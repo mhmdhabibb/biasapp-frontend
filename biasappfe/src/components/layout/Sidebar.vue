@@ -107,7 +107,7 @@ const iconPaths: Record<string, string> = {
 
   <aside class="sidebar" :class="{ 'sidebar-open': open }">
     <div class="sidebar-header">
-      <div class="sidebar-logo">BIAS</div>
+      <img class="sidebar-logo" src="@/assets/bias-logo.png" alt="BIAS" />
       <span class="sidebar-app-name">Admin Panel</span>
     </div>
 
@@ -225,17 +225,9 @@ const iconPaths: Record<string, string> = {
 }
 
 .sidebar-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: #fff;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.5px;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
