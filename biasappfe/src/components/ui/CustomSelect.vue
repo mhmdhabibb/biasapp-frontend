@@ -251,15 +251,13 @@ watch(() => searchQuery.value, () => {
 }
 
 .custom-select__dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
+  position: relative;
+  margin-top: 6px;
   z-index: 50;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 

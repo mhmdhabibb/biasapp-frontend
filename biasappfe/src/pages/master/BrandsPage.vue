@@ -6,11 +6,13 @@ import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import type { TableColumn, Brand } from '@/types'
 
+import { useBrands } from '@/composables/useBrands'
+
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Brand' },
 ]
 
-const data = ref<Brand[]>([])
+const { brands: data } = useBrands()
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Brand | null>(null)
