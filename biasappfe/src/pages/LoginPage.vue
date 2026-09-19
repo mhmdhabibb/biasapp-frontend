@@ -102,7 +102,7 @@ function handleSubmit() {
           </div>
 
           <button type="submit" class="login-submit">
-            Masuk
+            Login
           </button>
         </form>
 

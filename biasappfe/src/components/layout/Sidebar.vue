@@ -13,7 +13,7 @@ const { currentUser, logout } = useAuth()
 
 const menuGroups: MenuGroup[] = [
   {
-    title: 'Akses',
+    title: 'Access',
     items: [
       { label: 'Users', icon: 'users', route: '/master/users' },
       { label: 'Roles', icon: 'shield', route: '/master/roles' },
@@ -22,14 +22,14 @@ const menuGroups: MenuGroup[] = [
     ],
   },
   {
-    title: 'Pelanggan',
+    title: 'Customers',
     items: [
       { label: 'Customers', icon: 'building', route: '/master/customers' },
       { label: 'Technicians', icon: 'wrench', route: '/master/technicians' },
     ],
   },
   {
-    title: 'Produk',
+    title: 'Products',
     items: [
       { label: 'Unit Types', icon: 'layers', route: '/master/unit-types' },
       { label: 'Brands', icon: 'tag', route: '/master/brands' },
@@ -40,7 +40,7 @@ const menuGroups: MenuGroup[] = [
     ],
   },
   {
-    title: 'Inventaris',
+    title: 'Inventory',
     items: [
       { label: 'Units', icon: 'printer', route: '/master/units' },
       { label: 'Warranties', icon: 'shield-check', route: '/master/warranties' },
@@ -111,7 +111,7 @@ const iconPaths: Record<string, string> = {
       <span class="sidebar-app-name">Admin Panel</span>
     </div>
 
-    <nav class="sidebar-nav" aria-label="Menu navigasi utama">
+    <nav class="sidebar-nav" aria-label="Main navigation menu">
       <div v-for="group in menuGroups" :key="group.title" class="menu-group">
         <button
           class="menu-group-toggle"
@@ -170,7 +170,7 @@ const iconPaths: Record<string, string> = {
           <span class="sidebar-user-role">Superadmin</span>
         </div>
       </div>
-      <button class="btn-logout" title="Keluar" @click="handleLogout">
+      <button class="btn-logout" title="Logout" @click="handleLogout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
         </svg>

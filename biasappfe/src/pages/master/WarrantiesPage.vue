@@ -53,7 +53,7 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Warranties" button-label="Tambah Garansi" @add="openAdd" />
+    <PageHeader title="Warranties" button-label="Add Warranty" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari garansi..." @edit="openEdit" @delete="openDelete">
       <template #cell-status="{ value }">
         <span :class="value === 'active' ? 'badge badge-success' : value === 'expired' ? 'badge badge-danger' : 'badge badge-neutral'">

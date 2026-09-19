@@ -51,7 +51,7 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Product Categories" button-label="Tambah Kategori" @add="openAdd" />
+    <PageHeader title="Product Categories" button-label="Add Category" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari kategori..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Kategori' : 'Tambah Kategori'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
