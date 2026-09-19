@@ -104,7 +104,7 @@ const visiblePages = computed(() => {
             >
               {{ col.label }}
             </th>
-            <th class="th-actions">Actions</th>
+            <th class="th-actions">ACTION</th>
           </tr>
         </thead>
         <tbody>
@@ -121,23 +121,22 @@ const visiblePages = computed(() => {
                 title="Edit"
                 @click="$emit('edit', row)"
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                 </svg>
-                <span class="action-label">Edit</span>
               </button>
               <button
                 class="action-btn action-btn--delete"
                 title="Delete"
                 @click="$emit('delete', row)"
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="3 6 5 6 21 6"/>
-                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                  <line x1="10" y1="11" x2="10" y2="17"/>
-                  <line x1="14" y1="11" x2="14" y2="17"/>
+                <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
                 </svg>
-                <span class="action-label">Delete</span>
               </button>
             </td>
           </tr>
@@ -278,8 +277,7 @@ const visiblePages = computed(() => {
 }
 
 .th-actions {
-  width: 180px;
-  text-align: center;
+  width: 120px;
 }
 
 .td-actions {
@@ -292,51 +290,36 @@ const visiblePages = computed(() => {
 .action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  font-family: var(--font-family);
-  line-height: 1;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
   cursor: pointer;
-  border: none;
+  border: 1px solid var(--color-border-light);
+  background: transparent;
+  color: var(--color-text-muted);
   transition:
     background var(--transition-fast),
-    box-shadow var(--transition-fast),
-    transform var(--transition-fast),
-    color var(--transition-fast);
-  min-height: 32px;
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .action-btn:active {
-  transform: scale(0.95);
-}
-
-.action-btn--edit {
-  background: var(--color-primary-surface);
-  color: var(--color-primary);
+  transform: scale(0.92);
 }
 
 .action-btn--edit:hover {
-  background: var(--color-primary);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(48, 92, 255, 0.25);
-}
-
-.action-btn--delete {
-  background: var(--color-danger-surface);
-  color: var(--color-danger);
+  background: var(--color-primary-surface);
+  border-color: var(--color-primary-surface);
+  color: var(--color-primary);
 }
 
 .action-btn--delete:hover {
-  background: var(--color-danger);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
-}
-
-.action-label {
-  letter-spacing: 0.2px;
+  background: var(--color-danger-surface);
+  border-color: var(--color-danger-surface);
+  color: var(--color-danger);
 }
 
 .pagination {
