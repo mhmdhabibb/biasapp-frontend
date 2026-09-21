@@ -79,7 +79,8 @@ function handleSubmit() {
         </button>
       </form>
 
-      <p class="login-hint">Demo: admin / admin123</p>
+      <p class="demo-text">Demo Admin: admin / admin123</p>
+      <p class="demo-text">Demo CS: cs / cs123</p>
     </div>
   </div>
 </template>

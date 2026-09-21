@@ -4,7 +4,10 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { useMasterStore } from '@/composables/useMasterStore'
 import type { TableColumn, Warranty } from '@/types'
+
+const { warranties: data } = useMasterStore()
 
 const columns: TableColumn[] = [
   { key: 'warranty_type', label: 'Tipe Garansi' },
@@ -13,8 +16,6 @@ const columns: TableColumn[] = [
   { key: 'end_date', label: 'Berakhir' },
   { key: 'status', label: 'Status' },
 ]
-
-const data = ref<Warranty[]>([])
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Warranty | null>(null)

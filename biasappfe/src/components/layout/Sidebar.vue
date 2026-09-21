@@ -11,7 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const { currentUser, logout } = useAuth()
 
-const menuGroups: MenuGroup[] = [
+const allMenuGroups: MenuGroup[] = [
   {
     title: 'Akses',
     items: [
@@ -46,9 +46,32 @@ const menuGroups: MenuGroup[] = [
       { label: 'Warranties', icon: 'shield-check', route: '/master/warranties' },
     ],
   },
+  {
+    title: 'Customer Service',
+    items: [
+      { label: 'Contract Items', icon: 'clipboard', route: '/customer-service/contract-items' },
+      { label: 'Service Reports', icon: 'tool', route: '/customer-service/service-reports' },
+      { label: 'Meter Readings', icon: 'activity', route: '/customer-service/monthly-meter-readings' },
+      { label: 'Sales', icon: 'shopping-cart', route: '/customer-service/sales' },
+      { label: 'Rental Invoices', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
+      { label: 'Sales Invoices', icon: 'receipt', route: '/customer-service/sales-invoices' },
+      { label: 'Payments', icon: 'credit-card', route: '/customer-service/payments' },
+      { label: 'Warranty Claims', icon: 'alert-circle', route: '/customer-service/warranty-claims' },
+    ],
+  },
 ]
 
-const expandedGroups = ref<Set<string>>(new Set(menuGroups.map(g => g.title)))
+const menuGroups = computed(() => {
+  const role = currentUser.value?.role
+  if (role === 'admin') {
+    return allMenuGroups.filter(g => g.title !== 'Customer Service')
+  } else if (role === 'customer_service') {
+    return allMenuGroups.filter(g => g.title === 'Customer Service')
+  }
+  return []
+})
+
+const expandedGroups = ref<Set<string>>(new Set(allMenuGroups.map(g => g.title)))
 
 function toggleGroup(title: string) {
   if (expandedGroups.value.has(title)) {
@@ -93,6 +116,14 @@ const iconPaths: Record<string, string> = {
   box: 'M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12',
   printer: 'M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z',
   'shield-check': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9 12l2 2 4-4',
+  clipboard: 'M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2 M9 2h6a1 1 0 011 1v1a1 1 0 01-1 1H9a1 1 0 01-1-1V3a1 1 0 011-1z',
+  tool: 'M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z',
+  activity: 'M22 12h-4l-3 9L9 3l-3 9H2',
+  'shopping-cart': 'M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6 M9 22a1 1 0 100-2 1 1 0 000 2z M20 22a1 1 0 100-2 1 1 0 000 2z',
+  'file-invoice': 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M8 13h8 M8 17h8 M8 9h2',
+  receipt: 'M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z M8 10h8 M8 14h4',
+  'credit-card': 'M1 4h22v16H1z M1 10h22',
+  'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 8v4 M12 16h.01',
 }
 </script>
 
@@ -167,7 +198,7 @@ const iconPaths: Record<string, string> = {
         </div>
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
-          <span class="sidebar-user-role">Superadmin</span>
+          <span class="sidebar-user-role">{{ currentUser?.role === 'customer_service' ? 'Customer Service' : 'Superadmin' }}</span>
         </div>
       </div>
       <button class="btn-logout" title="Keluar" @click="handleLogout">

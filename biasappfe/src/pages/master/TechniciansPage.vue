@@ -4,14 +4,15 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { useMasterStore } from '@/composables/useMasterStore'
 import type { TableColumn, Technician } from '@/types'
+
+const { technicians: data } = useMasterStore()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Teknisi' },
   { key: 'phone', label: 'Telepon' },
 ]
-
-const data = ref<Technician[]>([])
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Technician | null>(null)

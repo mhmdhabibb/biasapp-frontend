@@ -84,21 +84,69 @@ const router = createRouter({
       name: 'warranties',
       component: () => import('@/pages/master/WarrantiesPage.vue'),
     },
+    {
+      path: '/customer-service/contract-items',
+      name: 'contractItems',
+      component: () => import('@/pages/customer-service/ContractItemsPage.vue'),
+    },
+    {
+      path: '/customer-service/service-reports',
+      name: 'serviceReports',
+      component: () => import('@/pages/customer-service/ServiceReportsPage.vue'),
+    },
+    {
+      path: '/customer-service/monthly-meter-readings',
+      name: 'monthlyMeterReadings',
+      component: () => import('@/pages/customer-service/MonthlyMeterReadingsPage.vue'),
+    },
+    {
+      path: '/customer-service/sales',
+      name: 'sales',
+      component: () => import('@/pages/customer-service/SalesPage.vue'),
+    },
+    {
+      path: '/customer-service/rental-invoices',
+      name: 'rentalInvoices',
+      component: () => import('@/pages/customer-service/RentalInvoicesPage.vue'),
+    },
+    {
+      path: '/customer-service/sales-invoices',
+      name: 'salesInvoices',
+      component: () => import('@/pages/customer-service/SalesInvoicesPage.vue'),
+    },
+    {
+      path: '/customer-service/payments',
+      name: 'payments',
+      component: () => import('@/pages/customer-service/PaymentsPage.vue'),
+    },
+    {
+      path: '/customer-service/warranty-claims',
+      name: 'warrantyClaims',
+      component: () => import('@/pages/customer-service/WarrantyClaimsPage.vue'),
+    },
   ],
 })
 
 router.beforeEach((to) => {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, currentUser } = useAuth()
 
   if (to.meta.requiresAuth === false) {
     if (isAuthenticated.value) {
-      return { name: 'users' }
+      return { name: currentUser.value?.role === 'customer_service' ? 'contractItems' : 'users' }
     }
     return true
   }
 
   if (!isAuthenticated.value) {
     return { name: 'login' }
+  }
+
+  const role = currentUser.value?.role
+  if (role === 'customer_service' && to.path.startsWith('/master')) {
+    return { name: 'contractItems' }
+  }
+  if (role === 'admin' && to.path.startsWith('/customer-service')) {
+    return { name: 'users' }
   }
 
   return true

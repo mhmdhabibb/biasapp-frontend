@@ -23,8 +23,16 @@ const pageTitle = computed(() => {
     '/master/products': 'Products',
     '/master/units': 'Units',
     '/master/warranties': 'Warranties',
+    '/customer-service/contract-items': 'Contract Items',
+    '/customer-service/service-reports': 'Service Reports',
+    '/customer-service/monthly-meter-readings': 'Monthly Meter Readings',
+    '/customer-service/sales': 'Sales',
+    '/customer-service/rental-invoices': 'Rental Invoices',
+    '/customer-service/sales-invoices': 'Sales Invoices',
+    '/customer-service/payments': 'Payments',
+    '/customer-service/warranty-claims': 'Warranty Claims',
   }
-  return titles[route.path] || 'Master Data'
+  return titles[route.path] || 'BIAS App'
 })
 </script>
 
