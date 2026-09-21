@@ -21,9 +21,18 @@ const editingItem = ref<Product | null>(null)
 const deletingItem = ref<Product | null>(null)
 const form = reactive({ name: '', sku: '', category_id: null as number | null, brand_id: null as number | null, price: 0, stock: 0 })
 
+function generateSKU(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let result = 'PRD-'
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
+}
+
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { name: '', sku: '', category_id: null, brand_id: null, price: 0, stock: 0 })
+  Object.assign(form, { name: '', sku: generateSKU(), category_id: null, brand_id: null, price: 0, stock: 0 })
   showModal.value = true
 }
 
@@ -57,7 +66,7 @@ function formatRupiah(val: number): string {
 
 <template>
   <div>
-    <PageHeader title="Products" button-label="Tambah Produk" @add="openAdd" />
+    <PageHeader title="Products" button-label="Add Product" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari produk..." @edit="openEdit" @delete="openDelete">
       <template #cell-price="{ value }">{{ formatRupiah(value || 0) }}</template>
     </DataTable>
@@ -68,7 +77,7 @@ function formatRupiah(val: number): string {
       </div>
       <div class="form-group">
         <label for="prod-sku" class="form-label">SKU</label>
-        <input id="prod-sku" v-model="form.sku" type="text" class="form-input" placeholder="Kode SKU produk">
+        <input id="prod-sku" v-model="form.sku" type="text" class="form-input" disabled placeholder="Auto-generated SKU">
       </div>
       <div class="form-group">
         <label for="prod-price" class="form-label">Harga (Rp)</label>

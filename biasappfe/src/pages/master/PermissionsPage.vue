@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
+import { useModules } from '@/composables/useModules'
 import type { TableColumn, Permission } from '@/types'
+
+const { modules } = useModules()
+
+const moduleOptions = computed(() =>
+  modules.value.map(m => ({ value: m.id, label: m.name }))
+)
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Permission' },
-  { key: 'module_id', label: 'Module ID' },
+  { key: 'module_id', label: 'Modul' },
 ]
 
 const data = ref<Permission[]>([])
@@ -17,6 +25,12 @@ const showConfirm = ref(false)
 const editingItem = ref<Permission | null>(null)
 const deletingItem = ref<Permission | null>(null)
 const form = reactive({ name: '', module_id: null as number | null })
+
+function getModuleName(id: number | null): string {
+  if (!id) return '-'
+  const mod = modules.value.find(m => m.id === id)
+  return mod ? mod.name : '-'
+}
 
 function openAdd() {
   editingItem.value = null
@@ -50,18 +64,28 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Permissions" button-label="Tambah Permission" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari permission..." @edit="openEdit" @delete="openDelete" />
+    <PageHeader title="Permissions" button-label="Add Permission" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari permission..." @edit="openEdit" @delete="openDelete">
+      <template #cell-module_id="{ value }">
+        {{ getModuleName(value) }}
+      </template>
+    </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Permission' : 'Tambah Permission'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="perm-name" class="form-label">Nama Permission</label>
         <input id="perm-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: create_user, delete_report">
       </div>
       <div class="form-group">
-        <label for="perm-module" class="form-label">Module ID</label>
-        <input id="perm-module" v-model.number="form.module_id" type="number" class="form-input" placeholder="ID modul terkait">
+        <label class="form-label">Modul</label>
+        <CustomSelect
+          v-model="form.module_id"
+          :options="moduleOptions"
+          placeholder="Pilih modul"
+          id="perm-module"
+        />
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Hapus Permission" :message="`Yakin ingin menghapus permission '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
+

@@ -50,7 +50,7 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Roles" button-label="Tambah Role" @add="openAdd" />
+    <PageHeader title="Roles" button-label="Add Role" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari role..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Role' : 'Tambah Role'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">

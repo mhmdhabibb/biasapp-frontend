@@ -74,7 +74,7 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Users" button-label="Tambah User" @add="openAdd" />
+    <PageHeader title="Users" button-label="Add User" @add="openAdd" />
     <DataTable
       :columns="columns"
       :data="data"

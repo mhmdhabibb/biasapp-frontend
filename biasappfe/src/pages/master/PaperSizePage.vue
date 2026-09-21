@@ -49,7 +49,7 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Paper Size" button-label="Tambah Ukuran Kertas" @add="openAdd" />
+    <PageHeader title="Paper Size" button-label="Add Paper Size" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari ukuran kertas..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Ukuran Kertas' : 'Tambah Ukuran Kertas'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">

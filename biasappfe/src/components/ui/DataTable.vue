@@ -65,11 +65,11 @@ const visiblePages = computed(() => {
           v-model="searchQuery"
           type="search"
           class="form-input search-input"
-          :placeholder="searchPlaceholder || 'Cari data...'"
+          :placeholder="searchPlaceholder || 'Search data...'"
           @input="currentPage = 1"
         >
       </div>
-      <span class="data-count">{{ filteredData.length }} data</span>
+      <span class="data-count">{{ filteredData.length }} items</span>
     </div>
 
     <div v-if="data.length === 0" class="empty-state">
@@ -78,8 +78,8 @@ const visiblePages = computed(() => {
         <polyline points="14 2 14 8 20 8"/>
         <line x1="9" y1="15" x2="15" y2="15"/>
       </svg>
-      <p class="empty-title">Belum ada data</p>
-      <p class="empty-desc">Data yang Anda tambahkan akan muncul di sini</p>
+      <p class="empty-title">No data yet</p>
+      <p class="empty-desc">Data you add will appear here</p>
     </div>
 
     <div v-else-if="filteredData.length === 0 && searchQuery" class="empty-state">
@@ -88,8 +88,8 @@ const visiblePages = computed(() => {
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         <line x1="8" y1="11" x2="14" y2="11"/>
       </svg>
-      <p class="empty-title">Tidak ditemukan</p>
-      <p class="empty-desc">Tidak ada data yang cocok dengan "{{ searchQuery }}"</p>
+      <p class="empty-title">Not found</p>
+      <p class="empty-desc">No data matches "{{ searchQuery }}"</p>
     </div>
 
     <div v-else class="table-scroll">
@@ -104,7 +104,7 @@ const visiblePages = computed(() => {
             >
               {{ col.label }}
             </th>
-            <th class="th-actions">Aksi</th>
+            <th class="th-actions">ACTION</th>
           </tr>
         </thead>
         <tbody>
@@ -117,26 +117,26 @@ const visiblePages = computed(() => {
             </td>
             <td class="td-actions">
               <button
-                class="btn btn-ghost btn-sm"
+                class="action-btn action-btn--edit"
                 title="Edit"
                 @click="$emit('edit', row)"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                  <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                 </svg>
-                Edit
               </button>
               <button
-                class="btn btn-ghost btn-sm btn-danger-text"
-                title="Hapus"
+                class="action-btn action-btn--delete"
+                title="Delete"
                 @click="$emit('delete', row)"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="3 6 5 6 21 6"/>
-                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
                 </svg>
-                Hapus
               </button>
             </td>
           </tr>
@@ -277,20 +277,48 @@ const visiblePages = computed(() => {
 }
 
 .th-actions {
-  width: 160px;
+  width: 120px;
 }
 
 .td-actions {
   display: flex;
-  gap: var(--space-xs);
+  align-items: center;
+  gap: var(--space-sm);
   white-space: nowrap;
 }
 
-.btn-danger-text {
-  color: var(--color-danger);
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--color-border-light);
+  background: transparent;
+  color: var(--color-text-muted);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
 }
-.btn-danger-text:hover {
+
+.action-btn:active {
+  transform: scale(0.92);
+}
+
+.action-btn--edit:hover {
+  background: var(--color-primary-surface);
+  border-color: var(--color-primary-surface);
+  color: var(--color-primary);
+}
+
+.action-btn--delete:hover {
   background: var(--color-danger-surface);
+  border-color: var(--color-danger-surface);
   color: var(--color-danger);
 }
 

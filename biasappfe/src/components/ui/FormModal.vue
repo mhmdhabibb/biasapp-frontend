@@ -56,8 +56,8 @@ onUnmounted(() => {
           </div>
 
           <div class="modal-footer">
-            <button class="btn btn-outline" @click="emit('close')">Batal</button>
-            <button class="btn btn-accent" @click="emit('submit')">Simpan</button>
+            <button class="btn btn-outline" @click="emit('close')">Cancel</button>
+            <button class="btn btn-accent" @click="emit('submit')">Save</button>
           </div>
         </div>
       </div>
@@ -83,6 +83,7 @@ onUnmounted(() => {
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 520px;
+  min-height: 480px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -118,10 +119,11 @@ onUnmounted(() => {
 
 .modal-body {
   padding: var(--space-md) var(--space-lg);
-  overflow-y: auto;
+  padding-bottom: var(--space-2xl);
   display: flex;
   flex-direction: column;
   gap: var(--space-base);
+  flex: 1;
 }
 
 .modal-footer {

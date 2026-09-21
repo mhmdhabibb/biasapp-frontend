@@ -6,11 +6,13 @@ import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import type { TableColumn, Brand } from '@/types'
 
+import { useBrands } from '@/composables/useBrands'
+
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Brand' },
 ]
 
-const data = ref<Brand[]>([])
+const { brands: data } = useBrands()
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Brand | null>(null)
@@ -49,7 +51,7 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Brands" button-label="Tambah Brand" @add="openAdd" />
+    <PageHeader title="Brands" button-label="Add Brand" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari brand..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Tambah Brand'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">

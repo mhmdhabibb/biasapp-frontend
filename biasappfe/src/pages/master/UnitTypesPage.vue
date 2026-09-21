@@ -51,7 +51,7 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Unit Types" button-label="Tambah Tipe Unit" @add="openAdd" />
+    <PageHeader title="Unit Types" button-label="Add Unit Type" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari tipe unit..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Tipe Unit' : 'Tambah Tipe Unit'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">

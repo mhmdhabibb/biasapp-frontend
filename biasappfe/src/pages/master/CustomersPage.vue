@@ -53,7 +53,7 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Customers" button-label="Tambah Customer" @add="openAdd" />
+    <PageHeader title="Customers" button-label="Add Customer" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari customer..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Customer' : 'Tambah Customer'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
@@ -70,7 +70,7 @@ function handleDelete() {
       </div>
       <div class="form-group">
         <label for="cust-phone" class="form-label">Telepon</label>
-        <input id="cust-phone" v-model="form.phone" type="tel" class="form-input" placeholder="08xxxxxxxxxx">
+        <input id="cust-phone" v-model="form.phone" type="tel" inputmode="numeric" pattern="[0-9]*" class="form-input" placeholder="08xxxxxxxxxx" @input="form.phone = form.phone.replace(/[^0-9]/g, '')">
       </div>
       <div class="form-group">
         <label for="cust-address" class="form-label">Alamat</label>

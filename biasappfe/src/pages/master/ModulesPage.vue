@@ -4,14 +4,16 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { useModules } from '@/composables/useModules'
 import type { TableColumn, Module } from '@/types'
+
+const { modules: data, addModule, updateModule, removeModule } = useModules()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Modul' },
   { key: 'is_active', label: 'Status' },
 ]
 
-const data = ref<Module[]>([])
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Module | null>(null)
@@ -33,24 +35,23 @@ function openEdit(item: Module) {
 function handleSubmit() {
   if (!form.name.trim()) return
   if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx], ...form }
+    updateModule(editingItem.value.id, form)
   } else {
-    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), deleted_at: null })
+    addModule({ id: Date.now(), ...form, created_at: new Date().toISOString(), deleted_at: null })
   }
   showModal.value = false
 }
 
 function openDelete(item: Module) { deletingItem.value = item; showConfirm.value = true }
 function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+  if (deletingItem.value) removeModule(deletingItem.value.id)
   showConfirm.value = false
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Modules" button-label="Tambah Module" @add="openAdd" />
+    <PageHeader title="Modules" button-label="Add Module" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari module..." @edit="openEdit" @delete="openDelete">
       <template #cell-is_active="{ value }">
         <span :class="value ? 'badge badge-success' : 'badge badge-neutral'">
