@@ -53,7 +53,7 @@ function handleDelete() {
   <div>
     <PageHeader title="Unit Types" button-label="Add Unit Type" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari tipe unit..." @edit="openEdit" @delete="openDelete" />
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Tipe Unit' : 'Tambah Tipe Unit'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Unit Type' : 'Add Unit Type'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="ut-name" class="form-label">Nama Tipe</label>
         <input id="ut-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Printer, Copier">

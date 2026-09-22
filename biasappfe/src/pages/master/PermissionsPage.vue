@@ -70,7 +70,7 @@ function handleDelete() {
         {{ getModuleName(value) }}
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Permission' : 'Tambah Permission'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Permission' : 'Add Permission'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="perm-name" class="form-label">Nama Permission</label>
         <input id="perm-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: create_user, delete_report">

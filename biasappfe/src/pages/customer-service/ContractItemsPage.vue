@@ -16,13 +16,13 @@ const {
 } = useMasterStore()
 
 const columns: TableColumn[] = [
-  { key: 'contract_no', label: 'No. Kontrak' },
+  { key: 'contract_no', label: 'Contract No.' },
   { key: 'customer_id', label: 'Customer' },
   { key: 'unit_id', label: 'Unit' },
-  { key: 'placement_location', label: 'Lokasi' },
-  { key: 'monthly_rent_fee', label: 'Biaya Sewa/bln' },
-  { key: 'start_date', label: 'Mulai' },
-  { key: 'end_date', label: 'Berakhir' },
+  { key: 'placement_location', label: 'Location' },
+  { key: 'monthly_rent_fee', label: 'Monthly Rent Fee' },
+  { key: 'start_date', label: 'Start Date' },
+  { key: 'end_date', label: 'End Date' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -110,52 +110,52 @@ function unitName(id: number | null): string {
 
 <template>
   <div>
-    <PageHeader title="Contract Items" button-label="Tambah Kontrak" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari kontrak..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Contract Items" button-label="Add Contract" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search contracts..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
       <template #cell-unit_id="{ value }">{{ unitName(value) }}</template>
       <template #cell-monthly_rent_fee="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-status="{ value }">
         <span :class="value === 'active' ? 'badge badge-success' : value === 'expired' ? 'badge badge-danger' : 'badge badge-neutral'">
-          {{ value === 'active' ? 'Aktif' : value === 'expired' ? 'Kadaluarsa' : value || '-' }}
+          {{ value === 'active' ? 'Active' : value === 'expired' ? 'Expired' : value || '-' }}
         </span>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Kontrak' : 'Tambah Kontrak'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Contract' : 'Add Contract'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="ci-no" class="form-label">No. Kontrak</label>
+        <label for="ci-no" class="form-label">Contract No.</label>
         <input id="ci-no" v-model="form.contract_no" type="text" class="form-input" placeholder="CNT-XXXXXX">
       </div>
       <div class="form-group">
         <label for="ci-customer" class="form-label">Customer</label>
         <select id="ci-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Pilih Customer --</option>
+          <option :value="null">-- Select Customer --</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name }}</option>
         </select>
       </div>
       <div class="form-group">
         <label for="ci-unit" class="form-label">Unit</label>
         <select id="ci-unit" v-model="form.unit_id" class="form-select">
-          <option :value="null">-- Pilih Unit --</option>
+          <option :value="null">-- Select Unit --</option>
           <option v-for="u in units" :key="u.id" :value="u.id">{{ u.name }} ({{ u.serial_no }})</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="ci-location" class="form-label">Lokasi Penempatan</label>
-        <input id="ci-location" v-model="form.placement_location" type="text" class="form-input" placeholder="Alamat lokasi unit">
+        <label for="ci-location" class="form-label">Placement Location</label>
+        <input id="ci-location" v-model="form.placement_location" type="text" class="form-input" placeholder="Unit location address">
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label for="ci-start" class="form-label">Tanggal Mulai</label>
+          <label for="ci-start" class="form-label">Start Date</label>
           <input id="ci-start" v-model="form.start_date" type="date" class="form-input">
         </div>
         <div class="form-group">
-          <label for="ci-end" class="form-label">Tanggal Berakhir</label>
+          <label for="ci-end" class="form-label">End Date</label>
           <input id="ci-end" v-model="form.end_date" type="date" class="form-input">
         </div>
       </div>
       <div class="form-group">
-        <label for="ci-rent" class="form-label">Biaya Sewa Bulanan (Rp)</label>
+        <label for="ci-rent" class="form-label">Monthly Rent Fee (Rp)</label>
         <input id="ci-rent" v-model.number="form.monthly_rent_fee" type="number" class="form-input" min="0">
       </div>
       <div class="form-group">
@@ -164,24 +164,24 @@ function unitName(id: number | null): string {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label for="ci-mono-rate" class="form-label">Rate/halaman Mono</label>
+          <label for="ci-mono-rate" class="form-label">Mono Rate/page</label>
           <input id="ci-mono-rate" v-model.number="form.rate_per_page_mono" type="number" class="form-input" min="0">
         </div>
         <div class="form-group">
-          <label for="ci-color-rate" class="form-label">Rate/halaman Color</label>
+          <label for="ci-color-rate" class="form-label">Color Rate/page</label>
           <input id="ci-color-rate" v-model.number="form.rate_per_page_color" type="number" class="form-input" min="0">
         </div>
       </div>
       <div class="form-group">
         <label for="ci-status" class="form-label">Status</label>
         <select id="ci-status" v-model="form.status" class="form-select">
-          <option value="active">Aktif</option>
-          <option value="expired">Kadaluarsa</option>
-          <option value="terminated">Dibatalkan</option>
+          <option value="active">Active</option>
+          <option value="expired">Expired</option>
+          <option value="terminated">Terminated</option>
         </select>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Kontrak" :message="`Yakin ingin menghapus kontrak '${deletingItem?.contract_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Contract" :message="`Are you sure you want to delete contract '${deletingItem?.contract_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

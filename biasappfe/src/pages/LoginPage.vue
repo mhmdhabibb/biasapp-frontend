@@ -13,7 +13,7 @@ const showPassword = ref(false)
 function handleSubmit() {
   const success = login(username.value, password.value)
   if (success) {
-    router.push('/master/users')
+    router.push('/')
   }
 }
 </script>
@@ -108,6 +108,7 @@ function handleSubmit() {
 
         <p class="login-hint">Demo Admin: admin / admin123</p>
         <p class="login-hint">Demo CS: cs / cs123</p>
+        <p class="login-hint">Demo Teknisi: tek / tek123</p>
       </div>
     </div>
   </div>

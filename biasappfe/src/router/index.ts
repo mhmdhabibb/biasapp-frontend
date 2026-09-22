@@ -124,6 +124,77 @@ const router = createRouter({
       name: 'warrantyClaims',
       component: () => import('@/pages/customer-service/WarrantyClaimsPage.vue'),
     },
+    {
+      path: '/customer-service/dashboard',
+      name: 'csDashboard',
+      component: () => import('@/pages/customer-service/CSDashboardPage.vue'),
+    },
+    {
+      path: '/customer-service/call-service',
+      name: 'csCallService',
+      component: () => import('@/pages/customer-service/CallServicePage.vue'),
+    },
+    {
+      path: '/customer-service/monitoring-service',
+      name: 'csMonitoringService',
+      component: () => import('@/pages/customer-service/MonitoringServicePage.vue'),
+    },
+    {
+      path: '/customer-service/sparepart-request',
+      name: 'csSparepartRequest',
+      component: () => import('@/pages/customer-service/SparepartRequestPage.vue'),
+    },
+    {
+      path: '/customer-service/indent',
+      name: 'csIndent',
+      component: () => import('@/pages/customer-service/IndentPage.vue'),
+    },
+    {
+      path: '/customer-service/delivery',
+      name: 'csDelivery',
+      component: () => import('@/pages/customer-service/DeliveryMonitoringPage.vue'),
+    },
+    {
+      path: '/customer-service/reports',
+      name: 'csReports',
+      component: () => import('@/pages/customer-service/CSReportsPage.vue'),
+    },
+    // Technician Routes
+    {
+      path: '/technician/dashboard',
+      name: 'techDashboard',
+      component: () => import('@/pages/technician/TechDashboardPage.vue'),
+    },
+    {
+      path: '/technician/call-services',
+      name: 'techCallServices',
+      component: () => import('@/pages/technician/TechCallServicesPage.vue'),
+    },
+    {
+      path: '/technician/call-services/:id',
+      name: 'techCallServiceDetail',
+      component: () => import('@/pages/technician/TechCallServiceDetailPage.vue'),
+    },
+    {
+      path: '/technician/maintenance',
+      name: 'techMaintenance',
+      component: () => import('@/pages/technician/TechMaintenancePage.vue'),
+    },
+    {
+      path: '/technician/sparepart-request',
+      name: 'techSparepartRequest',
+      component: () => import('@/pages/technician/TechSparepartRequestPage.vue'),
+    },
+    {
+      path: '/technician/meter-readings',
+      name: 'techMeterReadings',
+      component: () => import('@/pages/technician/TechMeterReadingsPage.vue'),
+    },
+    {
+      path: '/technician/service-history',
+      name: 'techServiceHistory',
+      component: () => import('@/pages/technician/TechServiceHistoryPage.vue'),
+    },
   ],
 })
 
@@ -132,7 +203,10 @@ router.beforeEach((to) => {
 
   if (to.meta.requiresAuth === false) {
     if (isAuthenticated.value) {
-      return { name: currentUser.value?.role === 'customer_service' ? 'contractItems' : 'users' }
+      const role = currentUser.value?.role
+      if (role === 'customer_service') return { name: 'csDashboard' }
+      if (role === 'technician') return { name: 'techDashboard' }
+      return { name: 'users' }
     }
     return true
   }
@@ -142,11 +216,30 @@ router.beforeEach((to) => {
   }
 
   const role = currentUser.value?.role
-  if (role === 'customer_service' && to.path.startsWith('/master')) {
-    return { name: 'contractItems' }
+  
+  // CS Authorization
+  if (role === 'customer_service') {
+    const allowedForCS = [
+      'csDashboard', 'customers', 'contractItems', 'units', 'csCallService', 
+      'csMonitoringService', 'csSparepartRequest', 'csIndent', 'csDelivery', 
+      'warrantyClaims', 'rentalInvoices', 'csReports'
+    ]
+    if (to.name && !allowedForCS.includes(to.name as string)) {
+      return { name: 'csDashboard' }
+    }
   }
-  if (role === 'admin' && to.path.startsWith('/customer-service')) {
+  if (role === 'admin' && (to.path.startsWith('/customer-service') || to.path.startsWith('/technician'))) {
     return { name: 'users' }
+  }
+  if (role === 'technician') {
+    const allowedForTechnician = [
+      'techDashboard', 'techCallServices', 'techCallServiceDetail', 'techMaintenance', 
+      'techSparepartRequest', 'techMeterReadings', 'techServiceHistory', 
+      'units', 'customers'
+    ]
+    if (to.name && !allowedForTechnician.includes(to.name as string)) {
+      return { name: 'techDashboard' }
+    }
   }
 
   return true

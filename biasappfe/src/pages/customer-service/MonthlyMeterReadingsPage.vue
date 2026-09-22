@@ -112,53 +112,53 @@ function formatRupiah(val: number): string {
 
 <template>
   <div>
-    <PageHeader title="Monthly Meter Readings" button-label="Tambah Pembacaan" @add="openAdd" />
+    <PageHeader title="Monthly Meter Readings" button-label="Add Meter Reading" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari pembacaan meter..." @edit="openEdit" @delete="openDelete">
       <template #cell-contract_item_id="{ value }">{{ contractNo(value) }}</template>
       <template #cell-service_report_id="{ value }">{{ srNo(value) }}</template>
       <template #cell-total_amount="{ value }">{{ formatRupiah(value || 0) }}</template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Pembacaan Meter' : 'Tambah Pembacaan Meter'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Meter Reading' : 'Add Meter Reading'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="mm-period" class="form-label">Periode</label>
+        <label for="mm-period" class="form-label">Period</label>
         <input id="mm-period" v-model="form.period" type="month" class="form-input">
       </div>
       <div class="form-group">
-        <label for="mm-contract" class="form-label">Kontrak</label>
+        <label for="mm-contract" class="form-label">Contract</label>
         <select id="mm-contract" v-model="form.contract_item_id" class="form-select">
-          <option :value="null">-- Pilih Kontrak --</option>
+          <option :value="null">-- Select Contract --</option>
           <option v-for="ci in contractItems" :key="ci.id" :value="ci.id">{{ ci.contract_no }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="mm-sr" class="form-label">Laporan Servis</label>
+        <label for="mm-sr" class="form-label">Service Report</label>
         <select id="mm-sr" v-model="form.service_report_id" class="form-select">
-          <option :value="null">-- Pilih Laporan --</option>
+          <option :value="null">-- Select Report --</option>
           <option v-for="sr in serviceReports" :key="sr.id" :value="sr.id">{{ sr.service_report_no }}</option>
         </select>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label for="mm-mono-start" class="form-label">Counter Mono Awal</label>
+          <label for="mm-mono-start" class="form-label">Initial Mono Counter</label>
           <input id="mm-mono-start" v-model.number="form.counter_mono_start" type="number" class="form-input" min="0">
         </div>
         <div class="form-group">
-          <label for="mm-mono-end" class="form-label">Counter Mono Akhir</label>
+          <label for="mm-mono-end" class="form-label">Final Mono Counter</label>
           <input id="mm-mono-end" v-model.number="form.counter_mono_end" type="number" class="form-input" min="0">
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label for="mm-color-start" class="form-label">Counter Color Awal</label>
+          <label for="mm-color-start" class="form-label">Initial Color Counter</label>
           <input id="mm-color-start" v-model.number="form.counter_color_start" type="number" class="form-input" min="0">
         </div>
         <div class="form-group">
-          <label for="mm-color-end" class="form-label">Counter Color Akhir</label>
+          <label for="mm-color-end" class="form-label">Final Color Counter</label>
           <input id="mm-color-end" v-model.number="form.counter_color_end" type="number" class="form-input" min="0">
         </div>
       </div>
       <div class="form-group">
-        <label for="mm-mode" class="form-label">Mode Warna</label>
+        <label for="mm-mode" class="form-label">Color Mode</label>
         <select id="mm-mode" v-model="form.color_mode" class="form-select">
           <option value="mono">Mono</option>
           <option value="color">Color</option>

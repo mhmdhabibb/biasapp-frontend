@@ -85,7 +85,7 @@ function handleDelete() {
 
     <FormModal
       :open="showModal"
-      :title="editingItem ? 'Edit User' : 'Tambah User'"
+      :title="editingItem ? 'Edit User' : 'Add User'"
       @close="showModal = false"
       @submit="handleSubmit"
     >

@@ -51,7 +51,7 @@ function handleDelete() {
   <div>
     <PageHeader title="Paper Type" button-label="Add Paper Type" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari tipe kertas..." @edit="openEdit" @delete="openDelete" />
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Tipe Kertas' : 'Tambah Tipe Kertas'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Paper Type' : 'Add Paper Type'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="pt-name" class="form-label">Nama Tipe Kertas</label>
         <input id="pt-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: HVS, Art Paper, Glossy">

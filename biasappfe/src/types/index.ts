@@ -170,6 +170,9 @@ export interface ServiceReport {
   is_chargeable: boolean
   reading_counter: number
   is_complete: boolean
+  inspection_result?: string
+  notes?: string
+  testing_confirmed?: boolean
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -316,4 +319,38 @@ export interface MenuItem {
 export interface MenuGroup {
   title: string
   items: MenuItem[]
+}
+
+export interface SparepartRequest {
+  id: number
+  request_no: string
+  service_report_id: number | null
+  product_id: number | null
+  qty: number
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Indent {
+  id: number
+  indent_no: string
+  sparepart_request_id: number | null
+  product_id: number | null
+  qty: number
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface DeliveryOrder {
+  id: number
+  delivery_no: string
+  contract_item_id: number | null
+  customer_id: number | null
+  delivery_date: string
+  status: string
+  assigned_to: number | null
+  created_at: string
+  updated_at: string
 }

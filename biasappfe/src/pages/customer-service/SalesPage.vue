@@ -111,7 +111,7 @@ function formatRupiah(val: number): string {
 
 <template>
   <div>
-    <PageHeader title="Sales" button-label="Buat Penjualan" @add="openAdd" />
+    <PageHeader title="Sales" button-label="Add Sale" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari penjualan..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
@@ -119,7 +119,7 @@ function formatRupiah(val: number): string {
       <template #cell-tax="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Penjualan' : 'Buat Penjualan'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Sale' : 'Add Sale'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="sale-customer" class="form-label">Customer</label>
         <select id="sale-customer" v-model="form.customer_id" class="form-select">
@@ -148,7 +148,7 @@ function formatRupiah(val: number): string {
         </div>
         <button type="button" class="btn-remove-item" title="Hapus item" @click="removeSaleItem(idx)">✕</button>
       </div>
-      <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem">+ Tambah Item</button>
+      <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem">+ Add Item</button>
 
       <div class="form-row">
         <div class="form-group">

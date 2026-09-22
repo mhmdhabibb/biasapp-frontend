@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useAuth } from '@/composables/useAuth'
 import type { TableColumn, Customer } from '@/types'
 
 const { customers: data } = useMasterStore()
+const { currentUser } = useAuth()
+const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
 const columns: TableColumn[] = [
-  { key: 'company_name', label: 'Perusahaan' },
-  { key: 'name', label: 'Nama' },
+  { key: 'company_name', label: 'Company' },
+  { key: 'name', label: 'Name' },
   { key: 'email', label: 'Email' },
-  { key: 'phone', label: 'Telepon' },
+  { key: 'phone', label: 'Phone' },
 ]
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -53,30 +56,32 @@ function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Customers" button-label="Add Customer" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari customer..." @edit="openEdit" @delete="openDelete" />
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Customer' : 'Tambah Customer'" @close="showModal = false" @submit="handleSubmit">
+    <PageHeader title="Customers" :button-label="isTechnician ? undefined : 'Add Customer'" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search customers..." 
+               :hide-actions="isTechnician"
+               @edit="openEdit" @delete="openDelete" />
+    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Customer' : 'Add Customer'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="cust-company" class="form-label">Nama Perusahaan</label>
+        <label for="cust-company" class="form-label">Company Name</label>
         <input id="cust-company" v-model="form.company_name" type="text" class="form-input" placeholder="PT Example">
       </div>
       <div class="form-group">
-        <label for="cust-name" class="form-label">Nama PIC</label>
-        <input id="cust-name" v-model="form.name" type="text" class="form-input" placeholder="Nama kontak">
+        <label for="cust-name" class="form-label">PIC Name</label>
+        <input id="cust-name" v-model="form.name" type="text" class="form-input" placeholder="Contact name">
       </div>
       <div class="form-group">
         <label for="cust-email" class="form-label">Email</label>
         <input id="cust-email" v-model="form.email" type="email" class="form-input" placeholder="email@perusahaan.com">
       </div>
       <div class="form-group">
-        <label for="cust-phone" class="form-label">Telepon</label>
+        <label for="cust-phone" class="form-label">Phone</label>
         <input id="cust-phone" v-model="form.phone" type="tel" inputmode="numeric" pattern="[0-9]*" class="form-input" placeholder="08xxxxxxxxxx" @input="form.phone = form.phone.replace(/[^0-9]/g, '')">
       </div>
       <div class="form-group">
-        <label for="cust-address" class="form-label">Alamat</label>
-        <textarea id="cust-address" v-model="form.address" class="form-textarea" placeholder="Alamat lengkap"></textarea>
+        <label for="cust-address" class="form-label">Address</label>
+        <textarea id="cust-address" v-model="form.address" class="form-textarea" placeholder="Full address"></textarea>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Customer" :message="`Yakin ingin menghapus customer '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Customer" :message="`Are you sure you want to delete customer '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>

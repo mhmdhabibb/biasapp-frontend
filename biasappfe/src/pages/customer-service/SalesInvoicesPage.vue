@@ -114,7 +114,7 @@ function formatRupiah(val: number): string {
 
 <template>
   <div>
-    <PageHeader title="Sales Invoices" button-label="Buat Invoice Penjualan" @add="openAdd" />
+    <PageHeader title="Sales Invoices" button-label="Add Sales Invoice" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari invoice penjualan..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
       <template #cell-sale_id="{ value }">{{ saleRef(value) }}</template>
@@ -126,7 +126,7 @@ function formatRupiah(val: number): string {
         </span>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Invoice Penjualan' : 'Buat Invoice Penjualan'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Sales Invoice' : 'Add Sales Invoice'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="si-no" class="form-label">No. Invoice</label>
         <input id="si-no" v-model="form.invoice_no" type="text" class="form-input" placeholder="INV-S-XXXXXX">

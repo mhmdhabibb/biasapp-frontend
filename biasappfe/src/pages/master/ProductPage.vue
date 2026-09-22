@@ -70,7 +70,7 @@ function formatRupiah(val: number): string {
     <DataTable :columns="columns" :data="data" search-placeholder="Cari produk..." @edit="openEdit" @delete="openDelete">
       <template #cell-price="{ value }">{{ formatRupiah(value || 0) }}</template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Produk' : 'Tambah Produk'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="prod-name" class="form-label">Nama Produk</label>
         <input id="prod-name" v-model="form.name" type="text" class="form-input" placeholder="Nama produk">

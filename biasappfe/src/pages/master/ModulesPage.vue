@@ -59,7 +59,7 @@ function handleDelete() {
         </span>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Module' : 'Tambah Module'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Module' : 'Add Module'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="mod-name" class="form-label">Nama Modul</label>
         <input id="mod-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Dashboard, Laporan">

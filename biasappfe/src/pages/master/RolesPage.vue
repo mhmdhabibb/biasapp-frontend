@@ -52,7 +52,7 @@ function handleDelete() {
   <div>
     <PageHeader title="Roles" button-label="Add Role" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari role..." @edit="openEdit" @delete="openDelete" />
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Role' : 'Tambah Role'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Role' : 'Add Role'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="role-name" class="form-label">Nama Role</label>
         <input id="role-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Admin, Operator">

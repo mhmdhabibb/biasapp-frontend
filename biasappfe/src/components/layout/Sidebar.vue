@@ -66,7 +66,106 @@ const menuGroups = computed(() => {
   if (role === 'admin') {
     return allMenuGroups.filter(g => g.title !== 'Customer Service')
   } else if (role === 'customer_service') {
-    return allMenuGroups.filter(g => g.title === 'Customer Service')
+    return [
+      {
+        title: 'Customer Service',
+        items: [
+          { label: 'Dashboard', icon: 'grid', route: '/customer-service/dashboard' },
+        ]
+      },
+      {
+        title: 'Customer',
+        items: [
+          { label: 'Customer', icon: 'building', route: '/master/customers' },
+        ]
+      },
+      {
+        title: 'Kontrak & Rental',
+        items: [
+          { label: 'Kontrak', icon: 'clipboard', route: '/customer-service/contract-items' },
+          { label: 'Unit Kontrak', icon: 'printer', route: '/master/units' },
+        ]
+      },
+      {
+        title: 'Call Service',
+        items: [
+          { label: 'Call Service', icon: 'tool', route: '/customer-service/call-service' },
+          { label: 'Monitoring Service', icon: 'activity', route: '/customer-service/monitoring-service' },
+        ]
+      },
+      {
+        title: 'Sparepart',
+        items: [
+          { label: 'Request Sparepart', icon: 'box', route: '/customer-service/sparepart-request' },
+          { label: 'Indent', icon: 'layers', route: '/customer-service/indent' },
+        ]
+      },
+      {
+        title: 'Delivery & Installation',
+        items: [
+          { label: 'Delivery & Installation', icon: 'truck', route: '/customer-service/delivery' },
+        ]
+      },
+      {
+        title: 'Warranty',
+        items: [
+          { label: 'Warranty Claim', icon: 'shield-check', route: '/customer-service/warranty-claims' },
+        ]
+      },
+      {
+        title: 'Invoice',
+        items: [
+          { label: 'Monitoring Invoice', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
+        ]
+      },
+      {
+        title: 'Laporan',
+        items: [
+          { label: 'Laporan', icon: 'file-text', route: '/customer-service/reports' },
+        ]
+      }
+    ]
+  } else if (role === 'technician') {
+    return [
+      {
+        title: 'Technician',
+        items: [
+          { label: 'Dashboard', icon: 'grid', route: '/technician/dashboard' },
+        ]
+      },
+      {
+        title: 'Pekerjaan Saya',
+        items: [
+          { label: 'Call Service', icon: 'tool', route: '/technician/call-services' },
+          { label: 'Maintenance', icon: 'shield-check', route: '/technician/maintenance' },
+        ],
+      },
+      {
+        title: 'Sparepart',
+        items: [
+          { label: 'Request Sparepart', icon: 'box', route: '/technician/sparepart-request' },
+        ],
+      },
+      {
+        title: 'Meter Reading',
+        items: [
+          { label: 'Meter Reading', icon: 'activity', route: '/technician/meter-readings' },
+        ],
+      },
+      {
+        title: 'Riwayat Service',
+        items: [
+          { label: 'Riwayat Service', icon: 'clipboard', route: '/technician/service-history' },
+        ],
+      },
+      {
+        title: 'References',
+        items: [
+          { label: 'Customers', icon: 'building', route: '/master/customers' },
+          { label: 'Units', icon: 'printer', route: '/master/units' },
+        ],
+      },
+    ]
   }
   return []
 })
@@ -124,6 +223,7 @@ const iconPaths: Record<string, string> = {
   receipt: 'M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z M8 10h8 M8 14h4',
   'credit-card': 'M1 4h22v16H1z M1 10h22',
   'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 8v4 M12 16h.01',
+  'truck': 'M1 3h15v13H1z M16 8h4l3 3v5h-7z M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z M18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
 }
 </script>
 
@@ -198,7 +298,10 @@ const iconPaths: Record<string, string> = {
         </div>
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
-          <span class="sidebar-user-role">{{ currentUser?.role === 'customer_service' ? 'Customer Service' : 'Superadmin' }}</span>
+          <span class="sidebar-user-role">{{ 
+            currentUser?.role === 'customer_service' ? 'Customer Service' : 
+            currentUser?.role === 'technician' ? 'Technician' : 'Superadmin' 
+          }}</span>
         </div>
       </div>
       <button class="btn-logout" title="Logout" @click="handleLogout">

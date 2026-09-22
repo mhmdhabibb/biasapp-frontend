@@ -13,6 +13,9 @@ import type {
   SalesInvoice,
   Payment,
   WarrantyClaim,
+  SparepartRequest,
+  Indent,
+  DeliveryOrder,
 } from '@/types'
 
 const store = reactive({
@@ -30,6 +33,9 @@ const store = reactive({
   salesInvoices: [] as SalesInvoice[],
   payments: [] as Payment[],
   warrantyClaims: [] as WarrantyClaim[],
+  sparepartRequests: [] as SparepartRequest[],
+  indents: [] as Indent[],
+  deliveryOrders: [] as DeliveryOrder[],
 })
 
 export function useMasterStore() {
@@ -69,6 +75,25 @@ export function useMasterStore() {
     return store.sales.find((s) => s.id === id)
   }
 
+  function getUnitsByCustomer(customerId: number | null): Unit[] {
+    if (!customerId) return []
+    // Find all contract items for this customer
+    const customerContracts = store.contractItems.filter(c => c.customer_id === customerId)
+    const unitIds = customerContracts.map(c => c.unit_id).filter(id => id !== null) as number[]
+    // Return unique units
+    return store.units.filter(u => unitIds.includes(u.id))
+  }
+
+  function getContractsByCustomer(customerId: number | null): ContractItem[] {
+    if (!customerId) return []
+    return store.contractItems.filter(c => c.customer_id === customerId)
+  }
+
+  function getServiceReportsByTechnician(technicianId: number | null): ServiceReport[] {
+    if (!technicianId) return []
+    return store.serviceReports.filter(sr => sr.technician_id === technicianId)
+  }
+
   return {
     ...toRefs(store),
     findCustomer,
@@ -80,5 +105,8 @@ export function useMasterStore() {
     findServiceReport,
     findRentalInvoice,
     findSale,
+    getUnitsByCustomer,
+    getContractsByCustomer,
+    getServiceReportsByTechnician,
   }
 }

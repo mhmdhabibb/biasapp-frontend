@@ -51,7 +51,7 @@ function handleDelete() {
   <div>
     <PageHeader title="Paper Size" button-label="Add Paper Size" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari ukuran kertas..." @edit="openEdit" @delete="openDelete" />
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Ukuran Kertas' : 'Tambah Ukuran Kertas'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Paper Size' : 'Add Paper Size'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="ps-name" class="form-label">Nama Ukuran</label>
         <input id="ps-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: A4, A3, Legal, Letter">

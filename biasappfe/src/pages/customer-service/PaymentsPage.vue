@@ -107,7 +107,7 @@ function formatRupiah(val: number): string {
 
 <template>
   <div>
-    <PageHeader title="Payments" button-label="Tambah Pembayaran" @add="openAdd" />
+    <PageHeader title="Payments" button-label="Add Payment" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari pembayaran..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
       <template #cell-rental_invoice_id="{ value }">{{ invoiceNo(value) }}</template>
@@ -115,7 +115,7 @@ function formatRupiah(val: number): string {
       <template #cell-tax_deduction="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-balance="{ value }">{{ formatRupiah(value || 0) }}</template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Pembayaran' : 'Tambah Pembayaran'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Payment' : 'Add Payment'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="pay-no" class="form-label">No. Pembayaran</label>
         <input id="pay-no" v-model="form.payment_no" type="text" class="form-input" placeholder="PAY-XXXXXX">

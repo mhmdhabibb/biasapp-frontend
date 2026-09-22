@@ -17,10 +17,10 @@ const {
 
 const columns: TableColumn[] = [
   { key: 'id', label: 'ID' },
-  { key: 'warranty_id', label: 'Garansi' },
-  { key: 'service_report_id', label: 'Laporan Servis' },
-  { key: 'claim_date', label: 'Tanggal Klaim' },
-  { key: 'issue_description', label: 'Deskripsi Masalah' },
+  { key: 'warranty_id', label: 'Warranty' },
+  { key: 'service_report_id', label: 'Service Report' },
+  { key: 'claim_date', label: 'Claim Date' },
+  { key: 'issue_description', label: 'Issue Description' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -86,49 +86,49 @@ function srLabel(id: number | null): string {
 
 <template>
   <div>
-    <PageHeader title="Warranty Claims" button-label="Ajukan Klaim" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari klaim garansi..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Warranty Claims" button-label="Add Warranty Claim" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search warranty claims..." @edit="openEdit" @delete="openDelete">
       <template #cell-warranty_id="{ value }">{{ warrantyLabel(value) }}</template>
       <template #cell-service_report_id="{ value }">{{ srLabel(value) }}</template>
       <template #cell-status="{ value }">
         <span :class="value === 'approved' ? 'badge badge-success' : value === 'rejected' ? 'badge badge-danger' : value === 'in_review' ? 'badge badge-info' : 'badge badge-warning'">
-          {{ value === 'approved' ? 'Disetujui' : value === 'rejected' ? 'Ditolak' : value === 'in_review' ? 'Dalam Review' : 'Pending' }}
+          {{ value === 'approved' ? 'Approved' : value === 'rejected' ? 'Rejected' : value === 'in_review' ? 'In Review' : 'Pending' }}
         </span>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Klaim Garansi' : 'Ajukan Klaim Garansi'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Warranty Claim' : 'Add Warranty Claim'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="wc-warranty" class="form-label">Garansi</label>
+        <label for="wc-warranty" class="form-label">Warranty</label>
         <select id="wc-warranty" v-model="form.warranty_id" class="form-select">
-          <option :value="null">-- Pilih Garansi --</option>
-          <option v-for="w in warranties" :key="w.id" :value="w.id">{{ w.warranty_type }} — {{ w.status === 'active' ? 'Aktif' : w.status }}</option>
+          <option :value="null">-- Select Warranty --</option>
+          <option v-for="w in warranties" :key="w.id" :value="w.id">{{ w.warranty_type }} — {{ w.status === 'active' ? 'Active' : w.status }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="wc-sr" class="form-label">Laporan Servis Terkait</label>
+        <label for="wc-sr" class="form-label">Related Service Report</label>
         <select id="wc-sr" v-model="form.service_report_id" class="form-select">
-          <option :value="null">-- Pilih Laporan --</option>
+          <option :value="null">-- Select Report --</option>
           <option v-for="sr in serviceReports" :key="sr.id" :value="sr.id">{{ sr.service_report_no }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="wc-date" class="form-label">Tanggal Klaim</label>
+        <label for="wc-date" class="form-label">Claim Date</label>
         <input id="wc-date" v-model="form.claim_date" type="date" class="form-input">
       </div>
       <div class="form-group">
-        <label for="wc-desc" class="form-label">Deskripsi Masalah</label>
-        <textarea id="wc-desc" v-model="form.issue_description" class="form-textarea" placeholder="Jelaskan masalah yang terjadi" rows="4"></textarea>
+        <label for="wc-desc" class="form-label">Issue Description</label>
+        <textarea id="wc-desc" v-model="form.issue_description" class="form-textarea" placeholder="Explain the issue" rows="4"></textarea>
       </div>
       <div class="form-group">
         <label for="wc-status" class="form-label">Status</label>
         <select id="wc-status" v-model="form.status" class="form-select">
           <option value="pending">Pending</option>
-          <option value="in_review">Dalam Review</option>
-          <option value="approved">Disetujui</option>
-          <option value="rejected">Ditolak</option>
+          <option value="in_review">In Review</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
         </select>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Klaim Garansi" :message="`Yakin ingin menghapus klaim ID ${deletingItem?.id}?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Warranty Claim" :message="`Are you sure you want to delete claim ID ${deletingItem?.id}?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>

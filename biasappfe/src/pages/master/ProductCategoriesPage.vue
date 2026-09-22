@@ -53,7 +53,7 @@ function handleDelete() {
   <div>
     <PageHeader title="Product Categories" button-label="Add Category" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari kategori..." @edit="openEdit" @delete="openDelete" />
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Kategori' : 'Tambah Kategori'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Category' : 'Add Category'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="cat-name" class="form-label">Nama Kategori</label>
         <input id="cat-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Toner, Drum, Spare Part">

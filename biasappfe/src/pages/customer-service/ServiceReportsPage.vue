@@ -114,7 +114,7 @@ function technicianName(id: number | null): string {
 
 <template>
   <div>
-    <PageHeader title="Service Reports" button-label="Tambah Laporan" @add="openAdd" />
+    <PageHeader title="Service Reports" button-label="Add Service Report" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari laporan servis..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value) }}</template>
@@ -125,27 +125,27 @@ function technicianName(id: number | null): string {
         </span>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Laporan Servis' : 'Tambah Laporan Servis'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Service Report' : 'Add Service Report'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="sr-no" class="form-label">No. Laporan</label>
+        <label for="sr-no" class="form-label">Report No.</label>
         <input id="sr-no" v-model="form.service_report_no" type="text" class="form-input" placeholder="SR-XXXXXX">
       </div>
       <div class="form-group">
         <label for="sr-customer" class="form-label">Customer</label>
         <select id="sr-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Pilih Customer --</option>
+          <option :value="null">-- Select Customer --</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="sr-contract" class="form-label">Kontrak</label>
+        <label for="sr-contract" class="form-label">Contract</label>
         <select id="sr-contract" v-model="form.contract_item_id" class="form-select">
-          <option :value="null">-- Pilih Kontrak --</option>
+          <option :value="null">-- Select Contract --</option>
           <option v-for="ci in contractItems" :key="ci.id" :value="ci.id">{{ ci.contract_no }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="sr-type" class="form-label">Tipe Servis</label>
+        <label for="sr-type" class="form-label">Service Type</label>
         <select id="sr-type" v-model="form.service_type" class="form-select">
           <option value="corrective">Corrective</option>
           <option value="preventive">Preventive</option>
@@ -154,33 +154,33 @@ function technicianName(id: number | null): string {
         </select>
       </div>
       <div class="form-group">
-        <label for="sr-tech" class="form-label">Teknisi</label>
+        <label for="sr-tech" class="form-label">Technician</label>
         <select id="sr-tech" v-model="form.technician_id" class="form-select">
-          <option :value="null">-- Pilih Teknisi --</option>
+          <option :value="null">-- Select Technician --</option>
           <option v-for="t in technicians" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="sr-visit" class="form-label">Tanggal Kunjungan</label>
+        <label for="sr-visit" class="form-label">Visit Date</label>
         <input id="sr-visit" v-model="form.visit_date" type="date" class="form-input">
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label for="sr-timein" class="form-label">Waktu Masuk</label>
+          <label for="sr-timein" class="form-label">Time In</label>
           <input id="sr-timein" v-model="form.time_in" type="time" class="form-input">
         </div>
         <div class="form-group">
-          <label for="sr-timeout" class="form-label">Waktu Keluar</label>
+          <label for="sr-timeout" class="form-label">Time Out</label>
           <input id="sr-timeout" v-model="form.time_out" type="time" class="form-input">
         </div>
       </div>
       <div class="form-group">
-        <label for="sr-problem" class="form-label">Masalah Mesin</label>
-        <textarea id="sr-problem" v-model="form.machine_problem" class="form-textarea" placeholder="Deskripsi masalah"></textarea>
+        <label for="sr-problem" class="form-label">Machine Problem</label>
+        <textarea id="sr-problem" v-model="form.machine_problem" class="form-textarea" placeholder="Problem description"></textarea>
       </div>
       <div class="form-group">
-        <label for="sr-action" class="form-label">Tindakan Perbaikan</label>
-        <textarea id="sr-action" v-model="form.repair_action" class="form-textarea" placeholder="Deskripsi tindakan"></textarea>
+        <label for="sr-action" class="form-label">Repair Action</label>
+        <textarea id="sr-action" v-model="form.repair_action" class="form-textarea" placeholder="Action description"></textarea>
       </div>
       <div class="form-group">
         <label for="sr-counter" class="form-label">Reading Counter</label>
@@ -190,9 +190,9 @@ function technicianName(id: number | null): string {
         <label for="sr-status" class="form-label">Status</label>
         <select id="sr-status" v-model="form.status" class="form-select">
           <option value="open">Open</option>
-          <option value="in_progress">Dalam Proses</option>
-          <option value="completed">Selesai</option>
-          <option value="cancelled">Dibatalkan</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
         </select>
       </div>
       <div class="form-group form-check-group">

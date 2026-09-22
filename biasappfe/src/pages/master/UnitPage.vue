@@ -5,11 +5,14 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useAuth } from '@/composables/useAuth'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useBrands } from '@/composables/useBrands'
 import type { TableColumn, Unit } from '@/types'
 
 const { units: data } = useMasterStore()
+const { currentUser } = useAuth()
+const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
 const columns: TableColumn[] = [
   { key: 'brand_id', label: 'Brand' },
@@ -62,13 +65,15 @@ function getBrandName(id: number | null): string {
 
 <template>
   <div>
-    <PageHeader title="Units" button-label="Add Unit" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search units..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search units..." 
+               :hide-actions="isTechnician"
+               @edit="openEdit" @delete="openDelete">
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group" style="position: relative;">
         <label for="unit-brand" class="form-label">Brand</label>
         <CustomSelect

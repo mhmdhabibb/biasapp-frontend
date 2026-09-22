@@ -53,7 +53,7 @@ function handleDelete() {
   <div>
     <PageHeader title="Brands" button-label="Add Brand" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari brand..." @edit="openEdit" @delete="openDelete" />
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Tambah Brand'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Add Brand'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="brand-name" class="form-label">Nama Brand</label>
         <input id="brand-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Canon, HP, Epson">
