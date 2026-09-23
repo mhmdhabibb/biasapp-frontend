@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import type { TableColumn, Sale, SaleItem } from '@/types'
+import type { Sale, TableColumn } from '@/types'
+import { computed, reactive, ref } from 'vue'
 
 const {
   sales: data,
@@ -52,6 +52,7 @@ function removeSaleItem(idx: number) {
 
 function onProductChange(idx: number) {
   const item = saleItems.value[idx]
+  if (!item) return
   const prod = findProduct(item.product_id)
   if (prod) {
     item.unit_price = prod.price
@@ -86,7 +87,7 @@ function handleSubmit() {
   }
   if (editingItem.value) {
     const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx], ...saleData, updated_at: new Date().toISOString() }
+    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...saleData, updated_at: new Date().toISOString() }
   } else {
     data.value.push({ id: Date.now(), ...saleData, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
   }

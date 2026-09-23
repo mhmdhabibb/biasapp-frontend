@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import type { TableColumn, User } from '@/types'
+import { resources } from '@/services/resource.service'
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama' },
@@ -28,6 +29,20 @@ const form = reactive({
   password: '',
 })
 
+async function fetchData() {
+  try {
+    const res = await resources.users.list()
+    data.value = res.data.map((u: any) => ({
+      ...u,
+      role_name: u.role?.name
+    }))
+  } catch (error) {
+    console.error('Failed to fetch users:', error)
+  }
+}
+
+onMounted(fetchData)
+
 function openAdd() {
   editingItem.value = null
   Object.assign(form, { name: '', username: '', phone: '', role_id: null, password: '' })
@@ -40,23 +55,20 @@ function openEdit(item: User) {
   showModal.value = true
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.name.trim() || !form.username.trim()) return
 
-  if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) {
-      data.value[idx] = { ...data.value[idx], ...form, updated_at: new Date().toISOString() }
+  try {
+    if (editingItem.value) {
+      await resources.users.update(String(editingItem.value.id), form)
+    } else {
+      await resources.users.create(form)
     }
-  } else {
-    data.value.push({
-      id: Date.now(),
-      ...form,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    showModal.value = false
+    await fetchData()
+  } catch (error) {
+    console.error('Failed to save user:', error)
   }
-  showModal.value = false
 }
 
 function openDelete(item: User) {
@@ -64,9 +76,14 @@ function openDelete(item: User) {
   showConfirm.value = true
 }
 
-function handleDelete() {
+async function handleDelete() {
   if (deletingItem.value) {
-    data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+    try {
+      await resources.users.remove(String(deletingItem.value.id))
+      await fetchData()
+    } catch (error) {
+      console.error('Failed to delete user:', error)
+    }
   }
   showConfirm.value = false
 }

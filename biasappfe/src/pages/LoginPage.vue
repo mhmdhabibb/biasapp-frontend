@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { useAuth } from '@/composables/useAuth'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth } from '@/composables/useAuth'
 
 const router = useRouter()
 const { login, loginError } = useAuth()
@@ -10,8 +10,8 @@ const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
 
-function handleSubmit() {
-  const success = login(username.value, password.value)
+async function handleSubmit() {
+  const success = await login({ username: username.value, password: password.value })
   if (success) {
     router.push('/')
   }
@@ -106,9 +106,6 @@ function handleSubmit() {
           </button>
         </form>
 
-        <p class="login-hint">Demo Admin: admin / admin123</p>
-        <p class="login-hint">Demo CS: cs / cs123</p>
-        <p class="login-hint">Demo Teknisi: tek / tek123</p>
       </div>
     </div>
   </div>

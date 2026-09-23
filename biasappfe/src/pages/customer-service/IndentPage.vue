@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import type { TableColumn } from '@/types'
 
@@ -26,7 +26,7 @@ function getProduct(id: number | null) {
     <PageHeader title="Indents (Backorders)" />
     <DataTable :columns="columns" :data="indents" search-placeholder="Search indents...">
       <template #cell-product_id="{ value }">{{ getProduct(value) }}</template>
-      <template #cell-sparepart_request_id="{ item }">REQ-{{ item.sparepart_request_id || '-' }}</template>
+      <template #cell-sparepart_request_id="{ row }">REQ-{{ row.sparepart_request_id || '-' }}</template>
       <template #cell-status="{ value }">
         <span class="badge" :class="value === 'arrived' ? 'badge-success' : 'badge-warning'">
           {{ value.toUpperCase() }}

@@ -1,55 +1,82 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import { useMasterStore } from '@/composables/useMasterStore'
 import { useAuth } from '@/composables/useAuth'
+import { useMasterStore } from '@/composables/useMasterStore'
+import { resources } from '@/services/resource.service'
 import type { TableColumn, Customer } from '@/types'
 
-const { customers: data } = useMasterStore()
+const data = ref<Customer[]>([])
 const { currentUser } = useAuth()
 const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
+async function fetchData() {
+  try {
+    const res = await resources.customers.list()
+    data.value = res.data as any
+  } catch (error) {
+    console.error('Failed to fetch customers:', error)
+  }
+}
+
+onMounted(fetchData)
+
 const columns: TableColumn[] = [
   { key: 'company_name', label: 'Company' },
-  { key: 'name', label: 'Name' },
-  { key: 'email', label: 'Email' },
+  { key: 'pic_name', label: 'PIC Name' },
   { key: 'phone', label: 'Phone' },
 ]
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Customer | null>(null)
 const deletingItem = ref<Customer | null>(null)
-const form = reactive({ company_name: '', name: '', email: '', phone: '', address: '' })
+const form = reactive({ company_name: '', pic_name: '', phone: '', address: '' })
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { company_name: '', name: '', email: '', phone: '', address: '' })
+  Object.assign(form, { company_name: '', pic_name: '', phone: '', address: '' })
   showModal.value = true
 }
 
 function openEdit(item: Customer) {
   editingItem.value = item
-  Object.assign(form, { company_name: item.company_name, name: item.name, email: item.email, phone: item.phone, address: item.address })
+  Object.assign(form, { company_name: item.company_name, pic_name: item.pic_name, phone: item.phone, address: item.address })
   showModal.value = true
 }
 
-function handleSubmit() {
-  if (!form.name.trim()) return
-  if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx], ...form, updated_at: new Date().toISOString() }
-  } else {
-    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+function openDelete(item: Customer) { deletingItem.value = item; showConfirm.value = true }
+
+const masterStore = useMasterStore()
+
+async function handleSubmit() {
+  if (!form.company_name.trim()) return
+  try {
+    if (editingItem.value) {
+      await resources.customers.update(String(editingItem.value.id), form)
+    } else {
+      await resources.customers.create(form)
+    }
+    await fetchData()
+    masterStore.refresh()
+    showModal.value = false
+  } catch (error) {
+    console.error('Failed to save customer:', error)
   }
-  showModal.value = false
 }
 
-function openDelete(item: Customer) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.customers.remove(String(deletingItem.value.id))
+      await fetchData()
+      masterStore.refresh()
+    } catch (error) {
+      console.error('Failed to delete customer:', error)
+    }
+  }
   showConfirm.value = false
 }
 </script>
@@ -67,11 +94,7 @@ function handleDelete() {
       </div>
       <div class="form-group">
         <label for="cust-name" class="form-label">PIC Name</label>
-        <input id="cust-name" v-model="form.name" type="text" class="form-input" placeholder="Contact name">
-      </div>
-      <div class="form-group">
-        <label for="cust-email" class="form-label">Email</label>
-        <input id="cust-email" v-model="form.email" type="email" class="form-input" placeholder="email@perusahaan.com">
+        <input id="cust-name" v-model="form.pic_name" type="text" class="form-input" placeholder="Contact name">
       </div>
       <div class="form-group">
         <label for="cust-phone" class="form-label">Phone</label>

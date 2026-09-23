@@ -60,7 +60,7 @@ function handleSubmit() {
   if (!form.issue_description.trim()) return
   if (editingItem.value) {
     const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx], ...form, updated_at: new Date().toISOString() }
+    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...form, updated_at: new Date().toISOString() }
   } else {
     data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
   }

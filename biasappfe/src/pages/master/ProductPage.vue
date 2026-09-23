@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import { useMasterStore } from '@/composables/useMasterStore'
+import { resources } from '@/services/resource.service'
 import type { TableColumn, Product } from '@/types'
-
-const { products: data } = useMasterStore()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Produk' },
@@ -15,6 +13,20 @@ const columns: TableColumn[] = [
   { key: 'price', label: 'Harga' },
   { key: 'stock', label: 'Stok' },
 ]
+
+const data = ref<Product[]>([])
+
+async function fetchData() {
+  try {
+    const res = await resources.products.list()
+    data.value = res.data as any
+  } catch (error) {
+    console.error('Failed to fetch products:', error)
+  }
+}
+
+onMounted(fetchData)
+
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Product | null>(null)
@@ -42,20 +54,32 @@ function openEdit(item: Product) {
   showModal.value = true
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.name.trim()) return
-  if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx], ...form, updated_at: new Date().toISOString() }
-  } else {
-    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+  try {
+    if (editingItem.value) {
+      await resources.products.update(String(editingItem.value.id), form)
+    } else {
+      await resources.products.create(form)
+    }
+    await fetchData()
+    showModal.value = false
+  } catch (error) {
+    console.error('Failed to save product:', error)
   }
-  showModal.value = false
 }
 
 function openDelete(item: Product) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.products.remove(String(deletingItem.value.id))
+      await fetchData()
+    } catch (error) {
+      console.error('Failed to delete product:', error)
+    }
+  }
   showConfirm.value = false
 }
 

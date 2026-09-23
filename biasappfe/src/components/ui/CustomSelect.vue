@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 export interface SelectOption {
   value: number | string
@@ -88,7 +88,8 @@ function handleKeydown(e: KeyboardEvent) {
     case 'Enter':
       e.preventDefault()
       if (highlightedIndex.value >= 0 && highlightedIndex.value < filteredOptions.value.length) {
-        select(filteredOptions.value[highlightedIndex.value])
+        const highlightedOption = filteredOptions.value[highlightedIndex.value]
+        if (highlightedOption) select(highlightedOption)
       }
       break
     case 'Escape':
