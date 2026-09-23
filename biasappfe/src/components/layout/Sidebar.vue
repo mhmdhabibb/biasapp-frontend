@@ -166,6 +166,18 @@ const menuGroups = computed(() => {
         ],
       },
     ]
+  } else if (role === 'accounting') {
+    return [
+      {
+        title: 'Accounting',
+        items: [
+          { label: 'Dashboard', icon: 'grid', route: '/accounting/dashboard' },
+          { label: 'Sparepart Requests', icon: 'box', route: '/accounting/sparepart-requests' },
+          { label: 'Purchase Orders', icon: 'clipboard', route: '/accounting/purchase-orders' },
+          { label: 'Delivery Orders', icon: 'truck', route: '/accounting/delivery-orders' },
+        ],
+      },
+    ]
   }
   return []
 })
@@ -300,7 +312,8 @@ const iconPaths: Record<string, string> = {
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
           <span class="sidebar-user-role">{{ 
             currentUser?.role === 'customer_service' ? 'Customer Service' : 
-            currentUser?.role === 'technician' ? 'Technician' : 'Superadmin' 
+            currentUser?.role === 'technician' ? 'Technician' : 
+            currentUser?.role === 'accounting' ? 'Accounting' : 'Superadmin' 
           }}</span>
         </div>
       </div>

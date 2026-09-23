@@ -16,6 +16,9 @@ import type {
   SparepartRequest,
   Indent,
   DeliveryOrder,
+  PurchaseOrder,
+  PurchaseOrderItem,
+  ProcurementDeliveryOrder,
 } from '@/types'
 
 const store = reactive({
@@ -33,9 +36,42 @@ const store = reactive({
   salesInvoices: [] as SalesInvoice[],
   payments: [] as Payment[],
   warrantyClaims: [] as WarrantyClaim[],
-  sparepartRequests: [] as SparepartRequest[],
+  sparepartRequests: [
+    {
+      id: 1,
+      request_no: 'SR-2026-001',
+      service_report_id: 1,
+      product_id: 1,
+      qty: 2,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      request_no: 'SR-2026-002',
+      service_report_id: 2,
+      product_id: 2,
+      qty: 1,
+      status: 'po_created',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  ] as SparepartRequest[],
   indents: [] as Indent[],
   deliveryOrders: [] as DeliveryOrder[],
+  purchaseOrders: [
+    {
+      id: 1,
+      po_no: 'PO-2026-001',
+      sparepart_request_id: 2,
+      po_date: new Date().toISOString(),
+      status: 'approved',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  ] as PurchaseOrder[],
+  procurementDeliveryOrders: [] as ProcurementDeliveryOrder[],
 })
 
 export function useMasterStore() {

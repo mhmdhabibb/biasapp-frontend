@@ -42,6 +42,14 @@ export function useAuth() {
       return true
     }
 
+    if (username === 'acc' && password === 'acc123') {
+      const user = { name: 'Accounting', username, role: 'accounting' }
+      sessionStorage.setItem('bias_auth', JSON.stringify(user))
+      currentUser.value = user
+      isAuthenticated.value = true
+      return true
+    }
+
     loginError.value = 'Username atau password salah'
     return false
   }

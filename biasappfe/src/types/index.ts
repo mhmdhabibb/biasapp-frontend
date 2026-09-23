@@ -354,3 +354,46 @@ export interface DeliveryOrder {
   created_at: string
   updated_at: string
 }
+
+export interface PurchaseOrder {
+  id: number
+  po_no: string
+  sparepart_request_id: number | null
+  po_date: string
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PurchaseOrderItem {
+  id: number
+  purchase_order_id: number | null
+  product_id: number | null
+  qty: number
+  unit_price: number
+  total_price: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ProcurementDeliveryOrder {
+  id: number
+  do_number: string
+  purchase_order_id: number | null
+  do_date: string
+  status: string
+  receiver_name: string
+  notes: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ProcurementDOItem {
+  id: number
+  procurement_delivery_order_id: number | null
+  purchase_order_item_id: number | null
+  product_id: number | null
+  deliver_qty: number
+  created_at: string
+  updated_at: string
+}

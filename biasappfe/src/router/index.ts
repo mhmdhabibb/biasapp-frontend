@@ -159,6 +159,27 @@ const router = createRouter({
       name: 'csReports',
       component: () => import('@/pages/customer-service/CSReportsPage.vue'),
     },
+    // Accounting Routes
+    {
+      path: '/accounting/dashboard',
+      name: 'accDashboard',
+      component: () => import('@/pages/accounting/AccDashboardPage.vue'),
+    },
+    {
+      path: '/accounting/sparepart-requests',
+      name: 'accSparepartRequests',
+      component: () => import('@/pages/accounting/AccSparepartRequestsPage.vue'),
+    },
+    {
+      path: '/accounting/purchase-orders',
+      name: 'accPurchaseOrders',
+      component: () => import('@/pages/accounting/AccPurchaseOrdersPage.vue'),
+    },
+    {
+      path: '/accounting/delivery-orders',
+      name: 'accDeliveryOrders',
+      component: () => import('@/pages/accounting/AccDeliveryOrdersPage.vue'),
+    },
     // Technician Routes
     {
       path: '/technician/dashboard',
@@ -206,6 +227,7 @@ router.beforeEach((to) => {
       const role = currentUser.value?.role
       if (role === 'customer_service') return { name: 'csDashboard' }
       if (role === 'technician') return { name: 'techDashboard' }
+      if (role === 'accounting') return { name: 'accDashboard' }
       return { name: 'users' }
     }
     return true
@@ -239,6 +261,14 @@ router.beforeEach((to) => {
     ]
     if (to.name && !allowedForTechnician.includes(to.name as string)) {
       return { name: 'techDashboard' }
+    }
+  }
+  if (role === 'accounting') {
+    const allowedForAccounting = [
+      'accDashboard', 'accSparepartRequests', 'accPurchaseOrders', 'accDeliveryOrders'
+    ]
+    if (to.name && !allowedForAccounting.includes(to.name as string)) {
+      return { name: 'accDashboard' }
     }
   }
 

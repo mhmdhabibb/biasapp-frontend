@@ -31,6 +31,10 @@ const pageTitle = computed(() => {
     '/customer-service/sales-invoices': 'Sales Invoices',
     '/customer-service/payments': 'Payments',
     '/customer-service/warranty-claims': 'Warranty Claims',
+    '/accounting/dashboard': 'Accounting Dashboard',
+    '/accounting/sparepart-requests': 'Sparepart Requests (Procurement)',
+    '/accounting/purchase-orders': 'Purchase Orders',
+    '/accounting/delivery-orders': 'Delivery Orders (Inbound)',
   }
   return titles[route.path] || 'BIAS App'
 })
