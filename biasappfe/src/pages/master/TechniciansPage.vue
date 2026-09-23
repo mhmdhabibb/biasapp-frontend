@@ -1,13 +1,30 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { resources } from '@/services/resource.service'
 import type { TableColumn, Technician } from '@/types'
 
-const { technicians: data } = useMasterStore()
+const data = ref<Technician[]>([])
+const masterStore = useMasterStore()
+
+async function fetchData() {
+  try {
+    const res = await resources.technicians.list()
+    data.value = res.data.map((t: any) => ({
+      ...t,
+      name: t.user?.name || '-',
+      phone: t.user?.phone || '-'
+    }))
+  } catch (error) {
+    console.error('Failed to fetch technicians:', error)
+  }
+}
+
+onMounted(fetchData)
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Technician Name' },
@@ -27,24 +44,40 @@ function openAdd() {
 
 function openEdit(item: Technician) {
   editingItem.value = item
-  Object.assign(form, { name: item.name, phone: item.phone })
+  // the original form only edits name and phone. Note: the backend actually maps name and phone to User model.
+  // The actual create/update might need to hit a different endpoint or handle it. Assuming backend handles it.
+  Object.assign(form, { name: (item as any).name, phone: (item as any).phone })
   showModal.value = true
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.name.trim()) return
-  if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx], ...form }
-  } else {
-    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), deleted_at: null })
+  try {
+    if (editingItem.value) {
+      await resources.technicians.update(String(editingItem.value.id), form)
+    } else {
+      await resources.technicians.create(form)
+    }
+    await fetchData()
+    masterStore.refresh()
+    showModal.value = false
+  } catch (error) {
+    console.error('Failed to save technician:', error)
   }
-  showModal.value = false
 }
 
 function openDelete(item: Technician) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.technicians.remove(String(deletingItem.value.id))
+      await fetchData()
+      masterStore.refresh()
+    } catch (error) {
+      console.error('Failed to delete technician:', error)
+    }
+  }
   showConfirm.value = false
 }
 </script>

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import type { TableColumn, Brand } from '@/types'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import type { Brand, TableColumn } from '@/types'
+import { reactive, ref } from 'vue'
 
 import { useBrands } from '@/composables/useBrands'
 
@@ -12,7 +12,8 @@ const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Brand' },
 ]
 
-const { brands: data } = useBrands()
+const { brands: data, fetchAll, create, update, remove, error } = useBrands()
+fetchAll()
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Brand | null>(null)
@@ -31,20 +32,19 @@ function openEdit(item: Brand) {
   showModal.value = true
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.name.trim()) return
   if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx], name: form.name, updated_at: new Date().toISOString() }
+    await update(String(editingItem.value.id), form.name)
   } else {
-    data.value.push({ id: Date.now(), name: form.name, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+    await create(form.name)
   }
   showModal.value = false
 }
 
 function openDelete(item: Brand) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+async function handleDelete() {
+  if (deletingItem.value) await remove(String(deletingItem.value.id))
   showConfirm.value = false
 }
 </script>
@@ -52,6 +52,7 @@ function handleDelete() {
 <template>
   <div>
     <PageHeader title="Brands" button-label="Add Brand" @add="openAdd" />
+    <div v-if="error" class="page-error" role="alert">{{ error }}</div>
     <DataTable :columns="columns" :data="data" search-placeholder="Cari brand..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Add Brand'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">

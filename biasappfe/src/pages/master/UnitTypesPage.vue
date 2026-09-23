@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { resources } from '@/services/resource.service'
 import type { TableColumn, UnitType } from '@/types'
 
 const columns: TableColumn[] = [
@@ -12,6 +13,18 @@ const columns: TableColumn[] = [
 ]
 
 const data = ref<UnitType[]>([])
+
+async function fetchData() {
+  try {
+    const res = await resources.unitTypes.list()
+    data.value = res.data as any
+  } catch (error) {
+    console.error('Failed to fetch unit types:', error)
+  }
+}
+
+onMounted(fetchData)
+
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<UnitType | null>(null)
@@ -30,21 +43,33 @@ function openEdit(item: UnitType) {
   showModal.value = true
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.name.trim()) return
   if (!form.slug.trim()) form.slug = form.name.toLowerCase().replace(/\s+/g, '-')
-  if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx], ...form, updated_at: new Date().toISOString() }
-  } else {
-    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+  try {
+    if (editingItem.value) {
+      await resources.unitTypes.update(String(editingItem.value.id), form)
+    } else {
+      await resources.unitTypes.create(form)
+    }
+    await fetchData()
+    showModal.value = false
+  } catch (error) {
+    console.error('Failed to save unit type:', error)
   }
-  showModal.value = false
 }
 
 function openDelete(item: UnitType) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.unitTypes.remove(String(deletingItem.value.id))
+      await fetchData()
+    } catch (error) {
+      console.error('Failed to delete unit type:', error)
+    }
+  }
   showConfirm.value = false
 }
 </script>

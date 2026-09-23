@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import type { TableColumn, ServiceReport } from '@/types'
+import type { ServiceReport, TableColumn } from '@/types'
+import { ref } from 'vue'
 
 const {
   serviceReports,
@@ -76,8 +76,8 @@ function formatSlaTime(report: ServiceReport) {
       <template #cell-customer_id="{ value }">
         {{ getCustomerName(value) }}
       </template>
-      <template #cell-unit="{ item }">
-        {{ getUnitName(item.contract_item_id) }}
+      <template #cell-unit="{ row }">
+        {{ getUnitName(row.contract_item_id) }}
       </template>
       <template #cell-machine_problem="{ value }">
         <span class="truncate-text" :title="value">{{ value }}</span>
@@ -98,11 +98,11 @@ function formatSlaTime(report: ServiceReport) {
         </span>
       </template>
       
-      <template #cell-sla="{ item }">
-        <div class="sla-indicator" :class="`sla-${getSlaStatus(item)}`">
+      <template #cell-sla="{ row }">
+        <div class="sla-indicator" :class="`sla-${getSlaStatus(row)}`">
           <span class="sla-dot"></span>
-          {{ formatSlaTime(item) }}
-          <small v-if="item.status === 'completed'">(Final)</small>
+          {{ formatSlaTime(row) }}
+          <small v-if="row.status === 'completed'">(Final)</small>
         </div>
       </template>
     </DataTable>

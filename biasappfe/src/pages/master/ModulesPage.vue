@@ -1,13 +1,24 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import { useModules } from '@/composables/useModules'
+import { resources } from '@/services/resource.service'
 import type { TableColumn, Module } from '@/types'
 
-const { modules: data, addModule, updateModule, removeModule } = useModules()
+const data = ref<Module[]>([])
+
+async function fetchData() {
+  try {
+    const res = await resources.modules.list()
+    data.value = res.data as any
+  } catch (error) {
+    console.error('Failed to fetch modules:', error)
+  }
+}
+
+onMounted(fetchData)
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Modul' },
@@ -32,19 +43,32 @@ function openEdit(item: Module) {
   showModal.value = true
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.name.trim()) return
-  if (editingItem.value) {
-    updateModule(editingItem.value.id, form)
-  } else {
-    addModule({ id: Date.now(), ...form, created_at: new Date().toISOString(), deleted_at: null })
+  try {
+    if (editingItem.value) {
+      await resources.modules.update(String(editingItem.value.id), form)
+    } else {
+      await resources.modules.create(form)
+    }
+    await fetchData()
+    showModal.value = false
+  } catch (error) {
+    console.error('Failed to save module:', error)
   }
-  showModal.value = false
 }
 
 function openDelete(item: Module) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) removeModule(deletingItem.value.id)
+
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.modules.remove(String(deletingItem.value.id))
+      await fetchData()
+    } catch (error) {
+      console.error('Failed to delete module:', error)
+    }
+  }
   showConfirm.value = false
 }
 </script>

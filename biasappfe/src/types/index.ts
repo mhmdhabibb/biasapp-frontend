@@ -36,8 +36,7 @@ export interface Module {
 export interface Customer {
   id: number
   company_name: string
-  name: string
-  email: string
+  pic_name: string
   phone: string
   address: string
   created_at: string
@@ -109,10 +108,10 @@ export interface Product {
 }
 
 export interface Unit {
-  id: number
+  id: string
   name: string
-  brand_id: number | null
-  unit_type_id: number | null
+  brand_id: string | null
+  type_id: string | null
   model: string
   serial_no: string
   created_at: string
