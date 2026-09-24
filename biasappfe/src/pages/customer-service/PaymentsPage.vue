@@ -32,8 +32,8 @@ const editingItem = ref<Payment | null>(null)
 const deletingItem = ref<Payment | null>(null)
 const form = reactive({
   payment_no: '',
-  rental_invoice_id: null as number | null,
-  customer_id: null as number | null,
+  rental_invoice_id: null as any,
+  customer_id: null as any,
   payment_date: '',
   amount: 0,
   tax_deduction: 0,
@@ -90,13 +90,13 @@ function handleDelete() {
   showConfirm.value = false
 }
 
-function customerName(id: number | null): string {
-  const c = findCustomer(id)
-  return c ? c.company_name || c.name : '-'
+function customerName(id: any): string {
+  const c = findCustomer(id as any)
+  return c ? c.company_name || c.name || '-' : '-'
 }
 
-function invoiceNo(id: number | null): string {
-  const inv = findRentalInvoice(id)
+function invoiceNo(id: any): string {
+  const inv = findRentalInvoice(id as any)
   return inv ? inv.invoice_no : '-'
 }
 
@@ -109,8 +109,8 @@ function formatRupiah(val: number): string {
   <div>
     <PageHeader title="Payments" button-label="Add Payment" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari pembayaran..." @edit="openEdit" @delete="openDelete">
-      <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
-      <template #cell-rental_invoice_id="{ value }">{{ invoiceNo(value) }}</template>
+      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
+      <template #cell-rental_invoice_id="{ value }">{{ invoiceNo(value as any) }}</template>
       <template #cell-amount="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-tax_deduction="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-balance="{ value }">{{ formatRupiah(value || 0) }}</template>
@@ -131,7 +131,7 @@ function formatRupiah(val: number): string {
         <label for="pay-customer" class="form-label">Customer</label>
         <select id="pay-customer" v-model="form.customer_id" class="form-select">
           <option :value="null">-- Pilih Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name }}</option>
+          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
         </select>
       </div>
       <div class="form-group">

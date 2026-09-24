@@ -32,16 +32,14 @@ const showConfirm = ref(false)
 const editingItem = ref<MonthlyMeterReading | null>(null)
 const deletingItem = ref<MonthlyMeterReading | null>(null)
 const form = reactive({
-  service_report_id: null as number | null,
-  contract_item_id: null as number | null,
-  period: '',
-  counter_mono_start: 0,
-  counter_mono_end: 0,
-  counter_color_start: 0,
-  counter_color_end: 0,
+  service_report_id: null as string | null,
+  contract_item_id: null as string | null,
+  unit_id: null as string | null,
+  paper_size_id: null as string | null,
   color_mode: 'mono',
+  start_meter: 0,
+  end_meter: 0,
   total_usage: 0,
-  total_amount: 0,
 })
 
 const defaultForm = { ...form }
@@ -52,33 +50,24 @@ function openAdd() {
   showModal.value = true
 }
 
-function openEdit(item: MonthlyMeterReading) {
+function openEdit(item: any) {
   editingItem.value = item
   Object.assign(form, {
     service_report_id: item.service_report_id,
     contract_item_id: item.contract_item_id,
-    period: item.period,
-    counter_mono_start: item.counter_mono_start,
-    counter_mono_end: item.counter_mono_end,
-    counter_color_start: item.counter_color_start,
-    counter_color_end: item.counter_color_end,
+    unit_id: item.unit_id,
+    paper_size_id: item.paper_size_id,
     color_mode: item.color_mode,
+    start_meter: item.start_meter,
+    end_meter: item.end_meter,
     total_usage: item.total_usage,
-    total_amount: item.total_amount,
   })
   showModal.value = true
 }
 
 function handleSubmit() {
-  if (!form.period.trim()) return
-  const monoUsage = Math.max(0, form.counter_mono_end - form.counter_mono_start)
-  const colorUsage = Math.max(0, form.counter_color_end - form.counter_color_start)
-  form.total_usage = monoUsage + colorUsage
-
-  const ci = findContractItem(form.contract_item_id)
-  if (ci) {
-    form.total_amount = (monoUsage * ci.rate_per_page_mono) + (colorUsage * ci.rate_per_page_color)
-  }
+  if (form.start_meter < 0 || form.end_meter < 0) return
+  form.total_usage = Math.max(0, form.end_meter - form.start_meter)
 
   if (editingItem.value) {
     const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
@@ -89,20 +78,20 @@ function handleSubmit() {
   showModal.value = false
 }
 
-function openDelete(item: MonthlyMeterReading) { deletingItem.value = item; showConfirm.value = true }
+function openDelete(item: any) { deletingItem.value = item; showConfirm.value = true }
 function handleDelete() {
   if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
   showConfirm.value = false
 }
 
-function contractNo(id: number | null): string {
-  const ci = findContractItem(id)
+function contractNo(id: string | number | null): string {
+  const ci = findContractItem(id as any)
   return ci ? ci.contract_no : '-'
 }
 
-function srNo(id: number | null): string {
-  const sr = findServiceReport(id)
-  return sr ? sr.service_report_no : '-'
+function srNo(id: string | number | null): string {
+  const sr = findServiceReport(id as any)
+  return sr ? sr.service_report_no || sr.report_no : '-'
 }
 
 function formatRupiah(val: number): string {
@@ -114,15 +103,10 @@ function formatRupiah(val: number): string {
   <div>
     <PageHeader title="Monthly Meter Readings" button-label="Add Meter Reading" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari pembacaan meter..." @edit="openEdit" @delete="openDelete">
-      <template #cell-contract_item_id="{ value }">{{ contractNo(value) }}</template>
-      <template #cell-service_report_id="{ value }">{{ srNo(value) }}</template>
-      <template #cell-total_amount="{ value }">{{ formatRupiah(value || 0) }}</template>
+      <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
+      <template #cell-service_report_id="{ value }">{{ srNo(value as any) }}</template>
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Meter Reading' : 'Add Meter Reading'" @close="showModal = false" @submit="handleSubmit">
-      <div class="form-group">
-        <label for="mm-period" class="form-label">Period</label>
-        <input id="mm-period" v-model="form.period" type="month" class="form-input">
-      </div>
       <div class="form-group">
         <label for="mm-contract" class="form-label">Contract</label>
         <select id="mm-contract" v-model="form.contract_item_id" class="form-select">
@@ -131,39 +115,39 @@ function formatRupiah(val: number): string {
         </select>
       </div>
       <div class="form-group">
-        <label for="mm-sr" class="form-label">Service Report</label>
+        <label for="mm-sr" class="form-label">Service Report (Optional)</label>
         <select id="mm-sr" v-model="form.service_report_id" class="form-select">
           <option :value="null">-- Select Report --</option>
-          <option v-for="sr in serviceReports" :key="sr.id" :value="sr.id">{{ sr.service_report_no }}</option>
+          <option v-for="sr in serviceReports" :key="sr.id" :value="sr.id">{{ sr.service_report_no || (sr as any).report_no }}</option>
         </select>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="mm-mono-start" class="form-label">Initial Mono Counter</label>
-          <input id="mm-mono-start" v-model.number="form.counter_mono_start" type="number" class="form-input" min="0">
-        </div>
-        <div class="form-group">
-          <label for="mm-mono-end" class="form-label">Final Mono Counter</label>
-          <input id="mm-mono-end" v-model.number="form.counter_mono_end" type="number" class="form-input" min="0">
-        </div>
+      <div class="form-group">
+        <label class="form-label">Unit</label>
+        <select v-model="form.unit_id" class="form-select">
+          <option :value="null">-- Select Unit --</option>
+          <option v-for="u in (useMasterStore().units as any)" :key="u.id" :value="u.id">{{ u.model }}</option>
+        </select>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="mm-color-start" class="form-label">Initial Color Counter</label>
-          <input id="mm-color-start" v-model.number="form.counter_color_start" type="number" class="form-input" min="0">
-        </div>
-        <div class="form-group">
-          <label for="mm-color-end" class="form-label">Final Color Counter</label>
-          <input id="mm-color-end" v-model.number="form.counter_color_end" type="number" class="form-input" min="0">
-        </div>
+      <div class="form-group">
+        <label class="form-label">Paper Size</label>
+        <input v-model="form.paper_size_id" type="text" class="form-input" placeholder="e.g. A4 UUID">
       </div>
       <div class="form-group">
         <label for="mm-mode" class="form-label">Color Mode</label>
         <select id="mm-mode" v-model="form.color_mode" class="form-select">
           <option value="mono">Mono</option>
           <option value="color">Color</option>
-          <option value="both">Mono + Color</option>
         </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="mm-mono-start" class="form-label">Start Meter</label>
+          <input id="mm-mono-start" v-model.number="form.start_meter" type="number" class="form-input" min="0">
+        </div>
+        <div class="form-group">
+          <label for="mm-mono-end" class="form-label">End Meter</label>
+          <input id="mm-mono-end" v-model.number="form.end_meter" type="number" class="form-input" min="0">
+        </div>
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Hapus Pembacaan Meter" :message="`Yakin ingin menghapus pembacaan periode '${deletingItem?.period}'?`" @close="showConfirm = false" @confirm="handleDelete" />

@@ -1,0 +1,159 @@
+<script setup lang="ts">
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import DataTable from '@/components/ui/DataTable.vue'
+import FormModal from '@/components/ui/FormModal.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import { useMasterStore } from '@/composables/useMasterStore'
+import type { TableColumn } from '@/types'
+import { reactive, ref, onMounted } from 'vue'
+
+const { customers, units, getUnitsByCustomer } = useMasterStore()
+
+const columns: TableColumn[] = [
+  { key: 'request_no', label: 'Request No' },
+  { key: 'customer', label: 'Customer' },
+  { key: 'request_date', label: 'Tgl Request' },
+  { key: 'problem_description', label: 'Keluhan' },
+  { key: 'status', label: 'Status' }
+]
+
+const serviceRequests = ref<any[]>([])
+const showModal = ref(false)
+const isLoading = ref(false)
+
+const form = reactive({
+  request_no: `REQ-${Date.now().toString().slice(-6)}`,
+  customer_id: '',
+  unit_id: null as string | null,
+  problem_description: '',
+  request_date: new Date().toISOString().slice(0, 10),
+})
+
+function availableUnits(customerId: string) {
+  if (!customerId) return []
+  return getUnitsByCustomer(Number(customerId) as any) // handle type mismatch based on dummy data if needed
+}
+
+function openAdd() {
+  Object.assign(form, {
+    request_no: `REQ-${Date.now().toString().slice(-6)}`,
+    customer_id: '',
+    unit_id: null,
+    problem_description: '',
+    request_date: new Date().toISOString().slice(0, 10),
+  })
+  showModal.value = true
+}
+
+async function fetchRequests() {
+  try {
+    const res = await fetch('http://localhost:4008/api/service-requests')
+    if (res.ok) {
+      const data = await res.json()
+      serviceRequests.value = data.data.map((r: any) => ({
+        ...r,
+        customer: r.customer?.name || '-',
+      }))
+    }
+  } catch (error) {
+    console.error("Gagal mengambil data", error)
+  }
+}
+
+async function handleSubmit() {
+  if (!form.customer_id || !form.problem_description) return
+  isLoading.value = true
+  
+  const payload = {
+    request_no: form.request_no,
+    customer_id: form.customer_id,
+    unit_id: form.unit_id || null,
+    problem_description: form.problem_description,
+    request_date: new Date(form.request_date).toISOString(),
+  }
+
+  try {
+    const res = await fetch('http://localhost:4008/api/service-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    
+    if (res.ok) {
+      alert("Service Request berhasil dibuat!")
+      showModal.value = false
+      fetchRequests()
+    } else {
+      const err = await res.json()
+      alert("Gagal: " + JSON.stringify(err))
+    }
+  } catch (error) {
+    alert("Terjadi kesalahan jaringan.")
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchRequests()
+})
+</script>
+
+<template>
+  <div>
+    <PageHeader title="Manajemen Service Request" button-label="Buat Request Baru" @add="openAdd" />
+    
+    <DataTable :columns="columns" :data="serviceRequests" search-placeholder="Cari keluhan...">
+      <template #cell-request_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
+    </DataTable>
+
+    <FormModal :open="showModal" title="Input Keluhan (Service Request)" @close="showModal = false" @submit="handleSubmit">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nomor Request</label>
+          <input v-model="form.request_no" type="text" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tanggal Masuk</label>
+          <input v-model="form.request_date" type="date" class="form-input" required>
+        </div>
+      </div>
+
+      <div class="form-group mt-3">
+        <label class="form-label">Customer</label>
+        <select v-model="form.customer_id" class="form-select" required>
+          <option value="">-- Pilih Customer --</option>
+          <option v-for="c in customers" :key="c.id" :value="c.id">{{ (c as any).company_name || (c as any).name }}</option>
+        </select>
+      </div>
+
+      <div class="form-group mt-3">
+        <label class="form-label">Mesin yang Bermasalah (Opsional)</label>
+        <select v-model="form.unit_id" class="form-select">
+          <option :value="null">-- Tidak spesifik mesin / Pilih Mesin --</option>
+          <option v-for="u in availableUnits(form.customer_id)" :key="u.id" :value="u.id">{{ u.model }} (SN: {{ (u as any).serial_number }})</option>
+        </select>
+      </div>
+
+      <div class="form-group mt-3">
+        <label class="form-label">Deskripsi Keluhan (Problem)</label>
+        <textarea v-model="form.problem_description" class="form-input" rows="4" placeholder="Jelaskan keluhan secara rinci" required></textarea>
+      </div>
+      
+      <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">Menyimpan data...</div>
+    </FormModal>
+  </div>
+</template>
+
+<style scoped>
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-base);
+}
+.mt-3 { margin-top: 1rem; }
+.mt-2 { margin-top: 0.5rem; }
+.text-center { text-align: center; }
+.text-sm { font-size: 0.875rem; }
+.text-gray-500 { color: #6b7280; }
+</style>

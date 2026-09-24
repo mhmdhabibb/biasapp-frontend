@@ -95,9 +95,24 @@ const router = createRouter({
       component: () => import('@/pages/customer-service/ServiceReportsPage.vue'),
     },
     {
+      path: '/customer-service/service-requests',
+      name: 'serviceRequests',
+      component: () => import('@/pages/customer-service/ServiceRequestsPage.vue'),
+    },
+    {
+      path: '/customer-service/job-orders',
+      name: 'jobOrders',
+      component: () => import('@/pages/customer-service/JobOrdersPage.vue'),
+    },
+    {
       path: '/customer-service/monthly-meter-readings',
       name: 'monthlyMeterReadings',
       component: () => import('@/pages/customer-service/MonthlyMeterReadingsPage.vue'),
+    },
+    {
+      path: '/customer-service/rentals',
+      name: 'rentals',
+      component: () => import('@/pages/customer-service/RentalsPage.vue'),
     },
     {
       path: '/customer-service/sales',
@@ -244,7 +259,8 @@ router.beforeEach((to) => {
     const allowedForCS = [
       'csDashboard', 'customers', 'contractItems', 'units', 'csCallService', 
       'csMonitoringService', 'csSparepartRequest', 'csIndent', 'csDelivery', 
-      'warrantyClaims', 'rentalInvoices', 'csReports'
+      'warrantyClaims', 'rentalInvoices', 'csReports', 'rentals',
+      'serviceRequests', 'jobOrders'
     ]
     if (to.name && !allowedForCS.includes(to.name as string)) {
       return { name: 'csDashboard' }

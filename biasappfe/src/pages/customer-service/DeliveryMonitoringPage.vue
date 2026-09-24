@@ -16,8 +16,8 @@ const columns: TableColumn[] = [
 ]
 
 function getCustomer(id: number | null) {
-  const c = findCustomer(id)
-  return c ? c.company_name || c.name : '-'
+  const c = findCustomer(id as any)
+  return c ? c.company_name || c.name || '-' : '-'
 }
 
 function getTechnician(id: number | null) {

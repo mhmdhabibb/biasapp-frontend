@@ -1,24 +1,25 @@
 export interface User {
-  id: number
+  id: string | number
   name: string
   username: string
   phone: string
-  role_id: number | null
+  role_id: string | number | null
   password?: string
   created_at: string
   updated_at: string
 }
 
 export interface Role {
-  id: number
+  id: string | number
   name: string
+  permissions?: any[]
   created_at: string
   deleted_at: string | null
 }
 
 export interface Permission {
-  id: number
-  module_id: number | null
+  id: string | number
+  module_id: string | number | null
   name: string
   created_at: string
   updated_at: string
@@ -26,7 +27,7 @@ export interface Permission {
 }
 
 export interface Module {
-  id: number
+  id: string | number
   name: string
   is_active: boolean
   created_at: string
@@ -34,10 +35,12 @@ export interface Module {
 }
 
 export interface Customer {
-  id: number
+  id: string | number
   company_name: string
   pic_name: string
   phone: string
+  email?: string
+  name?: string
   address: string
   created_at: string
   updated_at: string
@@ -45,7 +48,7 @@ export interface Customer {
 }
 
 export interface Technician {
-  id: number
+  id: string | number
   name: string
   phone: string
   created_at: string
@@ -53,7 +56,7 @@ export interface Technician {
 }
 
 export interface UnitType {
-  id: number
+  id: string | number
   name: string
   slug: string
   created_at: string
@@ -62,7 +65,7 @@ export interface UnitType {
 }
 
 export interface Brand {
-  id: number
+  id: string | number
   name: string
   created_at: string
   updated_at: string
@@ -70,7 +73,7 @@ export interface Brand {
 }
 
 export interface PaperSize {
-  id: number
+  id: string | number
   name: string
   created_at: string
   updated_at: string
@@ -78,7 +81,7 @@ export interface PaperSize {
 }
 
 export interface PaperType {
-  id: number
+  id: string | number
   name: string
   created_at: string
   updated_at: string
@@ -86,7 +89,7 @@ export interface PaperType {
 }
 
 export interface ProductCategory {
-  id: number
+  id: string | number
   name: string
   slug: string
   created_at: string
@@ -95,11 +98,11 @@ export interface ProductCategory {
 }
 
 export interface Product {
-  id: number
+  id: string | number
   name: string
   sku: string
-  category_id: number | null
-  brand_id: number | null
+  category_id: string | number | null
+  brand_id: string | number | null
   price: number
   stock: number
   created_at: string
@@ -114,13 +117,27 @@ export interface Unit {
   type_id: string | null
   model: string
   serial_no: string
+  is_copier?: boolean
+  current_meter_bw?: number
+  current_meter_color?: number
+  free_quota_color?: number
+  rates?: UnitRate[]
   created_at: string
   updated_at: string
   deleted_at: string | null
 }
 
+export interface UnitRate {
+  id?: string
+  unit_id?: string
+  paper_size_id: string
+  paper_size?: any
+  rate_per_page_bw: number
+  rate_per_page_color: number
+}
+
 export interface Warranty {
-  id: number
+  id: string | number
   warranty_type: string
   duration: number
   start_date: string
@@ -132,10 +149,10 @@ export interface Warranty {
 }
 
 export interface ContractItem {
-  id: number
+  id: string | number
   contract_no: string
-  unit_id: number | null
-  customer_id: number | null
+  unit_id: string | number | null
+  customer_id: string | number | null
   start_date: string
   end_date: string
   placement_location: string
@@ -143,8 +160,7 @@ export interface ContractItem {
   free_copy_quota: number
   start_mono_value: number
   start_color_value: number
-  rate_per_page_mono: number
-  rate_per_page_color: number
+  rates?: ContractItemRate[]
   is_complete: boolean
   status: string
   created_at: string
@@ -152,23 +168,39 @@ export interface ContractItem {
   deleted_at: string | null
 }
 
+export interface ContractItemRate {
+  id?: string
+  contract_item_id?: string
+  paper_size_id: string
+  paper_size?: any
+  rate_per_page_bw: number
+  rate_per_page_color: number
+}
+
 export interface ServiceReport {
-  id: number
-  service_report_no: string
-  contract_item_id: number | null
-  customer_id: number | null
+  id: string | number
+  report_no: string
+  unit_id: string | null
+  customer_id: string | null
   service_type: string
-  technician_id: number | null
-  visit_date: string
+  technician_id: string | null
+  project_name: string
+  reading_period: string
+  service_date: string
   time_in: string
   time_out: string
   machine_problem: string
   repair_action: string
+  remarks?: string
+  is_tested: boolean
+  is_completed: boolean
   status: string
-  project_name: string
-  is_chargeable: boolean
-  reading_counter: number
-  is_complete: boolean
+  service_report_no?: string
+  contract_item_id?: string | null
+  visit_date?: string
+  is_chargeable?: boolean
+  reading_counter?: number
+  is_complete?: boolean
   inspection_result?: string
   notes?: string
   testing_confirmed?: boolean
@@ -178,39 +210,46 @@ export interface ServiceReport {
 }
 
 export interface MonthlyMeterReading {
-  id: number
-  service_report_id: number | null
-  contract_item_id: number | null
-  period: string
-  counter_mono_start: number
-  counter_mono_end: number
-  counter_color_start: number
-  counter_color_end: number
+  id: string | number
+  service_report_id: string | null
+  contract_item_id: string | null
+  unit_id: string | null
+  paper_size_id: string | null
   color_mode: string
+  start_meter: number
+  end_meter: number
   total_usage: number
-  total_amount: number
+  period?: string
+  counter_mono_start?: number
+  counter_mono_end?: number
+  counter_color_start?: number
+  counter_color_end?: number
+  total_amount?: number
   created_at: string
   updated_at: string
   deleted_at: string | null
 }
 
 export interface Sale {
-  id: number
-  customer_id: number | null
+  id: string | number
+  sale_no: string
+  customer_id: string | null
   sale_date: string
-  subtotal: number
-  service_charge: number
-  tax: number
-  total: number
+  total_amount: number
+  status: string
+  subtotal?: number
+  service_charge?: number
+  tax?: number
+  total?: number
   created_at: string
   updated_at: string
   deleted_at: string | null
 }
 
 export interface SaleItem {
-  id: number
-  sale_id: number | null
-  product_id: number | null
+  id: string | number
+  sale_id: string | number | null
+  product_id: string | number | null
   qty: number
   unit_price: number
   total_price: number
@@ -219,10 +258,10 @@ export interface SaleItem {
 }
 
 export interface RentalInvoice {
-  id: number
-  contract_item_id: number | null
+  id: string | number
+  contract_item_id: string | number | null
   invoice_no: string
-  customer_id: number | null
+  customer_id: string | number | null
   period_start: string
   period_end: string
   monthly_date: string
@@ -239,8 +278,8 @@ export interface RentalInvoice {
 }
 
 export interface RentalInvoiceMotorDetail {
-  id: number
-  rental_invoice_id: number | null
+  id: string | number
+  rental_invoice_id: string | number | null
   start_meter_reading: number
   last_meter_reading: number
   free_copy: number
@@ -250,10 +289,10 @@ export interface RentalInvoiceMotorDetail {
 }
 
 export interface SalesInvoice {
-  id: number
+  id: string | number
   invoice_no: string
-  customer_id: number | null
-  sale_id: number | null
+  customer_id: string | number | null
+  sale_id: string | number | null
   due_date: string
   subtotal: number
   service_charge: number
@@ -266,9 +305,9 @@ export interface SalesInvoice {
 }
 
 export interface SalesInvoiceItem {
-  id: number
-  sales_invoice_id: number | null
-  product_id: number | null
+  id: string | number
+  sales_invoice_id: string | number | null
+  product_id: string | number | null
   qty: number
   price: number
   total_price: number
@@ -277,10 +316,10 @@ export interface SalesInvoiceItem {
 }
 
 export interface Payment {
-  id: number
+  id: string | number
   payment_no: string
-  rental_invoice_id: number | null
-  customer_id: number | null
+  rental_invoice_id: string | number | null
+  customer_id: string | number | null
   payment_date: string
   amount: number
   tax_deduction: number
@@ -291,9 +330,9 @@ export interface Payment {
 }
 
 export interface WarrantyClaim {
-  id: number
-  warranty_id: number | null
-  service_report_id: number | null
+  id: string | number
+  warranty_id: string | number | null
+  service_report_id: string | number | null
   claim_date: string
   issue_description: string
   status: string
@@ -321,10 +360,10 @@ export interface MenuGroup {
 }
 
 export interface SparepartRequest {
-  id: number
+  id: string | number
   request_no: string
-  service_report_id: number | null
-  product_id: number | null
+  service_report_id: string | number | null
+  product_id: string | number | null
   qty: number
   status: string
   created_at: string
@@ -332,10 +371,10 @@ export interface SparepartRequest {
 }
 
 export interface Indent {
-  id: number
+  id: string | number
   indent_no: string
-  sparepart_request_id: number | null
-  product_id: number | null
+  sparepart_request_id: string | number | null
+  product_id: string | number | null
   qty: number
   status: string
   created_at: string
@@ -343,10 +382,10 @@ export interface Indent {
 }
 
 export interface DeliveryOrder {
-  id: number
+  id: string | number
   delivery_no: string
-  contract_item_id: number | null
-  customer_id: number | null
+  contract_item_id: string | number | null
+  customer_id: string | number | null
   delivery_date: string
   status: string
   assigned_to: number | null
@@ -355,9 +394,9 @@ export interface DeliveryOrder {
 }
 
 export interface PurchaseOrder {
-  id: number
+  id: string | number
   po_no: string
-  sparepart_request_id: number | null
+  sparepart_request_id: string | number | null
   po_date: string
   status: string
   created_at: string
@@ -365,9 +404,9 @@ export interface PurchaseOrder {
 }
 
 export interface PurchaseOrderItem {
-  id: number
-  purchase_order_id: number | null
-  product_id: number | null
+  id: string | number
+  purchase_order_id: string | number | null
+  product_id: string | number | null
   qty: number
   unit_price: number
   total_price: number
@@ -376,9 +415,9 @@ export interface PurchaseOrderItem {
 }
 
 export interface ProcurementDeliveryOrder {
-  id: number
+  id: string | number
   do_number: string
-  purchase_order_id: number | null
+  purchase_order_id: string | number | null
   do_date: string
   status: string
   receiver_name: string
@@ -388,10 +427,10 @@ export interface ProcurementDeliveryOrder {
 }
 
 export interface ProcurementDOItem {
-  id: number
-  procurement_delivery_order_id: number | null
-  purchase_order_item_id: number | null
-  product_id: number | null
+  id: string | number
+  procurement_delivery_order_id: string | number | null
+  purchase_order_item_id: string | number | null
+  product_id: string | number | null
   deliver_qty: number
   created_at: string
   updated_at: string

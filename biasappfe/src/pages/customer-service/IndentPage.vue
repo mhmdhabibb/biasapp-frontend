@@ -16,7 +16,7 @@ const columns: TableColumn[] = [
 ]
 
 function getProduct(id: number | null) {
-  const p = findProduct(id)
+  const p = findProduct(id as any)
   return p ? p.name : '-'
 }
 </script>

@@ -5,17 +5,19 @@ import { useMasterStore } from '@/composables/useMasterStore'
 
 const {
   serviceReports,
+  serviceRequests,
+  jobOrders,
   contractItems,
   sparepartRequests,
   indents,
 } = useMasterStore()
 
 // Derived metrics
-const newCalls = computed(() => serviceReports.value.filter(s => s.status === 'open').length)
-const assignedJobs = computed(() => serviceReports.value.filter(s => s.status === 'assigned').length)
-const inProgressJobs = computed(() => serviceReports.value.filter(s => s.status === 'in_progress').length)
+const newCalls = computed(() => serviceRequests.value.filter(s => s.status === 'open' || s.status === 'pending').length)
+const assignedJobs = computed(() => jobOrders.value.filter(j => j.status === 'scheduled' || j.status === 'assigned').length)
+const inProgressJobs = computed(() => jobOrders.value.filter(j => j.status === 'in_progress').length)
 const waitingSparepartJobs = computed(() => serviceReports.value.filter(s => s.status === 'waiting_sparepart').length)
-const completedJobs = computed(() => serviceReports.value.filter(s => s.status === 'completed').length)
+const completedJobs = computed(() => serviceReports.value.filter(s => s.status === 'completed' || s.status === 'closed').length)
 
 // SLA logic (using created_at and completed_at if available, else compare with current time)
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000

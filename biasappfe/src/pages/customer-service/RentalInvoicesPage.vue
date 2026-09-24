@@ -32,8 +32,8 @@ const editingItem = ref<RentalInvoice | null>(null)
 const deletingItem = ref<RentalInvoice | null>(null)
 const form = reactive({
   invoice_no: '',
-  contract_item_id: null as number | null,
-  customer_id: null as number | null,
+  contract_item_id: null as any,
+  customer_id: null as any,
   period_start: '',
   period_end: '',
   monthly_date: '',
@@ -106,12 +106,12 @@ function handleDelete() {
   showConfirm.value = false
 }
 
-function customerName(id: number | null): string {
-  const c = findCustomer(id)
-  return c ? c.company_name || c.name : '-'
+function customerName(id: any): string {
+  const c = findCustomer(id as any)
+  return c ? c.company_name || c.name || '-' : '-'
 }
 
-function contractNo(id: number | null): string {
+function contractNo(id: any): string {
   const ci = findContractItem(id)
   return ci ? ci.contract_no : '-'
 }
@@ -125,8 +125,8 @@ function formatRupiah(val: number): string {
   <div>
     <PageHeader title="Monitoring Invoice" button-label="Add Invoice" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search invoices..." @edit="openEdit" @delete="openDelete">
-      <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
-      <template #cell-contract_item_id="{ value }">{{ contractNo(value) }}</template>
+      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
+      <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-total_pay="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-status="{ value }">
         <span :class="value === 'paid' ? 'badge badge-success' : value === 'overdue' ? 'badge badge-danger' : 'badge badge-warning'">
@@ -150,7 +150,7 @@ function formatRupiah(val: number): string {
         <label for="ri-customer" class="form-label">Customer</label>
         <select id="ri-customer" v-model="form.customer_id" class="form-select">
           <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name }}</option>
+          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
         </select>
       </div>
       <div class="form-row">

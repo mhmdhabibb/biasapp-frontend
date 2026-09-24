@@ -33,17 +33,17 @@ const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Customer | null>(null)
 const deletingItem = ref<Customer | null>(null)
-const form = reactive({ company_name: '', pic_name: '', phone: '', address: '' })
+const form = reactive({ company_name: '', pic_name: '', phone: '', email: '', address: '' })
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { company_name: '', pic_name: '', phone: '', address: '' })
+  Object.assign(form, { company_name: '', pic_name: '', phone: '', email: '', address: '' })
   showModal.value = true
 }
 
 function openEdit(item: Customer) {
   editingItem.value = item
-  Object.assign(form, { company_name: item.company_name, pic_name: item.pic_name, phone: item.phone, address: item.address })
+  Object.assign(form, { company_name: item.company_name, pic_name: item.pic_name, phone: item.phone, email: item.email || '', address: item.address })
   showModal.value = true
 }
 
@@ -101,10 +101,14 @@ async function handleDelete() {
         <input id="cust-phone" v-model="form.phone" type="tel" inputmode="numeric" pattern="[0-9]*" class="form-input" placeholder="08xxxxxxxxxx" @input="form.phone = form.phone.replace(/[^0-9]/g, '')">
       </div>
       <div class="form-group">
+        <label for="cust-email" class="form-label">Email</label>
+        <input id="cust-email" v-model="form.email" type="email" class="form-input" placeholder="customer@example.com">
+      </div>
+      <div class="form-group">
         <label for="cust-address" class="form-label">Address</label>
         <textarea id="cust-address" v-model="form.address" class="form-textarea" placeholder="Full address"></textarea>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Customer" :message="`Are you sure you want to delete customer '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Customer" :message="`Are you sure you want to delete customer '${deletingItem?.company_name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>

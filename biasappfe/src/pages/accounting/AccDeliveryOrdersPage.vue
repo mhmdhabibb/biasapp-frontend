@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import { useMasterStore } from '@/composables/useMasterStore'

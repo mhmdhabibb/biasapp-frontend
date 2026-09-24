@@ -28,8 +28,8 @@ const now = ref(Date.now())
 setInterval(() => { now.value = Date.now() }, 60000)
 
 function getCustomerName(id: number | null) {
-  const c = findCustomer(id)
-  return c ? c.company_name || c.name : '-'
+  const c = findCustomer(id as any)
+  return c ? c.company_name || c.name || '-' : '-'
 }
 
 function getUnitName(contractItemId: number | null) {

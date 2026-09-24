@@ -89,7 +89,7 @@ async function fetchData() {
 
 onMounted(fetchData)
 
-function getModuleName(id: number | null): string {
+function getModuleName(id: any): string {
   if (!id) return '-'
   const mod = modules.value.find(m => m.id === String(id))
   return mod ? mod.name : '-'

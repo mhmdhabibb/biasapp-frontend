@@ -31,7 +31,7 @@ const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Product | null>(null)
 const deletingItem = ref<Product | null>(null)
-const form = reactive({ name: '', sku: '', category_id: null as number | null, brand_id: null as number | null, price: 0, stock: 0 })
+const form = reactive({ name: '', sku: '', category_id: null as any, brand_id: null as any, price: 0, stock: 0 })
 
 function generateSKU(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'

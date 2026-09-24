@@ -33,17 +33,19 @@ const deletingItem = ref<Sale | null>(null)
 const saleItems = ref<{ product_id: number | null; qty: number; unit_price: number }[]>([])
 
 const form = reactive({
-  customer_id: null as number | null,
+  sale_no: '',
+  customer_id: null as string | null,
   sale_date: '',
-  service_charge: 0,
-  tax: 0,
+  total_amount: 0,
+  status: 'pending',
 })
 
 const calcSubtotal = computed(() => saleItems.value.reduce((sum, item) => sum + (item.qty * item.unit_price), 0))
-const calcTotal = computed(() => calcSubtotal.value + form.service_charge + form.tax)
+// You can use calcSubtotal to set total_amount automatically before submit
+const calcTotal = computed(() => calcSubtotal.value)
 
 function addSaleItem() {
-  saleItems.value.push({ product_id: null, qty: 1, unit_price: 0 })
+  saleItems.value.push({ product_id: null as any, qty: 1, unit_price: 0 })
 }
 
 function removeSaleItem(idx: number) {
@@ -61,20 +63,21 @@ function onProductChange(idx: number) {
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { customer_id: null, sale_date: new Date().toISOString().slice(0, 10), service_charge: 0, tax: 0 })
-  saleItems.value = [{ product_id: null, qty: 1, unit_price: 0 }]
+  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), total_amount: 0, status: 'pending' })
+  saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0 }]
   showModal.value = true
 }
 
-function openEdit(item: Sale) {
+function openEdit(item: any) {
   editingItem.value = item
   Object.assign(form, {
+    sale_no: item.sale_no || `SLS-${item.id}`,
     customer_id: item.customer_id,
-    sale_date: item.sale_date,
-    service_charge: item.service_charge,
-    tax: item.tax,
+    sale_date: item.sale_date ? item.sale_date.slice(0, 10) : '',
+    total_amount: item.total_amount || item.total,
+    status: item.status || 'pending',
   })
-  saleItems.value = [{ product_id: null, qty: 1, unit_price: 0 }]
+  saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0 }]
   showModal.value = true
 }
 
@@ -100,9 +103,9 @@ function handleDelete() {
   showConfirm.value = false
 }
 
-function customerName(id: number | null): string {
-  const c = findCustomer(id)
-  return c ? c.company_name || c.name : '-'
+function customerName(id: any): string {
+  const c = findCustomer(id as any)
+  return c ? c.company_name || c.name || '-' : '-'
 }
 
 function formatRupiah(val: number): string {
@@ -114,7 +117,7 @@ function formatRupiah(val: number): string {
   <div>
     <PageHeader title="Sales" button-label="Add Sale" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari penjualan..." @edit="openEdit" @delete="openDelete">
-      <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
+      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-service_charge="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-tax="{ value }">{{ formatRupiah(value || 0) }}</template>
@@ -122,15 +125,27 @@ function formatRupiah(val: number): string {
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Sale' : 'Add Sale'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
+        <label for="sale-no" class="form-label">Sale No.</label>
+        <input id="sale-no" v-model="form.sale_no" type="text" class="form-input">
+      </div>
+      <div class="form-group">
         <label for="sale-customer" class="form-label">Customer</label>
         <select id="sale-customer" v-model="form.customer_id" class="form-select">
           <option :value="null">-- Pilih Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name }}</option>
+          <option v-for="c in customers" :key="c.id" :value="c.id">{{ (c as any).company_name || (c as any).name }}</option>
         </select>
       </div>
       <div class="form-group">
         <label for="sale-date" class="form-label">Tanggal</label>
         <input id="sale-date" v-model="form.sale_date" type="date" class="form-input">
+      </div>
+      <div class="form-group">
+        <label for="sale-status" class="form-label">Status</label>
+        <select id="sale-status" v-model="form.status" class="form-select">
+          <option value="pending">Pending</option>
+          <option value="paid">Paid</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
       </div>
 
       <div class="form-section-title">Item Penjualan</div>
@@ -138,7 +153,7 @@ function formatRupiah(val: number): string {
         <div class="form-group sale-item-product">
           <select v-model="item.product_id" class="form-select" @change="onProductChange(idx)">
             <option :value="null">-- Produk --</option>
-            <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option>
+            <option v-for="p in products" :key="p.id" :value="p.id">{{ (p as any).name }}</option>
           </select>
         </div>
         <div class="form-group sale-item-qty">
@@ -151,21 +166,7 @@ function formatRupiah(val: number): string {
       </div>
       <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem">+ Add Item</button>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label for="sale-svc" class="form-label">Biaya Jasa (Rp)</label>
-          <input id="sale-svc" v-model.number="form.service_charge" type="number" class="form-input" min="0">
-        </div>
-        <div class="form-group">
-          <label for="sale-tax" class="form-label">Pajak (Rp)</label>
-          <input id="sale-tax" v-model.number="form.tax" type="number" class="form-input" min="0">
-        </div>
-      </div>
-
       <div class="sale-summary">
-        <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(calcSubtotal) }}</span></div>
-        <div class="summary-row"><span>Biaya Jasa</span><span>{{ formatRupiah(form.service_charge) }}</span></div>
-        <div class="summary-row"><span>Pajak</span><span>{{ formatRupiah(form.tax) }}</span></div>
         <div class="summary-row summary-total"><span>Total</span><span>{{ formatRupiah(calcTotal) }}</span></div>
       </div>
     </FormModal>

@@ -29,6 +29,7 @@ onMounted(fetchData)
 const columns: TableColumn[] = [
   { key: 'name', label: 'Technician Name' },
   { key: 'phone', label: 'Phone' },
+  { key: 'status', label: 'Status' },
 ]
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -85,7 +86,20 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Technicians" button-label="Add Technician" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search technician..." @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search technician..." @edit="openEdit" @delete="openDelete">
+      <template #cell-status="{ value }">
+        <span
+          class="badge"
+          :class="{
+            'badge-success': value === 'available' || value === 'Active',
+            'badge-warning': value === 'non-active' || value === 'Working',
+            'badge-danger': value === 'inactive' || value === 'Off'
+          }"
+        >
+          {{ value || 'available' }}
+        </span>
+      </template>
+    </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Technician' : 'Add Technician'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="tech-name" class="form-label">Name</label>

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, nextTick } from 'vue'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   title: string
   open: boolean
-}>()
+  maxWidth?: string
+}>(), {
+  maxWidth: '520px'
+})
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'submit'): void
@@ -36,6 +39,7 @@ onUnmounted(() => {
           role="dialog"
           :aria-label="title"
           aria-modal="true"
+          :style="{ maxWidth: props.maxWidth }"
         >
           <div class="modal-header">
             <h3 class="modal-title">{{ title }}</h3>
@@ -82,8 +86,6 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  max-width: 520px;
-  min-height: 480px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;

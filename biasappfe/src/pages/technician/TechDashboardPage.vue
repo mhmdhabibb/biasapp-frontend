@@ -8,14 +8,13 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 const router = useRouter()
 const { currentUser } = useAuth()
 const {
-  getServiceReportsByTechnician,
+  jobOrders,
   findCustomer,
-  findContractItem,
   findUnit
 } = useMasterStore()
 
 const myJobs = computed(() => {
-  return getServiceReportsByTechnician(currentUser.value?.id || null)
+  return jobOrders.value.filter(j => j.technician_id === currentUser.value?.id)
 })
 
 const isToday = (dateStr: string) => {
@@ -34,8 +33,8 @@ const getSlaHours = (createdStr: string) => {
   return (now - created) / (1000 * 60 * 60)
 }
 
-const newJobs = computed(() => myJobs.value.filter(j => j.status === 'assigned').length)
-const inProgressJobs = computed(() => myJobs.value.filter(j => j.status === 'on_progress' || j.status === 'waiting_sparepart').length)
+const newJobs = computed(() => myJobs.value.filter(j => j.status === 'scheduled' || j.status === 'assigned').length)
+const inProgressJobs = computed(() => myJobs.value.filter(j => j.status === 'in_progress').length)
 const completedToday = computed(() => myJobs.value.filter(j => j.status === 'completed' && isToday(j.updated_at)).length)
 const slaBreached = computed(() => myJobs.value.filter(j => j.status !== 'completed' && j.status !== 'cancelled' && getSlaHours(j.created_at) > 2).length)
 
@@ -49,13 +48,12 @@ const formatSla = (createdStr: string) => {
 }
 
 function getCustomerName(id: number | null) {
-  return findCustomer(id)?.company_name || '-'
+  return findCustomer(id as any)?.company_name || '-'
 }
 
-function getUnitName(contractItemId: number | null) {
-  const ci = findContractItem(contractItemId)
-  if (!ci) return '-'
-  const u = findUnit(ci.unit_id)
+function getUnitName(unitId: string | null) {
+  if (!unitId) return '-'
+  const u = findUnit(unitId as any)
   return u ? u.model : '-'
 }
 
@@ -126,12 +124,12 @@ function goToDetail(id: number) {
           </thead>
           <tbody>
             <tr v-for="job in activeJobs" :key="job.id">
-              <td>{{ job.service_report_no }}</td>
-              <td>{{ getCustomerName(job.customer_id) }}</td>
-              <td>{{ getUnitName(job.contract_item_id) }}</td>
-              <td class="text-truncate" style="max-width: 200px;">{{ job.machine_problem }}</td>
+              <td>{{ job.job_order_no }}</td>
+              <td>{{ getCustomerName(job.service_request?.customer_id || null) }}</td>
+              <td>{{ findUnit(job.service_request?.unit_id || null)?.model || '-' }}</td>
+              <td class="text-truncate" style="max-width: 200px;">{{ job.instructions || job.service_request?.problem_description || '-' }}</td>
               <td>
-                <span class="badge" :class="'badge-' + (job.status === 'on_progress' ? 'info' : job.status === 'assigned' ? 'warning' : 'danger')">
+                <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'scheduled' || job.status === 'assigned' ? 'warning' : 'danger')">
                   {{ job.status.toUpperCase().replace('_', ' ') }}
                 </span>
               </td>

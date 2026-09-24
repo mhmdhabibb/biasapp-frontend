@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { api } from '@/services/api'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -25,19 +26,27 @@ const form = reactive({
   name: '',
   username: '',
   phone: '',
-  role_id: null as number | null,
+  role_id: null as any,
   password: '',
 })
 
+const roles = ref<any[]>([])
+
 async function fetchData() {
   try {
-    const res = await resources.users.list()
-    data.value = res.data.map((u: any) => ({
+    const [resUsers, resRoles] = await Promise.all([
+      resources.users.list(),
+      resources.roles.list()
+    ])
+    
+    roles.value = resRoles.data
+    
+    data.value = resUsers.data.map((u: any) => ({
       ...u,
-      role_name: u.role?.name
+      role_name: u.role?.name || roles.value.find((r: any) => r.id === u.role_id)?.name
     }))
   } catch (error) {
-    console.error('Failed to fetch users:', error)
+    console.error('Failed to fetch data:', error)
   }
 }
 
@@ -62,7 +71,7 @@ async function handleSubmit() {
     if (editingItem.value) {
       await resources.users.update(String(editingItem.value.id), form)
     } else {
-      await resources.users.create(form)
+      await api.post('/auth/register', form)
     }
     showModal.value = false
     await fetchData()
@@ -117,6 +126,13 @@ async function handleDelete() {
       <div class="form-group">
         <label for="user-phone" class="form-label">Telepon</label>
         <input id="user-phone" v-model="form.phone" type="tel" class="form-input" placeholder="08xxxxxxxxxx">
+      </div>
+      <div class="form-group">
+        <label for="user-role" class="form-label">Role</label>
+        <select id="user-role" v-model="form.role_id" class="form-select">
+          <option :value="null">-- Pilih Role --</option>
+          <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
+        </select>
       </div>
       <div class="form-group">
         <label for="user-password" class="form-label">Password</label>

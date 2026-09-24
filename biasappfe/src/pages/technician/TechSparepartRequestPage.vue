@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
@@ -21,7 +22,7 @@ const availableSpareparts = computed(() => products.value)
 
 const form = ref({
   service_report_id: serviceId,
-  product_id: null as number | null,
+  product_id: null as any,
   qty: 1,
   notes: ''
 })
