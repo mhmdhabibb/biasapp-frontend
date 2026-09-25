@@ -189,6 +189,7 @@ function printContract(item: any) {
   const custEmail = customer?.email || '-';
   const contractNo = item.contract?.contract_no || item.contract_no || '';
   const startDate = item.contract?.start_date ? item.contract.start_date.slice(0,10) : (item.start_date ? item.start_date.slice(0,10) : '');
+  const endDate = item.contract?.end_date ? item.contract.end_date.slice(0,10) : (item.end_date ? item.end_date.slice(0,10) : '');
   
   // Calculate total monthly rent across all units in contract if multiple
   const sumUnitsFee = unitsInContract.reduce((sum: number, u: any) => sum + (u.monthly_rent_fee || u.total_value || 0), 0);
@@ -220,6 +221,45 @@ function printContract(item: any) {
   const spellYear = (y: number) => {
     return spellNumber(y);
   };
+
+  let durationText = '2 (dua) tahun';
+  if (startDate && endDate) {
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+    if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+      let years = e.getFullYear() - s.getFullYear();
+      let months = e.getMonth() - s.getMonth();
+      let days = e.getDate() - s.getDate();
+      if (days < 0) {
+        months--;
+      }
+      if (months < 0) {
+        years--;
+        months += 12;
+      }
+      
+      // If days > 25 (e.g., month end adjustment), treat it as an extra month
+      if (days >= 28) {
+        months++;
+        if (months === 12) {
+          years++;
+          months = 0;
+        }
+      }
+      
+      const parts = [];
+      if (years > 0) {
+        parts.push(`${years} (${spellNumber(years).toLowerCase()}) tahun`);
+      }
+      if (months > 0) {
+        parts.push(`${months} (${spellNumber(months).toLowerCase()}) bulan`);
+      }
+      
+      if (parts.length > 0) {
+        durationText = parts.join(' dan ');
+      }
+    }
+  }
 
   const html = `
     <!DOCTYPE html>
@@ -289,7 +329,7 @@ function printContract(item: any) {
           <!-- Document Title -->
           <div class="doc-title">
             <h3>SURAT PERJANJIAN SEWA ${machineTypeName}</h3>
-            <p>Nomor : ${contractNo} – ${custName.toUpperCase()}</p>
+            <p>Nomor : ${contractNo}</p>
           </div>
 
           <!-- Preamble -->
@@ -357,10 +397,12 @@ function printContract(item: any) {
               const uBrand = uItem.unit?.brand?.name || targetUnit?.brand?.name || 'EPSON';
               const uSerial = unitSerialNo(uItem.unit_id, uItem.unit);
               const uLoc = uItem.contract?.location || uItem.placement_location || uItem.location || '-';
-              const uStartBw = uItem.start_meter_bw || 0;
-              const uStartColor = uItem.start_meter_color || 0;
+              const uStartBw = uItem.start_mono_value || uItem.start_meter_bw || 0;
+              const uStartColor = uItem.start_color_value || uItem.start_meter_color || 0;
+              
+              const showMeter = isCopier || uStartBw > 0 || uStartColor > 0;
 
-              const meterHtml = isCopier ? `
+              const meterHtml = showMeter ? `
                     <div>Start Meter Reading</div><div>:</div><div>${uStartBw} (B/W)</div>
                     <div>Start Meter Reading</div><div>:</div><div>${uStartColor} (Colour)</div>
               ` : '';
@@ -391,7 +433,7 @@ function printContract(item: any) {
               JANGKA WAKTU PERJANJIAN
             </div>
             <div class="content-block">
-              Para Pihak sepakat bahwa Jangka Waktu Perjanjian ini adalah 2 (dua) tahun, terhitung sejak tanggal <b>${item.contract?.start_date ? item.contract.start_date.slice(0,10) : '-'} s/d ${item.contract?.end_date ? item.contract.end_date.slice(0,10) : '-'}</b> dan masa sewa dapat diperpanjang kembali atas persetujuan kedua belah pihak dengan pemberitahuan terlebih dahulu oleh Pihak Kedua selambat-lambatnya 2 (dua) minggu sebelum masa sewa berakhir. <i>Dan apabila tidak ada pemberitahuan maka kontrak ini otomatis diperpanjang</i>.
+              Para Pihak sepakat bahwa Jangka Waktu Perjanjian ini adalah ${durationText}, terhitung sejak tanggal <b>${item.contract?.start_date ? item.contract.start_date.slice(0,10) : '-'} s/d ${item.contract?.end_date ? item.contract.end_date.slice(0,10) : '-'}</b> dan masa sewa dapat diperpanjang kembali atas persetujuan kedua belah pihak dengan pemberitahuan terlebih dahulu oleh Pihak Kedua selambat-lambatnya 2 (dua) minggu sebelum masa sewa berakhir. <i>Dan apabila tidak ada pemberitahuan maka kontrak ini otomatis diperpanjang</i>.
             </div>
           </div>
 

@@ -1,9 +1,21 @@
 <script setup lang="ts">
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 
 const store = useMasterStore()
+let intervalId: any = null
+
+onMounted(() => {
+  // Auto-reload data every 30 seconds
+  intervalId = setInterval(() => {
+    store.refresh(true)
+  }, 30000)
+})
+
+onUnmounted(() => {
+  if (intervalId) clearInterval(intervalId)
+})
 
 const stats = computed(() => [
   {

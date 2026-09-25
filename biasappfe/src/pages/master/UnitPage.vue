@@ -7,7 +7,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Unit } from '@/types'
-import { computed, reactive, ref, onMounted, watch } from 'vue'
+import { computed, reactive, ref, onMounted, watch, onUnmounted } from 'vue'
 
 const { currentUser } = useAuth()
 const isTechnician = computed(() => currentUser.value?.role === 'technician')
@@ -61,10 +61,20 @@ const form = reactive({
   model: '',
   name: '', 
   is_copier: false,
+  is_computer: false,
   current_meter_bw: 0,
   current_meter_color: 0,
   free_quota_color: 0,
   rates: [] as { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[],
+  specsData: {
+    cpu: '',
+    ram: '',
+    storage: '',
+    storage_type: '',
+    os: '',
+    vga: '',
+    office: ''
+  },
 })
 
 function addRate() {
@@ -85,8 +95,7 @@ watch([() => form.brand_id, () => form.model], ([newBrand, newModel]) => {
 })
 
 function openAdd() {
-  editingItem.value = null
-  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, model: '', name: '', is_copier: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, rates: [] })
+  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
   showModal.value = true
 }
 
@@ -99,6 +108,7 @@ function openEdit(item: any) {
     model: item.model,
     name: item.name || '',
     is_copier: !!item.is_copier,
+    is_computer: !!item.is_computer,
     current_meter_bw: item.current_meter_bw || 0,
     current_meter_color: item.current_meter_color || 0,
     free_quota_color: item.free_quota_color || 0,
@@ -107,6 +117,7 @@ function openEdit(item: any) {
       rate_per_page_bw: r.rate_per_page_bw,
       rate_per_page_color: r.rate_per_page_color
     })) : [],
+    specsData: item.specs ? (typeof item.specs === 'string' ? JSON.parse(item.specs || '{}') : item.specs) : { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
   })
   showModal.value = true
 }
@@ -117,10 +128,14 @@ async function handleSubmit() {
     return
   }
   try {
+    const payload = {
+      ...form,
+      specs: form.is_computer ? JSON.stringify(form.specsData) : ''
+    }
     if (editingItem.value) {
-      await resources.units.update(String(editingItem.value.id), form)
+      await resources.units.update(String(editingItem.value.id), payload)
     } else {
-      await resources.units.create(form)
+      await resources.units.create(payload)
     }
     await fetchData()
     showModal.value = false
@@ -149,6 +164,7 @@ function getBrandName(id: string | null): string {
   const b = brands.value.find(b => b.id === id)
   return b ? b.name : '-'
 }
+
 </script>
 
 <template>
@@ -198,46 +214,43 @@ function getBrandName(id: string | null): string {
           Adalah Mesin Fotocopy
         </label>
       </div>
+      <div class="form-group" style="margin-top: 1rem;">
+        <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" v-model="form.is_computer" style="width: 1rem; height: 1rem;" />
+          Adalah Komputer / PC / Laptop
+        </label>
+      </div>
 
-      <div v-if="form.is_copier" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
-        <h4 style="margin-bottom: 1rem; font-weight: 600;">Data Mesin Fotocopy</h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+      <div v-if="form.is_computer" style="margin-top: 1rem; border-top: 1px solid var(--color-border-light); padding-top: 1rem;">
+        <h4 style="margin-bottom: 1rem; font-weight: 600;">Spesifikasi Komputer / Desktop</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group">
-            <label class="form-label">Current BW Meter</label>
-            <input v-model.number="form.current_meter_bw" type="number" class="form-input" min="0">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Current Color Meter</label>
-            <input v-model.number="form.current_meter_color" type="number" class="form-input" min="0">
+            <label class="form-label">CPU</label>
+            <input v-model="form.specsData.cpu" type="text" class="form-input" placeholder="e.g. Intel Core i5">
           </div>
           <div class="form-group">
-            <label class="form-label">Free Quota Color</label>
-            <input v-model.number="form.free_quota_color" type="number" class="form-input" min="0">
+            <label class="form-label">RAM</label>
+            <input v-model="form.specsData.ram" type="text" class="form-input" placeholder="e.g. 8GB DDR4">
           </div>
-        </div>
-
-        <div style="margin-top: 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <label class="form-label" style="margin: 0;">Daftar Harga Kertas (Rates)</label>
-            <button type="button" @click="addRate" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">+ Tambah Harga</button>
+          <div class="form-group">
+            <label class="form-label">Storage</label>
+            <input v-model="form.specsData.storage" type="text" class="form-input" placeholder="e.g. 512GB">
           </div>
-          
-          <div v-for="(rate, index) in form.rates" :key="index" style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; background: var(--bg-color); padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border-color);">
-            <div>
-              <CustomSelect v-model="rate.paper_size_id" :options="paperSizeOptions" placeholder="Pilih Ukuran" />
-            </div>
-            <div>
-              <input v-model.number="rate.rate_per_page_bw" type="number" class="form-input" min="0" placeholder="Tarif BW">
-            </div>
-            <div>
-              <input v-model.number="rate.rate_per_page_color" type="number" class="form-input" min="0" placeholder="Tarif Warna">
-            </div>
-            <button type="button" @click="removeRate(index)" style="background: none; border: none; color: var(--danger-color); cursor: pointer; padding: 0.5rem;">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-            </button>
+          <div class="form-group">
+            <label class="form-label">Storage Type</label>
+            <CustomSelect v-model="form.specsData.storage_type" :options="[{id:'SSD',name:'SSD'},{id:'HDD',name:'HDD'},{id:'NVMe',name:'NVMe'}]" placeholder="Pilih Tipe" />
           </div>
-          <div v-if="form.rates.length === 0" style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 1rem; border: 1px dashed var(--border-color); border-radius: 8px;">
-            Belum ada ukuran kertas yang ditambahkan.
+          <div class="form-group">
+            <label class="form-label">OS</label>
+            <input v-model="form.specsData.os" type="text" class="form-input" placeholder="e.g. Windows 11">
+          </div>
+          <div class="form-group">
+            <label class="form-label">VGA</label>
+            <input v-model="form.specsData.vga" type="text" class="form-input" placeholder="e.g. Intel Iris Xe">
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label class="form-label">Paket Office</label>
+            <input v-model="form.specsData.office" type="text" class="form-input" placeholder="e.g. Office Home & Student 2021">
           </div>
         </div>
       </div>
@@ -245,3 +258,5 @@ function getBrandName(id: string | null): string {
     <ConfirmDialog :open="showConfirm" title="Delete Unit" :message="`Are you sure you want to delete this unit?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
+
+

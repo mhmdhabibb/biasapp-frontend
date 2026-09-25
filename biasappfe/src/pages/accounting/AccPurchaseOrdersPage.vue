@@ -55,6 +55,121 @@ function updateStatus(po: PurchaseOrder, newStatus: string) {
     store.purchaseOrders.value[idx].status = newStatus
   }
 }
+
+function printInvoice(po: any) {
+  // Simple print invoice template for Sparepart costs
+  const req = store.sparepartRequests.value.find(r => r.id === po.sparepart_request_id) || {}
+  
+  let totalCost = 0;
+  let itemsHtml = '';
+  
+  // Calculate items
+  if (req.items && req.items.length > 0) {
+    req.items.forEach((item: any, idx: number) => {
+      // Mock price if not available
+      const price = item.estimated_price || 150000;
+      const subtotal = price * item.qty;
+      totalCost += subtotal;
+      
+      itemsHtml += `
+        <tr>
+          <td style="text-align: center; border: 1px solid #3399ff; padding: 4px;">${idx + 1}</td>
+          <td style="border: 1px solid #3399ff; padding: 4px;">${item.part_name || item.product_id}</td>
+          <td style="text-align: center; border: 1px solid #3399ff; padding: 4px;">${item.qty}</td>
+          <td style="text-align: right; border: 1px solid #3399ff; padding: 4px;">Rp ${price.toLocaleString('id-ID')}</td>
+          <td style="text-align: right; border: 1px solid #3399ff; padding: 4px;">Rp ${subtotal.toLocaleString('id-ID')}</td>
+        </tr>
+      `;
+    })
+  } else {
+    itemsHtml = `<tr><td colspan="5" style="text-align: center; padding: 10px;">Tidak ada detail item</td></tr>`
+  }
+
+  const tax = totalCost * 0.11;
+  const grandTotal = totalCost + tax;
+
+  const html = `
+    <html>
+      <head>
+        <title>Invoice Sparepart - ${po.po_no}</title>
+        <style>
+          @media print {
+            @page { margin: 10mm; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          }
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; margin: 0; padding: 20px; }
+          .inv-container { max-width: 800px; margin: 0 auto; }
+          .header-wrap { display: flex; justify-content: space-between; margin-bottom: 20px; }
+          .title { color: #3399ff; font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+          .invoice-title { text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 2px; margin: 10px 0; border-bottom: 2px solid #3399ff; padding-bottom: 10px; }
+          .main-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+          .main-table th { background-color: #3399ff; color: #fff; padding: 8px; border: 1px solid #3399ff; }
+          .total-row td { border: 2px solid #3399ff; font-weight: bold; padding: 6px; }
+        </style>
+      </head>
+      <body>
+        <div class="inv-container">
+          <div class="header-wrap">
+            <div>
+              <div class="title">PT. BIAS SURYA TEKNOLOGI</div>
+              <div>Greenland Housing Blok E6 No. 11<br>Batam Kota - Batam</div>
+            </div>
+            <div style="text-align: right;">
+              <div><b>INVOICE NO:</b> INV-SP-${po.id || Math.floor(Math.random()*1000)}</div>
+              <div><b>DATE:</b> ${new Date().toLocaleDateString('id-ID')}</div>
+              <div><b>REF PO:</b> ${po.po_no}</div>
+            </div>
+          </div>
+          <div class="invoice-title">SPAREPART INVOICE</div>
+          <table class="main-table">
+            <thead>
+              <tr>
+                <th style="width: 30px;">No</th>
+                <th>Item Description</th>
+                <th style="width: 50px;">Qty</th>
+                <th style="width: 120px;">Unit Price</th>
+                <th style="width: 120px;">Total Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+              <tr class="total-row">
+                <td colspan="4" style="text-align: right;">SUBTOTAL</td>
+                <td style="text-align: right;">Rp ${totalCost.toLocaleString('id-ID')}</td>
+              </tr>
+              <tr class="total-row">
+                <td colspan="4" style="text-align: right;">TAX (11%)</td>
+                <td style="text-align: right;">Rp ${tax.toLocaleString('id-ID')}</td>
+              </tr>
+              <tr class="total-row">
+                <td colspan="4" style="text-align: right;">GRAND TOTAL</td>
+                <td style="text-align: right; color: #000; background-color: #e6f2ff;">Rp ${grandTotal.toLocaleString('id-ID')}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="margin-top: 50px; display: flex; justify-content: flex-end;">
+            <div style="text-align: center; width: 200px;">
+              Hormat Kami,
+              <br><br><br><br>
+              <u>Finance</u>
+            </div>
+          </div>
+        </div>
+        <script>
+          window.onload = function() {
+            setTimeout(() => { window.print(); }, 500);
+          }
+        \x3C/script>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+}
 </script>
 
 <template>
@@ -102,6 +217,14 @@ function updateStatus(po: PurchaseOrder, newStatus: string) {
             @click="updateStatus(row, 'approved')"
           >
             Approve
+          </button>
+          <button 
+            v-if="row.status === 'approved' || row.status === 'do_created' || row.status === 'completed'"
+            class="btn btn-sm btn-outline"
+            style="color: var(--color-primary); border-color: var(--color-primary);"
+            @click="printInvoice(row)"
+          >
+            Print Invoice
           </button>
           <button 
             v-if="row.status === 'approved'"

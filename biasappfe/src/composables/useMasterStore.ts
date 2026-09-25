@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useResourcesStore } from "@/stores/resources.store";
+import { useAuthStore } from "@/stores/auth.store";
 import type {
   ContractItem,
   Customer,
@@ -82,63 +83,44 @@ let syncPromise: Promise<void> | null = null;
 
 export function useMasterStore() {
   const resources = useResourcesStore();
+  const authStore = useAuthStore();
 
-  function syncFromApi() {
-    if (syncPromise) return syncPromise;
-    syncPromise = Promise.all([
-      resources.fetchAll("customers").then((items) => {
-        store.customers = items as unknown as Customer[];
-      }),
-      resources.fetchAll("technicians").then((items) => {
-        store.technicians = items as unknown as Technician[];
-      }),
-      resources.fetchAll("units").then((items) => {
-        store.units = items as unknown as Unit[];
-      }),
-      resources.fetchAll("products").then((items) => {
-        store.products = items as unknown as Product[];
-      }),
-      resources.fetchAll("warranties").then((items) => {
-        store.warranties = items as unknown as Warranty[];
-      }),
-      resources.fetchAll("contractItems").then((items) => {
-        store.contractItems = items as unknown as ContractItem[];
-      }),
-      resources.fetchAll("serviceReports").then((items) => {
-        store.serviceReports = items as unknown as ServiceReport[];
-      }),
-      resources.fetchAll("serviceRequests").then((items) => {
-        store.serviceRequests = items as any[];
-      }),
-      resources.fetchAll("jobOrders").then((items) => {
-        store.jobOrders = items as any[];
-      }),
-      resources.fetchAll("monthlyMeterReadings").then((items) => {
-        store.monthlyMeterReadings = items as unknown as MonthlyMeterReading[];
-      }),
-      resources.fetchAll("sales").then((items) => {
-        store.sales = items as unknown as Sale[];
-      }),
-      resources.fetchAll("rentalInvoices").then((items) => {
-        store.rentalInvoices = items as unknown as RentalInvoice[];
-      }),
-      resources.fetchAll("salesInvoices").then((items) => {
-        store.salesInvoices = items as unknown as SalesInvoice[];
-      }),
-      resources.fetchAll("payments").then((items) => {
-        store.payments = items as unknown as Payment[];
-      }),
-      resources.fetchAll("warrantyClaims").then((items) => {
-        store.warrantyClaims = items as unknown as WarrantyClaim[];
-      }),
-      resources.fetchAll("serviceSpareparts").then((items) => {
-        // Keep mock data intact if api returns empty
-        if (items.length > 0) store.sparepartRequests = items as unknown as SparepartRequest[];
-      }),
-      resources.fetchAll("deliveryOrders").then((items) => {
-        store.deliveryOrders = items as unknown as DeliveryOrder[];
-      }),
-    ]).then(() => undefined);
+  function hasPerm(resourceName: string) {
+    if (authStore.currentUser?.role === 'admin' || authStore.currentUser?.role === 'superadmin') return true;
+    const perms = authStore.currentUser?.permissions || [];
+    const resBase = resourceName.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '');
+    return perms.some(p => {
+      const pMod = p.split(':')[0].toLowerCase();
+      const pBase = pMod.replace(/[^a-z]/g, '').replace(/s/g, '');
+      return pBase === resBase;
+    });
+  }
+
+  function syncFromApi(force = false) {
+    if (syncPromise && !force) return syncPromise;
+    
+    const tasks: Promise<void>[] = [];
+    if (hasPerm('customer')) tasks.push(resources.fetchAll("customers").then((items) => { store.customers = items as unknown as Customer[]; }));
+    if (hasPerm('technician')) tasks.push(resources.fetchAll("technicians").then((items) => { store.technicians = items as unknown as Technician[]; }));
+    if (hasPerm('unit')) tasks.push(resources.fetchAll("units").then((items) => { store.units = items as unknown as Unit[]; }));
+    if (hasPerm('product')) tasks.push(resources.fetchAll("products").then((items) => { store.products = items as unknown as Product[]; }));
+    if (hasPerm('warranty')) tasks.push(resources.fetchAll("warranties").then((items) => { store.warranties = items as unknown as Warranty[]; }));
+    if (hasPerm('contractitem') || hasPerm('contract')) tasks.push(resources.fetchAll("contractItems").then((items) => { store.contractItems = items as unknown as ContractItem[]; }));
+    if (hasPerm('servicereport')) tasks.push(resources.fetchAll("serviceReports").then((items) => { store.serviceReports = items as unknown as ServiceReport[]; }));
+    if (hasPerm('servicerequest')) tasks.push(resources.fetchAll("serviceRequests").then((items) => { store.serviceRequests = items as any[]; }));
+    if (hasPerm('joborder')) tasks.push(resources.fetchAll("jobOrders").then((items) => { store.jobOrders = items as any[]; }));
+    if (hasPerm('monthlymeterreading')) tasks.push(resources.fetchAll("monthlyMeterReadings").then((items) => { store.monthlyMeterReadings = items as unknown as MonthlyMeterReading[]; }));
+    if (hasPerm('sale')) tasks.push(resources.fetchAll("sales").then((items) => { store.sales = items as unknown as Sale[]; }));
+    if (hasPerm('rentalinvoice')) tasks.push(resources.fetchAll("rentalInvoices").then((items) => { store.rentalInvoices = items as unknown as RentalInvoice[]; }));
+    if (hasPerm('salesinvoice')) tasks.push(resources.fetchAll("salesInvoices").then((items) => { store.salesInvoices = items as unknown as SalesInvoice[]; }));
+    if (hasPerm('payment')) tasks.push(resources.fetchAll("payments").then((items) => { store.payments = items as unknown as Payment[]; }));
+    if (hasPerm('warrantyclaim')) tasks.push(resources.fetchAll("warrantyClaims").then((items) => { store.warrantyClaims = items as unknown as WarrantyClaim[]; }));
+    if (hasPerm('servicesparepart') || hasPerm('sparepartrequest')) tasks.push(resources.fetchAll("serviceSpareparts").then((items) => { 
+      if (items.length > 0) store.sparepartRequests = items as unknown as SparepartRequest[]; 
+    }));
+    if (hasPerm('deliveryorder')) tasks.push(resources.fetchAll("deliveryOrders").then((items) => { store.deliveryOrders = items as unknown as DeliveryOrder[]; }));
+
+    syncPromise = Promise.all(tasks).then(() => undefined);
     return syncPromise;
   }
 

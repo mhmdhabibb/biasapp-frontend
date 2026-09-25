@@ -46,6 +46,110 @@ const form = reactive({
 
 const defaultForm = { ...form }
 
+// Date Range & Month Filters
+const startDateFilter = ref('')
+const endDateFilter = ref('')
+const monthFilter = ref('')
+
+function onMonthFilterChange() {
+  if (!monthFilter.value) return
+  const [yearStr, monthStr] = monthFilter.value.split('-')
+  const year = parseInt(yearStr)
+  const month = parseInt(monthStr)
+  
+  const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
+  const lastDayNum = new Date(year, month, 0).getDate()
+  const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
+  
+  startDateFilter.value = firstDay
+  endDateFilter.value = lastDay
+}
+
+function resetFilters() {
+  startDateFilter.value = ''
+  endDateFilter.value = ''
+  monthFilter.value = ''
+}
+
+const filteredData = computed(() => {
+  let items = data.value
+  if (startDateFilter.value) {
+    items = items.filter(d => {
+      const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
+      if (!itemDate) return false
+      return String(itemDate).slice(0, 10) >= startDateFilter.value
+    })
+  }
+  if (endDateFilter.value) {
+    items = items.filter(d => {
+      const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
+      if (!itemDate) return false
+      return String(itemDate).slice(0, 10) <= endDateFilter.value
+    })
+  }
+  return items
+})
+
+function exportMonthToPdf() {
+  alert('Export PDF akan segera tersedia (contoh fungsi)')
+}
+
+function exportMonthToExcel() {
+  alert('Export Excel akan segera tersedia (contoh fungsi)')
+}
+
+// Date Range & Month Filters
+const startDateFilter = ref('')
+const endDateFilter = ref('')
+const monthFilter = ref('')
+
+function onMonthFilterChange() {
+  if (!monthFilter.value) return
+  const [yearStr, monthStr] = monthFilter.value.split('-')
+  const year = parseInt(yearStr)
+  const month = parseInt(monthStr)
+  
+  const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
+  const lastDayNum = new Date(year, month, 0).getDate()
+  const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
+  
+  startDateFilter.value = firstDay
+  endDateFilter.value = lastDay
+}
+
+function resetFilters() {
+  startDateFilter.value = ''
+  endDateFilter.value = ''
+  monthFilter.value = ''
+}
+
+const filteredData = computed(() => {
+  let items = data.value
+  if (startDateFilter.value) {
+    items = items.filter(d => {
+      const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
+      if (!itemDate) return false
+      return String(itemDate).slice(0, 10) >= startDateFilter.value
+    })
+  }
+  if (endDateFilter.value) {
+    items = items.filter(d => {
+      const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
+      if (!itemDate) return false
+      return String(itemDate).slice(0, 10) <= endDateFilter.value
+    })
+  }
+  return items
+})
+
+function exportMonthToPdf() {
+  alert('Export PDF akan segera tersedia (contoh fungsi)')
+}
+
+function exportMonthToExcel() {
+  alert('Export Excel akan segera tersedia (contoh fungsi)')
+}
+
 const calcTotal = computed(() => form.subtotal + form.service_charge + form.tax)
 
 function onSaleChange() {
@@ -134,7 +238,10 @@ function printInvoice(item: any) {
   if (sale && sale.sale_items && sale.sale_items.length > 0) {
     itemsHtml = sale.sale_items.map((si: any, idx: number) => {
       const p = findProduct(si.product_id)
-      const pName = p ? p.name : ('Produk ID: ' + si.product_id)
+      let pName = p ? p.name : ('Produk ID: ' + si.product_id)
+      if (si.description) {
+        pName += `<br><span style="font-size: 10px; color: #555;">${si.description}</span>`
+      }
       return `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
@@ -235,10 +342,12 @@ function printInvoice(item: any) {
                     <td class="label">Date :</td>
                     <td>${dateStr}</td>
                   </tr>
+                  ${item.sale?.po_no || item.po_no ? `
                   <tr>
                     <td class="label">PO NO.:</td>
-                    <td></td>
+                    <td>${item.sale?.po_no || item.po_no}</td>
                   </tr>
+                  ` : ''}
                   <tr>
                     <td colspan="2" class="bg-blue">Kepada Yth. :</td>
                   </tr>
@@ -344,7 +453,40 @@ function printInvoice(item: any) {
 <template>
   <div>
     <PageHeader title="Sales Invoices" button-label="Add Sales Invoice" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari invoice penjualan..." @edit="openEdit" @delete="openDelete">
+
+    <!-- Filter & Export Toolbar -->
+    <div class="filter-toolbar">
+      <div class="filter-inputs">
+        <div class="filter-item">
+          <label class="filter-label">Tanggal Awal</label>
+          <input v-model="startDateFilter" type="date" class="form-input filter-input">
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Tanggal Akhir</label>
+          <input v-model="endDateFilter" type="date" class="form-input filter-input">
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Filter Bulan</label>
+          <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
+        </div>
+        <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
+          Reset Filter
+        </button>
+      </div>
+
+      <div class="export-actions">
+        <button type="button" class="btn btn-export-pdf" @click="exportMonthToPdf" title="Export Invoices (PDF)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Export PDF
+        </button>
+        <button type="button" class="btn btn-export-excel" @click="exportMonthToExcel" title="Export Invoices (Excel)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
+          Export Excel
+        </button>
+      </div>
+    </div>
+
+    <DataTable :columns="columns" :data="filteredData" search-placeholder="Cari invoice penjualan..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-sale_id="{ value }">{{ saleRef(value) }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
@@ -454,5 +596,95 @@ function printInvoice(item: any) {
 .summary-total {
   font-weight: var(--font-weight-bold);
   color: var(--color-text);
+}
+
+.filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--color-surface, #ffffff);
+  padding: 16px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.filter-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #64748b);
+  letter-spacing: 0.5px;
+}
+
+.filter-input {
+  padding: 7px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: var(--color-background, #ffffff);
+}
+
+.filter-reset-btn {
+  height: 35px;
+  align-self: flex-end;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-export-pdf {
+  display: flex;
+  align-items: center;
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-export-pdf:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.btn-export-excel {
+  display: flex;
+  align-items: center;
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-export-excel:hover {
+  background: #15803d;
+  transform: translateY(-1px);
 }
 </style>

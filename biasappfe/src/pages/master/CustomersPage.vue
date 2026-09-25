@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -79,6 +79,7 @@ async function handleDelete() {
   }
   showConfirm.value = false
 }
+
 </script>
 
 <template>
@@ -135,3 +136,5 @@ async function handleDelete() {
     <ConfirmDialog :open="showConfirm" title="Delete Company" :message="`Are you sure you want to delete company '${deletingItem?.company_name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
+
+

@@ -77,136 +77,58 @@ const allMenuGroups: MenuGroup[] = [
 
 const menuGroups = computed(() => {
   const role = currentUser.value?.role
-  let groups: MenuGroup[] = []
   
-  if (role === 'admin') {
-    groups = allMenuGroups
-  } else if (role === 'customer_service') {
-    groups = [
-      {
-        title: 'Customer Service',
-        items: [
-          { label: 'Dashboard', icon: 'grid', route: '/customer-service/dashboard' },
-        ]
-      },
-      {
-        title: 'Customer',
-        items: [
-          { label: 'Customer', icon: 'user', route: '/master/customers' },
-        ]
-      },
-      {
-        title: 'Contract & Rental',
-        items: [
-          { label: 'Contract', icon: 'clipboard', route: '/customer-service/contract-items' },
-          { label: 'Contract Units', icon: 'printer', route: '/master/units' },
-        ]
-      },
-      {
-        title: 'Call Service',
-        items: [
-          { label: 'Call Service', icon: 'tool', route: '/customer-service/call-service' },
-          { label: 'Monitoring Service', icon: 'activity', route: '/customer-service/monitoring-service' },
-        ]
-      },
-      {
-        title: 'Sparepart',
-        items: [
-          { label: 'Sparepart Request', icon: 'box', route: '/customer-service/sparepart-request' },
-          { label: 'Indent', icon: 'layers', route: '/customer-service/indent' },
-        ]
-      },
-      {
-        title: 'Delivery & Installation',
-        items: [
-          { label: 'Delivery & Installation', icon: 'truck', route: '/customer-service/delivery' },
-        ]
-      },
-      {
-        title: 'Warranty',
-        items: [
-          { label: 'Warranty Claim', icon: 'shield-check', route: '/customer-service/warranty-claims' },
-        ]
-      },
-      {
-        title: 'Invoice',
-        items: [
-          { label: 'Monitoring Invoice', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
-        ]
-      },
-      {
-        title: 'Reports',
-        items: [
-          { label: 'Reports', icon: 'file-text', route: '/customer-service/reports' },
-        ]
-      }
-    ]
-  } else if (role === 'technician') {
-    groups = [
-      {
-        title: 'Technician',
-        items: [
-          { label: 'Dashboard', icon: 'grid', route: '/technician/dashboard' },
-        ]
-      },
-      {
-        title: 'My Jobs',
-        items: [
-          { label: 'Call Service', icon: 'tool', route: '/technician/call-services' },
-          { label: 'Maintenance', icon: 'shield-check', route: '/technician/maintenance' },
-        ],
-      },
-      {
-        title: 'Sparepart',
-        items: [
-          { label: 'Sparepart Request', icon: 'box', route: '/technician/sparepart-request' },
-        ],
-      },
-      {
-        title: 'Meter Reading',
-        items: [
-          { label: 'Meter Reading', icon: 'activity', route: '/technician/meter-readings' },
-        ],
-      },
-      {
-        title: 'Service History',
-        items: [
-          { label: 'Service History', icon: 'clipboard', route: '/technician/service-history' },
-        ],
-      },
-      {
-        title: 'References',
-        items: [
-          { label: 'Companies', icon: 'building', route: '/master/customers' },
-          { label: 'Units', icon: 'printer', route: '/master/units' },
-        ],
-      },
-    ]
-  } else if (role === 'accounting') {
-    groups = [
-      {
-        title: 'Accounting',
-        items: [
-          { label: 'Dashboard', icon: 'grid', route: '/accounting/dashboard' },
-          { label: 'Sparepart Requests', icon: 'box', route: '/accounting/sparepart-requests' },
-          { label: 'Purchase Orders', icon: 'clipboard', route: '/accounting/purchase-orders' },
-          { label: 'Delivery Orders', icon: 'truck', route: '/accounting/delivery-orders' },
-        ],
-      },
-    ]
-  }
+  // Use allMenuGroups for everyone, but filter dynamically
+  let groups: MenuGroup[] = JSON.parse(JSON.stringify(allMenuGroups))
   
-  // Filter dynamically based on database modules
+  // Filter dynamically based on permissions and active database modules
   return groups.map(group => ({
     ...group,
     title: group.title.includes('.') ? t(group.title) : group.title,
     items: group.items.filter(item => {
+      // 1. Superadmin (admin) sees everything
+      if (role === 'admin' || role === 'superadmin') return true;
+
       const translatedLabel = item.label.includes('.') ? t(item.label) : item.label
-      const dbModule = modules.value.find(m => m.name.toLowerCase() === translatedLabel.toLowerCase())
+      const dbModule = modules.value.find(m => {
+        const mBase = m.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
+        const tBase = translatedLabel.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
+        const routeBase = (item.route.split('/').pop() || '').replace(/[^a-z]/g, '').replace(/s/g, '')
+        return mBase === tBase || mBase === routeBase || routeBase.includes(mBase) || mBase.includes(routeBase)
+      })
+      
+      // If module is registered in DB
       if (dbModule) {
-        return dbModule.is_active
+        if (!dbModule.is_active) {
+          console.log(`[Sidebar] dbModule ${dbModule.name} is NOT active`);
+          return false;
+        }
+        
+        // 2. Check if user has permission
+        const perms = currentUser.value?.permissions || [];
+        
+        // Try to match permission format using aggressive normalization
+        const mBaseForPerm = dbModule.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '');
+        
+        const hasModulePerm = perms.some(p => {
+          const pName = p.toLowerCase();
+          const pModPart = pName.split(':')[0]; // e.g. 'sale_invoice' from 'sale_invoice:read'
+          const pBase = pModPart.replace(/[^a-z]/g, '').replace(/s/g, '');
+          return pBase === mBaseForPerm;
+        });
+        
+        console.log(`[Sidebar] evaluating ${dbModule.name}: mBaseForPerm=${mBaseForPerm}, userPerms=`, perms, ` -> hasModulePerm=${hasModulePerm}`);
+        
+        return hasModulePerm;
       }
-      return true
+      
+      console.log(`[Sidebar] dbModule NOT FOUND for label: ${translatedLabel}, route: ${item.route}`);
+      
+      // If it's a dashboard or something not in modules DB, we can let it show
+      if (translatedLabel.toLowerCase().includes('dashboard') || translatedLabel.toLowerCase().includes('notification') || translatedLabel.toLowerCase().includes('setting')) return true;
+      
+      // Default DENY if not in DB to prevent leaking menus to users without rights
+      return false;
     }).map(item => ({
       ...item,
       label: item.label.includes('.') ? t(item.label) : item.label
@@ -344,10 +266,8 @@ const iconPaths: Record<string, string> = {
         </div>
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
-          <span class="sidebar-user-role">{{ 
-            currentUser?.role === 'customer_service' ? 'Customer Service' : 
-            currentUser?.role === 'technician' ? 'Technician' : 
-            currentUser?.role === 'accounting' ? 'Accounting' : 'Superadmin' 
+          <span class="sidebar-user-role">{{
+            currentUser?.role ? currentUser.role.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase()) : 'Superadmin'
           }}</span>
         </div>
       </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
@@ -10,8 +10,22 @@ const { currentUser } = useAuth()
 const {
   jobOrders,
   findCustomer,
-  findUnit
+  findUnit,
+  refresh
 } = useMasterStore()
+
+let intervalId: any = null
+
+onMounted(() => {
+  // Auto-reload data every 30 seconds
+  intervalId = setInterval(() => {
+    refresh(true)
+  }, 30000)
+})
+
+onUnmounted(() => {
+  if (intervalId) clearInterval(intervalId)
+})
 
 const myJobs = computed(() => {
   return jobOrders.value.filter(j => j.technician_id === currentUser.value?.id)

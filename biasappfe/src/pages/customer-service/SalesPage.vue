@@ -35,49 +35,7 @@ const editingItem = ref<Sale | null>(null)
 const deletingItem = ref<Sale | null>(null)
 const viewingItem = ref<Sale | null>(null)
 
-// Date Range & Month Filters
-const startDateFilter = ref('')
-const endDateFilter = ref('')
-const monthFilter = ref('')
 
-function onMonthFilterChange() {
-  if (!monthFilter.value) return
-  const [yearStr, monthStr] = monthFilter.value.split('-')
-  const year = parseInt(yearStr)
-  const month = parseInt(monthStr)
-  
-  const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
-  const lastDayNum = new Date(year, month, 0).getDate()
-  const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
-  
-  startDateFilter.value = firstDay
-  endDateFilter.value = lastDay
-}
-
-function resetFilters() {
-  startDateFilter.value = ''
-  endDateFilter.value = ''
-  monthFilter.value = ''
-}
-
-const filteredData = computed(() => {
-  let items = data.value
-  if (startDateFilter.value) {
-    items = items.filter(d => {
-      const itemDate = d.sale_date || d.date
-      if (!itemDate) return false
-      return String(itemDate).slice(0, 10) >= startDateFilter.value
-    })
-  }
-  if (endDateFilter.value) {
-    items = items.filter(d => {
-      const itemDate = d.sale_date || d.date
-      if (!itemDate) return false
-      return String(itemDate).slice(0, 10) <= endDateFilter.value
-    })
-  }
-  return items
-})
 
 function generateSingleInvoiceHtml(item: any) {
   const customer = findCustomer(item.customer_id)
@@ -101,7 +59,10 @@ function generateSingleInvoiceHtml(item: any) {
   if (item.sale_items && item.sale_items.length > 0) {
     itemsHtml = item.sale_items.map((si: any, idx: number) => {
       const p = findProduct(si.product_id)
-      const pName = p ? p.name : ('Produk ID: ' + si.product_id)
+      let pName = p ? p.name : ('Produk ID: ' + si.product_id)
+      if (si.description) {
+        pName += `<br><span style="font-size: 10px; color: #555;">${si.description}</span>`
+      }
       return `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
@@ -153,10 +114,12 @@ function generateSingleInvoiceHtml(item: any) {
                 <td class="label">Date :</td>
                 <td>${dateStr}</td>
               </tr>
+              ${item.po_no ? `
               <tr>
                 <td class="label">PO NO.:</td>
-                <td></td>
+                <td>${item.po_no}</td>
               </tr>
+              ` : ''}
               <tr>
                 <td colspan="2" class="bg-blue">Kepada Yth. :</td>
               </tr>
@@ -411,12 +374,13 @@ function exportMonthToPdf() {
   }
 }
 
-const saleItems = ref<{ product_id: number | null; qty: number; unit_price: number }[]>([])
+const saleItems = ref<{ product_id: number | null; qty: number; unit_price: number; is_computer: boolean; specs: { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string; }; description: string; }[]>([])
 
 const form = reactive({
   sale_no: '',
   customer_id: null as string | null,
   sale_date: '',
+  po_no: '',
   total_amount: 0,
   status: 'pending',
 })
@@ -426,7 +390,7 @@ const calcSubtotal = computed(() => saleItems.value.reduce((sum, item) => sum + 
 const calcTotal = computed(() => calcSubtotal.value)
 
 function addSaleItem() {
-  saleItems.value.push({ product_id: null as any, qty: 1, unit_price: 0 })
+  saleItems.value.push({ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' })
 }
 
 function removeSaleItem(idx: number) {
@@ -439,13 +403,14 @@ function onProductChange(idx: number) {
   const prod = findProduct(item.product_id)
   if (prod) {
     item.unit_price = prod.price
+    item.is_computer = !!prod.is_computer
   }
 }
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), total_amount: 0, status: 'pending' })
-  saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0 }]
+  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', total_amount: 0, status: 'pending' })
+  saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
   showModal.value = true
 }
 
@@ -459,11 +424,29 @@ function openEdit(item: any) {
   Object.assign(form, {
     sale_no: item.sale_no || `SLS-${item.id}`,
     customer_id: item.customer_id,
+    po_no: item.po_no || '',
     sale_date: item.sale_date ? item.sale_date.slice(0, 10) : '',
     total_amount: item.total_amount || item.total,
     status: item.status || 'pending',
   })
-  saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0 }]
+  if (item.sale_items && item.sale_items.length > 0) {
+    saleItems.value = item.sale_items.map((si: any) => {
+      let parsedSpecs = { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }
+      if (si.specs) {
+        try { parsedSpecs = typeof si.specs === 'string' ? JSON.parse(si.specs) : si.specs } catch (e) {}
+      }
+      return {
+        product_id: si.product_id,
+        qty: si.qty,
+        unit_price: si.unit_price || si.price || 0,
+        is_computer: !!(findProduct(si.product_id)?.is_computer),
+        specs: parsedSpecs,
+        description: si.description || ''
+      }
+    })
+  } else {
+    saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
+  }
   showModal.value = true
 }
 
@@ -473,6 +456,10 @@ function handleSubmit() {
     ...form,
     subtotal: calcSubtotal.value,
     total: calcTotal.value,
+    sale_items: saleItems.value.map(item => ({
+      ...item,
+      specs: JSON.stringify(item.specs)
+    }))
   }
   if (editingItem.value) {
     const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
@@ -569,39 +556,7 @@ function printInvoice(item: any) {
   <div>
     <PageHeader title="Sales" button-label="Add Sale" @add="openAdd" />
     
-    <!-- Filter & Export Toolbar -->
-    <div class="filter-toolbar">
-      <div class="filter-inputs">
-        <div class="filter-item">
-          <label class="filter-label">Tanggal Awal</label>
-          <input v-model="startDateFilter" type="date" class="form-input filter-input">
-        </div>
-        <div class="filter-item">
-          <label class="filter-label">Tanggal Akhir</label>
-          <input v-model="endDateFilter" type="date" class="form-input filter-input">
-        </div>
-        <div class="filter-item">
-          <label class="filter-label">Filter Bulan</label>
-          <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
-        </div>
-        <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
-          Reset Filter
-        </button>
-      </div>
-
-      <div class="export-actions">
-        <button type="button" class="btn btn-export-pdf" @click="exportMonthToPdf" title="Export Invoices (PDF)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-          Export PDF
-        </button>
-        <button type="button" class="btn btn-export-excel" @click="exportMonthToExcel" title="Export Invoices (Excel)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
-          Export Excel
-        </button>
-      </div>
-    </div>
-
-    <DataTable :columns="columns" :data="filteredData" search-placeholder="Cari penjualan..." @edit="openEdit"
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari penjualan..." @edit="openEdit"
       @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-pic_name="{ row }">{{ picName(row.customer_id) }}</template>
@@ -671,6 +626,10 @@ function printInvoice(item: any) {
         <input id="sale-date" v-model="form.sale_date" type="date" class="form-input">
       </div>
       <div class="form-group">
+        <label for="sale-po-no" class="form-label">PO No (Opsional)</label>
+        <input id="sale-po-no" v-model="form.po_no" type="text" class="form-input" placeholder="Misal: PO-2024-001">
+      </div>
+      <div class="form-group">
         <label for="sale-status" class="form-label">Status</label>
         <select id="sale-status" v-model="form.status" class="form-select">
           <option value="pending">Pending</option>
@@ -688,15 +647,67 @@ function printInvoice(item: any) {
             <option v-for="p in products" :key="p.id" :value="p.id">{{ (p as any).name }}</option>
           </select>
         </div>
-        <div class="form-group sale-item-qty">
-          <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
+        <div style="display: flex; gap: 8px;">
+          <div class="form-group sale-item-qty">
+            <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
+          </div>
+          <div class="form-group sale-item-price">
+            <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Harga">
+          </div>
+          <button type="button" class="btn-remove-item" title="Hapus item" @click="removeSaleItem(idx)">✕</button>
         </div>
-        <div class="form-group sale-item-price">
-          <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Harga">
+
+        <div v-if="item.is_computer" style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
+          <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Spesifikasi Komputer / PC</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Processor (CPU)</label>
+              <input v-model="item.specs.cpu" type="text" class="form-input" placeholder="Misal: Intel Core i5">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">RAM</label>
+              <input v-model="item.specs.ram" type="text" class="form-input" placeholder="Misal: 16GB DDR4">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">VGA / GPU</label>
+              <input v-model="item.specs.vga" type="text" class="form-input" placeholder="Misal: Intel UHD Graphics">
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
+              <select v-model="item.specs.storage_type" class="form-select">
+                <option value="">Pilih</option>
+                <option value="SSD">SSD</option>
+                <option value="HDD">HDD</option>
+                <option value="NVMe">NVMe</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>
+              <input v-model="item.specs.storage" type="text" class="form-input" placeholder="Misal: 512GB">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Operating System (OS)</label>
+              <input v-model="item.specs.os" type="text" class="form-input" placeholder="Misal: Windows 11 Pro">
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Office Package</label>
+              <input v-model="item.specs.office" type="text" class="form-input" placeholder="Misal: Microsoft Office 2021">
+            </div>
+          </div>
         </div>
-        <button type="button" class="btn-remove-item" title="Hapus item" @click="removeSaleItem(idx)">✕</button>
+
+        <div style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
+          <div class="form-group">
+            <label class="form-label" style="font-size: 0.8rem;">Deskripsi / Keterangan (Tampil di Invoice)</label>
+            <textarea v-model="item.description" class="form-input" placeholder="Misal: Kondisi mulus, termasuk kabel power..." rows="2"></textarea>
+          </div>
+        </div>
       </div>
-      <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem">+ Add Item</button>
+      <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem" style="margin-top: 1rem;">+ Add Item</button>
 
       <div class="sale-summary">
         <div class="summary-row summary-total"><span>Total</span><span>{{ formatRupiah(calcTotal) }}</span></div>

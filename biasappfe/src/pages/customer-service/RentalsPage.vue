@@ -5,10 +5,10 @@ import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import type { TableColumn } from '@/types'
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const { customers, units, products } = useMasterStore()
+const { customers, units, products, refresh } = useMasterStore()
 const { t } = useI18n()
 
 const columns = computed<TableColumn[]>(() => [
@@ -28,7 +28,7 @@ const isLoading = ref(false)
 
 const paperSizes = ref<{id: string, name: string}[]>([])
 
-const rentalItems = ref<{ selected_item: string; unit_id: string | null; product_id: string | null; qty: number; monthly_rent: number; start_meter_bw: number; start_meter_color: number; free_quota_color: number; is_copier: boolean; rates: { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[] }[]>([])
+const rentalItems = ref<{ selected_item: string; unit_id: string | null; product_id: string | null; qty: number; monthly_rent: number; start_meter_bw: number; start_meter_color: number; free_quota_color: number; is_copier: boolean; is_computer: boolean; specs: { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string; }; description: string; rates: { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[] }[]>([])
 
 const form = reactive({
   customer_id: '',
@@ -38,6 +38,7 @@ const form = reactive({
   tax: 0,
   deposit: 0,
   notes: '',
+  po_no: '',
   installation_address: '',
 })
 
@@ -52,7 +53,7 @@ const calcSubtotal = computed(() => {
 const calcTotal = computed(() => calcSubtotal.value + form.tax + form.deposit)
 
 function addRentalItem() {
-  rentalItems.value.push({ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, rates: [] })
+  rentalItems.value.push({ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '', rates: [] })
 }
 
 function removeRentalItem(idx: number) {
@@ -74,6 +75,7 @@ function onItemSelectChange(item: any) {
     const u = units.value.find((target: any) => String(target.id) === String(unitId));
     if (u) {
       item.is_copier = !!u.is_copier;
+      item.is_computer = !!u.is_computer;
       if (u.current_meter_bw !== undefined) item.start_meter_bw = u.current_meter_bw;
       if (u.current_meter_color !== undefined) item.start_meter_color = u.current_meter_color;
       if (u.free_quota_color !== undefined) item.free_quota_color = u.free_quota_color;
@@ -85,12 +87,20 @@ function onItemSelectChange(item: any) {
         }));
       }
     }
+  } else if (item.selected_item.startsWith('prod_')) {
+    const prodId = item.selected_item.replace('prod_', '');
+    const p = products.value.find((target: any) => String(target.id) === String(prodId));
+    if (p) {
+      item.is_copier = false;
+      item.is_computer = !!p.is_computer;
+    }
   }
 }
 
-function openAdd() {
-  Object.assign(form, { customer_id: '', start_date: new Date().toISOString().slice(0, 10), duration_months: 12, duration_days: 0, tax: 0, deposit: 0, notes: '', installation_address: '' })
-  rentalItems.value = [{ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, rates: [] }]
+async function openAdd() {
+  await refresh(true)
+  Object.assign(form, { customer_id: '', start_date: new Date().toISOString().slice(0, 10), duration_months: 12, duration_days: 0, tax: 0, deposit: 0, po_no: '', notes: '', installation_address: '' })
+  rentalItems.value = [{ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '', rates: [] }]
   showModal.value = true
 }
 
@@ -129,6 +139,7 @@ async function handleSubmit() {
     duration_days: form.duration_days,
     tax: form.tax,
     deposit: form.deposit,
+    po_no: form.po_no,
     notes: form.notes,
     installation_address: form.installation_address,
     items: rentalItems.value.map(item => {
@@ -140,7 +151,9 @@ async function handleSubmit() {
         qty: item.qty,
         monthly_rent: item.monthly_rent,
         start_meter_bw: item.start_meter_bw,
-        start_meter_color: item.start_meter_color
+        start_meter_color: item.start_meter_color,
+        specs: JSON.stringify(item.specs),
+        description: item.description,
       }
     })
   }
@@ -179,6 +192,7 @@ function formatRupiah(val: number): string {
 import { resources } from '@/services/resource.service'
 
 onMounted(async () => {
+  await refresh(true)
   fetchRentals()
   try {
     const res = await resources.paperSizes.list()
@@ -187,6 +201,7 @@ onMounted(async () => {
     console.error('Failed to fetch paper sizes:', e)
   }
 })
+
 </script>
 
 <template>
@@ -229,6 +244,10 @@ onMounted(async () => {
         <div class="form-group">
           <label for="duration-days" class="form-label">Tambahan Hari</label>
           <input id="duration-days" v-model.number="form.duration_days" type="number" class="form-input" min="0">
+        </div>
+        <div class="form-group">
+          <label for="po-no" class="form-label">PO No (Opsional)</label>
+          <input id="po-no" v-model="form.po_no" type="text" class="form-input" placeholder="Misal: PO-2024-001">
         </div>
         <div class="form-group">
           <label for="notes" class="form-label">Catatan</label>
@@ -320,6 +339,56 @@ onMounted(async () => {
             <div v-if="!item.rates || item.rates.length === 0" style="text-align: center; color: var(--color-text-muted, #64748b); font-size: 0.8rem; padding: 0.75rem; border: 1px dashed var(--color-border-light, #cbd5e1); border-radius: 6px;">
               Belum ada ukuran kertas yang ditambahkan.
             </div>
+          </div>
+        </div>
+        
+        <div v-if="item.is_computer" style="margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
+          <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Spesifikasi Komputer / PC</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Processor (CPU)</label>
+              <input v-model="item.specs.cpu" type="text" class="form-input" placeholder="Misal: Intel Core i5">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">RAM</label>
+              <input v-model="item.specs.ram" type="text" class="form-input" placeholder="Misal: 16GB DDR4">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">VGA / GPU</label>
+              <input v-model="item.specs.vga" type="text" class="form-input" placeholder="Misal: Intel UHD Graphics">
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
+              <select v-model="item.specs.storage_type" class="form-select">
+                <option value="">Pilih</option>
+                <option value="SSD">SSD</option>
+                <option value="HDD">HDD</option>
+                <option value="NVMe">NVMe</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>
+              <input v-model="item.specs.storage" type="text" class="form-input" placeholder="Misal: 512GB">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Operating System (OS)</label>
+              <input v-model="item.specs.os" type="text" class="form-input" placeholder="Misal: Windows 11 Pro">
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Office Package</label>
+              <input v-model="item.specs.office" type="text" class="form-input" placeholder="Misal: Microsoft Office 2021">
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
+          <div class="form-group">
+            <label class="form-label" style="font-size: 0.8rem;">Deskripsi / Keterangan (Tampil di Invoice)</label>
+            <textarea v-model="item.description" class="form-input" placeholder="Misal: Kondisi mulus, termasuk kabel power..." rows="2"></textarea>
           </div>
         </div>
         
@@ -453,3 +522,5 @@ onMounted(async () => {
 .text-sm { font-size: 0.875rem; }
 .text-gray-500 { color: var(--color-text-muted); }
 </style>
+
+

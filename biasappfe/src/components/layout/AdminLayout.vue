@@ -7,6 +7,22 @@ import TopBar from './TopBar.vue'
 const route = useRoute()
 const sidebarOpen = ref(false)
 
+import { useMasterStore } from '@/composables/useMasterStore'
+import { onMounted, onUnmounted } from 'vue'
+
+const { refresh } = useMasterStore()
+let adminInterval: any = null
+
+onMounted(() => {
+  adminInterval = setInterval(() => {
+    refresh(true)
+  }, 30000)
+})
+
+onUnmounted(() => {
+  if (adminInterval) clearInterval(adminInterval)
+})
+
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {
     '/master/users': 'Users',

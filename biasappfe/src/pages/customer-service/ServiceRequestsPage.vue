@@ -94,6 +94,58 @@ async function handleSubmit() {
   }
 }
 
+const showAssignModal = ref(false)
+const assignItem = ref<any>(null)
+const assignForm = reactive({
+  technician_id: '',
+  scheduled_date: new Date().toISOString().slice(0, 10),
+  instructions: ''
+})
+
+function openAssign(row: any) {
+  assignItem.value = row
+  Object.assign(assignForm, {
+    technician_id: '',
+    scheduled_date: new Date().toISOString().slice(0, 10),
+    instructions: `Lanjutan dari keluhan: ${row.problem_description}`
+  })
+  showAssignModal.value = true
+}
+
+async function handleAssignSubmit() {
+  if (!assignForm.technician_id) return
+  isLoading.value = true
+  
+  const payload = {
+    job_order_no: `JO-${Date.now().toString().slice(-6)}`,
+    service_request_id: assignItem.value.id,
+    technician_id: assignForm.technician_id,
+    scheduled_date: new Date(assignForm.scheduled_date).toISOString(),
+    instructions: assignForm.instructions
+  }
+
+  try {
+    const res = await fetch('http://localhost:4008/api/job-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    
+    if (res.ok) {
+      alert("Teknisi berhasil di-assign! Job Order telah dibuat.")
+      showAssignModal.value = false
+      fetchRequests() // To maybe refresh status if backend updates SR status automatically
+    } else {
+      const err = await res.json()
+      alert("Gagal: " + JSON.stringify(err))
+    }
+  } catch (error) {
+    alert("Terjadi kesalahan jaringan.")
+  } finally {
+    isLoading.value = false
+  }
+}
+
 onMounted(() => {
   fetchRequests()
 })
@@ -105,6 +157,14 @@ onMounted(() => {
     
     <DataTable :columns="columns" :data="serviceRequests" search-placeholder="Cari keluhan...">
       <template #cell-request_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
+      <template #cell-status="{ value }">
+        <span class="badge" :class="value === 'assigned' || value === 'in_progress' ? 'badge-success' : 'badge-warning'">
+          {{ value.toUpperCase() }}
+        </span>
+      </template>
+      <template #actions="{ row }">
+        <button v-if="row.status !== 'assigned' && row.status !== 'completed'" class="btn btn-sm btn-primary" @click="openAssign(row)">Assign Teknisi</button>
+      </template>
     </DataTable>
 
     <FormModal :open="showModal" title="Input Keluhan (Service Request)" @close="showModal = false" @submit="handleSubmit">
@@ -140,6 +200,25 @@ onMounted(() => {
         <textarea v-model="form.problem_description" class="form-input" rows="4" placeholder="Jelaskan keluhan secara rinci" required></textarea>
       </div>
       
+      <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">Menyimpan data...</div>
+    </FormModal>
+
+    <FormModal :open="showAssignModal" title="Assign Teknisi (Buat Job Order)" @close="showAssignModal = false" @submit="handleAssignSubmit">
+      <div class="form-group mt-3">
+        <label class="form-label">Pilih Teknisi</label>
+        <select v-model="assignForm.technician_id" class="form-select" required>
+          <option value="">-- Pilih Teknisi --</option>
+          <option v-for="t in useMasterStore().technicians" :key="t.id" :value="t.id">{{ (t as any).name }}</option>
+        </select>
+      </div>
+      <div class="form-group mt-3">
+        <label class="form-label">Tanggal Penugasan</label>
+        <input v-model="assignForm.scheduled_date" type="date" class="form-input" required>
+      </div>
+      <div class="form-group mt-3">
+        <label class="form-label">Instruksi / Catatan untuk Teknisi</label>
+        <textarea v-model="assignForm.instructions" class="form-input" rows="4" required></textarea>
+      </div>
       <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">Menyimpan data...</div>
     </FormModal>
   </div>

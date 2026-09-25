@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 
@@ -10,7 +10,21 @@ const {
   contractItems,
   sparepartRequests,
   indents,
+  refresh
 } = useMasterStore()
+
+let intervalId: any = null
+
+onMounted(() => {
+  // Auto-reload data every 30 seconds
+  intervalId = setInterval(() => {
+    refresh(true)
+  }, 30000)
+})
+
+onUnmounted(() => {
+  if (intervalId) clearInterval(intervalId)
+})
 
 // Derived metrics
 const newCalls = computed(() => serviceRequests.value.filter(s => s.status === 'open' || s.status === 'pending').length)

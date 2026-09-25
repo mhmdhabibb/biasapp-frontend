@@ -248,6 +248,10 @@ const form = reactive({
   tax: 0,
   total_pay: 0,
   status: 'unpaid',
+  meter_start: 0,
+  meter_end: 0,
+  free_copies: 2000,
+  rate_per_page: 150
 })
 
 const defaultForm = { ...form }
@@ -262,6 +266,15 @@ function onContractChange() {
 }
 
 function recalculate() {
+  const ci = findContractItem(form.contract_item_id)
+  const isComputer = ci && ci.specs && ci.specs.length > 5
+
+  if (!isComputer) {
+    const totalUsage = Math.max(0, form.meter_end - form.meter_start)
+    const excess = Math.max(0, totalUsage - form.free_copies)
+    form.excess_amount = excess * form.rate_per_page
+  }
+
   form.subtotal = form.basis_rental_fee + form.excess_amount
   form.total_pay = form.subtotal + form.tax
 }
@@ -288,6 +301,10 @@ function openEdit(item: RentalInvoice) {
     tax: item.tax,
     total_pay: item.total_pay,
     status: item.status,
+    meter_start: item.meter_start || 0,
+    meter_end: item.meter_end || 0,
+    free_copies: item.free_copies || 2000,
+    rate_per_page: item.rate_per_page || 150
   })
   showModal.value = true
 }
@@ -419,6 +436,12 @@ function printInvoice(item: any) {
                   <td class="bg-label">Date :</td>
                   <td>${dateStr}</td>
                 </tr>
+                ${item.rental?.po_no || item.po_no ? `
+                <tr>
+                  <td class="bg-label">PO NO. :</td>
+                  <td>${item.rental?.po_no || item.po_no}</td>
+                </tr>
+                ` : ''}
                 <tr>
                   <td colspan="2" style="text-align: center;">Kepada Yth.</td>
                 </tr>
@@ -450,45 +473,55 @@ function printInvoice(item: any) {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td class="no-col">1</td>
-                <td>
-                  <div class="desc-content">
-                    Rental Charges Mesin Fotocopy<br>
-                    <br>
-                    B/W A4<br>
-                    <div class="motor-grid">
-                      <div>Start Meter Reading</div><div>###</div><div></div>
-                      <div>Last Meter Reading</div><div>###</div><div>(-)</div>
-                      <div>Total Copies</div><div>###</div><div></div>
-                      <div>Free Copies</div><div>###</div><div>(-)</div>
-                      <div>Total Copies</div><div>###</div><div></div>
-                    </div>
-                    <br>
-                    Colour A4<br>
-                    <div class="motor-grid">
-                      <div>Start Meter Reading</div><div>###</div><div></div>
-                      <div>Last Meter Reading</div><div>###</div><div>(-)</div>
-                      <div>Total Copies</div><div>###</div><div></div>
-                      <div>Free Copies</div><div>###</div><div>(-)</div>
-                      <div>Total Copies</div><div>###</div><div></div>
-                    </div>
-                  </div>
-                </td>
-                <td class="rp-col">Rp</td>
-                <td class="val-col">${basisFee}</td>
-              </tr>
-              <tr>
-                <td class="no-col">2</td>
-                <td>
-                  <div style="display: flex; justify-content: space-between;">
-                    <span>Copies Charges</span>
-                    <span>(x) Rp ###</span>
-                  </div>
-                </td>
-                <td class="rp-col">Rp</td>
-                <td class="val-col">${excessFee}</td>
-              </tr>
+              ${(() => {
+                const ci = findContractItem(item.contract_item_id)
+                const isComputer = ci && ci.specs && ci.specs.length > 5
+                if (!isComputer) {
+                  return `<tr>
+                    <td class="no-col">1</td>
+                    <td>
+                      <div class="desc-content" style="text-transform: uppercase;">
+                        RENTAL FOTOCOPY BW ${ci?.description || ''} ${periodStr} (Biaya Fixed: Rp.${basisFee})
+                      </div>
+                    </td>
+                    <td class="rp-col">Rp</td>
+                    <td class="val-col">${basisFee}</td>
+                  </tr>
+                  <tr>
+                    <td class="no-col"></td>
+                    <td>
+                      <div class="desc-content">
+                        FREE COPY BW ${item.free_copies || 2000} LEMBAR
+                      </div>
+                    </td>
+                    <td class="rp-col"></td>
+                    <td class="val-col"></td>
+                  </tr>
+                  <tr>
+                    <td class="no-col"></td>
+                    <td>
+                      <div class="desc-content">
+                        TOTAL PEMAKAIAN BW: ${Math.max(0, (item.meter_end || 0) - (item.meter_start || 0))} LEMBAR<br>
+                        KEKURANGAN BW: ${Math.max(0, ((item.meter_end || 0) - (item.meter_start || 0)) - (item.free_copies || 2000))} LEMBAR
+                      </div>
+                    </td>
+                    <td class="rp-col">Rp</td>
+                    <td class="val-col">${excessFee}</td>
+                  </tr>`
+                } else {
+                  return `<tr>
+                    <td class="no-col">1</td>
+                    <td>
+                      <div class="desc-content">
+                        Rental Charges Komputer / Desktop ${ci?.description || ''}<br>
+                        Periode: ${periodStr}
+                      </div>
+                    </td>
+                    <td class="rp-col">Rp</td>
+                    <td class="val-col">${basisFee}</td>
+                  </tr>`
+                }
+              })()}
               <tr class="total-row">
                 <td colspan="2" class="total-label">TOTAL</td>
                 <td class="rp-col">Rp</td>
@@ -654,12 +687,43 @@ function printInvoice(item: any) {
           <label for="ri-basis" class="form-label">Base Rental Fee (Rp)</label>
           <input id="ri-basis" v-model.number="form.basis_rental_fee" type="number" class="form-input" min="0" @input="recalculate">
         </div>
+      </div>
+      
+      <!-- Meter Readings for Copier -->
+      <div v-if="findContractItem(form.contract_item_id) && (!findContractItem(form.contract_item_id)?.specs || findContractItem(form.contract_item_id)?.specs.length < 5)" style="border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; margin-bottom: 15px;">
+        <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px;">Meter Reading (Fotocopy)</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Start Meter Reading</label>
+            <input v-model.number="form.meter_start" type="number" class="form-input" min="0" @input="recalculate">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Last Meter Reading</label>
+            <input v-model.number="form.meter_end" type="number" class="form-input" min="0" @input="recalculate">
+          </div>
+        </div>
+        <div class="form-row mt-2">
+          <div class="form-group">
+            <label class="form-label">Free Copies</label>
+            <input v-model.number="form.free_copies" type="number" class="form-input" min="0" @input="recalculate">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Harga Satuan (Overusage)</label>
+            <input v-model.number="form.rate_per_page" type="number" class="form-input" min="0" @input="recalculate">
+          </div>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px; color: #64748b;">
+          Total Pemakaian: <b>{{ Math.max(0, form.meter_end - form.meter_start) }}</b> lembar. 
+          Kekurangan: <b>{{ Math.max(0, (form.meter_end - form.meter_start) - form.free_copies) }}</b> lembar.
+        </div>
+      </div>
+
+      <div class="form-row">
         <div class="form-group">
           <label for="ri-excess" class="form-label">Excess Amount (Rp)</label>
           <input id="ri-excess" v-model.number="form.excess_amount" type="number" class="form-input" min="0" @input="recalculate">
         </div>
-      </div>
-      <div class="form-group">
+        <div class="form-group">
         <label for="ri-tax" class="form-label">Tax (Rp)</label>
         <input id="ri-tax" v-model.number="form.tax" type="number" class="form-input" min="0" @input="recalculate">
       </div>
