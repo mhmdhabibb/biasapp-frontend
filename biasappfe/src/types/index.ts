@@ -40,6 +40,7 @@ export interface Customer {
   pic_name: string
   pic_gender?: string
   pic_position?: string
+  nip?: string
   phone: string
   fax?: string
   email?: string

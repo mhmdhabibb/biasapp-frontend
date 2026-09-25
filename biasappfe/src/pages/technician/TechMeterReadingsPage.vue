@@ -8,6 +8,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 const { currentUser } = useAuth()
 const {
   monthlyMeterReadings,
+  rentalInvoices,
   contractItems,
   findCustomer,
   findUnit
@@ -65,25 +66,69 @@ function submitReading() {
     }
   }
 
+  const ci = selectedContract.value
+  const monoStart = previousReading.value?.mono || 0
+  const colorStart = previousReading.value?.color || 0
+  const monoEnd = form.value.counter_mono_end
+  const colorEnd = form.value.counter_color_end
+
+  const usageMono = Math.max(0, monoEnd - monoStart)
+  const usageColor = Math.max(0, colorEnd - colorStart)
+
+  const freeQuotaColor = ci?.free_quota_color || ci?.free_copy_quota || 0
+  const bwRate = ci?.rates?.[0]?.rate_per_page_bw || ci?.rate_per_page_bw || 150
+  const colorRate = ci?.rates?.[0]?.rate_per_page_color || ci?.rate_per_page_color || 1300
+
+  const excessColor = Math.max(0, usageColor - freeQuotaColor)
+  const excessAmount = (excessColor * colorRate) + (usageMono * bwRate)
+  const baseRent = ci?.monthly_rent_fee || ci?.total_value || 0
+  const subtotal = baseRent + excessAmount
+
+  const readingId = Date.now()
   monthlyMeterReadings.value.push({
-    id: Date.now(),
+    id: readingId,
     service_report_id: null,
     contract_item_id: form.value.contract_item_id,
     period: form.value.period,
-    counter_mono_start: previousReading.value?.mono || 0,
-    counter_mono_end: form.value.counter_mono_end,
-    counter_color_start: previousReading.value?.color || 0,
-    counter_color_end: form.value.counter_color_end,
-    color_mode: 'BW', // Simplified
-    total_usage: (form.value.counter_mono_end - (previousReading.value?.mono || 0)) + (form.value.counter_color_end - (previousReading.value?.color || 0)),
-    total_amount: 0,
+    counter_mono_start: monoStart,
+    counter_mono_end: monoEnd,
+    counter_color_start: colorStart,
+    counter_color_end: colorEnd,
+    color_mode: 'BW/Color',
+    total_usage: usageMono + usageColor,
+    total_amount: excessAmount,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    deleted_at: null
+  })
+
+  // Auto-generate Rental Invoice for Copier
+  const invNo = `INV-R-${Date.now().toString().slice(-6)}`
+  const now = new Date()
+  const dueDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+  rentalInvoices.value.push({
+    id: Date.now() + 1,
+    invoice_no: invNo,
+    customer_id: ci?.customer_id,
+    contract_item_id: ci?.id,
+    period_start: `${form.value.period}-01`,
+    period_end: `${form.value.period}-30`,
+    monthly_date: now.toISOString().slice(0, 10),
+    due_date: dueDate,
+    basis_rental_fee: baseRent,
+    excess_amount: excessAmount,
+    subtotal: subtotal,
+    tax: 0,
+    total_pay: subtotal,
+    status: 'unpaid',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     deleted_at: null
   })
 
   showAddModal.value = false
-  alert('Meter Reading berhasil ditambahkan!')
+  alert(`Meter Reading berhasil ditambahkan!\nRental Invoice ${invNo} sebesar Rp ${subtotal.toLocaleString('id-ID')} otomatis diterbitkan.`)
 }
 </script>
 

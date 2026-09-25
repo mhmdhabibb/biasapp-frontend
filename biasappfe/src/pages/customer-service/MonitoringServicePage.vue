@@ -15,8 +15,9 @@ const {
 
 const columns: TableColumn[] = [
   { key: 'service_report_no', label: 'Service No' },
-  { key: 'customer_id', label: 'Customer' },
+  { key: 'customer_id', label: 'Company' },
   { key: 'unit', label: 'Unit' },
+  { key: 'serial_no', label: 'Serial Number' },
   { key: 'machine_problem', label: 'Problem' },
   { key: 'technician_id', label: 'Technician' },
   { key: 'status', label: 'Status' },
@@ -36,7 +37,16 @@ function getUnitName(contractItemId: number | null) {
   const ci = findContractItem(contractItemId)
   if (ci && ci.unit_id) {
     const u = findUnit(ci.unit_id)
-    return u ? `${u.model} (${u.serial_no})` : '-'
+    return u ? u.model || u.name || '-' : '-'
+  }
+  return '-'
+}
+
+function getUnitSerialNo(contractItemId: number | null) {
+  const ci = findContractItem(contractItemId)
+  if (ci && ci.unit_id) {
+    const u = findUnit(ci.unit_id)
+    return u ? u.serial_no || '-' : '-'
   }
   return '-'
 }
@@ -78,6 +88,9 @@ function formatSlaTime(report: ServiceReport) {
       </template>
       <template #cell-unit="{ row }">
         {{ getUnitName(row.contract_item_id) }}
+      </template>
+      <template #cell-serial_no="{ row }">
+        {{ getUnitSerialNo(row.contract_item_id) }}
       </template>
       <template #cell-machine_problem="{ value }">
         <span class="truncate-text" :title="value">{{ value }}</span>

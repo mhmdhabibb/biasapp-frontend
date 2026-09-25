@@ -6,24 +6,29 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import type { TableColumn } from '@/types'
 import { computed, reactive, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const { customers, units, products } = useMasterStore()
+const { t } = useI18n()
 
-const columns: TableColumn[] = [
-  { key: 'rental_no', label: 'Rental No' },
-  { key: 'customer', label: 'Customer' },
-  { key: 'start_date', label: 'Mulai' },
-  { key: 'end_date', label: 'Selesai' },
-  { key: 'total', label: 'Total' },
-  { key: 'status', label: 'Status' }
-]
+const columns = computed<TableColumn[]>(() => [
+  { key: 'rental_no', label: t('rentals.no') },
+  { key: 'company', label: t('rentals.company') },
+  { key: 'pic_name', label: t('rentals.pic_name') },
+  { key: 'start_date', label: t('rentals.start') },
+  { key: 'end_date', label: t('rentals.end') },
+  { key: 'total', label: t('rentals.total') },
+  { key: 'status', label: t('rentals.status') }
+])
 
 const rentals = ref<any[]>([])
 
 const showModal = ref(false)
 const isLoading = ref(false)
 
-const rentalItems = ref<{ selected_item: string; unit_id: string | null; product_id: string | null; qty: number; monthly_rent: number; start_meter_bw: number; start_meter_color: number; is_copier: boolean }[]>([])
+const paperSizes = ref<{id: string, name: string}[]>([])
+
+const rentalItems = ref<{ selected_item: string; unit_id: string | null; product_id: string | null; qty: number; monthly_rent: number; start_meter_bw: number; start_meter_color: number; free_quota_color: number; is_copier: boolean; rates: { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[] }[]>([])
 
 const form = reactive({
   customer_id: '',
@@ -47,16 +52,45 @@ const calcSubtotal = computed(() => {
 const calcTotal = computed(() => calcSubtotal.value + form.tax + form.deposit)
 
 function addRentalItem() {
-  rentalItems.value.push({ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, is_copier: false })
+  rentalItems.value.push({ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, rates: [] })
 }
 
 function removeRentalItem(idx: number) {
   rentalItems.value.splice(idx, 1)
 }
 
+function addItemRate(item: any) {
+  if (!item.rates) item.rates = []
+  item.rates.push({ paper_size_id: '', rate_per_page_bw: 0, rate_per_page_color: 0 })
+}
+
+function removeItemRate(item: any, index: number) {
+  if (item.rates) item.rates.splice(index, 1)
+}
+
+function onItemSelectChange(item: any) {
+  if (item.selected_item.startsWith('unit_')) {
+    const unitId = item.selected_item.replace('unit_', '');
+    const u = units.value.find((target: any) => String(target.id) === String(unitId));
+    if (u) {
+      item.is_copier = !!u.is_copier;
+      if (u.current_meter_bw !== undefined) item.start_meter_bw = u.current_meter_bw;
+      if (u.current_meter_color !== undefined) item.start_meter_color = u.current_meter_color;
+      if (u.free_quota_color !== undefined) item.free_quota_color = u.free_quota_color;
+      if (Array.isArray(u.rates) && u.rates.length > 0) {
+        item.rates = u.rates.map((r: any) => ({
+          paper_size_id: r.paper_size_id,
+          rate_per_page_bw: r.rate_per_page_bw,
+          rate_per_page_color: r.rate_per_page_color,
+        }));
+      }
+    }
+  }
+}
+
 function openAdd() {
   Object.assign(form, { customer_id: '', start_date: new Date().toISOString().slice(0, 10), duration_months: 12, duration_days: 0, tax: 0, deposit: 0, notes: '', installation_address: '' })
-  rentalItems.value = [{ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, is_copier: false }]
+  rentalItems.value = [{ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, rates: [] }]
   showModal.value = true
 }
 
@@ -70,10 +104,12 @@ async function fetchRentals() {
       const data = await res.json()
       rentals.value = data.data.map((r: any) => {
         const c = customers.value.find((cust: any) => cust.id === r.customer_id)
-        const custName = c ? (c.company_name || c.name || '-') + (c.pic_name ? ' - ' + c.pic_name : '') : (r.customer?.company_name || r.customer?.name || '-') + (r.customer?.pic_name ? ' - ' + r.customer.pic_name : '')
+        const companyName = c ? (c.company_name || c.name || '-') : (r.customer?.company_name || r.customer?.name || '-')
+        const picName = c ? (c.pic_name || '-') : (r.customer?.pic_name || '-')
         return {
           ...r,
-          customer: custName === '-' ? '-' : custName,
+          company: companyName,
+          pic_name: picName,
         }
       })
     }
@@ -121,16 +157,16 @@ async function handleSubmit() {
     })
     
     if (res.ok) {
-      alert("Rental berhasil dibuat beserta Contract-nya!")
+      alert(t('rentals.success'))
       showModal.value = false
       fetchRentals() // refresh
     } else {
       const err = await res.json()
-      alert("Gagal: " + JSON.stringify(err))
+      alert(t('rentals.failed', { error: JSON.stringify(err) }))
     }
   } catch (error) {
     console.error(error)
-    alert("Terjadi kesalahan jaringan.")
+    alert(t('rentals.network_error'))
   } finally {
     isLoading.value = false
   }
@@ -140,40 +176,51 @@ function formatRupiah(val: number): string {
   return 'Rp ' + (val || 0).toLocaleString('id-ID')
 }
 
-onMounted(() => {
+import { resources } from '@/services/resource.service'
+
+onMounted(async () => {
   fetchRentals()
+  try {
+    const res = await resources.paperSizes.list()
+    paperSizes.value = res.data as any
+  } catch (e) {
+    console.error('Failed to fetch paper sizes:', e)
+  }
 })
 </script>
 
 <template>
   <div>
-    <PageHeader title="Manajemen Rental" button-label="Buat Rental Baru" @add="openAdd" />
+    <PageHeader :title="t('rentals.title')" :button-label="t('rentals.create_new')" @add="openAdd" />
     
-    <DataTable :columns="columns" :data="rentals" search-placeholder="Cari rental...">
-      <template #cell-customer="{ row }">
-        {{ (customers.find((c: any) => c.id === row.customer_id)?.company_name || customers.find((c: any) => c.id === row.customer_id)?.name || row.customer?.company_name || row.customer?.name || '-') + (customers.find((c: any) => c.id === row.customer_id)?.pic_name || row.customer?.pic_name ? ' - ' + (customers.find((c: any) => c.id === row.customer_id)?.pic_name || row.customer?.pic_name) : '') }}
+    <DataTable :columns="columns" :data="rentals" :search-placeholder="t('rentals.search')">
+      <template #cell-company="{ row }">
+        {{ customers.find((c: any) => c.id === row.customer_id)?.company_name || customers.find((c: any) => c.id === row.customer_id)?.name || row.customer?.company_name || row.customer?.name || '-' }}
+      </template>
+      <template #cell-pic_name="{ row }">
+        {{ customers.find((c: any) => c.id === row.customer_id)?.pic_name || row.customer?.pic_name || '-' }}
       </template>
       <template #cell-start_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
       <template #cell-end_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
     </DataTable>
 
-    <FormModal :open="showModal" title="Buat Kontrak Rental Baru" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="t('rentals.modal_title')" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="rent-customer" class="form-label">Customer</label>
+        <label for="rent-customer" class="form-label">{{ t('rentals.customer_label') }}</label>
         <select id="rent-customer" v-model="form.customer_id" class="form-select" required>
-          <option value="">-- Pilih Customer --</option>
+          <option value="">{{ t('rentals.customer_select') }}</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">{{ (c as any).company_name || (c as any).name }}{{ (c as any).pic_name ? ' - ' + (c as any).pic_name : '' }}</option>
         </select>
       </div>
       
       <div class="form-row">
         <div class="form-group">
-          <label for="start-date" class="form-label">Tanggal Mulai (Start Date)</label>
+          <label for="start-date" class="form-label">{{ t('rentals.start_date_label') }}</label>
           <input id="start-date" v-model="form.start_date" type="date" class="form-input" required>
         </div>
         <div class="form-group">
-          <label for="duration" class="form-label">Durasi (Bulan)</label>
+          <label for="duration" class="form-label">{{ t('rentals.duration_label') }}</label>
           <input id="duration" v-model.number="form.duration_months" type="number" class="form-input" min="0" required>
         </div>
       </div>
@@ -207,7 +254,7 @@ onMounted(() => {
 
         <div class="form-group" style="margin-bottom: var(--space-md);">
           <label class="form-label">Pilih Unit / Produk</label>
-          <select v-model="item.selected_item" class="form-select" required>
+          <select v-model="item.selected_item" class="form-select" required @change="onItemSelectChange(item)">
             <option value="">-- Pilih Mesin atau Produk --</option>
             <optgroup label="Mesin (Unit)">
               <option v-for="u in units" :key="u.id" :value="'unit_' + u.id">{{ u.model }} ({{ (u as any).brand?.name }})</option>
@@ -229,14 +276,50 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-if="item.is_copier" class="form-row meter-row" style="margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: 1px dashed var(--color-border-light);">
-          <div class="form-group">
-            <label class="form-label text-meter-label">Start Meter B/W</label>
-            <input v-model.number="item.start_meter_bw" type="number" class="form-input meter-input" min="0" placeholder="0">
+        <!-- Copier Section moved from Gambar 1 to Gambar 2 -->
+        <div v-if="item.is_copier" style="margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
+          <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Data Mesin Fotocopy</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Current BW Meter</label>
+              <input v-model.number="item.start_meter_bw" type="number" class="form-input" min="0" placeholder="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Current Color Meter</label>
+              <input v-model.number="item.start_meter_color" type="number" class="form-input" min="0" placeholder="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem;">Free Quota Color</label>
+              <input v-model.number="item.free_quota_color" type="number" class="form-input" min="0" placeholder="0">
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label text-meter-label">Start Meter Color</label>
-            <input v-model.number="item.start_meter_color" type="number" class="form-input meter-input" min="0" placeholder="0">
+
+          <div style="margin-top: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <label class="form-label" style="margin: 0; font-weight: 600; font-size: 0.85rem;">Daftar Harga Kertas (Rates)</label>
+              <button type="button" @click="addItemRate(item)" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">+ Tambah Harga</button>
+            </div>
+            
+            <div v-for="(rate, rIdx) in item.rates" :key="rIdx" style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; background: var(--color-surface, #f8fafc); padding: 0.5rem; border-radius: 6px; border: 1px solid var(--color-border-light, #e2e8f0);">
+              <div>
+                <select v-model="rate.paper_size_id" class="form-select" style="font-size: 0.8rem;">
+                  <option value="">Pilih Ukuran</option>
+                  <option v-for="p in paperSizes" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+              </div>
+              <div>
+                <input v-model.number="rate.rate_per_page_bw" type="number" class="form-input" min="0" placeholder="Tarif BW" style="font-size: 0.8rem;">
+              </div>
+              <div>
+                <input v-model.number="rate.rate_per_page_color" type="number" class="form-input" min="0" placeholder="Tarif Warna" style="font-size: 0.8rem;">
+              </div>
+              <button type="button" @click="removeItemRate(item, rIdx)" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 0.4rem;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              </button>
+            </div>
+            <div v-if="!item.rates || item.rates.length === 0" style="text-align: center; color: var(--color-text-muted, #64748b); font-size: 0.8rem; padding: 0.75rem; border: 1px dashed var(--color-border-light, #cbd5e1); border-radius: 6px;">
+              Belum ada ukuran kertas yang ditambahkan.
+            </div>
           </div>
         </div>
         

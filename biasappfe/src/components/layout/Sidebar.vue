@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useModules } from '@/composables/useModules'
+import { useI18n } from 'vue-i18n'
 import type { MenuGroup } from '@/types'
 
 defineProps<{ open: boolean }>()
@@ -10,73 +12,77 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const route = useRoute()
 const router = useRouter()
 const { currentUser, logout } = useAuth()
+const { modules } = useModules()
+const { t } = useI18n()
 
 const allMenuGroups: MenuGroup[] = [
   {
-    title: 'Master Data',
+    title: 'sidebar.master_data',
     items: [
-      { label: 'Users', icon: 'users', route: '/master/users' },
-      { label: 'Roles', icon: 'shield', route: '/master/roles' },
-      { label: 'Permissions', icon: 'key', route: '/master/permissions' },
-      { label: 'Modules', icon: 'grid', route: '/master/modules' },
-      { label: 'Customers', icon: 'building', route: '/master/customers' },
-      { label: 'Technicians', icon: 'wrench', route: '/master/technicians' },
-      { label: 'Suppliers', icon: 'truck', route: '/master/suppliers' },
-      { label: 'Unit Types', icon: 'layers', route: '/master/unit-types' },
-      { label: 'Brands', icon: 'tag', route: '/master/brands' },
-      { label: 'Paper Size', icon: 'file', route: '/master/paper-size' },
-      { label: 'Paper Type', icon: 'file-text', route: '/master/paper-type' },
-      { label: 'Product Categories', icon: 'folder', route: '/master/product-categories' },
-      { label: 'Products', icon: 'box', route: '/master/products' },
-      { label: 'Units', icon: 'printer', route: '/master/units' },
-      { label: 'Warranties', icon: 'shield-check', route: '/master/warranties' },
+      { label: 'sidebar.users', icon: 'users', route: '/master/users' },
+      { label: 'sidebar.roles', icon: 'shield', route: '/master/roles' },
+      { label: 'sidebar.permissions', icon: 'key', route: '/master/permissions' },
+      { label: 'sidebar.modules', icon: 'grid', route: '/master/modules' },
+      { label: 'sidebar.customers', icon: 'building', route: '/master/customers' },
+      { label: 'sidebar.technicians', icon: 'wrench', route: '/master/technicians' },
+      { label: 'sidebar.suppliers', icon: 'truck', route: '/master/suppliers' },
+      { label: 'sidebar.unit_types', icon: 'layers', route: '/master/unit-types' },
+      { label: 'sidebar.brands', icon: 'tag', route: '/master/brands' },
+      { label: 'sidebar.paper_size', icon: 'file', route: '/master/paper-size' },
+      { label: 'sidebar.paper_type', icon: 'file-text', route: '/master/paper-type' },
+      { label: 'sidebar.product_categories', icon: 'folder', route: '/master/product-categories' },
+      { label: 'sidebar.products', icon: 'box', route: '/master/products' },
+      { label: 'sidebar.units', icon: 'printer', route: '/master/units' },
+      { label: 'sidebar.warranties', icon: 'shield-check', route: '/master/warranties' },
     ],
   },
   {
-    title: 'Transaksi',
+    title: 'sidebar.transaction',
     items: [
-      { label: 'Contract & Items', icon: 'clipboard', route: '/customer-service/contract-items' },
-      { label: 'Service Requests', icon: 'alert-circle', route: '/customer-service/service-requests' },
-      { label: 'Job Orders', icon: 'clipboard', route: '/customer-service/job-orders' },
-      { label: 'Service Reports', icon: 'tool', route: '/customer-service/service-reports' },
-      { label: 'Meter Readings', icon: 'activity', route: '/customer-service/monthly-meter-readings' },
-      { label: 'Rentals', icon: 'box', route: '/customer-service/rentals' },
-      { label: 'Sales', icon: 'shopping-cart', route: '/customer-service/sales' },
-      { label: 'Sparepart Requests', icon: 'box', route: '/accounting/sparepart-requests' },
-      { label: 'Purchase Orders', icon: 'clipboard', route: '/accounting/purchase-orders' },
-      { label: 'Delivery Orders', icon: 'truck', route: '/accounting/delivery-orders' },
-      { label: 'Rental Invoices', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
-      { label: 'Sales Invoices', icon: 'receipt', route: '/customer-service/sales-invoices' },
-      { label: 'Payments', icon: 'credit-card', route: '/customer-service/payments' },
-      { label: 'Warranty Claims', icon: 'alert-circle', route: '/customer-service/warranty-claims' },
+      { label: 'sidebar.contract_items', icon: 'clipboard', route: '/customer-service/contract-items' },
+      { label: 'sidebar.service_requests', icon: 'alert-circle', route: '/customer-service/service-requests' },
+      { label: 'sidebar.job_orders', icon: 'clipboard', route: '/customer-service/job-orders' },
+      { label: 'sidebar.service_reports', icon: 'tool', route: '/customer-service/service-reports' },
+      { label: 'sidebar.meter_readings', icon: 'activity', route: '/customer-service/monthly-meter-readings' },
+      { label: 'sidebar.rentals', icon: 'box', route: '/customer-service/rentals' },
+      { label: 'sidebar.sales', icon: 'shopping-cart', route: '/customer-service/sales' },
+      { label: 'sidebar.sparepart_requests', icon: 'box', route: '/accounting/sparepart-requests' },
+      { label: 'sidebar.purchase_orders', icon: 'clipboard', route: '/accounting/purchase-orders' },
+      { label: 'sidebar.delivery_orders', icon: 'truck', route: '/accounting/delivery-orders' },
+      { label: 'sidebar.rental_invoices', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
+      { label: 'sidebar.sales_invoices', icon: 'receipt', route: '/customer-service/sales-invoices' },
+      { label: 'sidebar.payments', icon: 'credit-card', route: '/customer-service/payments' },
+      { label: 'sidebar.warranty_claims', icon: 'alert-circle', route: '/customer-service/warranty-claims' },
     ],
   },
   {
-    title: 'Monitoring & Laporan',
+    title: 'sidebar.monitoring',
     items: [
-      { label: 'CS Dashboard', icon: 'grid', route: '/customer-service/dashboard' },
-      { label: 'Tech Dashboard', icon: 'grid', route: '/technician/dashboard' },
-      { label: 'Acc Dashboard', icon: 'grid', route: '/accounting/dashboard' },
-      { label: 'Monitoring Service', icon: 'activity', route: '/customer-service/monitoring-service' },
-      { label: 'Delivery Monitoring', icon: 'truck', route: '/customer-service/delivery' },
-      { label: 'Laporan CS', icon: 'file-text', route: '/customer-service/reports' },
+      { label: 'sidebar.cs_dashboard', icon: 'grid', route: '/customer-service/dashboard' },
+      { label: 'sidebar.tech_dashboard', icon: 'grid', route: '/technician/dashboard' },
+      { label: 'sidebar.acc_dashboard', icon: 'grid', route: '/accounting/dashboard' },
+      { label: 'sidebar.monitoring_service', icon: 'activity', route: '/customer-service/monitoring-service' },
+      { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
+      { label: 'sidebar.cs_reports', icon: 'file-text', route: '/customer-service/reports' },
     ],
   },
   {
-    title: 'Sistem',
+    title: 'sidebar.system',
     items: [
-      { label: 'System Settings', icon: 'settings', route: '/master/system-settings' },
-      { label: 'Notifications', icon: 'bell', route: '/master/notifications' },
+      { label: 'sidebar.system_settings', icon: 'settings', route: '/master/system-settings' },
+      { label: 'sidebar.notifications', icon: 'bell', route: '/master/notifications' },
     ]
   }
 ]
 
 const menuGroups = computed(() => {
   const role = currentUser.value?.role
+  let groups: MenuGroup[] = []
+  
   if (role === 'admin') {
-    return allMenuGroups
+    groups = allMenuGroups
   } else if (role === 'customer_service') {
-    return [
+    groups = [
       {
         title: 'Customer Service',
         items: [
@@ -86,14 +92,14 @@ const menuGroups = computed(() => {
       {
         title: 'Customer',
         items: [
-          { label: 'Customer', icon: 'building', route: '/master/customers' },
+          { label: 'Customer', icon: 'user', route: '/master/customers' },
         ]
       },
       {
-        title: 'Kontrak & Rental',
+        title: 'Contract & Rental',
         items: [
-          { label: 'Kontrak', icon: 'clipboard', route: '/customer-service/contract-items' },
-          { label: 'Unit Kontrak', icon: 'printer', route: '/master/units' },
+          { label: 'Contract', icon: 'clipboard', route: '/customer-service/contract-items' },
+          { label: 'Contract Units', icon: 'printer', route: '/master/units' },
         ]
       },
       {
@@ -106,7 +112,7 @@ const menuGroups = computed(() => {
       {
         title: 'Sparepart',
         items: [
-          { label: 'Request Sparepart', icon: 'box', route: '/customer-service/sparepart-request' },
+          { label: 'Sparepart Request', icon: 'box', route: '/customer-service/sparepart-request' },
           { label: 'Indent', icon: 'layers', route: '/customer-service/indent' },
         ]
       },
@@ -129,14 +135,14 @@ const menuGroups = computed(() => {
         ]
       },
       {
-        title: 'Laporan',
+        title: 'Reports',
         items: [
-          { label: 'Laporan', icon: 'file-text', route: '/customer-service/reports' },
+          { label: 'Reports', icon: 'file-text', route: '/customer-service/reports' },
         ]
       }
     ]
   } else if (role === 'technician') {
-    return [
+    groups = [
       {
         title: 'Technician',
         items: [
@@ -144,7 +150,7 @@ const menuGroups = computed(() => {
         ]
       },
       {
-        title: 'Pekerjaan Saya',
+        title: 'My Jobs',
         items: [
           { label: 'Call Service', icon: 'tool', route: '/technician/call-services' },
           { label: 'Maintenance', icon: 'shield-check', route: '/technician/maintenance' },
@@ -153,7 +159,7 @@ const menuGroups = computed(() => {
       {
         title: 'Sparepart',
         items: [
-          { label: 'Request Sparepart', icon: 'box', route: '/technician/sparepart-request' },
+          { label: 'Sparepart Request', icon: 'box', route: '/technician/sparepart-request' },
         ],
       },
       {
@@ -163,21 +169,21 @@ const menuGroups = computed(() => {
         ],
       },
       {
-        title: 'Riwayat Service',
+        title: 'Service History',
         items: [
-          { label: 'Riwayat Service', icon: 'clipboard', route: '/technician/service-history' },
+          { label: 'Service History', icon: 'clipboard', route: '/technician/service-history' },
         ],
       },
       {
         title: 'References',
         items: [
-          { label: 'Customers', icon: 'building', route: '/master/customers' },
+          { label: 'Companies', icon: 'building', route: '/master/customers' },
           { label: 'Units', icon: 'printer', route: '/master/units' },
         ],
       },
     ]
   } else if (role === 'accounting') {
-    return [
+    groups = [
       {
         title: 'Accounting',
         items: [
@@ -189,10 +195,26 @@ const menuGroups = computed(() => {
       },
     ]
   }
-  return []
+  
+  // Filter dynamically based on database modules
+  return groups.map(group => ({
+    ...group,
+    title: group.title.includes('.') ? t(group.title) : group.title,
+    items: group.items.filter(item => {
+      const translatedLabel = item.label.includes('.') ? t(item.label) : item.label
+      const dbModule = modules.value.find(m => m.name.toLowerCase() === translatedLabel.toLowerCase())
+      if (dbModule) {
+        return dbModule.is_active
+      }
+      return true
+    }).map(item => ({
+      ...item,
+      label: item.label.includes('.') ? t(item.label) : item.label
+    }))
+  })).filter(group => group.items.length > 0)
 })
 
-const expandedGroups = ref<Set<string>>(new Set(allMenuGroups.map(g => g.title)))
+const expandedGroups = ref<Set<string>>(new Set(allMenuGroups.map(g => g.title.includes('.') ? t(g.title) : g.title)))
 
 function toggleGroup(title: string) {
   if (expandedGroups.value.has(title)) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+// @ts-nocheck
+import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -30,6 +31,209 @@ const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<RentalInvoice | null>(null)
 const deletingItem = ref<RentalInvoice | null>(null)
+
+// Date Range & Month Filters
+const startDateFilter = ref('')
+const endDateFilter = ref('')
+const monthFilter = ref('')
+
+function onMonthFilterChange() {
+  if (!monthFilter.value) return
+  const [yearStr, monthStr] = monthFilter.value.split('-')
+  const year = parseInt(yearStr)
+  const month = parseInt(monthStr)
+  
+  const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
+  const lastDayNum = new Date(year, month, 0).getDate()
+  const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
+  
+  startDateFilter.value = firstDay
+  endDateFilter.value = lastDay
+}
+
+function resetFilters() {
+  startDateFilter.value = ''
+  endDateFilter.value = ''
+  monthFilter.value = ''
+}
+
+const filteredData = computed(() => {
+  let items = data.value
+  if (startDateFilter.value) {
+    items = items.filter((d: any) => {
+      const itemDate = d.monthly_date || d.period_start || d.created_at
+      if (!itemDate) return false
+      return String(itemDate).slice(0, 10) >= startDateFilter.value
+    })
+  }
+  if (endDateFilter.value) {
+    items = items.filter((d: any) => {
+      const itemDate = d.monthly_date || d.period_start || d.created_at
+      if (!itemDate) return false
+      return String(itemDate).slice(0, 10) <= endDateFilter.value
+    })
+  }
+  return items
+})
+
+function exportMonthToExcel() {
+  const items = filteredData.value
+  if (items.length === 0) {
+    alert('Tidak ada data rental invoice untuk diekspor!')
+    return
+  }
+
+  let periodLabel = 'Semua_Periode'
+  if (monthFilter.value) {
+    periodLabel = monthFilter.value
+  } else if (startDateFilter.value || endDateFilter.value) {
+    periodLabel = `${startDateFilter.value || 'Awal'}_sd_${endDateFilter.value || 'Akhir'}`
+  }
+
+  let csvContent = '\uFEFF'
+  csvContent += 'No;No. Invoice;Tanggal;Nama Customer;No. Kontrak;Biaya Sewa Pokok (Rp);Overusage Rate (Rp);Total Pay (Rp);Status\n'
+
+  items.forEach((item: any, idx: number) => {
+    const code = item.invoice_no || `INV-R-${item.id}`
+    const dateVal = item.monthly_date ? String(item.monthly_date).slice(0, 10) : (item.period_start ? String(item.period_start).slice(0, 10) : '-')
+    const cName = (customerName(item.customer_id) || '-').replace(/;/g, ',')
+    const cNo = (contractNo(item.contract_item_id) || '-').replace(/;/g, ',')
+    const baseFee = item.basis_rental_fee || 0
+    const excessFee = item.excess_amount || 0
+    const totalVal = item.total_pay || item.subtotal || 0
+    const statusStr = (item.status || 'unpaid').toUpperCase()
+
+    csvContent += `${idx + 1};"${code}";"${dateVal}";"${cName}";"${cNo}";${baseFee};${excessFee};${totalVal};"${statusStr}"\n`
+  })
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  link.setAttribute('href', url)
+  link.setAttribute('download', `Laporan_Rental_Invoices_${periodLabel}.csv`)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function exportMonthToPdf() {
+  const items = filteredData.value
+  if (items.length === 0) {
+    alert('Tidak ada data rental invoice untuk diekspor ke PDF!')
+    return
+  }
+
+  let periodTitle = 'Seluruh Periode'
+  if (monthFilter.value) {
+    const [yearStr, monthStr] = monthFilter.value.split('-')
+    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+    periodTitle = `${months[parseInt(monthStr) - 1]} ${yearStr}`
+  } else if (startDateFilter.value || endDateFilter.value) {
+    periodTitle = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
+  }
+
+  const totalRevenue = items.reduce((sum: number, item: any) => sum + (item.total_pay || item.subtotal || 0), 0)
+
+  let rowsHtml = items.map((item: any, idx: number) => {
+    const code = item.invoice_no || `INV-R-${item.id}`
+    const dateVal = item.monthly_date ? new Date(item.monthly_date).toLocaleDateString('id-ID') : (item.period_start ? new Date(item.period_start).toLocaleDateString('id-ID') : '-')
+    const cName = customerName(item.customer_id)
+    const cNo = contractNo(item.contract_item_id)
+    const totalStr = formatRupiah(item.total_pay || item.subtotal || 0)
+    const statusStr = (item.status || 'unpaid').toUpperCase()
+
+    return `
+      <tr>
+        <td style="text-align: center; border: 1px solid #cbd5e1; padding: 8px;">${idx + 1}</td>
+        <td style="border: 1px solid #cbd5e1; padding: 8px; font-weight: bold;">${code}</td>
+        <td style="border: 1px solid #cbd5e1; padding: 8px;">${dateVal}</td>
+        <td style="border: 1px solid #cbd5e1; padding: 8px; font-weight: bold;">${cName}</td>
+        <td style="border: 1px solid #cbd5e1; padding: 8px;">${cNo}</td>
+        <td style="text-align: right; border: 1px solid #cbd5e1; padding: 8px; font-weight: bold;">${totalStr}</td>
+        <td style="text-align: center; border: 1px solid #cbd5e1; padding: 8px;"><span class="badge">${statusStr}</span></td>
+      </tr>
+    `
+  }).join('')
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Laporan Rental Invoices - ${periodTitle}</title>
+        <style>
+          @page { size: A4 portrait; margin: 1.5cm; }
+          body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; margin: 0; padding: 20px; }
+          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #002b5e; padding-bottom: 12px; margin-bottom: 20px; }
+          .header-title h1 { margin: 0; font-size: 18pt; color: #002b5e; font-weight: 900; }
+          .header-title h2 { margin: 2px 0 0 0; font-size: 11pt; color: #666; font-style: italic; }
+          .header-info { text-align: right; font-size: 9pt; color: #555; }
+          .report-title { text-align: center; margin-bottom: 20px; }
+          .report-title h3 { margin: 0; font-size: 14pt; color: #111; text-transform: uppercase; letter-spacing: 0.5px; }
+          .report-title p { margin: 4px 0 0 0; font-size: 10.5pt; font-weight: bold; color: #004d99; }
+          .summary-cards { display: flex; gap: 15px; margin-bottom: 20px; }
+          .card-box { flex: 1; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px 15px; border-radius: 6px; }
+          .card-box .label { font-size: 9pt; color: #64748b; font-weight: bold; text-transform: uppercase; }
+          .card-box .val { font-size: 14pt; font-weight: bold; color: #0f172a; margin-top: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
+          th { background: #002b5e; color: white; border: 1px solid #002b5e; padding: 10px; font-size: 10pt; text-align: left; }
+          th.right { text-align: right; }
+          th.center { text-align: center; }
+          .badge { background: #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 8.5pt; font-weight: bold; color: #334155; }
+          .footer-sig { display: flex; justify-content: space-between; margin-top: 40px; }
+          .sig-box { text-align: center; width: 200px; font-size: 10pt; }
+          .sig-space { height: 60px; }
+          .sig-name { font-weight: bold; text-decoration: underline; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="header-title">
+            <h1>PT. BIAS SURYA TEKNOLOGI</h1>
+            <h2>Your Office Solution</h2>
+          </div>
+          <div class="header-info">
+            Greenland Housing Blok E6 No.11<br>
+            Batam Centre, Kepulauan Riau<br>
+            Telepon: +62 811.704.5657
+          </div>
+        </div>
+        <div class="report-title">
+          <h3>Laporan Rekapitulasi Rental Invoices</h3>
+          <p>Periode: ${periodTitle}</p>
+        </div>
+        <div class="summary-cards">
+          <div class="card-box"><div class="label">Total Invoice</div><div class="val">${items.length} Dokumen</div></div>
+          <div class="card-box"><div class="label">Total Tagihan</div><div class="val" style="color: #059669;">${formatRupiah(totalRevenue)}</div></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th class="center" style="width: 35px;">No</th>
+              <th>No. Invoice</th>
+              <th>Tanggal</th>
+              <th>Customer</th>
+              <th>Kontrak</th>
+              <th class="right">Total Tagihan</th>
+              <th class="center">Status</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <div class="footer-sig">
+          <div class="sig-box">Dibuat Oleh,<div class="sig-space"></div><div class="sig-name">Admin Finance</div></div>
+          <div class="sig-box">Disetujui Oleh,<div class="sig-space"></div><div class="sig-name">Rosmalinda Hutagalung</div><i>Direktur</i></div>
+        </div>
+        <script>window.onload = function() { setTimeout(function() { window.print(); }, 500); }<\/script>
+      </body>
+    </html>
+  `
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.write(html)
+    printWindow.document.close()
+  }
+}
+
 const form = reactive({
   invoice_no: '',
   contract_item_id: null as any,
@@ -346,7 +550,40 @@ function printInvoice(item: any) {
 <template>
   <div>
     <PageHeader title="Monitoring Invoice" button-label="Add Invoice" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search invoices..." @edit="openEdit" @delete="openDelete">
+    
+    <!-- Filter & Export Toolbar -->
+    <div class="filter-toolbar">
+      <div class="filter-inputs">
+        <div class="filter-item">
+          <label class="filter-label">Tanggal Awal</label>
+          <input v-model="startDateFilter" type="date" class="form-input filter-input">
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Tanggal Akhir</label>
+          <input v-model="endDateFilter" type="date" class="form-input filter-input">
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Filter Bulan</label>
+          <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
+        </div>
+        <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
+          Reset Filter
+        </button>
+      </div>
+
+      <div class="export-actions">
+        <button type="button" class="btn btn-export-pdf" @click="exportMonthToPdf" title="Export Invoices (PDF)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Export PDF
+        </button>
+        <button type="button" class="btn btn-export-excel" @click="exportMonthToExcel" title="Export Invoices (Excel)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
+          Export Excel
+        </button>
+      </div>
+    </div>
+
+    <DataTable :columns="columns" :data="filteredData" search-placeholder="Search invoices..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-total_pay="{ value }">{{ formatRupiah(value || 0) }}</template>
@@ -468,5 +705,95 @@ function printInvoice(item: any) {
   color: var(--color-text);
   border-top: 1px solid var(--color-border);
   padding-top: var(--space-xs);
+}
+
+.filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--color-surface, #ffffff);
+  padding: 16px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.filter-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #64748b);
+  letter-spacing: 0.5px;
+}
+
+.filter-input {
+  padding: 7px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: var(--color-background, #ffffff);
+}
+
+.filter-reset-btn {
+  height: 35px;
+  align-self: flex-end;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-export-pdf {
+  display: flex;
+  align-items: center;
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-export-pdf:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.btn-export-excel {
+  display: flex;
+  align-items: center;
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-export-excel:hover {
+  background: #15803d;
+  transform: translateY(-1px);
 }
 </style>

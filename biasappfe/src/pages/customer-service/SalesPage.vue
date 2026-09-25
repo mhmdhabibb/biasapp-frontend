@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Trigger HMR
+// @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -34,6 +34,382 @@ const showDetail = ref(false)
 const editingItem = ref<Sale | null>(null)
 const deletingItem = ref<Sale | null>(null)
 const viewingItem = ref<Sale | null>(null)
+
+// Date Range & Month Filters
+const startDateFilter = ref('')
+const endDateFilter = ref('')
+const monthFilter = ref('')
+
+function onMonthFilterChange() {
+  if (!monthFilter.value) return
+  const [yearStr, monthStr] = monthFilter.value.split('-')
+  const year = parseInt(yearStr)
+  const month = parseInt(monthStr)
+  
+  const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
+  const lastDayNum = new Date(year, month, 0).getDate()
+  const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
+  
+  startDateFilter.value = firstDay
+  endDateFilter.value = lastDay
+}
+
+function resetFilters() {
+  startDateFilter.value = ''
+  endDateFilter.value = ''
+  monthFilter.value = ''
+}
+
+const filteredData = computed(() => {
+  let items = data.value
+  if (startDateFilter.value) {
+    items = items.filter(d => {
+      const itemDate = d.sale_date || d.date
+      if (!itemDate) return false
+      return String(itemDate).slice(0, 10) >= startDateFilter.value
+    })
+  }
+  if (endDateFilter.value) {
+    items = items.filter(d => {
+      const itemDate = d.sale_date || d.date
+      if (!itemDate) return false
+      return String(itemDate).slice(0, 10) <= endDateFilter.value
+    })
+  }
+  return items
+})
+
+function generateSingleInvoiceHtml(item: any) {
+  const customer = findCustomer(item.customer_id)
+  const custName = customer?.company_name || customer?.name || '-'
+  const custAddress = customer?.address || '-'
+  const custPhone = customer?.phone || '-'
+  const pic = customer?.pic_name || '-'
+  const gender = customer?.pic_gender
+  let prefix = 'Bapak/Ibu '
+  if (gender === 'L') prefix = 'Bapak '
+  if (gender === 'P') prefix = 'Ibu '
+  const picDisplay = pic !== '-' ? prefix + pic : '-'
+
+  const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
+  const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
+  const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
+
+  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+
+  let itemsHtml = ''
+  if (item.sale_items && item.sale_items.length > 0) {
+    itemsHtml = item.sale_items.map((si: any, idx: number) => {
+      const p = findProduct(si.product_id)
+      const pName = p ? p.name : ('Produk ID: ' + si.product_id)
+      return `
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td>${pName}</td>
+          <td style="text-align: center;">${si.qty || 1}</td>
+          <td style="text-align: center;">unit</td>
+          <td class="rp-col">Rp</td><td class="val-col">${(si.unit_price || si.price || 0).toLocaleString('id-ID')}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${((si.unit_price || si.price || 0) * (si.qty || 1)).toLocaleString('id-ID')}</td>
+        </tr>
+      `
+    }).join('')
+  } else {
+    itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">Data item tidak tersedia</td></tr>`
+  }
+
+  const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
+  const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
+
+  return `
+    <div class="page-break" style="padding: 20px; box-sizing: border-box; max-width: 900px; margin: 0 auto;">
+      <table class="header-table">
+        <tr>
+          <td class="logo-col">
+            <div class="logo-container">
+              <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
+                <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
+                <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
+              </svg>
+              <div class="company-details">
+                <h1>PT. BIAS SURYA</h1>
+                <h1>TEKNOLOGI</h1>
+                <h2>The shape of smart</h2>
+              </div>
+            </div>
+            <div class="company-details" style="padding-left: 95px;">
+              <p>Ruko Purimas Blok A No.47 Kota Batam,<br>
+              Kepulauan Riau - Indonesia<br>
+              Phone: +62811 704 5657<br>
+              Email: admin@biasbst.com<br>
+              Website: www.biassuryateknologi.com</p>
+            </div>
+            <div class="invoice-text">INVOICE</div>
+          </td>
+          <td class="info-col">
+            <div style="font-size: 20px; font-weight: bold; text-align: right; margin-bottom: 10px; font-family: monospace;">INVOICE NO. : ${invoiceNo}</div>
+            <table class="meta-table">
+              <tr>
+                <td class="label">Date :</td>
+                <td>${dateStr}</td>
+              </tr>
+              <tr>
+                <td class="label">PO NO.:</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td colspan="2" class="bg-blue">Kepada Yth. :</td>
+              </tr>
+              <tr>
+                <td colspan="2" style="font-weight: bold; height: 35px; vertical-align: top;">${custName}</td>
+              </tr>
+              <tr>
+                <td colspan="2" class="bg-blue" style="height: 10px; padding: 4px 8px;">Address :</td>
+              </tr>
+              <tr>
+                <td colspan="2" style="height: 45px; vertical-align: top;">${custAddress}</td>
+              </tr>
+              <tr>
+                <td class="label">Phone :</td>
+                <td>${custPhone}</td>
+              </tr>
+              <tr>
+                <td class="label">Up.:</td>
+                <td>${picDisplay}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;">No</th>
+            <th>Description</th>
+            <th style="width: 50px;">Qty</th>
+            <th style="width: 60px;">UOM</th>
+            <th colspan="2" style="width: 140px;">Unit Price</th>
+            <th colspan="2" style="width: 140px;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsHtml}
+          <tr style="height: 60px;">
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="rp-col"></td><td class="val-col"></td>
+            <td class="rp-col"></td><td class="val-col"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table class="summary-table">
+        <tr>
+          <td class="label">Sub Total</td>
+          <td class="rp-col" style="border-right: none; width: 30px; padding-right: 0;">Rp</td>
+          <td class="val-col" style="border-left: none; text-align: right; width: 110px;">${subTotalStr}</td>
+        </tr>
+        <tr>
+          <td class="label">Discount</td>
+          <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
+          <td class="val-col" style="border-left: none; text-align: right;">-</td>
+        </tr>
+        <tr>
+          <td class="label">Amount</td>
+          <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
+          <td class="val-col" style="border-left: none; text-align: right;">${grandTotalStr}</td>
+        </tr>
+      </table>
+
+      <div class="payment-info">
+        Pembayaran Transfer ke rekening :<br>
+        BANK BRKSYARIAH Cabang Batam<br>
+        Rek No. 106-08-85757<br>
+        A/N : PT. BIAS SURYA TEKNOLOGI<br>
+        NPWP : 0941.8395.0822.5000
+      </div>
+
+      <div class="signatures">
+        <div class="sig-box">
+          Received By,
+          <div class="sig-line"></div>
+        </div>
+        <div class="sig-box">
+          Hormat Kami,
+          <div class="sig-line">Grace</div>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function exportMonthToExcel() {
+  const items = filteredData.value
+  if (items.length === 0) {
+    alert('Tidak ada data sales invoice untuk diekspor!')
+    return
+  }
+
+  let periodLabel = 'Semua_Periode'
+  if (monthFilter.value) {
+    periodLabel = monthFilter.value
+  } else if (startDateFilter.value || endDateFilter.value) {
+    periodLabel = `${startDateFilter.value || 'Awal'}_sd_${endDateFilter.value || 'Akhir'}`
+  }
+
+  let csvContent = '\uFEFF'
+
+  items.forEach((item: any, idx: number) => {
+    const customer = findCustomer(item.customer_id)
+    const custName = (customer?.company_name || customer?.name || '-').replace(/;/g, ',')
+    const custAddress = (customer?.address || '-').replace(/;/g, ',').replace(/\n/g, ' ')
+    const custPhone = (customer?.phone || '-').replace(/;/g, ',')
+    const pic = customer?.pic_name || '-'
+    const gender = customer?.pic_gender
+    let prefix = 'Bapak/Ibu '
+    if (gender === 'L') prefix = 'Bapak '
+    if (gender === 'P') prefix = 'Ibu '
+    const picDisplay = pic !== '-' ? (prefix + pic).replace(/;/g, ',') : '-'
+
+    const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
+    const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
+    const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
+    const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID') : '-'
+
+    const subtotal = item.subtotal || item.total_amount || item.total || 0
+    const grandTotal = item.total_amount || item.total || 0
+
+    csvContent += `INVOICE SALES #${idx + 1};;;;;;\n`
+    csvContent += `PT. BIAS SURYA TEKNOLOGI;;;;;Invoice No:;"${invoiceNo}"\n`
+    csvContent += `Ruko Purimas Blok A No.47 Batam;;;;;Tanggal:;"${dateStr}"\n`
+    csvContent += `Kepada Yth:;"${custName}";;;;;Status:;"${(item.status || 'pending').toUpperCase()}"\n`
+    csvContent += `Alamat:;"${custAddress}";;;;;Phone:;"${custPhone}"\n`
+    csvContent += `UP:;"${picDisplay}";;;;;\n`
+    csvContent += `;;;;;;\n`
+    csvContent += `No;Deskripsi Produk / Item;Qty;Satuan;Harga Satuan (Rp);Total Amount (Rp)\n`
+
+    if (item.sale_items && item.sale_items.length > 0) {
+      item.sale_items.forEach((si: any, sIdx: number) => {
+        const p = findProduct(si.product_id)
+        const pName = (p ? p.name : ('Produk ID: ' + si.product_id)).replace(/;/g, ',')
+        const qty = si.qty || 1
+        const uPrice = si.unit_price || si.price || 0
+        const itemTotal = uPrice * qty
+        csvContent += `${sIdx + 1};"${pName}";${qty};unit;${uPrice};${itemTotal}\n`
+      })
+    } else {
+      csvContent += `1;"Penjualan Barang / Jasa";1;unit;${subtotal};${subtotal}\n`
+    }
+
+    csvContent += `;;;;Sub Total:;${subtotal}\n`
+    csvContent += `;;;;Discount:;0\n`
+    csvContent += `;;;;Grand Total:;${grandTotal}\n`
+    csvContent += `;;;;;;\n`
+    csvContent += `------------------------------------------------------------------------;;;;;;\n`
+    csvContent += `;;;;;;\n`
+  })
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  link.setAttribute('href', url)
+  link.setAttribute('download', `Document_Invoices_Sales_${periodLabel}.csv`)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function exportMonthToPdf() {
+  const items = filteredData.value
+  if (items.length === 0) {
+    alert('Tidak ada data sales invoice untuk diekspor ke PDF!')
+    return
+  }
+
+  let periodTitle = 'Seluruh Periode'
+  if (monthFilter.value) {
+    const [yearStr, monthStr] = monthFilter.value.split('-')
+    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+    periodTitle = `${months[parseInt(monthStr) - 1]} ${yearStr}`
+  } else if (startDateFilter.value || endDateFilter.value) {
+    periodTitle = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
+  }
+
+  const invoicesHtml = items.map(item => generateSingleInvoiceHtml(item)).join('')
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Sales Invoices - ${periodTitle}</title>
+        <style>
+          @media print {
+            @page { size: A4 portrait; margin: 10mm; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page-break { page-break-after: always; break-after: page; }
+            .page-break:last-child { page-break-after: auto; break-after: auto; }
+          }
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; color: #000; font-size: 12px; margin: 0; }
+          .page-break { page-break-after: always; break-after: page; min-height: 95vh; box-sizing: border-box; }
+          .page-break:last-child { page-break-after: auto; break-after: auto; }
+          
+          .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          .header-table td { vertical-align: top; padding: 0; }
+          
+          .logo-col { width: 50%; padding-right: 20px; }
+          .info-col { width: 50%; }
+          
+          .logo-container { display: flex; align-items: center; margin-bottom: 10px; }
+          .logo { width: 80px; height: 80px; margin-right: 15px; flex-shrink: 0; }
+          
+          .company-details h1 { margin: 0; font-size: 22px; font-weight: bold; }
+          .company-details h2 { margin: 0; font-size: 14px; font-style: italic; font-weight: normal; margin-bottom: 10px; color: #333; }
+          .company-details p { margin: 0; font-size: 11px; line-height: 1.4; }
+          
+          .invoice-text { font-size: 28px; font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 10px; letter-spacing: 1px; }
+          
+          .meta-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #7ea8ce; }
+          .meta-table td, .meta-table th { border: 1px solid #7ea8ce; padding: 4px 8px; }
+          .meta-table .bg-blue { background-color: #003366; color: white; font-weight: bold; }
+          .meta-table .label { width: 90px; font-weight: bold; }
+          
+          .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          .items-table th { background-color: #003366; color: white; border: 1px solid #7ea8ce; padding: 8px; text-align: center; font-size: 12px; }
+          .items-table td { border: 1px solid #7ea8ce; padding: 8px; vertical-align: top; }
+          .items-table .rp-col { border-right: none; width: 20px; padding-right: 2px; }
+          .items-table .val-col { border-left: none; text-align: right; }
+          
+          .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
+          .summary-table td { border: 1px solid #7ea8ce; padding: 6px; background-color: #dbeaf4; font-weight: bold; }
+          .summary-table .label { text-align: right; padding-right: 10px; }
+          
+          .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
+          
+          .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
+          .sig-box { width: 250px; }
+          .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
+        </style>
+      </head>
+      <body>
+        ${invoicesHtml}
+        <script>
+          window.onload = function() {
+            setTimeout(function() { window.print(); }, 500);
+          }
+        <\/script>
+      </body>
+    </html>
+  `
+
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.write(html)
+    printWindow.document.close()
+  }
+}
 
 const saleItems = ref<{ product_id: number | null; qty: number; unit_price: number }[]>([])
 
@@ -130,221 +506,51 @@ function formatRupiah(val: number): string {
 }
 
 function printInvoice(item: any) {
-  const customer = findCustomer(item.customer_id)
-  const custName = customer?.company_name || customer?.name || '-'
-  const custAddress = customer?.address || '-'
-  const custPhone = customer?.phone || '-'
-  const pic = customer?.pic_name || '-'
-  const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
-  const picDisplay = pic !== '-' ? prefix + pic : '-'
-
-  const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
-  const invoiceNo = invoice ? invoice.invoice_no : item.sale_no
-  const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date
-
-  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
-
-  let itemsHtml = ''
-  if (item.sale_items && item.sale_items.length > 0) {
-    itemsHtml = item.sale_items.map((si: any, idx: number) => {
-      const p = findProduct(si.product_id)
-      const pName = p ? p.name : ('Produk ID: ' + si.product_id)
-      return `
-        <tr>
-          <td style="text-align: center;">${idx + 1}</td>
-          <td>${pName}</td>
-          <td style="text-align: center;">${si.qty || 1}</td>
-          <td style="text-align: center;">unit</td>
-          <td class="rp-col">Rp</td><td class="val-col">${(si.unit_price || si.price || 0).toLocaleString('id-ID')}</td>
-          <td class="rp-col">Rp</td><td class="val-col">${((si.unit_price || si.price || 0) * (si.qty || 1)).toLocaleString('id-ID')}</td>
-        </tr>
-      `
-    }).join('')
-  } else {
-    itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">Data item tidak tersedia</td></tr>`
-  }
-
-  const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
-  const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
-
+  const invoiceContentHtml = generateSingleInvoiceHtml(item)
   const html = `
+    <!DOCTYPE html>
     <html>
       <head>
-        <title>Invoice - ${invoiceNo || 'Sales'}</title>
+        <title>Invoice - ${item.sale_no || item.id}</title>
         <style>
           @media print {
-            @page { margin: 10mm; }
+            @page { size: A4 portrait; margin: 10mm; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           }
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; color: #000; font-size: 12px; margin: 0; }
-          .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-          
           .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
           .header-table td { vertical-align: top; padding: 0; }
-          
           .logo-col { width: 50%; padding-right: 20px; }
           .info-col { width: 50%; }
-          
           .logo-container { display: flex; align-items: center; margin-bottom: 10px; }
           .logo { width: 80px; height: 80px; margin-right: 15px; flex-shrink: 0; }
-          
           .company-details h1 { margin: 0; font-size: 22px; font-weight: bold; }
           .company-details h2 { margin: 0; font-size: 14px; font-style: italic; font-weight: normal; margin-bottom: 10px; color: #333; }
           .company-details p { margin: 0; font-size: 11px; line-height: 1.4; }
-          
           .invoice-text { font-size: 28px; font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 10px; letter-spacing: 1px; }
-          
           .meta-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #7ea8ce; }
           .meta-table td, .meta-table th { border: 1px solid #7ea8ce; padding: 4px 8px; }
           .meta-table .bg-blue { background-color: #003366; color: white; font-weight: bold; }
           .meta-table .label { width: 90px; font-weight: bold; }
-          
           .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
           .items-table th { background-color: #003366; color: white; border: 1px solid #7ea8ce; padding: 8px; text-align: center; font-size: 12px; }
           .items-table td { border: 1px solid #7ea8ce; padding: 8px; vertical-align: top; }
           .items-table .rp-col { border-right: none; width: 20px; padding-right: 2px; }
           .items-table .val-col { border-left: none; text-align: right; }
-          
-          .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 0; margin-bottom: 20px; }
+          .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px; }
           .summary-table td { border: 1px solid #7ea8ce; padding: 6px; background-color: #dbeaf4; font-weight: bold; }
           .summary-table .label { text-align: right; padding-right: 10px; }
-          
           .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
-          
           .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
           .sig-box { width: 250px; }
           .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
         </style>
       </head>
       <body>
-        <div class="container">
-          <table class="header-table">
-            <tr>
-              <td class="logo-col">
-                <div class="logo-container">
-                  <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-                    <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-                    <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-                  </svg>
-                  <div class="company-details">
-                    <h1>PT. BIAS SURYA</h1>
-                    <h1>TEKNOLOGI</h1>
-                    <h2>The shape of smart</h2>
-                  </div>
-                </div>
-                <div class="company-details" style="padding-left: 95px;">
-                  <p>Ruko Purimas Blok A No.47 Kota Batam,<br>
-                  Kepulauan Riau - Indonesia<br>
-                  Phone: +62811 704 5657<br>
-                  Email: admin@biasbst.com<br>
-                  Website: www.biassuryateknologi.com</p>
-                </div>
-                <div class="invoice-text">INVOICE</div>
-              </td>
-              <td class="info-col">
-                <div style="font-size: 20px; font-weight: bold; text-align: right; margin-bottom: 10px; font-family: monospace;">INVOICE NO. : ${invoiceNo}</div>
-                <table class="meta-table">
-                  <tr>
-                    <td class="label">Date :</td>
-                    <td>${dateStr}</td>
-                  </tr>
-                  <tr>
-                    <td class="label">PO NO.:</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colspan="2" class="bg-blue">Kepada Yth. :</td>
-                  </tr>
-                  <tr>
-                    <td colspan="2" style="font-weight: bold; height: 35px; vertical-align: top;">${custName}</td>
-                  </tr>
-                  <tr>
-                    <td colspan="2" class="bg-blue" style="height: 10px; padding: 4px 8px;">Address :</td>
-                  </tr>
-                  <tr>
-                    <td colspan="2" style="height: 45px; vertical-align: top;">${custAddress}</td>
-                  </tr>
-                  <tr>
-                    <td class="label">Phone :</td>
-                    <td>${custPhone}</td>
-                  </tr>
-                  <tr>
-                    <td class="label">Up.:</td>
-                    <td>${picDisplay}</td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-
-          <table class="items-table">
-            <thead>
-              <tr>
-                <th style="width: 40px;">No</th>
-                <th>Description</th>
-                <th style="width: 50px;">Qty</th>
-                <th style="width: 60px;">UOM</th>
-                <th colspan="2" style="width: 140px;">Unit Price</th>
-                <th colspan="2" style="width: 140px;">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-              <tr style="height: 100px;">
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td class="rp-col"></td><td class="val-col"></td>
-                <td class="rp-col"></td><td class="val-col"></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <table class="summary-table">
-            <tr>
-              <td class="label">Sub Total</td>
-              <td class="rp-col" style="border-right: none; width: 30px; padding-right: 0;">Rp</td>
-              <td class="val-col" style="border-left: none; text-align: right; width: 110px;">${subTotalStr}</td>
-            </tr>
-            <tr>
-              <td class="label">Discount</td>
-              <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
-              <td class="val-col" style="border-left: none; text-align: right;">-</td>
-            </tr>
-            <tr>
-              <td class="label">Amount</td>
-              <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
-              <td class="val-col" style="border-left: none; text-align: right;">${grandTotalStr}</td>
-            </tr>
-          </table>
-
-          <div class="payment-info">
-            Pembayaran Transfer ke rekening :<br>
-            BANK BRKSYARIAH Cabang Batam<br>
-            Rek No. 106-08-85757<br>
-            A/N : PT. BIAS SURYA TEKNOLOGI<br>
-            NPWP : 0941.8395.0822.5000
-          </div>
-
-          <div class="signatures">
-            <div class="sig-box">
-              Received By,
-              <div class="sig-line"></div>
-            </div>
-            <div class="sig-box">
-              Hormat Kami,
-              <div class="sig-line">Grace</div>
-            </div>
-          </div>
-        </div>
+        ${invoiceContentHtml}
         <script>
           window.onload = function() {
-            setTimeout(() => { window.print(); }, 500);
+            setTimeout(function() { window.print(); }, 500);
           }
         <\/script>
       </body>
@@ -362,7 +568,40 @@ function printInvoice(item: any) {
 <template>
   <div>
     <PageHeader title="Sales" button-label="Add Sale" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari penjualan..." @edit="openEdit"
+    
+    <!-- Filter & Export Toolbar -->
+    <div class="filter-toolbar">
+      <div class="filter-inputs">
+        <div class="filter-item">
+          <label class="filter-label">Tanggal Awal</label>
+          <input v-model="startDateFilter" type="date" class="form-input filter-input">
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Tanggal Akhir</label>
+          <input v-model="endDateFilter" type="date" class="form-input filter-input">
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Filter Bulan</label>
+          <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
+        </div>
+        <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
+          Reset Filter
+        </button>
+      </div>
+
+      <div class="export-actions">
+        <button type="button" class="btn btn-export-pdf" @click="exportMonthToPdf" title="Export Invoices (PDF)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Export PDF
+        </button>
+        <button type="button" class="btn btn-export-excel" @click="exportMonthToExcel" title="Export Invoices (Excel)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
+          Export Excel
+        </button>
+      </div>
+    </div>
+
+    <DataTable :columns="columns" :data="filteredData" search-placeholder="Cari penjualan..." @edit="openEdit"
       @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-pic_name="{ row }">{{ picName(row.customer_id) }}</template>
@@ -611,5 +850,95 @@ function printInvoice(item: any) {
   color: var(--color-text);
   border-top: 1px solid var(--color-border);
   padding-top: var(--space-xs);
+}
+
+.filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--color-surface, #ffffff);
+  padding: 16px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.filter-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #64748b);
+  letter-spacing: 0.5px;
+}
+
+.filter-input {
+  padding: 7px 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: var(--color-background, #ffffff);
+}
+
+.filter-reset-btn {
+  height: 35px;
+  align-self: flex-end;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-export-pdf {
+  display: flex;
+  align-items: center;
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-export-pdf:hover {
+  background: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.btn-export-excel {
+  display: flex;
+  align-items: center;
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-export-excel:hover {
+  background: #15803d;
+  transform: translateY(-1px);
 }
 </style>
