@@ -85,6 +85,26 @@ const router = createRouter({
       component: () => import('@/pages/master/WarrantiesPage.vue'),
     },
     {
+      path: '/master/suppliers',
+      name: 'suppliers',
+      component: () => import('@/pages/master/SuppliersPage.vue'),
+    },
+    {
+      path: '/master/contracts',
+      name: 'contracts',
+      component: () => import('@/pages/master/ContractsPage.vue'),
+    },
+    {
+      path: '/master/system-settings',
+      name: 'systemSettings',
+      component: () => import('@/pages/master/SystemSettingsPage.vue'),
+    },
+    {
+      path: '/master/notifications',
+      name: 'notifications',
+      component: () => import('@/pages/master/NotificationsPage.vue'),
+    },
+    {
       path: '/customer-service/contract-items',
       name: 'contractItems',
       component: () => import('@/pages/customer-service/ContractItemsPage.vue'),
@@ -266,9 +286,7 @@ router.beforeEach((to) => {
       return { name: 'csDashboard' }
     }
   }
-  if (role === 'admin' && (to.path.startsWith('/customer-service') || to.path.startsWith('/technician'))) {
-    return { name: 'users' }
-  }
+  // Admin can access everything
   if (role === 'technician') {
     const allowedForTechnician = [
       'techDashboard', 'techCallServices', 'techCallServiceDetail', 'techMaintenance', 

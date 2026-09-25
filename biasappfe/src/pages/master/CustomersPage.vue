@@ -33,17 +33,17 @@ const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Customer | null>(null)
 const deletingItem = ref<Customer | null>(null)
-const form = reactive({ company_name: '', pic_name: '', phone: '', email: '', address: '' })
+const form = reactive({ company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', phone: '', fax: '', email: '', address: '' })
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { company_name: '', pic_name: '', phone: '', email: '', address: '' })
+  Object.assign(form, { company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', phone: '', fax: '', email: '', address: '' })
   showModal.value = true
 }
 
 function openEdit(item: Customer) {
   editingItem.value = item
-  Object.assign(form, { company_name: item.company_name, pic_name: item.pic_name, phone: item.phone, email: item.email || '', address: item.address })
+  Object.assign(form, { company_name: item.company_name, pic_name: item.pic_name, pic_gender: item.pic_gender || 'L', pic_position: item.pic_position || '', phone: item.phone, fax: item.fax || '', email: item.email || '', address: item.address })
   showModal.value = true
 }
 
@@ -97,8 +97,27 @@ async function handleDelete() {
         <input id="cust-name" v-model="form.pic_name" type="text" class="form-input" placeholder="Contact name">
       </div>
       <div class="form-group">
+        <label class="form-label">PIC Gender</label>
+        <div style="display: flex; gap: 10px;">
+          <label style="display: flex; align-items: center; gap: 4px;">
+            <input type="radio" v-model="form.pic_gender" value="L"> Laki-laki
+          </label>
+          <label style="display: flex; align-items: center; gap: 4px;">
+            <input type="radio" v-model="form.pic_gender" value="P"> Perempuan
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="cust-pic-position" class="form-label">PIC Position (Jabatan)</label>
+        <input id="cust-pic-position" v-model="form.pic_position" type="text" class="form-input" placeholder="e.g. Direktur / Kepala Cabang">
+      </div>
+      <div class="form-group">
         <label for="cust-phone" class="form-label">Phone</label>
         <input id="cust-phone" v-model="form.phone" type="tel" inputmode="numeric" pattern="[0-9]*" class="form-input" placeholder="08xxxxxxxxxx" @input="form.phone = form.phone.replace(/[^0-9]/g, '')">
+      </div>
+      <div class="form-group">
+        <label for="cust-fax" class="form-label">Fax (Opsional)</label>
+        <input id="cust-fax" v-model="form.fax" type="text" class="form-input" placeholder="Nomor Fax">
       </div>
       <div class="form-group">
         <label for="cust-email" class="form-label">Email</label>

@@ -38,7 +38,10 @@ export interface Customer {
   id: string | number
   company_name: string
   pic_name: string
+  pic_gender?: string
+  pic_position?: string
   phone: string
+  fax?: string
   email?: string
   name?: string
   address: string
@@ -241,6 +244,7 @@ export interface Sale {
   service_charge?: number
   tax?: number
   total?: number
+  sale_items?: SaleItem[]
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -432,6 +436,30 @@ export interface ProcurementDOItem {
   purchase_order_item_id: string | number | null
   product_id: string | number | null
   deliver_qty: number
+  created_at: string
+  updated_at: string
+}
+
+export interface Supplier {
+  id: string | number
+  created_at: string
+  updated_at: string
+}
+
+export interface Contract {
+  id: string | number
+  created_at: string
+  updated_at: string
+}
+
+export interface SystemSetting {
+  id: string | number
+  created_at: string
+  updated_at: string
+}
+
+export interface Notification {
+  id: string | number
   created_at: string
   updated_at: string
 }

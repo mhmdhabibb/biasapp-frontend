@@ -13,58 +13,68 @@ const { currentUser, logout } = useAuth()
 
 const allMenuGroups: MenuGroup[] = [
   {
-    title: 'Access',
+    title: 'Master Data',
     items: [
       { label: 'Users', icon: 'users', route: '/master/users' },
       { label: 'Roles', icon: 'shield', route: '/master/roles' },
       { label: 'Permissions', icon: 'key', route: '/master/permissions' },
       { label: 'Modules', icon: 'grid', route: '/master/modules' },
-    ],
-  },
-  {
-    title: 'Customers',
-    items: [
       { label: 'Customers', icon: 'building', route: '/master/customers' },
       { label: 'Technicians', icon: 'wrench', route: '/master/technicians' },
-    ],
-  },
-  {
-    title: 'Products',
-    items: [
+      { label: 'Suppliers', icon: 'truck', route: '/master/suppliers' },
       { label: 'Unit Types', icon: 'layers', route: '/master/unit-types' },
       { label: 'Brands', icon: 'tag', route: '/master/brands' },
       { label: 'Paper Size', icon: 'file', route: '/master/paper-size' },
       { label: 'Paper Type', icon: 'file-text', route: '/master/paper-type' },
       { label: 'Product Categories', icon: 'folder', route: '/master/product-categories' },
       { label: 'Products', icon: 'box', route: '/master/products' },
-    ],
-  },
-  {
-    title: 'Inventory',
-    items: [
       { label: 'Units', icon: 'printer', route: '/master/units' },
       { label: 'Warranties', icon: 'shield-check', route: '/master/warranties' },
     ],
   },
   {
-    title: 'Customer Service',
+    title: 'Transaksi',
     items: [
-      { label: 'Contract Items', icon: 'clipboard', route: '/customer-service/contract-items' },
+      { label: 'Contract & Items', icon: 'clipboard', route: '/customer-service/contract-items' },
+      { label: 'Service Requests', icon: 'alert-circle', route: '/customer-service/service-requests' },
+      { label: 'Job Orders', icon: 'clipboard', route: '/customer-service/job-orders' },
       { label: 'Service Reports', icon: 'tool', route: '/customer-service/service-reports' },
       { label: 'Meter Readings', icon: 'activity', route: '/customer-service/monthly-meter-readings' },
+      { label: 'Rentals', icon: 'box', route: '/customer-service/rentals' },
       { label: 'Sales', icon: 'shopping-cart', route: '/customer-service/sales' },
+      { label: 'Sparepart Requests', icon: 'box', route: '/accounting/sparepart-requests' },
+      { label: 'Purchase Orders', icon: 'clipboard', route: '/accounting/purchase-orders' },
+      { label: 'Delivery Orders', icon: 'truck', route: '/accounting/delivery-orders' },
       { label: 'Rental Invoices', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
       { label: 'Sales Invoices', icon: 'receipt', route: '/customer-service/sales-invoices' },
       { label: 'Payments', icon: 'credit-card', route: '/customer-service/payments' },
       { label: 'Warranty Claims', icon: 'alert-circle', route: '/customer-service/warranty-claims' },
     ],
   },
+  {
+    title: 'Monitoring & Laporan',
+    items: [
+      { label: 'CS Dashboard', icon: 'grid', route: '/customer-service/dashboard' },
+      { label: 'Tech Dashboard', icon: 'grid', route: '/technician/dashboard' },
+      { label: 'Acc Dashboard', icon: 'grid', route: '/accounting/dashboard' },
+      { label: 'Monitoring Service', icon: 'activity', route: '/customer-service/monitoring-service' },
+      { label: 'Delivery Monitoring', icon: 'truck', route: '/customer-service/delivery' },
+      { label: 'Laporan CS', icon: 'file-text', route: '/customer-service/reports' },
+    ],
+  },
+  {
+    title: 'Sistem',
+    items: [
+      { label: 'System Settings', icon: 'settings', route: '/master/system-settings' },
+      { label: 'Notifications', icon: 'bell', route: '/master/notifications' },
+    ]
+  }
 ]
 
 const menuGroups = computed(() => {
   const role = currentUser.value?.role
   if (role === 'admin') {
-    return allMenuGroups.filter(g => g.title !== 'Customer Service')
+    return allMenuGroups
   } else if (role === 'customer_service') {
     return [
       {
@@ -236,6 +246,8 @@ const iconPaths: Record<string, string> = {
   'credit-card': 'M1 4h22v16H1z M1 10h22',
   'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 8v4 M12 16h.01',
   'truck': 'M1 3h15v13H1z M16 8h4l3 3v5h-7z M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z M18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
+  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01', 
+  'bell': 'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0',
 }
 </script>
 
