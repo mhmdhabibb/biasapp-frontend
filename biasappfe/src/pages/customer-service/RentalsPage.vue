@@ -152,7 +152,7 @@ async function handleSubmit() {
         monthly_rent: item.monthly_rent,
         start_meter_bw: item.start_meter_bw,
         start_meter_color: item.start_meter_color,
-        specs: JSON.stringify(item.specs),
+        specs: item.specs || {},
         description: item.description,
       }
     })
