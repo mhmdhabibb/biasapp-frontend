@@ -65,13 +65,6 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
       { label: 'sidebar.cs_reports', icon: 'file-text', route: '/customer-service/reports' },
     ],
-  },
-  {
-    title: 'sidebar.system',
-    items: [
-      { label: 'sidebar.system_settings', icon: 'settings', route: '/master/system-settings' },
-      { label: 'sidebar.notifications', icon: 'bell', route: '/master/notifications' },
-    ]
   }
 ]
 
