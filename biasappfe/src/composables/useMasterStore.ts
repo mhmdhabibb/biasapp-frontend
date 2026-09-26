@@ -99,26 +99,31 @@ export function useMasterStore() {
   function syncFromApi(force = false) {
     if (syncPromise && !force) return syncPromise;
     
-    const tasks: Promise<void>[] = [];
-    if (hasPerm('customer')) tasks.push(resources.fetchAll("customers").then((items) => { store.customers = items as unknown as Customer[]; }));
-    if (hasPerm('technician')) tasks.push(resources.fetchAll("technicians").then((items) => { store.technicians = items as unknown as Technician[]; }));
-    if (hasPerm('unit')) tasks.push(resources.fetchAll("units").then((items) => { store.units = items as unknown as Unit[]; }));
-    if (hasPerm('product')) tasks.push(resources.fetchAll("products").then((items) => { store.products = items as unknown as Product[]; }));
-    if (hasPerm('warranty')) tasks.push(resources.fetchAll("warranties").then((items) => { store.warranties = items as unknown as Warranty[]; }));
-    if (hasPerm('contractitem') || hasPerm('contract')) tasks.push(resources.fetchAll("contractItems").then((items) => { store.contractItems = items as unknown as ContractItem[]; }));
-    if (hasPerm('servicereport')) tasks.push(resources.fetchAll("serviceReports").then((items) => { store.serviceReports = items as unknown as ServiceReport[]; }));
-    if (hasPerm('servicerequest')) tasks.push(resources.fetchAll("serviceRequests").then((items) => { store.serviceRequests = items as any[]; }));
-    if (hasPerm('joborder')) tasks.push(resources.fetchAll("jobOrders").then((items) => { store.jobOrders = items as any[]; }));
-    if (hasPerm('monthlymeterreading')) tasks.push(resources.fetchAll("monthlyMeterReadings").then((items) => { store.monthlyMeterReadings = items as unknown as MonthlyMeterReading[]; }));
-    if (hasPerm('sale')) tasks.push(resources.fetchAll("sales").then((items) => { store.sales = items as unknown as Sale[]; }));
-    if (hasPerm('rentalinvoice')) tasks.push(resources.fetchAll("rentalInvoices").then((items) => { store.rentalInvoices = items as unknown as RentalInvoice[]; }));
-    if (hasPerm('salesinvoice')) tasks.push(resources.fetchAll("salesInvoices").then((items) => { store.salesInvoices = items as unknown as SalesInvoice[]; }));
-    if (hasPerm('payment')) tasks.push(resources.fetchAll("payments").then((items) => { store.payments = items as unknown as Payment[]; }));
-    if (hasPerm('warrantyclaim')) tasks.push(resources.fetchAll("warrantyClaims").then((items) => { store.warrantyClaims = items as unknown as WarrantyClaim[]; }));
-    if (hasPerm('servicesparepart') || hasPerm('sparepartrequest')) tasks.push(resources.fetchAll("serviceSpareparts").then((items) => { 
-      if (items.length > 0) store.sparepartRequests = items as unknown as SparepartRequest[]; 
-    }));
-    if (hasPerm('deliveryorder')) tasks.push(resources.fetchAll("deliveryOrders").then((items) => { store.deliveryOrders = items as unknown as DeliveryOrder[]; }));
+    const safeFetch = (fetchPromise: Promise<any>, assignCallback: (items: any) => void) => {
+      return fetchPromise
+        .then(items => { if (items) assignCallback(items); })
+        .catch(err => { console.warn("Failed to fetch data:", err); });
+    };
+
+    const tasks: Promise<void>[] = [
+      safeFetch(resources.fetchAll("customers"), items => store.customers = items),
+      safeFetch(resources.fetchAll("technicians"), items => store.technicians = items),
+      safeFetch(resources.fetchAll("units"), items => store.units = items),
+      safeFetch(resources.fetchAll("products"), items => store.products = items),
+      safeFetch(resources.fetchAll("warranties"), items => store.warranties = items),
+      safeFetch(resources.fetchAll("contractItems"), items => store.contractItems = items),
+      safeFetch(resources.fetchAll("serviceReports"), items => store.serviceReports = items),
+      safeFetch(resources.fetchAll("serviceRequests"), items => store.serviceRequests = items),
+      safeFetch(resources.fetchAll("jobOrders"), items => store.jobOrders = items),
+      safeFetch(resources.fetchAll("monthlyMeterReadings"), items => store.monthlyMeterReadings = items),
+      safeFetch(resources.fetchAll("sales"), items => store.sales = items),
+      safeFetch(resources.fetchAll("rentalInvoices"), items => store.rentalInvoices = items),
+      safeFetch(resources.fetchAll("salesInvoices"), items => store.salesInvoices = items),
+      safeFetch(resources.fetchAll("payments"), items => store.payments = items),
+      safeFetch(resources.fetchAll("warrantyClaims"), items => store.warrantyClaims = items),
+      safeFetch(resources.fetchAll("serviceSpareparts"), items => { if (items.length > 0) store.sparepartRequests = items; }),
+      safeFetch(resources.fetchAll("deliveryOrders"), items => store.deliveryOrders = items)
+    ];
 
     syncPromise = Promise.all(tasks).then(() => undefined);
     return syncPromise;

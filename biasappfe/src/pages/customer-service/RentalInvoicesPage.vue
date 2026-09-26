@@ -690,7 +690,7 @@ function printInvoice(item: any) {
       </div>
       
       <!-- Meter Readings for Copier -->
-      <div v-if="findContractItem(form.contract_item_id) && (!findContractItem(form.contract_item_id)?.specs || findContractItem(form.contract_item_id)?.specs.length < 5)" style="border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; margin-bottom: 15px;">
+      <div v-if="findContractItem(form.contract_item_id) && (!findContractItem(form.contract_item_id)?.specs || findContractItem(form.contract_item_id)?.specs.length &lt; 5)" style="border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; margin-bottom: 15px;">
         <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px;">Meter Reading (Fotocopy)</div>
         <div class="form-row">
           <div class="form-group">
@@ -724,8 +724,9 @@ function printInvoice(item: any) {
           <input id="ri-excess" v-model.number="form.excess_amount" type="number" class="form-input" min="0" @input="recalculate">
         </div>
         <div class="form-group">
-        <label for="ri-tax" class="form-label">Tax (Rp)</label>
-        <input id="ri-tax" v-model.number="form.tax" type="number" class="form-input" min="0" @input="recalculate">
+          <label for="ri-tax" class="form-label">Tax (Rp)</label>
+          <input id="ri-tax" v-model.number="form.tax" type="number" class="form-input" min="0" @input="recalculate">
+        </div>
       </div>
       <div class="sale-summary">
         <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(form.subtotal) }}</span></div>

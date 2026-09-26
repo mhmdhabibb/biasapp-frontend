@@ -98,57 +98,7 @@ function exportMonthToExcel() {
   alert('Export Excel akan segera tersedia (contoh fungsi)')
 }
 
-// Date Range & Month Filters
-const startDateFilter = ref('')
-const endDateFilter = ref('')
-const monthFilter = ref('')
 
-function onMonthFilterChange() {
-  if (!monthFilter.value) return
-  const [yearStr, monthStr] = monthFilter.value.split('-')
-  const year = parseInt(yearStr)
-  const month = parseInt(monthStr)
-  
-  const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
-  const lastDayNum = new Date(year, month, 0).getDate()
-  const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
-  
-  startDateFilter.value = firstDay
-  endDateFilter.value = lastDay
-}
-
-function resetFilters() {
-  startDateFilter.value = ''
-  endDateFilter.value = ''
-  monthFilter.value = ''
-}
-
-const filteredData = computed(() => {
-  let items = data.value
-  if (startDateFilter.value) {
-    items = items.filter(d => {
-      const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
-      if (!itemDate) return false
-      return String(itemDate).slice(0, 10) >= startDateFilter.value
-    })
-  }
-  if (endDateFilter.value) {
-    items = items.filter(d => {
-      const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
-      if (!itemDate) return false
-      return String(itemDate).slice(0, 10) <= endDateFilter.value
-    })
-  }
-  return items
-})
-
-function exportMonthToPdf() {
-  alert('Export PDF akan segera tersedia (contoh fungsi)')
-}
-
-function exportMonthToExcel() {
-  alert('Export Excel akan segera tersedia (contoh fungsi)')
-}
 
 const calcTotal = computed(() => form.subtotal + form.service_charge + form.tax)
 

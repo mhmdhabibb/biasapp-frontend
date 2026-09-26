@@ -1,11 +1,12 @@
 <script setup lang="ts">
-defineProps<{ title: string }>()
+defineProps<{ title: string; hideHamburger?: boolean }>()
 defineEmits<{ (e: 'toggle-sidebar'): void }>()
 </script>
 
 <template>
-  <header class="topbar">
+  <header class="topbar" :class="{ 'mobile-topbar': hideHamburger }">
     <button
+      v-if="!hideHamburger"
       class="topbar-hamburger"
       aria-label="Buka menu"
       @click="$emit('toggle-sidebar')"
@@ -37,6 +38,13 @@ defineEmits<{ (e: 'toggle-sidebar'): void }>()
   z-index: 50;
 }
 
+.topbar.mobile-topbar {
+  justify-content: center;
+  border-bottom: none;
+  background: transparent;
+  padding-top: 16px;
+}
+
 .topbar-hamburger {
   display: flex;
   align-items: center;
@@ -53,7 +61,7 @@ defineEmits<{ (e: 'toggle-sidebar'): void }>()
 }
 
 @media (min-width: 769px) {
-  .topbar-hamburger {
+  .admin-layout:not(.mobile-layout-wrapper) .topbar-hamburger {
     display: none;
   }
 }
