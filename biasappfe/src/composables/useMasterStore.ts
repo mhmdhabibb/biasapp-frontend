@@ -41,41 +41,10 @@ const store = reactive({
   salesInvoices: [] as SalesInvoice[],
   payments: [] as Payment[],
   warrantyClaims: [] as WarrantyClaim[],
-  sparepartRequests: [
-    {
-      id: 1,
-      request_no: 'SR-2026-001',
-      service_report_id: 1,
-      product_id: 1,
-      qty: 2,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: 2,
-      request_no: 'SR-2026-002',
-      service_report_id: 2,
-      product_id: 2,
-      qty: 1,
-      status: 'po_created',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  ] as SparepartRequest[],
+  sparepartRequests: [] as SparepartRequest[],
   indents: [] as Indent[],
   deliveryOrders: [] as DeliveryOrder[],
-  purchaseOrders: [
-    {
-      id: 1,
-      po_no: 'PO-2026-001',
-      sparepart_request_id: 2,
-      po_date: new Date().toISOString(),
-      status: 'approved',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-  ] as PurchaseOrder[],
+  purchaseOrders: [] as PurchaseOrder[],
   procurementDeliveryOrders: [] as ProcurementDeliveryOrder[],
 });
 
@@ -167,6 +136,10 @@ export function useMasterStore() {
     return store.sales.find((s) => s.id === id);
   }
 
+  function findSalesInvoice(id: any): SalesInvoice | undefined {
+    return store.salesInvoices.find((si) => si.id === id);
+  }
+
   function getUnitsByCustomer(customerId: number | string | null): Unit[] {
     if (!customerId) return [];
     // Find all contract items for this customer
@@ -206,6 +179,7 @@ export function useMasterStore() {
     findServiceReport,
     findRentalInvoice,
     findSale,
+    findSalesInvoice,
     getUnitsByCustomer,
     getContractsByCustomer,
     getServiceReportsByTechnician,

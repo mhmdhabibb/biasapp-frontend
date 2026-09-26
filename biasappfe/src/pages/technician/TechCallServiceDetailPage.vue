@@ -49,7 +49,8 @@ const form = ref({
   inspection_result: job.value?.inspection_result || '',
   repair_action: job.value?.repair_action || '',
   notes: job.value?.notes || '',
-  testing_confirmed: job.value?.testing_confirmed || false
+  testing_confirmed: job.value?.testing_confirmed || false,
+  spareparts: job.value?.spareparts ? JSON.parse(JSON.stringify(job.value.spareparts)) : []
 })
 
 function acceptJob() {
@@ -87,7 +88,24 @@ function completeJob() {
     job.value.time_out = new Date().toISOString()
     job.value.is_complete = true
     job.value.updated_at = new Date().toISOString()
-    alert('Pekerjaan selesai!')
+        job.value.spareparts = form.value.spareparts;
+    if (form.value.spareparts && form.value.spareparts.length > 0) {
+      form.value.spareparts.forEach((sp, i) => {
+        if (sp.product_id && sp.qty > 0) {
+          useMasterStore().sparepartRequests.value.push({
+            id: Date.now() + i,
+            request_no: 'SPR-' + new Date().getFullYear() + '-' + Math.floor(Math.random() * 10000),
+            service_report_id: job.value.id,
+            product_id: sp.product_id,
+            qty: sp.qty,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+        }
+      })
+    }
+    alert('Pekerjaan selesai! Data penggantian sparepart otomatis masuk antrean Procurement.');
     router.push('/technician/call-services')
   }
 }
@@ -170,6 +188,21 @@ function completeJob() {
             <label class="form-label">Tindakan Perbaikan <span class="text-danger">*</span></label>
             <textarea v-model="form.repair_action" class="form-textarea" rows="3" placeholder="Apa yang dilakukan untuk memperbaiki masalah?"></textarea>
           </div>
+                    <div class="form-group mt-md" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
+            <label class="form-label">Penggantian Komponen Langsung</label>
+            <div v-for="(sp, idx) in form.spareparts" :key="idx" style="display: flex; gap: 8px; margin-bottom: 10px;">
+              <select v-model="sp.product_id" class="form-select" style="flex: 1; padding: 6px; font-size: 13px;">
+                <option value="" disabled>Pilih Komponen...</option>
+                <option v-for="p in useMasterStore().products.value" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+              <input type="number" v-model="sp.qty" class="form-input" style="width: 60px; padding: 6px; text-align: center;" min="1" placeholder="Qty">
+              <button type="button" class="btn btn-sm btn-outline" style="color: var(--color-danger); border-color: var(--color-danger); padding: 4px 10px;" @click="form.spareparts.splice(idx, 1)">x</button>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline mt-xs w-full" style="width: 100%; border-style: dashed;" @click="form.spareparts.push({product_id: '', qty: 1})">
+              + Tambah Penggunaan Sparepart
+            </button>
+          </div>
+
           <div class="form-group">
             <label class="form-label">Catatan Tambahan</label>
             <textarea v-model="form.notes" class="form-textarea" rows="2" placeholder="Catatan operasional..."></textarea>
@@ -206,6 +239,21 @@ function completeJob() {
             <label class="form-label">Tindakan Perbaikan</label>
             <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm)">{{ job.repair_action || '-' }}</div>
           </div>
+                    <div class="form-group mt-md" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
+            <label class="form-label">Penggantian Komponen Langsung</label>
+            <div v-for="(sp, idx) in form.spareparts" :key="idx" style="display: flex; gap: 8px; margin-bottom: 10px;">
+              <select v-model="sp.product_id" class="form-select" style="flex: 1; padding: 6px; font-size: 13px;">
+                <option value="" disabled>Pilih Komponen...</option>
+                <option v-for="p in useMasterStore().products.value" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+              <input type="number" v-model="sp.qty" class="form-input" style="width: 60px; padding: 6px; text-align: center;" min="1" placeholder="Qty">
+              <button type="button" class="btn btn-sm btn-outline" style="color: var(--color-danger); border-color: var(--color-danger); padding: 4px 10px;" @click="form.spareparts.splice(idx, 1)">x</button>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline mt-xs w-full" style="width: 100%; border-style: dashed;" @click="form.spareparts.push({product_id: '', qty: 1})">
+              + Tambah Penggunaan Sparepart
+            </button>
+          </div>
+
           <div class="form-group">
             <label class="form-label">Catatan Tambahan</label>
             <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm)">{{ job.notes || '-' }}</div>
@@ -251,3 +299,4 @@ function completeJob() {
   color: var(--color-text);
 }
 </style>
+

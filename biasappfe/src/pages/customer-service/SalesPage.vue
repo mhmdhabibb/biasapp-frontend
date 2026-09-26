@@ -5,6 +5,7 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useResourcesStore } from '@/stores/resources.store'
 import type { Sale, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
 
@@ -16,6 +17,8 @@ const {
   findCustomer,
   findProduct,
 } = useMasterStore()
+
+const resources = useResourcesStore()
 
 const columns: TableColumn[] = [
   { key: 'date', label: 'Tanggal Transaksi' },
@@ -450,7 +453,7 @@ function openEdit(item: any) {
   showModal.value = true
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.customer_id) return
   const saleData = {
     ...form,
@@ -461,18 +464,50 @@ function handleSubmit() {
       specs: JSON.stringify(item.specs)
     }))
   }
-  if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...saleData, updated_at: new Date().toISOString() }
-  } else {
-    data.value.push({ id: Date.now(), ...saleData, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+  
+  let pw: Window | null = null;
+  if (!editingItem.value) {
+    pw = window.open('', '_blank');
+    if (pw) {
+      pw.document.write('Loading invoice...');
+    }
   }
-  showModal.value = false
+  
+  try {
+    let res;
+    if (editingItem.value) {
+      res = await resources.update("sales", editingItem.value.id as any, saleData)
+    } else {
+      res = await resources.create("sales", saleData)
+    }
+    await useMasterStore().refresh(true)
+    showModal.value = false
+
+    // Auto-print invoice when a new sale is created
+    if (!editingItem.value && res && res.id) {
+      const newSale = useMasterStore().sales.find(s => s.id === res.id)
+      if (newSale) {
+        printInvoice(newSale, pw)
+      } else {
+        printInvoice(res, pw)
+      }
+    }
+  } catch (error) {
+    if (pw) pw.close();
+    alert("Gagal menyimpan data!")
+  }
 }
 
 function openDelete(item: Sale) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.remove("sales", deletingItem.value.id as any)
+      useMasterStore().refresh(true)
+    } catch (error) {
+      alert("Gagal menghapus data!")
+    }
+  }
   showConfirm.value = false
 }
 
@@ -492,7 +527,7 @@ function formatRupiah(val: number): string {
   return 'Rp ' + val.toLocaleString('id-ID')
 }
 
-function printInvoice(item: any) {
+function printInvoice(item: any, existingWindow?: Window | null) {
   const invoiceContentHtml = generateSingleInvoiceHtml(item)
   const html = `
     <!DOCTYPE html>
@@ -544,12 +579,14 @@ function printInvoice(item: any) {
     </html>
   `
 
-  const printWindow = window.open('', '_blank')
+  const printWindow = existingWindow || window.open('', '_blank')
   if (printWindow) {
+    printWindow.document.open()
     printWindow.document.write(html)
     printWindow.document.close()
   }
 }
+
 </script>
 
 <template>
@@ -647,15 +684,13 @@ function printInvoice(item: any) {
             <option v-for="p in products" :key="p.id" :value="p.id">{{ (p as any).name }}</option>
           </select>
         </div>
-        <div style="display: flex; gap: 8px;">
-          <div class="form-group sale-item-qty">
-            <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
-          </div>
-          <div class="form-group sale-item-price">
-            <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Harga">
-          </div>
-          <button type="button" class="btn-remove-item" title="Hapus item" @click="removeSaleItem(idx)">✕</button>
+        <div class="form-group sale-item-qty">
+          <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
         </div>
+        <div class="form-group sale-item-price">
+          <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Harga">
+        </div>
+        <button type="button" class="btn-remove-item" title="Hapus item" @click="removeSaleItem(idx)">✕</button>
 
         <div v-if="item.is_computer" style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
           <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Spesifikasi Komputer / PC</h4>

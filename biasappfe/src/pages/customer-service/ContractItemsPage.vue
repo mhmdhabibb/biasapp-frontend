@@ -992,7 +992,7 @@ function unitSerialNo(id: any, rowUnit?: any): string {
         <button type="button" class="btn btn-primary" @click="printContract(detailItem)">Print to PDF</button>
       </template>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Contract" :message="`Are you sure you want to delete contract '${deletingItem?.contract_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Contract" :message="`Are you sure you want to delete contract '${deletingItem?.contract?.contract_no || deletingItem?.contract_no || '-'}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

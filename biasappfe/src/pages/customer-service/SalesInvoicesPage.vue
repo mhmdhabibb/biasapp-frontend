@@ -6,6 +6,7 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useResourcesStore } from '@/stores/resources.store'
 import type { TableColumn, SalesInvoice } from '@/types'
 
 const {
@@ -14,9 +15,10 @@ const {
   customers,
   products,
   findCustomer,
-  findSale,
   findProduct,
 } = useMasterStore()
+
+const resources = useResourcesStore()
 
 const columns: TableColumn[] = [
   { key: 'invoice_no', label: 'No. Invoice' },
@@ -135,21 +137,32 @@ function openEdit(item: SalesInvoice) {
   showModal.value = true
 }
 
-function handleSubmit() {
+async function handleSubmit() {
   if (!form.invoice_no.trim()) return
   form.total = calcTotal.value
-  if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...form, updated_at: new Date().toISOString() }
-  } else {
-    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+  try {
+    if (editingItem.value) {
+      await resources.update("salesInvoices", editingItem.value.id as any, form)
+    } else {
+      await resources.create("salesInvoices", form)
+    }
+    useMasterStore().refresh(true)
+    showModal.value = false
+  } catch (error) {
+    alert("Gagal menyimpan invoice!")
   }
-  showModal.value = false
 }
 
 function openDelete(item: SalesInvoice) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.remove("salesInvoices", deletingItem.value.id as any)
+      useMasterStore().refresh(true)
+    } catch (error) {
+      alert("Gagal menghapus invoice!")
+    }
+  }
   showConfirm.value = false
 }
 
@@ -402,7 +415,7 @@ function printInvoice(item: any) {
 
 <template>
   <div>
-    <PageHeader title="Sales Invoices" button-label="Add Sales Invoice" @add="openAdd" />
+    <PageHeader title="Sales Invoices" />
 
     <!-- Filter & Export Toolbar -->
     <div class="filter-toolbar">
@@ -439,6 +452,7 @@ function printInvoice(item: any) {
     <DataTable :columns="columns" :data="filteredData" search-placeholder="Cari invoice penjualan..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-sale_id="{ value }">{{ saleRef(value) }}</template>
+      <template #cell-due_date="{ value }">{{ value ? new Date(value).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-' }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-status="{ value }">

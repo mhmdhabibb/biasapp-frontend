@@ -96,12 +96,34 @@ function openEdit(item: any) {
 }
 
 function handleSubmit() {
-  if (!form.service_report_no.trim()) return
+  if (!form.report_no.trim() && !form.service_report_no?.trim()) return
+  
+  const finalForm = { ...form, service_report_no: form.report_no }
+  
   if (editingItem.value) {
     const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...form, updated_at: new Date().toISOString() }
+    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...finalForm, updated_at: new Date().toISOString() }
   } else {
-    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+    const newId = Date.now()
+    data.value.push({ id: newId, ...finalForm, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+    
+    // Auto-generate Sparepart Requests for accounting/procurement
+    if (form.spareparts && form.spareparts.length > 0) {
+      form.spareparts.forEach((sp: any, i: number) => {
+        if (sp.product_id && sp.qty > 0) {
+          useMasterStore().sparepartRequests.value.push({
+            id: Date.now() + i,
+            request_no: `SPR-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`,
+            service_report_id: newId,
+            product_id: sp.product_id,
+            qty: sp.qty,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+        }
+      })
+    }
   }
   showModal.value = false
 }

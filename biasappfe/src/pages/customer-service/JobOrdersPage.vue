@@ -12,7 +12,9 @@ const searchTech = ref('')
 
 async function fetchJobOrders() {
   try {
-    const res = await fetch('http://localhost:4008/api/job-orders')
+    const res = await fetch('http://localhost:4008/api/job-orders', {
+      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('bias_token')}` }
+    })
     if (res.ok) {
       const data = await res.json()
       jobOrders.value = data.data.map((j: any) => ({
@@ -29,7 +31,9 @@ async function fetchJobOrders() {
 
 async function fetchServiceRequests() {
   try {
-    const res = await fetch('http://localhost:4008/api/service-requests')
+    const res = await fetch('http://localhost:4008/api/service-requests', {
+      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('bias_token')}` }
+    })
     if (res.ok) {
       const data = await res.json()
       serviceRequests.value = data.data
@@ -56,8 +60,8 @@ const unassignedRequests = computed(() => {
 })
 
 const filteredTechs = computed(() => {
-  if (!searchTech.value) return technicians;
-  return technicians.filter((t: any) => t.name.toLowerCase().includes(searchTech.value.toLowerCase()))
+  if (!searchTech.value) return technicians.value;
+  return technicians.value.filter((t: any) => t && (t.name || (t.user && t.user.name) || '').toLowerCase().includes(searchTech.value.toLowerCase()))
 })
 
 function getJobsForTech(techId: string) {
@@ -149,7 +153,7 @@ async function onDrop(techId: string) {
 
       <div class="tech-lanes">
         <div v-for="t in filteredTechs" :key="t.id" class="tech-row">
-          <div class="tech-name">{{ (t as any).name }} - {{ (t as any).status || 'AVAILABLE' }}</div>
+          <div class="tech-name">{{ (t as any).name || ((t as any).user && (t as any).user.name) || 'Unknown' }} - {{ (t as any).status || 'AVAILABLE' }}</div>
           
           <div 
             class="tech-lane"
