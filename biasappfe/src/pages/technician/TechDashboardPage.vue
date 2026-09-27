@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import PageHeader from '@/components/ui/PageHeader.vue'
-import FormModal from '@/components/ui/FormModal.vue'
+import CreateJobModal from './CreateJobModal.vue'
 import { api } from '@/services/api'
 
 const router = useRouter()
@@ -91,35 +91,10 @@ async function onDropToTech(event: any, techId: string | number) {
   dragType = null
 }
 
-// Create Job / Request Modal
 const showModal = ref(false)
-const form = reactive({
-  customer_id: '',
-  job_type: 'Visit', // Visit, Maintenance, Pengantaran
-  instructions: ''
-})
 
 function openCreateJob() {
-  form.customer_id = customers.value.length > 0 ? String(customers.value[0].id) : ''
-  form.job_type = 'Visit'
-  form.instructions = ''
   showModal.value = true
-}
-
-async function handleCreateJob() {
-  if (!form.customer_id) return
-  try {
-    // We create a service request, which will appear as an unassigned job on the left
-    await api.post('/service-requests', {
-      customer_id: String(form.customer_id),
-      problem_description: `[${form.job_type.toUpperCase()}] ${form.instructions}`,
-      status: 'pending'
-    })
-    showModal.value = false
-    await refresh(true)
-  } catch (err) {
-    console.error('Failed to create job', err)
-  }
 }
 
 function parseJobType(description: string) {
@@ -213,27 +188,7 @@ function parseJobInstructions(description: string) {
     </div>
 
     <!-- Create Job Modal -->
-    <FormModal v-if="showModal" title="Buat Job Baru" @close="showModal = false" @submit="handleCreateJob">
-       <div class="form-group">
-         <label class="form-label">Customer</label>
-         <select v-model="form.customer_id" class="form-select" required>
-            <option disabled value="">-- Pilih Customer --</option>
-            <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name }}</option>
-         </select>
-       </div>
-       <div class="form-group">
-         <label class="form-label">Tipe Job</label>
-         <select v-model="form.job_type" class="form-select" required>
-            <option value="Visit">Visit</option>
-            <option value="Maintenance">Maintenance</option>
-            <option value="Pengantaran">Pengantaran</option>
-         </select>
-       </div>
-       <div class="form-group">
-         <label class="form-label">Instruksi / Catatan</label>
-         <textarea v-model="form.instructions" class="form-textarea" placeholder="Detail pekerjaan..." required></textarea>
-       </div>
-    </FormModal>
+    <CreateJobModal :open="showModal" @close="showModal = false" @refresh="refresh(true)" />
   </div>
 </template>
 

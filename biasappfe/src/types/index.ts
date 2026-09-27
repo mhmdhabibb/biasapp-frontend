@@ -118,6 +118,7 @@ export interface Unit {
   id: string
   name: string
   brand_id: string | null
+  brand?: any
   type_id: string | null
   model: string
   serial_no: string
@@ -179,6 +180,35 @@ export interface ContractItemRate {
   paper_size?: any
   rate_per_page_bw: number
   rate_per_page_color: number
+}
+
+export interface ServiceRequest {
+  id: string
+  request_no: string
+  customer_id: string | null
+  unit_id: string | null
+  problem_description: string
+  status: string
+  request_date: string
+  created_at: string
+  updated_at: string
+}
+
+export interface JobOrder {
+  id: string
+  job_order_no: string
+  job_type: string
+  service_request_id?: string | null
+  customer_id?: string | null
+  unit_id?: string | null
+  technician_id: string
+  scheduled_date: string
+  status: string
+  instructions: string
+  assigned_at?: string | null
+  completed_at?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface ServiceReport {

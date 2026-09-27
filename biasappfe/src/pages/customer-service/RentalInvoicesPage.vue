@@ -727,6 +727,7 @@ function printInvoice(item: any) {
         <label for="ri-tax" class="form-label">Tax (Rp)</label>
         <input id="ri-tax" v-model.number="form.tax" type="number" class="form-input" min="0" @input="recalculate">
       </div>
+      </div>
       <div class="sale-summary">
         <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(form.subtotal) }}</span></div>
         <div class="summary-row summary-total"><span>Total Pay</span><span>{{ formatRupiah(form.total_pay) }}</span></div>

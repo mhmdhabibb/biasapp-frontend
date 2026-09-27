@@ -57,7 +57,7 @@ const unassignedRequests = computed(() => {
 
 const filteredTechs = computed(() => {
   if (!searchTech.value) return technicians;
-  return technicians.filter((t: any) => t.name.toLowerCase().includes(searchTech.value.toLowerCase()))
+  return technicians.value.filter((t: any) => t.name.toLowerCase().includes(searchTech.value.toLowerCase()))
 })
 
 function getJobsForTech(techId: string) {
