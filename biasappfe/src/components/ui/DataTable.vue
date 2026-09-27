@@ -299,30 +299,39 @@ const visiblePages = computed(() => {
   padding: 0;
   border-radius: 8px;
   cursor: pointer;
-  border: 1px solid var(--color-border-light);
-  background: transparent;
-  color: var(--color-text-muted);
+  border: none;
   transition:
     background var(--transition-fast),
     border-color var(--transition-fast),
     color var(--transition-fast),
-    transform var(--transition-fast);
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .action-btn:active {
   transform: scale(0.92);
 }
 
-.action-btn--edit:hover {
-  background: var(--color-primary-surface);
-  border-color: var(--color-primary-surface);
+.action-btn--edit {
+  background: rgba(48, 92, 255, 0.1);
   color: var(--color-primary);
 }
 
-.action-btn--delete:hover {
-  background: var(--color-danger-surface);
-  border-color: var(--color-danger-surface);
+.action-btn--edit:hover {
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(48, 92, 255, 0.3);
+}
+
+.action-btn--delete {
+  background: rgba(220, 38, 38, 0.1);
   color: var(--color-danger);
+}
+
+.action-btn--delete:hover {
+  background: var(--color-danger);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
 }
 
 .pagination {

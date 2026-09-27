@@ -124,7 +124,9 @@ function openAdd() {
 
 async function fetchRequests() {
   try {
-    const res = await fetch('http://localhost:4008/api/service-requests')
+    const res = await fetch('http://localhost:4008/api/service-requests', {
+      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('bias_token')}` }
+    })
     if (res.ok) {
       const data = await res.json()
       serviceRequests.value = data.data.map((r: any) => ({
@@ -152,7 +154,10 @@ async function handleSubmit() {
   try {
     const res = await fetch('http://localhost:4008/api/service-requests', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionStorage.getItem('bias_token')}`
+      },
       body: JSON.stringify(payload)
     })
     

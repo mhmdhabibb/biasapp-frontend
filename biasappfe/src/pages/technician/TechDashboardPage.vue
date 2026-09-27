@@ -9,6 +9,7 @@ const router = useRouter()
 const { currentUser } = useAuth()
 const {
   jobOrders,
+  technicians,
   findCustomer,
   findUnit,
   refresh
@@ -27,8 +28,16 @@ onUnmounted(() => {
   if (intervalId) clearInterval(intervalId)
 })
 
+// Find the technician record that belongs to the current logged-in user
+const myTechnician = computed(() => {
+  if (!currentUser.value?.id) return null
+  return technicians.value.find((t: any) => t.user_id === currentUser.value?.id || t.user_id == currentUser.value?.id)
+})
+
 const myJobs = computed(() => {
-  return jobOrders.value.filter(j => j.technician_id === currentUser.value?.id)
+  const techId = myTechnician.value?.id
+  if (!techId) return []
+  return jobOrders.value.filter(j => j.technician_id === techId)
 })
 
 const isToday = (dateStr: string) => {

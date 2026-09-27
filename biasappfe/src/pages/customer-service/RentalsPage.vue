@@ -218,6 +218,11 @@ onMounted(async () => {
       <template #cell-start_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
       <template #cell-end_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
+      <template #cell-status="{ value }">
+        <span class="status-badge" :class="'status-' + (value || 'unknown').toLowerCase()">
+          {{ value || '-' }}
+        </span>
+      </template>
     </DataTable>
 
     <FormModal :open="showModal" :title="t('rentals.modal_title')" @close="showModal = false" @submit="handleSubmit">
@@ -521,6 +526,87 @@ onMounted(async () => {
 .text-center { text-align: center; }
 .text-sm { font-size: 0.875rem; }
 .text-gray-500 { color: var(--color-text-muted); }
+
+/* Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.status-badge::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Active - Green */
+.status-active {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+.status-active::before {
+  background: #16a34a;
+  box-shadow: 0 0 6px rgba(22, 163, 74, 0.5);
+}
+
+/* Pending - Blue */
+.status-pending {
+  background: rgba(48, 92, 255, 0.1);
+  color: #305CFF;
+}
+.status-pending::before {
+  background: #305CFF;
+  box-shadow: 0 0 6px rgba(48, 92, 255, 0.4);
+}
+
+/* Expired - Orange */
+.status-expired {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+.status-expired::before {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+}
+
+/* Cancelled - Red */
+.status-cancelled, .status-canceled {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+.status-cancelled::before, .status-canceled::before {
+  background: #dc2626;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.4);
+}
+
+/* Completed - Teal */
+.status-completed {
+  background: rgba(13, 148, 136, 0.12);
+  color: #0f766e;
+}
+.status-completed::before {
+  background: #0d9488;
+  box-shadow: 0 0 6px rgba(13, 148, 136, 0.5);
+}
+
+/* Unknown / fallback */
+.status-unknown {
+  background: rgba(100, 116, 139, 0.1);
+  color: #64748b;
+}
+.status-unknown::before {
+  background: #94a3b8;
+}
 </style>
 
 

@@ -164,13 +164,13 @@ async function onDrop(techId: string) {
             
             <div class="job-card assigned" v-for="job in getJobsForTech(t.id)" :key="job.id">
               <div class="card-header">
-                <span class="ref-no">{{ job.service_request_no }}</span>
+                <span class="ref-no">{{ job.job_order_no }}</span>
                 <span class="status-badge">{{ job.status }}</span>
                 <span class="date-tag">{{ formatDateDisplay(job.scheduled_date) }}</span>
               </div>
               <div class="card-body">
-                <div class="customer-name">{{ job.customer_name }}</div>
-                <div class="problem-text">{{ job.problem }}</div>
+                <div class="customer-name">{{ job.service_request?.customer?.name }}</div>
+                <div class="problem-text">{{ job.instructions }}</div>
               </div>
             </div>
             
