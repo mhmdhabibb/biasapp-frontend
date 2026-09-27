@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CreateJobModal from './CreateJobModal.vue'
 
 const router = useRouter()
 const { currentUser } = useAuth()
@@ -70,6 +71,12 @@ const formatSla = (createdStr: string) => {
   return `${hours.toFixed(1)}h / 2.0h`
 }
 
+const showModal = ref(false)
+
+function openCreateJob() {
+  showModal.value = true
+}
+
 function getCustomerName(id: number | null) {
   return findCustomer(id as any)?.company_name || '-'
 }
@@ -92,6 +99,9 @@ function goToDetail(id: number) {
         <h1 class="greeting-title">Halo, {{ currentUser?.name || 'Teknisi' }}! 👋</h1>
         <p class="greeting-subtitle">Berikut adalah ringkasan pekerjaan Anda hari ini.</p>
       </div>
+      <button class="btn btn-primary create-job-btn" type="button" @click="openCreateJob">
+        Buat Job
+      </button>
     </div>
 
     <!-- Summary Grid -->
@@ -186,6 +196,8 @@ function goToDetail(id: number) {
         <p>Tidak ada pekerjaan aktif untuk Anda saat ini.</p>
       </div>
     </div>
+    <!-- Create Job Modal -->
+    <CreateJobModal :open="showModal" @close="showModal = false" @refresh="refresh(true)" />
   </div>
 </template>
 
@@ -199,6 +211,11 @@ function goToDetail(id: number) {
 
 .welcome-header {
   padding: 8px 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .greeting-title {

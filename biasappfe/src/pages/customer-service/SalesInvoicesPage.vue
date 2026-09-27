@@ -100,8 +100,6 @@ function exportMonthToExcel() {
   alert('Export Excel akan segera tersedia (contoh fungsi)')
 }
 
-
-
 const calcTotal = computed(() => form.subtotal + form.service_charge + form.tax)
 
 function onSaleChange() {

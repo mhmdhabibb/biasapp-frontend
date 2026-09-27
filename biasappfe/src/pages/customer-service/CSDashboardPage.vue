@@ -67,6 +67,19 @@ const pendingWarrantyClaims = computed(() => warrantyClaims.value.filter(c => c.
 
 const totalJobsAll = computed(() => newCalls.value + assignedJobs.value + inProgressJobs.value + waitingSparepartJobs.value + completedJobs.value)
 const completionPercentage = computed(() => totalJobsAll.value === 0 ? 0 : Math.round((completedJobs.value / totalJobsAll.value) * 100))
+
+// Job Analytics Categorization
+const jobAnalytics = computed(() => {
+  return [
+    { label: 'Delivery', count: jobOrders.value.filter(j => j.job_type === 'delivery').length, color: '#3b82f6' },
+    { label: 'Installation', count: jobOrders.value.filter(j => j.job_type === 'installation' || j.job_type === 'delivery_installation').length, color: '#8b5cf6' },
+    { label: 'Call Service', count: jobOrders.value.filter(j => j.job_type === 'call_service').length, color: '#ef4444' },
+    { label: 'Maintenance', count: jobOrders.value.filter(j => j.job_type === 'maintenance_visit').length, color: '#10b981' },
+    { label: 'Meter Reading', count: jobOrders.value.filter(j => j.job_type === 'meter_reading').length, color: '#f59e0b' },
+    { label: 'Pickup/Return', count: jobOrders.value.filter(j => j.job_type === 'pickup_return').length, color: '#64748b' },
+  ]
+})
+const maxAnalytics = computed(() => Math.max(...jobAnalytics.value.map(a => a.count), 1))
 </script>
 
 <template>
@@ -138,38 +151,14 @@ const completionPercentage = computed(() => totalJobsAll.value === 0 ? 0 : Math.
       <!-- Left Column -->
       <div class="card section-card">
         <div class="section-header">
-          <h3 class="section-title">Job Analytics</h3>
+          <h3 class="section-title">Job Analytics (Categories)</h3>
         </div>
         <div class="bars-container">
-          <div class="bar-group">
-            <div class="bar-bg">
-              <div class="bar-fill" :style="{ height: `${(assignedJobs / maxJobs) * 100}%`, background: 'var(--color-primary)' }"></div>
+          <div class="bar-group" v-for="cat in jobAnalytics" :key="cat.label">
+            <div class="bar-bg" :title="`${cat.label}: ${cat.count}`">
+              <div class="bar-fill" :style="{ height: `${(cat.count / maxAnalytics) * 100}%`, background: cat.color }"></div>
             </div>
-            <span>Asg.</span>
-          </div>
-          <div class="bar-group">
-            <div class="bar-bg">
-              <div class="bar-fill" :style="{ height: `${(inProgressJobs / maxJobs) * 100}%`, background: 'var(--color-primary)' }"></div>
-            </div>
-            <span>InPrg.</span>
-          </div>
-          <div class="bar-group">
-            <div class="bar-bg">
-              <div class="bar-fill" :style="{ height: `${(waitingSparepartJobs / maxJobs) * 100}%`, background: '#f59e0b' }"></div>
-            </div>
-            <span>Wait.Sp</span>
-          </div>
-          <div class="bar-group">
-            <div class="bar-bg">
-              <div class="bar-fill" :style="{ height: `${(approachingSlaJobs / maxJobs) * 100}%`, background: '#f59e0b' }"></div>
-            </div>
-            <span>Appr.SLA</span>
-          </div>
-          <div class="bar-group">
-            <div class="bar-bg">
-              <div class="bar-fill" :style="{ height: `${(breachedSlaJobs / maxJobs) * 100}%`, background: '#ef4444' }"></div>
-            </div>
-            <span>Brch.SLA</span>
+            <span style="font-size: 11px;">{{ cat.label.substring(0,6) }}.</span>
           </div>
         </div>
       </div>

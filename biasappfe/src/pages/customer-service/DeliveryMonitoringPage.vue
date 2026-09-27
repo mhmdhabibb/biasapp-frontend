@@ -176,8 +176,8 @@ function printServiceHistory(item: any) {
             setTimeout(function() { window.print(); }, 500);
           }
         <\/script>
-      </body>
-    </html>
+      <\/body>
+    <\/html>
   `
   const printWindow = window.open('', '_blank')
   if (printWindow) {
@@ -189,7 +189,7 @@ function printServiceHistory(item: any) {
 import { ref, reactive } from 'vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
-import { useResourcesStore } from '@/stores/resources'
+import { useResourcesStore } from '@/stores/resources.store'
 const resources = useResourcesStore()
 
 const showModal = ref(false)
