@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useToast } from '@/composables/useToast'
 import { ref, onMounted, computed } from 'vue'
+import FormModal from '@/components/ui/FormModal.vue'
 
+const toast = useToast()
 const { technicians } = useMasterStore()
 
 const jobOrders = ref<any[]>([])
@@ -9,6 +12,7 @@ const serviceRequests = ref<any[]>([])
 
 const searchUnassigned = ref('')
 const searchTech = ref('')
+const dragOverTechId = ref<string | number | null>(null)
 
 async function fetchJobOrders() {
   try {
@@ -25,7 +29,7 @@ async function fetchJobOrders() {
       }))
     }
   } catch (error) {
-    console.error("Gagal mengambil data", error)
+    console.error("Failed to fetch data", error)
   }
 }
 
@@ -39,7 +43,7 @@ async function fetchServiceRequests() {
       serviceRequests.value = data.data
     }
   } catch (error) {
-    console.error("Gagal mengambil data SR", error)
+    console.error("Failed to fetch data SR", error)
   }
 }
 
@@ -64,14 +68,99 @@ const filteredTechs = computed(() => {
   return technicians.value.filter((t: any) => t && (t.name || (t.user && t.user.name) || '').toLowerCase().includes(searchTech.value.toLowerCase()))
 })
 
-function getJobsForTech(techId: string) {
+function getJobsForTech(techId: string | number) {
   return jobOrders.value.filter(j => j.technician_id === techId)
+}
+
+function statusBadgeClass(status: string) {
+  switch ((status || '').toLowerCase()) {
+    case 'completed':
+    case 'done':
+      return 'badge-success'
+    case 'in_progress':
+    case 'in-progress':
+    case 'progress':
+      return 'badge-hold'
+    case 'cancelled':
+    case 'canceled':
+      return 'badge-danger'
+    case 'on_hold':
+    case 'hold':
+      return 'badge-warning'
+    default:
+      return 'badge-neutral'
+  }
+}
+
+function techName(t: any) {
+  return t?.name || t?.user?.name || 'Unknown'
+}
+
+function techInitials(t: any) {
+  const name = techName(t)
+  return name
+    .split(' ')
+    .map((w: string) => w[0])
+    .filter((_: string, i: number) => i < 2)
+    .join('')
+    .toUpperCase()
 }
 
 function formatDateDisplay(d: string) {
   const date = new Date(d)
-  return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
+
+function formatFullDate(d?: string) {
+  if (!d) return '-'
+  const date = new Date(d)
+  if (isNaN(date.getTime())) return '-'
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+
+function formatDateTime(d?: string) {
+  if (!d) return '-'
+  const date = new Date(d)
+  if (isNaN(date.getTime())) return '-'
+  return `${formatFullDate(d)} · ${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
+}
+
+// Detail modal
+const selectedJob = ref<any | null>(null)
+const selectedRequest = ref<any | null>(null)
+let lastDragEnd = 0
+
+function markDragEnd() {
+  lastDragEnd = Date.now()
+}
+
+function openJobDetail(job: any) {
+  if (Date.now() - lastDragEnd < 300) return
+  selectedJob.value = job
+  selectedRequest.value = null
+}
+
+function openRequestDetail(req: any) {
+  if (Date.now() - lastDragEnd < 300) return
+  selectedRequest.value = req
+  selectedJob.value = null
+}
+
+function closeDetail() {
+  selectedJob.value = null
+  selectedRequest.value = null
+}
+
+function technicianLabel(techId?: string | number) {
+  if (!techId) return 'Unassigned'
+  const t = (technicians.value as any[]).find((x: any) => x && x.id === techId)
+  return t ? techName(t) : 'Unknown'
+}
+
+const detailCustomer = computed(() => {
+  const sr = selectedJob.value?.service_request || selectedRequest.value
+  return sr?.customer || null
+})
 
 // Drag and drop logic
 let draggedRequest: any = null
@@ -80,15 +169,25 @@ function onDragStart(req: any) {
   draggedRequest = req
 }
 
-async function onDrop(techId: string) {
+function onDragOver(techId: string | number) {
+  dragOverTechId.value = techId
+}
+
+function onDragLeave() {
+  dragOverTechId.value = null
+}
+
+async function onDrop(techId: string | number) {
+  lastDragEnd = Date.now()
   if (!draggedRequest) return
-  
+  dragOverTechId.value = null
+
   const payload = {
     job_order_no: `JO-${Date.now().toString().slice(-6)}`,
     service_request_id: draggedRequest.id,
     technician_id: techId,
     scheduled_date: new Date().toISOString(),
-    instructions: draggedRequest.problem_description || 'Silakan cek unit'
+    instructions: draggedRequest.problem_description || 'Please check the unit'
   }
 
   try {
@@ -101,320 +200,837 @@ async function onDrop(techId: string) {
     if (res.ok) {
       draggedRequest = null
       fetchJobOrders()
+      toast.success("Job order berhasil di-assign ke teknisi.")
     } else {
-      alert("Gagal assign job order")
+      toast.error("Failed to assign job order")
     }
   } catch (error) {
-    alert("Terjadi kesalahan")
+    toast.error("Something went wrong")
   }
 }
 </script>
 
 <template>
-  <div class="dashboard-layout">
-    <!-- Left Sidebar for Unassigned Requests -->
-    <div class="sidebar">
-      <div class="sidebar-header">
-        <h3 class="title">SERVICE REQUESTS</h3>
-        <button class="action-btn">Action</button>
+  <div class="jo-page">
+    <header class="jo-header">
+      <div>
+        <h1 class="jo-title">Job Orders</h1>
+        <p class="jo-subtitle">Drag a service request onto a technician lane to create a job order</p>
       </div>
-      <div class="sidebar-search">
-        <input v-model="searchUnassigned" type="text" placeholder="Search code..." class="search-input">
-        <button class="refresh-btn" @click="fetchServiceRequests">↻</button>
-      </div>
-      <div class="unassigned-list">
-        <div v-if="unassignedRequests.length === 0" class="empty-state">Belum ada request baru</div>
-        <div 
-          v-for="req in unassignedRequests" 
-          :key="req.id" 
-          class="job-card draggble"
-          draggable="true"
-          @dragstart="onDragStart(req)"
-        >
-          <div class="card-header">
-            <span class="ref-no">{{ req.request_no }}</span>
-            <span class="date-tag">{{ formatDateDisplay(req.created_at) }}</span>
-          </div>
-          <div class="card-body">
-            <div class="customer-name">{{ req.customer?.company_name || req.customer?.name }}</div>
-            <div class="problem-text">{{ req.problem_description }}</div>
-          </div>
+      <div class="jo-summary">
+        <div class="summary-chip">
+          <span class="summary-value">{{ unassignedRequests.length }}</span>
+          <span class="summary-label">Unassigned</span>
+        </div>
+        <div class="summary-chip primary">
+          <span class="summary-value">{{ jobOrders.length }}</span>
+          <span class="summary-label">Assigned</span>
         </div>
       </div>
-    </div>
+    </header>
 
-    <!-- Main Board for Technicians -->
-    <div class="main-board">
-      <div class="board-topbar">
-        <input v-model="searchTech" type="text" placeholder="Search for Technician Name" class="search-input">
-        <select class="filter-select"><option>All</option></select>
-        <button class="filter-btn black">ALL</button>
-      </div>
-
-      <div class="tech-lanes">
-        <div v-for="t in filteredTechs" :key="t.id" class="tech-row">
-          <div class="tech-name">{{ (t as any).name || ((t as any).user && (t as any).user.name) || 'Unknown' }} - {{ (t as any).status || 'AVAILABLE' }}</div>
-          
-          <div 
-            class="tech-lane"
-            @dragover.prevent
-            @drop="onDrop(t.id)"
+    <div class="dashboard-layout">
+      <!-- Left Sidebar for Unassigned Requests -->
+      <aside class="sidebar panel">
+        <div class="sidebar-header">
+          <div class="panel-title-wrap">
+            <h3 class="title">Service Requests</h3>
+            <span class="count-pill">{{ unassignedRequests.length }}</span>
+          </div>
+          <button class="btn btn-accent btn-sm">Action</button>
+        </div>
+        <div class="sidebar-search">
+          <input v-model="searchUnassigned" type="text" placeholder="Search code..." class="form-input search-input">
+          <button class="btn-icon refresh-btn" title="Refresh" @click="fetchServiceRequests">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+          </button>
+        </div>
+        <div class="unassigned-list">
+          <div v-if="unassignedRequests.length === 0" class="empty-state">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>
+            <span>No new requests yet</span>
+          </div>
+          <div
+            v-for="req in unassignedRequests"
+            :key="req.id"
+            class="job-card draggble"
+            draggable="true"
+            @dragstart="onDragStart(req)"
+            @dragend="markDragEnd"
+            @click="openRequestDetail(req)"
           >
-            <div class="lane-empty" v-if="getJobsForTech(t.id).length === 0">Tarik request ke sini untuk assign ke Teknisi</div>
-            
-            <div class="job-card assigned" v-for="job in getJobsForTech(t.id)" :key="job.id">
+            <div class="card-grip" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+            </div>
+            <div class="card-main">
               <div class="card-header">
-                <span class="ref-no">{{ job.job_order_no }}</span>
-                <span class="status-badge">{{ job.status }}</span>
-                <span class="date-tag">{{ formatDateDisplay(job.scheduled_date) }}</span>
+                <span class="ref-no">{{ req.request_no }}</span>
+                <span class="date-tag">{{ formatDateDisplay(req.created_at) }}</span>
               </div>
               <div class="card-body">
-                <div class="customer-name">{{ job.service_request?.customer?.name }}</div>
-                <div class="problem-text">{{ job.instructions }}</div>
+                <div class="customer-name">{{ req.customer?.company_name || req.customer?.name }}</div>
+                <div class="problem-text">{{ req.problem_description }}</div>
               </div>
             </div>
-            
           </div>
         </div>
-      </div>
+      </aside>
+
+      <!-- Main Board for Technicians -->
+      <section class="main-board panel">
+        <div class="board-topbar">
+          <div class="topbar-search">
+            <svg class="topbar-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input v-model="searchTech" type="text" placeholder="Search for Technician Name" class="form-input search-input">
+          </div>
+          <select class="form-select filter-select"><option>All</option></select>
+          <button class="btn btn-primary btn-sm filter-btn">ALL</button>
+        </div>
+
+        <div class="tech-lanes">
+          <div v-for="t in filteredTechs" :key="t.id" class="tech-row">
+            <div class="tech-name">
+              <span class="tech-avatar">{{ techInitials(t) }}</span>
+              <span class="tech-label">{{ techName(t) }}</span>
+              <span class="tech-status" :class="{ online: String((t as any).status || 'AVAILABLE').toLowerCase() === 'available' }">
+                {{ (t as any).status || 'AVAILABLE' }}
+              </span>
+              <span class="tech-count">{{ getJobsForTech(t.id).length }} {{ getJobsForTech(t.id).length === 1 ? 'job' : 'jobs' }}</span>
+            </div>
+
+            <div
+              class="tech-lane"
+              :class="{ 'drag-over': dragOverTechId === t.id }"
+              @dragover.prevent="onDragOver(t.id)"
+              @dragleave="onDragLeave"
+              @drop="onDrop(t.id)"
+            >
+              <div class="lane-empty" v-if="getJobsForTech(t.id).length === 0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                <span>{{ dragOverTechId === t.id ? 'Drop here' : 'Drag a request here to assign to this technician' }}</span>
+              </div>
+
+              <div
+                class="job-card assigned"
+                v-for="job in getJobsForTech(t.id)"
+                :key="job.id"
+                role="button"
+                tabindex="0"
+                @click="openJobDetail(job)"
+                @keydown.enter="openJobDetail(job)"
+              >
+                <div class="card-main">
+                  <div class="card-header">
+                    <span class="ref-no">{{ job.job_order_no }}</span>
+                    <span class="badge" :class="statusBadgeClass(job.status)">{{ String(job.status || 'new').replace('_', ' ') }}</span>
+                    <span class="date-tag">{{ formatDateDisplay(job.scheduled_date) }}</span>
+                  </div>
+                  <div class="card-body">
+                    <div class="customer-name">{{ job.service_request?.customer?.name }}</div>
+                    <div class="problem-text">{{ job.instructions }}</div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
+
+    <!-- Job Order / Service Request detail -->
+    <FormModal
+      :open="!!selectedJob || !!selectedRequest"
+      :title="selectedJob ? 'Job Order Details' : 'Service Request Details'"
+      max-width="560px"
+      @close="closeDetail"
+    >
+      <template v-if="selectedJob">
+        <div class="detail-hero">
+          <div class="detail-hero-main">
+            <span class="detail-hero-id">{{ selectedJob.job_order_no }}</span>
+            <span class="badge" :class="statusBadgeClass(selectedJob.status)">
+              {{ String(selectedJob.status || 'new').replace('_', ' ') }}
+            </span>
+          </div>
+          <span class="detail-hero-scheduled">Scheduled {{ formatFullDate(selectedJob.scheduled_date) }}</span>
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-item">
+            <span class="detail-label">Technician</span>
+            <span class="detail-value">{{ technicianLabel(selectedJob.technician_id) }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Scheduled Date</span>
+            <span class="detail-value">{{ formatFullDate(selectedJob.scheduled_date) }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Created</span>
+            <span class="detail-value">{{ formatDateTime(selectedJob.created_at) }}</span>
+          </div>
+          <div class="detail-item" v-if="selectedJob.service_request">
+            <span class="detail-label">Request Date</span>
+            <span class="detail-value">{{ formatFullDate(selectedJob.service_request.request_date) }}</span>
+          </div>
+        </div>
+
+        <div class="detail-section" v-if="selectedJob.service_request">
+          <div class="detail-section-title">Service Request</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Request No</span>
+              <span class="detail-value detail-link">{{ selectedJob.service_request.request_no }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Request Status</span>
+              <span class="detail-value">{{ String(selectedJob.service_request.status || '-').replace('_', ' ') }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section" v-if="detailCustomer">
+          <div class="detail-section-title">Customer</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Name</span>
+              <span class="detail-value">{{ detailCustomer.company_name || detailCustomer.name || '-' }}</span>
+            </div>
+            <div class="detail-item" v-if="detailCustomer.pic_name">
+              <span class="detail-label">PIC</span>
+              <span class="detail-value">{{ detailCustomer.pic_name }}</span>
+            </div>
+            <div class="detail-item" v-if="detailCustomer.phone">
+              <span class="detail-label">Phone</span>
+              <span class="detail-value">{{ detailCustomer.phone }}</span>
+            </div>
+            <div class="detail-item" v-if="detailCustomer.email">
+              <span class="detail-label">Email</span>
+              <span class="detail-value">{{ detailCustomer.email }}</span>
+            </div>
+            <div class="detail-item wide" v-if="detailCustomer.address">
+              <span class="detail-label">Address</span>
+              <span class="detail-value">{{ detailCustomer.address }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Problem</div>
+          <p class="detail-text">{{ selectedJob.service_request?.problem_description || '-' }}</p>
+        </div>
+
+        <div class="detail-section" v-if="selectedJob.instructions">
+          <div class="detail-section-title">Instructions</div>
+          <p class="detail-text">{{ selectedJob.instructions }}</p>
+        </div>
+      </template>
+
+      <template v-else-if="selectedRequest">
+        <div class="detail-hero">
+          <div class="detail-hero-main">
+            <span class="detail-hero-id">{{ selectedRequest.request_no }}</span>
+            <span class="badge badge-neutral">{{ String(selectedRequest.status || '-').replace('_', ' ') }}</span>
+          </div>
+          <span class="detail-hero-scheduled">Created {{ formatFullDate(selectedRequest.created_at) }}</span>
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-item">
+            <span class="detail-label">Request Date</span>
+            <span class="detail-value">{{ formatFullDate(selectedRequest.request_date) }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">Assignment</span>
+            <span class="detail-value">Not assigned yet</span>
+          </div>
+        </div>
+
+        <div class="detail-section" v-if="detailCustomer">
+          <div class="detail-section-title">Customer</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Name</span>
+              <span class="detail-value">{{ detailCustomer.company_name || detailCustomer.name || '-' }}</span>
+            </div>
+            <div class="detail-item" v-if="detailCustomer.pic_name">
+              <span class="detail-label">PIC</span>
+              <span class="detail-value">{{ detailCustomer.pic_name }}</span>
+            </div>
+            <div class="detail-item" v-if="detailCustomer.phone">
+              <span class="detail-label">Phone</span>
+              <span class="detail-value">{{ detailCustomer.phone }}</span>
+            </div>
+            <div class="detail-item" v-if="detailCustomer.email">
+              <span class="detail-label">Email</span>
+              <span class="detail-value">{{ detailCustomer.email }}</span>
+            </div>
+            <div class="detail-item wide" v-if="detailCustomer.address">
+              <span class="detail-label">Address</span>
+              <span class="detail-value">{{ detailCustomer.address }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Problem</div>
+          <p class="detail-text">{{ selectedRequest.problem_description || '-' }}</p>
+        </div>
+      </template>
+
+      <template #footer>
+        <button class="btn btn-outline" @click="closeDetail">Close</button>
+      </template>
+    </FormModal>
   </div>
 </template>
 
 <style scoped>
-.dashboard-layout {
-  display: flex;
-  height: calc(100vh - var(--header-height, 60px) - 40px);
-  background: #f0f2f5;
-  font-family: 'Inter', sans-serif;
-  gap: 16px;
-}
-
-/* Sidebar Styles */
-.sidebar {
-  width: 320px;
-  background: #f0f2f5;
+.jo-page {
   display: flex;
   flex-direction: column;
+  gap: var(--space-base);
+}
+
+/* Page header */
+.jo-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-base);
+  flex-wrap: wrap;
+}
+
+.jo-title {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  line-height: 1.2;
+}
+
+.jo-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin-top: var(--space-xs);
+}
+
+.jo-summary {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.summary-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-sm) var(--space-base);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  min-width: 108px;
+}
+
+.summary-chip.primary {
+  background: var(--color-primary-surface);
+  border-color: transparent;
+}
+
+.summary-value {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
+  line-height: 1.1;
+}
+
+.summary-chip.primary .summary-value {
+  color: var(--color-primary);
+}
+
+.summary-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Board layout */
+.dashboard-layout {
+  display: flex;
+  height: calc(100vh - var(--topbar-height, 60px) - 140px);
+  min-height: 420px;
+  gap: var(--space-base);
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Sidebar */
+.sidebar {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-base);
+  gap: var(--space-sm);
 }
 
 .sidebar-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  gap: var(--space-sm);
+}
+
+.panel-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 .sidebar-header .title {
-  font-weight: 700;
-  font-size: 16px;
-  color: #333;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
 }
 
-.action-btn {
-  background: #4ade80;
-  color: white;
-  border: none;
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-weight: 600;
-  cursor: pointer;
+.count-pill {
+  background: var(--color-primary-surface);
+  color: var(--color-primary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  padding: 2px 9px;
+  border-radius: var(--radius-full);
 }
 
 .sidebar-search {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--space-sm);
 }
 
 .search-input {
-  flex: 1;
+  min-height: 38px;
   padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  outline: none;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-md);
 }
 
-.refresh-btn {
-  background: #4ade80;
-  color: white;
-  border: none;
-  width: 34px;
-  border-radius: 4px;
+.sidebar-search .search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-icon.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
   cursor: pointer;
-  font-size: 16px;
+  transition: all var(--transition-fast);
+}
+
+.btn-icon.refresh-btn:hover {
+  background: var(--color-primary-surface);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .unassigned-list {
-  background: white;
   flex: 1;
-  border-radius: 8px;
-  padding: 12px;
   overflow-y: auto;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-right: 2px;
 }
 
 .empty-state {
-  text-align: center;
-  color: #999;
-  font-size: 13px;
-  margin-top: 20px;
-}
-
-/* Main Board Styles */
-.main-board {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: var(--space-xl) var(--space-md);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  margin-top: var(--space-xs);
+}
+
+/* Main board */
+.main-board {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
 .board-topbar {
-  padding: 12px 20px;
-  border-bottom: 1px solid #eee;
+  padding: var(--space-base) var(--space-lg);
+  border-bottom: 1px solid var(--color-border-light);
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: #fff;
+  gap: var(--space-sm);
+  background: var(--color-surface);
+}
+
+.topbar-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.topbar-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.topbar-search .search-input {
+  width: 100%;
+  padding-left: 34px;
 }
 
 .filter-select {
+  min-height: 38px;
   padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-md);
   min-width: 100px;
 }
 
 .filter-btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  font-weight: bold;
-  font-size: 12px;
-  cursor: pointer;
-}
-.filter-btn.black {
-  background: #000;
-  color: #fff;
+  min-height: 38px;
 }
 
 .tech-lanes {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
-  background: #f8f9fa;
+  padding: var(--space-lg);
+  background: var(--color-surface-raised);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-base);
 }
 
 .tech-row {
-  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
 }
 
 .tech-name {
-  font-size: 11px;
-  font-weight: 700;
-  color: #666;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.tech-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-text-on-primary);
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.tech-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text);
   text-transform: uppercase;
-  margin-bottom: 4px;
   letter-spacing: 0.5px;
 }
 
+.tech-status {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-sunken);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.tech-status.online {
+  color: var(--color-success);
+  background: var(--color-success-surface);
+}
+
+.tech-count {
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-semibold);
+}
+
 .tech-lane {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  min-height: 80px;
-  padding: 8px;
-  border-radius: 4px;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  min-height: 84px;
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   flex-wrap: wrap;
   align-items: flex-start;
+  transition: border-color var(--transition-base), background var(--transition-base), box-shadow var(--transition-base);
+}
+
+.tech-lane.drag-over {
+  border-color: var(--color-primary);
+  background: var(--color-primary-surface);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
 }
 
 .lane-empty {
-  color: #bbb;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
   font-style: italic;
   width: 100%;
   text-align: center;
-  margin-top: 20px;
+  padding: var(--space-base) var(--space-sm);
 }
 
-/* Card Styles */
+.tech-lane.drag-over .lane-empty {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Cards */
 .job-card {
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
   width: 100%;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+}
+
+.job-card:hover {
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-base);
+  transform: translateY(-1px);
 }
 
 .job-card.draggble {
   cursor: grab;
-  margin-bottom: 10px;
 }
+
 .job-card.draggble:active {
   cursor: grabbing;
 }
 
+.job-card.draggble:active .card-grip {
+  color: var(--color-primary);
+}
+
+.card-grip {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.card-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .job-card.assigned {
-  width: 280px;
-  border-left: 3px solid #22c55e;
+  width: 286px;
+  border-left: 3px solid var(--color-primary);
+}
+
+.job-card.assigned:hover {
+  border-color: var(--color-border);
+  border-left-color: var(--color-primary);
 }
 
 .card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--space-xs);
+  margin-bottom: 5px;
+  flex-wrap: wrap;
 }
 
 .ref-no {
-  color: #22c55e;
-  font-weight: 700;
-  font-size: 13px;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
 }
 
 .date-tag {
-  background: #ef4444;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: bold;
   margin-left: auto;
-}
-
-.status-badge {
-  background: #4ade80;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
   font-size: 10px;
-  font-weight: bold;
+  font-weight: var(--font-weight-semibold);
 }
 
 .card-body {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
 }
 
 .customer-name {
-  color: #ef4444;
-  font-weight: 700;
-  margin-bottom: 4px;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-sm);
+  margin-bottom: 3px;
 }
 
 .problem-text {
-  color: #666;
+  color: var(--color-text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.job-card.assigned {
+  cursor: pointer;
+}
+
+.job-card.assigned:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Detail modal */
+.detail-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  padding: var(--space-base);
+  background: var(--color-primary-surface);
+  border-radius: var(--radius-md);
+}
+
+.detail-hero-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.detail-hero-id {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+}
+
+.detail-hero-scheduled {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-base);
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.detail-item.wide {
+  grid-column: 1 / -1;
+}
+
+.detail-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.detail-value {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.detail-link {
+  color: var(--color-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-top: var(--space-base);
+  border-top: 1px solid var(--color-border-light);
+}
+
+.detail-section-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detail-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  line-height: 1.55;
+}
+
+@media (max-width: 900px) {
+  .dashboard-layout {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .sidebar {
+    width: 100%;
+  }
+
+  .tech-lanes {
+    max-height: none;
+  }
 }
 </style>

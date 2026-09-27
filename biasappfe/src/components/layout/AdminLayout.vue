@@ -67,9 +67,17 @@ const pageTitle = computed(() => {
     '/accounting/sparepart-requests': 'Sparepart Requests (Procurement)',
     '/accounting/purchase-orders': 'Purchase Orders',
     '/accounting/delivery-orders': 'Delivery Orders (Inbound)',
-    '/technician/dashboard': 'BIAS Technician'
+    '/technician/dashboard': 'BIAS Technician',
+    '/technician/call-services': 'My Jobs',
+    '/technician/maintenance': 'Maintenance',
+    '/technician/sparepart-request': 'Request Sparepart',
+    '/technician/meter-readings': 'Meter Readings',
+    '/technician/service-history': 'Service History'
   }
-  return titles[route.path] || 'BIAS App'
+  const exact = titles[route.path]
+  if (exact) return exact
+  if (route.path.startsWith('/technician/call-services/')) return 'My Jobs'
+  return 'BIAS App'
 })
 </script>
 

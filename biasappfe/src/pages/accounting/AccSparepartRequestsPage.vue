@@ -3,9 +3,11 @@
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import { useRouter } from 'vue-router'
 import type { TableColumn, SparepartRequest } from '@/types'
 
+const { can } = usePermission()
 const store = useMasterStore()
 const router = useRouter()
 
@@ -79,7 +81,7 @@ function handleCreatePO(request: SparepartRequest) {
       <span>These requests come from Customer Service. You can generate Purchase Orders (PO) for pending requests.</span>
     </div>
 
-    <DataTable :columns="columns" :data="store.sparepartRequests.value" search-placeholder="Search requests...">
+    <DataTable :columns="columns" :data="store.sparepartRequests.value" permission="service_sparepart" search-placeholder="Search requests...">
       <template #cell-product_id="{ value }">{{ getProduct(value) }}</template>
       <template #cell-service_report_id="{ value }">{{ getSR(value) }}</template>
       <template #cell-status="{ value }">
@@ -97,7 +99,7 @@ function handleCreatePO(request: SparepartRequest) {
       </template>
       <template #cell-actions="{ row }">
         <button 
-          v-if="row.status === 'pending'"
+          v-if="row.status === 'pending' && can('purchase_order:create')"
           class="btn btn-sm btn-primary"
           @click="handleCreatePO(row)"
         >

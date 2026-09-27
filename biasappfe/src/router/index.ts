@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { allowedRouteNamesByRole, homeRouteNameByRole, normalizeRole } from '@/router/role-access'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -256,14 +257,12 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const { isAuthenticated, currentUser } = useAuth()
+  const role = normalizeRole(currentUser.value?.role)
 
   if (to.meta.requiresAuth === false) {
     if (isAuthenticated.value) {
-      const role = currentUser.value?.role
-      if (role === 'customer_service') return { name: 'csDashboard' }
-      if (role === 'technician') return { name: 'techDashboard' }
-      if (role === 'accounting') return { name: 'accDashboard' }
-      return { name: 'users' }
+      const home = homeRouteNameByRole[role]
+      return { name: home || 'users' }
     }
     return true
   }
@@ -272,38 +271,10 @@ router.beforeEach((to) => {
     return { name: 'login' }
   }
 
-  const role = currentUser.value?.role
-  
-  // CS Authorization
-  if (role === 'customer_service') {
-    const allowedForCS = [
-      'csDashboard', 'customers', 'contractItems', 'units', 'csCallService', 
-      'csMonitoringService', 'csSparepartRequest', 'csIndent', 'csDelivery', 
-      'warrantyClaims', 'rentalInvoices', 'csReports', 'rentals',
-      'serviceRequests', 'jobOrders'
-    ]
-    if (to.name && !allowedForCS.includes(to.name as string)) {
-      return { name: 'csDashboard' }
-    }
-  }
-  // Admin can access everything
-  if (role === 'technician') {
-    const allowedForTechnician = [
-      'techDashboard', 'techCallServices', 'techCallServiceDetail', 'techMaintenance', 
-      'techSparepartRequest', 'techMeterReadings', 'techServiceHistory', 
-      'units', 'customers'
-    ]
-    if (to.name && !allowedForTechnician.includes(to.name as string)) {
-      return { name: 'techDashboard' }
-    }
-  }
-  if (role === 'accounting') {
-    const allowedForAccounting = [
-      'accDashboard', 'accSparepartRequests', 'accPurchaseOrders', 'accDeliveryOrders'
-    ]
-    if (to.name && !allowedForAccounting.includes(to.name as string)) {
-      return { name: 'accDashboard' }
-    }
+  // Role route allowlists (see role-access.ts). Admin/custom roles are unrestricted here.
+  const allowed = allowedRouteNamesByRole[role]
+  if (allowed && to.name && !allowed.includes(to.name as string)) {
+    return { name: homeRouteNameByRole[role] }
   }
 
   return true

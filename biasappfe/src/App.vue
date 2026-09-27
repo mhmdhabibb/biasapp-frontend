@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminLayout from './components/layout/AdminLayout.vue'
+import ToastHost from './components/ui/ToastHost.vue'
 
 const route = useRoute()
 const isLoginPage = computed(() => route.name === 'login')
@@ -12,4 +13,5 @@ const isLoginPage = computed(() => route.name === 'login')
     <router-view />
   </AdminLayout>
   <router-view v-else />
+  <ToastHost />
 </template>

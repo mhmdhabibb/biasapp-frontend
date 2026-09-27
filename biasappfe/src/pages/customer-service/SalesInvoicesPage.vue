@@ -6,9 +6,13 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import { useResourcesStore } from '@/stores/resources.store'
+import { useToast } from '@/composables/useToast'
 import type { TableColumn, SalesInvoice } from '@/types'
 
+const toast = useToast()
+const { can } = usePermission()
 const {
   salesInvoices: data,
   sales,
@@ -93,11 +97,11 @@ const filteredData = computed(() => {
 })
 
 function exportMonthToPdf() {
-  alert('Export PDF akan segera tersedia (contoh fungsi)')
+  toast.info('Export PDF akan segera tersedia (contoh fungsi)')
 }
 
 function exportMonthToExcel() {
-  alert('Export Excel akan segera tersedia (contoh fungsi)')
+  toast.info('Export Excel akan segera tersedia (contoh fungsi)')
 }
 
 const calcTotal = computed(() => form.subtotal + form.service_charge + form.tax)
@@ -141,13 +145,15 @@ async function handleSubmit() {
   try {
     if (editingItem.value) {
       await resources.update("salesInvoices", editingItem.value.id as any, form)
+      toast.success("Invoice berhasil diperbarui!")
     } else {
       await resources.create("salesInvoices", form)
+      toast.success("Invoice berhasil disimpan!")
     }
     useMasterStore().refresh(true)
     showModal.value = false
   } catch (error) {
-    alert("Gagal menyimpan invoice!")
+    toast.error("Gagal menyimpan invoice!")
   }
 }
 
@@ -157,8 +163,9 @@ async function handleDelete() {
     try {
       await resources.remove("salesInvoices", deletingItem.value.id as any)
       useMasterStore().refresh(true)
+      toast.success("Invoice berhasil dihapus!")
     } catch (error) {
-      alert("Gagal menghapus invoice!")
+      toast.error("Gagal menghapus invoice!")
     }
   }
   showConfirm.value = false
@@ -459,20 +466,20 @@ function printInvoice(item: any) {
         </span>
       </template>
       <template #actions="{ row }">
-        <button class="action-btn action-btn--print" title="Print Invoice" @click="printInvoice(row)">
+        <button v-if="can('sales_invoice:read')" class="action-btn action-btn--print" title="Print Invoice" @click="printInvoice(row)">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M6 9V2h12v7"></path>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
             <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
-        <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)" style="margin-left: 4px;">
+        <button v-if="can('sales_invoice:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)" style="margin-left: 4px;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
             <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
           </svg>
         </button>
-        <button class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="margin-left: 4px;">
+        <button v-if="can('sales_invoice:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="margin-left: 4px;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>

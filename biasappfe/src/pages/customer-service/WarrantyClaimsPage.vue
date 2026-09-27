@@ -6,7 +6,10 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import type { TableColumn, WarrantyClaim } from '@/types'
+
+const { can, canApprove } = usePermission()
 
 const {
   warrantyClaims: data,
@@ -87,8 +90,8 @@ function srLabel(id: any): string {
 
 <template>
   <div>
-    <PageHeader title="Warranty Claims" button-label="Add Warranty Claim" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search warranty claims..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Warranty Claims" button-label="Add Warranty Claim" permission="warranty_claim:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" permission="warranty_claim" search-placeholder="Search warranty claims..." @edit="openEdit" @delete="openDelete">
       <template #cell-warranty_id="{ value }">{{ warrantyLabel(value) }}</template>
       <template #cell-service_report_id="{ value }">{{ srLabel(value) }}</template>
       <template #cell-status="{ value }">
@@ -125,8 +128,8 @@ function srLabel(id: any): string {
         <select id="wc-status" v-model="form.status" class="form-select">
           <option value="pending">Pending</option>
           <option value="in_review">In Review</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
+          <option v-if="canApprove('warranty_claim')" value="approved">Approved</option>
+          <option v-if="canApprove('warranty_claim')" value="rejected">Rejected</option>
         </select>
       </div>
     </FormModal>

@@ -6,9 +6,12 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import { resources } from '@/services/resource.service'
 import { onMounted } from 'vue'
 import type { TableColumn, ContractItem } from '@/types'
+
+const { can } = usePermission()
 
 const {
   contractItems: data,
@@ -773,7 +776,7 @@ function unitSerialNo(id: any, rowUnit?: any): string {
 
 <template>
   <div>
-    <PageHeader title="Contract Items" button-label="Add Contract" @add="openAdd" />
+    <PageHeader title="Contract Items" button-label="Add Contract" permission="contract_item:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search contracts..." @edit="openEdit" @delete="openDelete">
       <template #cell-contract_no="{ row }">
         <span class="cell-contract-no">{{ row.contract?.contract_no || row.contract_no || '-' }}</span>
@@ -799,26 +802,26 @@ function unitSerialNo(id: any, rowUnit?: any): string {
         </span>
       </template>
       <template #actions="{ row }">
-        <button class="action-btn" title="Print to PDF" @click="printContract(row)">
+        <button v-if="can('contract_item:read')" class="action-btn" title="Print to PDF" @click="printContract(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
             <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
-        <button class="action-btn" title="Detail" @click="openDetail(row)">
+        <button v-if="can('contract_item:read')" class="action-btn" title="Detail" @click="openDetail(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
         </button>
-        <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
+        <button v-if="can('contract_item:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
             <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
           </svg>
         </button>
-        <button class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
+        <button v-if="can('contract_item:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>

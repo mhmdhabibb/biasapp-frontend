@@ -2,8 +2,12 @@
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
 import type { TableColumn } from '@/types'
 
+const toast = useToast()
+const { can } = usePermission()
 const { deliveryOrders, findCustomer, findTechnician } = useMasterStore()
 
 const columns: TableColumn[] = [
@@ -230,7 +234,7 @@ async function handleSubmit() {
     showModal.value = false
   } catch (err) {
     console.error(err)
-    alert('Failed to update')
+    toast.error('Failed to update')
   }
 }
 </script>
@@ -250,8 +254,8 @@ async function handleSubmit() {
         {{ value ? new Date(value).toLocaleDateString() : '-' }}
       </template>
       <template #actions="{ row }">
-        <button class="btn btn-sm btn-outline" @click="openEdit(row)">Edit Report</button>
-        <button class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="printServiceHistory(row)">Print Service History</button>
+        <button v-if="can('delivery_order:update')" class="btn btn-sm btn-outline" @click="openEdit(row)">Edit Report</button>
+        <button v-if="can('delivery_order:read')" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="printServiceHistory(row)">Print Service History</button>
       </template>
     </DataTable>
 

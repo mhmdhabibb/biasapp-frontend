@@ -387,6 +387,8 @@ export interface MenuItem {
   label: string
   icon: string
   route: string
+  /** Restrict this item to specific (normalized) roles. When set, permission/module checks are skipped. */
+  roles?: string[]
 }
 
 export interface MenuGroup {

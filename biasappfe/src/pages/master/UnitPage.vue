@@ -5,10 +5,12 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Unit } from '@/types'
 import { computed, reactive, ref, onMounted, watch, onUnmounted } from 'vue'
 
+const toast = useToast()
 const { currentUser } = useAuth()
 const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
@@ -43,7 +45,7 @@ async function fetchData() {
     paperSizes.value = resPaperSizes.data as any
   } catch (error: any) {
     console.error('Failed to fetch data:', error)
-    alert('Gagal mengambil data dari server: ' + (error.message || 'Error'))
+    toast.error('Gagal mengambil data dari server: ' + (error.message || 'Error'))
   }
 }
 
@@ -124,7 +126,7 @@ function openEdit(item: any) {
 
 async function handleSubmit() {
   if (!form.brand_id || !form.type_id || !form.name.trim() || !form.serial_no.trim()) {
-    alert('Harap lengkapi semua field yang wajib (Nama Unit, Brand, Tipe, Serial Number).')
+    toast.warning('Harap lengkapi semua field yang wajib (Nama Unit, Brand, Tipe, Serial Number).')
     return
   }
   try {
@@ -134,14 +136,16 @@ async function handleSubmit() {
     }
     if (editingItem.value) {
       await resources.units.update(String(editingItem.value.id), payload)
+      toast.success("Unit berhasil diperbarui!")
     } else {
       await resources.units.create(payload)
+      toast.success("Unit berhasil disimpan!")
     }
     await fetchData()
     showModal.value = false
   } catch (error: any) {
     console.error('Failed to save unit:', error)
-    alert('Gagal menyimpan data Unit: ' + (error.message || 'Terjadi kesalahan'))
+    toast.error('Gagal menyimpan data Unit: ' + (error.message || 'Terjadi kesalahan'))
   }
 }
 
@@ -152,8 +156,10 @@ async function handleDelete() {
     try {
       await resources.units.remove(String(deletingItem.value.id))
       await fetchData()
+      toast.success("Unit berhasil dihapus!")
     } catch (error) {
       console.error('Failed to delete unit:', error)
+      toast.error('Gagal menghapus data Unit')
     }
   }
   showConfirm.value = false
@@ -169,9 +175,9 @@ function getBrandName(id: string | null): string {
 
 <template>
   <div>
-    <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" @add="openAdd" />
+    <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" permission="unit:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search units..." 
-               :hide-actions="isTechnician"
+               permission="unit"
                @edit="openEdit" @delete="openDelete">
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}

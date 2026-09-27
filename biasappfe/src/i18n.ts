@@ -91,6 +91,7 @@ const messages = {
       call_service: 'Call Service',
       maintenance: 'Maintenance',
       service_history: 'Service History',
+      technician_menu: 'Technician',
       references: 'References',
     }
   },
@@ -184,6 +185,7 @@ const messages = {
       call_service: 'Call Service',
       maintenance: 'Maintenance',
       service_history: 'Riwayat Servis',
+      technician_menu: 'Teknisi',
       references: 'Referensi',
     }
   }

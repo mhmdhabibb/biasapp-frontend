@@ -2,7 +2,10 @@
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import type { TableColumn } from '@/types'
+
+const { canApprove } = usePermission()
 
 const { sparepartRequests, findProduct, findServiceReport } = useMasterStore()
 
@@ -28,8 +31,8 @@ function getSR(id: number | null) {
 
 <template>
   <div>
-    <PageHeader title="Sparepart Requests" button-label="New Request" />
-    <DataTable :columns="columns" :data="sparepartRequests" search-placeholder="Search requests...">
+    <PageHeader title="Sparepart Requests" button-label="New Request" permission="service_sparepart:create" />
+    <DataTable :columns="columns" :data="sparepartRequests" permission="service_sparepart" search-placeholder="Search requests...">
       <template #cell-product_id="{ value }">{{ getProduct(value) }}</template>
       <template #cell-service_report_id="{ value }">{{ getSR(value) }}</template>
       <template #cell-status="{ value }">

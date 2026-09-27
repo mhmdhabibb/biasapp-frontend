@@ -3,8 +3,12 @@
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useToast } from '@/composables/useToast'
+import { usePermission } from '@/composables/usePermission'
 import type { TableColumn, ProcurementDeliveryOrder } from '@/types'
 
+const toast = useToast()
+const { can } = usePermission()
 const store = useMasterStore()
 
 const columns: TableColumn[] = [
@@ -36,7 +40,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
   }
 
   // In a real implementation, this is where we would trigger the API to update Product.Stock
-  alert(`DO ${doItem.do_number} marked as received. Inventory stock would be updated here.`)
+  toast.success(`DO ${doItem.do_number} marked as received. Inventory stock would be updated here.`)
 }
 
 function updateStatus(doItem: ProcurementDeliveryOrder, newStatus: string) {
@@ -60,7 +64,7 @@ function updateStatus(doItem: ProcurementDeliveryOrder, newStatus: string) {
       <span>Track inbound shipments for sparepart procurement. Marking a DO as "Received" will automatically update inventory stock.</span>
     </div>
 
-    <DataTable :columns="columns" :data="store.procurementDeliveryOrders.value" search-placeholder="Search delivery orders...">
+    <DataTable :columns="columns" :data="store.procurementDeliveryOrders.value" permission="delivery_order" search-placeholder="Search delivery orders...">
       <template #cell-do_date="{ value }">
         {{ new Date(value).toLocaleDateString() }}
       </template>
@@ -81,14 +85,14 @@ function updateStatus(doItem: ProcurementDeliveryOrder, newStatus: string) {
       <template #cell-actions="{ row }">
         <div class="action-group">
           <button 
-            v-if="row.status === 'draft'"
+            v-if="row.status === 'draft' && can('delivery_order:update')"
             class="btn btn-sm btn-outline"
             @click="updateStatus(row, 'issued')"
           >
             Issue
           </button>
           <button 
-            v-if="row.status === 'issued'"
+            v-if="row.status === 'issued' && can('delivery_order:update')"
             class="btn btn-sm btn-success"
             @click="handleReceiveDO(row)"
           >

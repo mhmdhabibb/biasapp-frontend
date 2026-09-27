@@ -8,7 +8,9 @@ import { resources } from '@/services/resource.service'
 import { api } from '@/services/api'
 import type { Role, Permission, Module } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
+import { useToast } from '@/composables/useToast'
 
+const toast = useToast()
 const authStore = useAuthStore()
 const router = useRouter()
 
@@ -121,13 +123,16 @@ async function handleSaveRole() {
   try {
     if (editingRole.value) {
       await resources.roles.update(String(editingRole.value.id), { name: roleForm.value.name })
+      toast.success("Role berhasil diperbarui!")
     } else {
       await resources.roles.create({ name: roleForm.value.name })
+      toast.success("Role berhasil disimpan!")
     }
     showModal.value = false
     await fetchData()
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to save role:', error)
+    toast.error('Gagal menyimpan role: ' + (error.message || 'Error'))
   }
 }
 
@@ -140,8 +145,10 @@ async function handleDeleteRole() {
     }
     showConfirm.value = false
     await fetchData()
-  } catch (error) {
+    toast.success("Role berhasil dihapus!")
+  } catch (error: any) {
     console.error('Failed to delete role:', error)
+    toast.error('Gagal menghapus role: ' + (error.message || 'Error'))
   }
 }
 
@@ -194,7 +201,7 @@ async function savePermissions() {
     }
   } catch (error: any) {
     console.error(error)
-    alert('Gagal menyimpan: ' + (error.message || 'Error'))
+    toast.error('Gagal menyimpan: ' + (error.message || 'Error'))
   } finally {
     isSaving.value = false
   }

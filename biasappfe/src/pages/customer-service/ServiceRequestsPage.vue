@@ -4,9 +4,13 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
 import type { TableColumn } from '@/types'
 import { computed, reactive, ref, onMounted, watch } from 'vue'
 
+const toast = useToast()
+const { can } = usePermission()
 const { customers, units, sales, findProduct, getUnitsByCustomer } = useMasterStore()
 
 const columns: TableColumn[] = [
@@ -162,15 +166,15 @@ async function handleSubmit() {
     })
     
     if (res.ok) {
-      alert("Service Request berhasil dibuat!")
+      toast.success("Service Request berhasil dibuat!")
       showModal.value = false
       fetchRequests()
     } else {
       const err = await res.json()
-      alert("Gagal: " + JSON.stringify(err))
+      toast.error("Gagal: " + JSON.stringify(err))
     }
   } catch (error) {
-    alert("Terjadi kesalahan jaringan.")
+    toast.error("Terjadi kesalahan jaringan.")
   } finally {
     isLoading.value = false
   }
@@ -209,20 +213,23 @@ async function handleAssignSubmit() {
   try {
     const res = await fetch('http://localhost:4008/api/job-orders', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionStorage.getItem('bias_token')}`
+      },
       body: JSON.stringify(payload)
     })
     
     if (res.ok) {
-      alert("Teknisi berhasil di-assign! Job Order telah dibuat.")
+      toast.success("Teknisi berhasil di-assign! Job Order telah dibuat.")
       showAssignModal.value = false
       fetchRequests() // To maybe refresh status if backend updates SR status automatically
     } else {
       const err = await res.json()
-      alert("Gagal: " + JSON.stringify(err))
+      toast.error("Gagal: " + JSON.stringify(err))
     }
   } catch (error) {
-    alert("Terjadi kesalahan jaringan.")
+    toast.error("Terjadi kesalahan jaringan.")
   } finally {
     isLoading.value = false
   }
@@ -236,7 +243,7 @@ onMounted(() => {
 
 <template>
   <div>
-    <PageHeader title="Manajemen Service Request" button-label="Buat Request Baru" @add="openAdd" />
+    <PageHeader title="Manajemen Service Request" button-label="Buat Request Baru" permission="service_request:create" @add="openAdd" />
     
     <DataTable :columns="columns" :data="serviceRequests" search-placeholder="Cari keluhan...">
       <template #cell-request_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
@@ -246,7 +253,7 @@ onMounted(() => {
         </span>
       </template>
       <template #actions="{ row }">
-        <button v-if="row.status !== 'assigned' && row.status !== 'completed'" class="btn btn-sm btn-primary" @click="openAssign(row)">Assign Teknisi</button>
+        <button v-if="can('job_order:create') && row.status !== 'assigned' && row.status !== 'completed'" class="btn btn-sm btn-primary" @click="openAssign(row)">Assign Teknisi</button>
       </template>
     </DataTable>
 

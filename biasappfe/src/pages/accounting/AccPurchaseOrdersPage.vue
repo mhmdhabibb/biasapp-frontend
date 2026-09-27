@@ -3,10 +3,12 @@
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import { useRouter } from 'vue-router'
 import type { TableColumn, PurchaseOrder } from '@/types'
 import { computed } from 'vue'
 
+const { can } = usePermission()
 const store = useMasterStore()
 const router = useRouter()
 
@@ -185,7 +187,7 @@ function printInvoice(po: any) {
       <span>Manage Purchase Orders generated from Sparepart Requests. Approved POs can be converted to Delivery Orders for receiving.</span>
     </div>
 
-    <DataTable :columns="columns" :data="store.purchaseOrders.value" search-placeholder="Search purchase orders...">
+    <DataTable :columns="columns" :data="store.purchaseOrders.value" permission="purchase_order" search-placeholder="Search purchase orders...">
       <template #cell-po_date="{ value }">
         {{ new Date(value).toLocaleDateString() }}
       </template>
@@ -205,21 +207,21 @@ function printInvoice(po: any) {
       <template #cell-actions="{ row }">
         <div class="action-group">
           <button 
-            v-if="row.status === 'draft'"
+            v-if="row.status === 'draft' && can('purchase_order:submit')"
             class="btn btn-sm btn-outline"
             @click="updateStatus(row, 'submitted')"
           >
             Submit
           </button>
           <button 
-            v-if="row.status === 'submitted'"
+            v-if="row.status === 'submitted' && can('purchase_order:approve')"
             class="btn btn-sm btn-primary"
             @click="updateStatus(row, 'approved')"
           >
             Approve
           </button>
           <button 
-            v-if="row.status === 'approved' || row.status === 'do_created' || row.status === 'completed'"
+            v-if="(row.status === 'approved' || row.status === 'do_created' || row.status === 'completed') && can('purchase_order:read')"
             class="btn btn-sm btn-outline"
             style="color: var(--color-primary); border-color: var(--color-primary);"
             @click="printInvoice(row)"
@@ -227,7 +229,7 @@ function printInvoice(po: any) {
             Print Invoice
           </button>
           <button 
-            v-if="row.status === 'approved'"
+            v-if="row.status === 'approved' && can('delivery_order:create')"
             class="btn btn-sm btn-accent"
             @click="handleGenerateDO(row)"
           >

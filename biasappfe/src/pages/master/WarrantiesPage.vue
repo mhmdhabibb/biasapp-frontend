@@ -5,9 +5,12 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
+import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Warranty } from '@/types'
 import { formatDateDDMMYYYY } from '@/utils/format'
+
+const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'warranty_type', label: 'Warranty Type' },
@@ -30,6 +33,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch warranties:', error)
+    toast.error('Gagal mengambil data warranty: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -63,8 +67,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
+    toast.success(editingItem.value ? 'Warranty berhasil diperbarui!' : 'Warranty berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save warranty:', error)
+    toast.error('Gagal menyimpan warranty: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -75,8 +81,10 @@ async function handleDelete() {
     try {
       await resources.warranties.remove(String(deletingItem.value.id))
       await fetchData()
+      toast.success('Warranty berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete warranty:', error)
+      toast.error('Gagal menghapus warranty')
     }
   }
   showConfirm.value = false
@@ -86,8 +94,8 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Warranties" button-label="Add Warranty" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search warranties..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Warranties" button-label="Add Warranty" permission="warranty:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search warranties..." permission="warranty" @edit="openEdit" @delete="openDelete">
       <template #cell-start_date="{ value }">
         {{ formatDateDDMMYYYY(value) }}
       </template>

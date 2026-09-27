@@ -6,6 +6,9 @@ import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, ProductCategory } from '@/types'
+import { useToast } from '@/composables/useToast'
+
+const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Kategori' },
@@ -20,6 +23,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch product categories:', error)
+    toast.error('Gagal mengambil data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -54,8 +58,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
+    toast.success(editingItem.value ? 'Kategori berhasil diperbarui!' : 'Kategori berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save product category:', error)
+    toast.error('Gagal menyimpan kategori: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -66,8 +72,10 @@ async function handleDelete() {
     try {
       await resources.productCategories.remove(String(deletingItem.value.id))
       await fetchData()
+      toast.success('Kategori berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete product category:', error)
+      toast.error('Gagal menghapus kategori')
     }
   }
   showConfirm.value = false
@@ -77,8 +85,8 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Product Categories" button-label="Add Category" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari kategori..." @edit="openEdit" @delete="openDelete" />
+    <PageHeader title="Product Categories" button-label="Add Category" permission="product_category:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari kategori..." permission="product_category" @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Category' : 'Add Category'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="cat-name" class="form-label">Nama Kategori</label>

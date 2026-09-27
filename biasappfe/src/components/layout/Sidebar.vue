@@ -5,6 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
 import { useI18n } from 'vue-i18n'
 import type { MenuGroup } from '@/types'
+import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
 
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -65,63 +66,72 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
       { label: 'sidebar.cs_reports', icon: 'file-text', route: '/customer-service/reports' },
     ],
+  },
+  {
+    title: 'sidebar.technician_menu',
+    items: [
+      { label: 'sidebar.my_jobs', icon: 'tool', route: '/technician/call-services', roles: ['technician'] },
+      { label: 'sidebar.maintenance', icon: 'wrench', route: '/technician/maintenance', roles: ['technician'] },
+      { label: 'sidebar.sparepart_requests', icon: 'box', route: '/technician/sparepart-request', roles: ['technician'] },
+      { label: 'sidebar.meter_readings', icon: 'activity', route: '/technician/meter-readings', roles: ['technician'] },
+      { label: 'sidebar.service_history', icon: 'file-text', route: '/technician/service-history', roles: ['technician'] },
+    ],
   }
 ]
 
 const menuGroups = computed(() => {
-  const role = currentUser.value?.role
-  
-  // Use allMenuGroups for everyone, but filter dynamically
-  let groups: MenuGroup[] = JSON.parse(JSON.stringify(allMenuGroups))
-  
-  // Filter dynamically based on permissions and active database modules
+  const role = normalizeRole(currentUser.value?.role)
+
+  const groups: MenuGroup[] = JSON.parse(JSON.stringify(allMenuGroups))
+
+  // Filter dynamically based on role route access, permissions and active database modules
   return groups.map(group => ({
     ...group,
     title: group.title.includes('.') ? t(group.title) : group.title,
     items: group.items.filter(item => {
       // 1. Superadmin (admin) sees everything
-      if (role === 'admin' || role === 'superadmin') return true;
+      if (role === 'admin') return true
+
+      // 2. Role-restricted items (technician menu): role decides, no module/permission checks
+      if (item.roles) return item.roles.includes(role)
+
+      // 3. Mirror the router guard: only show routes this role may actually open
+      //    (fixes wrong dashboards / bouncing menus for built-in roles)
+      const allowedNames = allowedRouteNamesByRole[role]
+      if (allowedNames) {
+        const itemName = router.resolve(item.route).name
+        if (!itemName || !allowedNames.includes(String(itemName))) return false
+      }
 
       const translatedLabel = item.label.includes('.') ? t(item.label) : item.label
+
+      // 4. Match against active database modules + user permissions
       const dbModule = modules.value.find(m => {
         const mBase = m.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
         const tBase = translatedLabel.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
         const routeBase = (item.route.split('/').pop() || '').replace(/[^a-z]/g, '').replace(/s/g, '')
         return mBase === tBase || mBase === routeBase || routeBase.includes(mBase) || mBase.includes(routeBase)
       })
-      
-      // If module is registered in DB
+
       if (dbModule) {
-        if (!dbModule.is_active) {
-          console.log(`[Sidebar] dbModule ${dbModule.name} is NOT active`);
-          return false;
-        }
-        
-        // 2. Check if user has permission
-        const perms = currentUser.value?.permissions || [];
-        
-        // Try to match permission format using aggressive normalization
-        const mBaseForPerm = dbModule.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '');
-        
-        const hasModulePerm = perms.some(p => {
-          const pName = p.toLowerCase();
-          const pModPart = pName.split(':')[0]; // e.g. 'sale_invoice' from 'sale_invoice:read'
-          const pBase = pModPart.replace(/[^a-z]/g, '').replace(/s/g, '');
-          return pBase === mBaseForPerm;
-        });
-        
-        console.log(`[Sidebar] evaluating ${dbModule.name}: mBaseForPerm=${mBaseForPerm}, userPerms=`, perms, ` -> hasModulePerm=${hasModulePerm}`);
-        
-        return hasModulePerm;
+        if (!dbModule.is_active) return false
+
+        const perms = currentUser.value?.permissions || []
+        const mBaseForPerm = dbModule.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
+
+        return perms.some(p => {
+          const pModPart = p.toLowerCase().split(':')[0] ?? ''
+          const pBase = pModPart.replace(/[^a-z]/g, '').replace(/s/g, '')
+          return pBase === mBaseForPerm
+        })
       }
-      
-      console.log(`[Sidebar] dbModule NOT FOUND for label: ${translatedLabel}, route: ${item.route}`);
-      
-      // If it's a dashboard or something not in modules DB, we can let it show
-      if (translatedLabel.toLowerCase().includes('dashboard') || translatedLabel.toLowerCase().includes('notification') || translatedLabel.toLowerCase().includes('setting')) return true;
-      
+
+      // Not registered as a module (dashboards, notifications, settings) -> visible
+      const label = translatedLabel.toLowerCase()
+      if (label.includes('dashboard') || label.includes('notification') || label.includes('setting')) return true
+
       // Default DENY if not in DB to prevent leaking menus to users without rights
-      return false;
+      return false
     }).map(item => ({
       ...item,
       label: item.label.includes('.') ? t(item.label) : item.label
@@ -260,7 +270,7 @@ const iconPaths: Record<string, string> = {
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
           <span class="sidebar-user-role">{{
-            currentUser?.role ? currentUser.role.replace(/_/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase()) : 'Superadmin'
+            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Superadmin'
           }}</span>
         </div>
       </div>

@@ -4,8 +4,11 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, UnitType } from '@/types'
+
+const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Tipe' },
@@ -20,6 +23,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch unit types:', error)
+    toast.error('Gagal mengambil data unit type: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -54,8 +58,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
+    toast.success(editingItem.value ? 'Unit Type berhasil diperbarui!' : 'Unit Type berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save unit type:', error)
+    toast.error('Gagal menyimpan unit type: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -66,8 +72,10 @@ async function handleDelete() {
     try {
       await resources.unitTypes.remove(String(deletingItem.value.id))
       await fetchData()
+      toast.success('Unit Type berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete unit type:', error)
+      toast.error('Gagal menghapus unit type')
     }
   }
   showConfirm.value = false
@@ -77,8 +85,8 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Unit Types" button-label="Add Unit Type" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari tipe unit..." @edit="openEdit" @delete="openDelete" />
+    <PageHeader title="Unit Types" button-label="Add Unit Type" permission="unit_type:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari tipe unit..." permission="unit_type" @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Unit Type' : 'Add Unit Type'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="ut-name" class="form-label">Nama Tipe</label>

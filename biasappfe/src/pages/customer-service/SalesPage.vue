@@ -5,10 +5,14 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import { useResourcesStore } from '@/stores/resources.store'
+import { useToast } from '@/composables/useToast'
 import type { Sale, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
 
+const toast = useToast()
+const { can, canApprove } = usePermission()
 const {
   sales: data,
   customers,
@@ -100,9 +104,9 @@ async function handlePayment() {
     await resources.update("sales", viewingItem.value.id as any, payload)
     await useMasterStore().refresh(true)
     showPaymentModal.value = false
-    alert("Pembayaran berhasil dicatat!")
+    toast.success("Pembayaran berhasil dicatat!")
   } catch (err: any) {
-    alert("Gagal mencatat pembayaran! " + (err.response?.data?.message || err.message))
+    toast.error("Gagal mencatat pembayaran! " + (err.response?.data?.message || err.message))
   }
 }
 
@@ -283,7 +287,7 @@ function generateSingleInvoiceHtml(item: any) {
 function exportMonthToExcel() {
   const items = filteredData.value
   if (items.length === 0) {
-    alert('Tidak ada data sales invoice untuk diekspor!')
+    toast.warning('Tidak ada data sales invoice untuk diekspor!')
     return
   }
 
@@ -359,7 +363,7 @@ function exportMonthToExcel() {
 function exportMonthToPdf() {
   const items = filteredData.value
   if (items.length === 0) {
-    alert('Tidak ada data sales invoice untuk diekspor ke PDF!')
+    toast.warning('Tidak ada data sales invoice untuk diekspor ke PDF!')
     return
   }
 
@@ -569,6 +573,7 @@ async function handleSubmit() {
     }
     await useMasterStore().refresh(true)
     showModal.value = false
+    toast.success(editingItem.value ? "Data penjualan berhasil diperbarui!" : "Data penjualan berhasil disimpan!")
 
     // Auto-print invoice when a new sale is created
     if (!editingItem.value && res && res.id) {
@@ -582,7 +587,7 @@ async function handleSubmit() {
   } catch (error: any) {
     if (pw) pw.close();
     const errMsg = (error.response?.data?.message || error.message || "Unknown error") + " - Detail: " + JSON.stringify(error.response?.data || error.response || error);
-    alert("Gagal menyimpan data! " + errMsg)
+    toast.error("Gagal menyimpan data! " + errMsg)
   }
 }
 
@@ -592,8 +597,9 @@ async function handleDelete() {
     try {
       await resources.remove("sales", deletingItem.value.id as any)
       useMasterStore().refresh(true)
+      toast.success("Data penjualan berhasil dihapus!")
     } catch (error) {
-      alert("Gagal menghapus data!")
+      toast.error("Gagal menghapus data!")
     }
   }
   showConfirm.value = false
@@ -779,7 +785,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
 
 <template>
   <div>
-    <PageHeader title="Sales" button-label="Add Sale" @add="openAdd" />
+    <PageHeader title="Sales" button-label="Add Sale" permission="sale:create" @add="openAdd" />
     
     <DataTable :columns="columns" :data="data" search-placeholder="Cari penjualan..." @edit="openEdit"
       @delete="openDelete">
@@ -798,21 +804,21 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         </span>
       </template>
       <template #actions="{ row }">
-        <button class="action-btn action-btn--view" title="Detail" @click="openView(row)" style="margin-right: 4px;">
+        <button v-if="can('sale:read')" class="action-btn action-btn--view" title="Detail" @click="openView(row)" style="margin-right: 4px;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
         </button>
-        <button v-if="row.status !== 'paid'" class="action-btn" title="Pembayaran" @click="openPayment(row)" style="margin-right: 4px; color: var(--color-success);">
+        <button v-if="row.status !== 'paid' && can('payment:create')" class="action-btn" title="Pembayaran" @click="openPayment(row)" style="margin-right: 4px; color: var(--color-success);">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
             <line x1="2" y1="10" x2="22" y2="10"></line>
           </svg>
         </button>
-        <button v-if="row.status === 'paid'" class="action-btn" title="Print Bukti Bayar"
+        <button v-if="row.status === 'paid' && can('sale:read')" class="action-btn" title="Print Bukti Bayar"
           @click="printReceipt(row)" style="margin-right: 4px; color: var(--color-success);">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -823,7 +829,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
         </button>
-        <button v-if="row.status === 'approved'" class="action-btn action-btn--print" title="Print Invoice"
+        <button v-if="row.status === 'approved' && can('sale:read')" class="action-btn action-btn--print" title="Print Invoice"
           @click="printInvoice(row)" style="margin-right: 4px; color: var(--color-primary);">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -832,14 +838,14 @@ function printReceipt(item: any, existingWindow?: Window | null) {
             <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
-        <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
+        <button v-if="can('sale:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
             <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
           </svg>
         </button>
-        <button class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="margin-left: 4px;">
+        <button v-if="can('sale:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="margin-left: 4px;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -876,7 +882,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <label for="sale-status" class="form-label">Status</label>
         <select id="sale-status" v-model="form.status" class="form-select">
           <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
+          <option v-if="canApprove('sale')" value="approved">Approved</option>
           <option value="paid">Paid</option>
           <option value="cancelled">Cancelled</option>
         </select>

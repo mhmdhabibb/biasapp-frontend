@@ -5,8 +5,11 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { useToast } from '@/composables/useToast'
 import type { TableColumn, User } from '@/types'
 import { resources } from '@/services/resource.service'
+
+const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama' },
@@ -48,6 +51,7 @@ async function fetchData() {
     }))
   } catch (error) {
     console.error('Failed to fetch data:', error)
+    toast.error('Gagal mengambil data user: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -76,8 +80,10 @@ async function handleSubmit() {
     }
     showModal.value = false
     await fetchData()
+    toast.success(editingItem.value ? 'User berhasil diperbarui!' : 'User berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save user:', error)
+    toast.error('Gagal menyimpan user: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -91,8 +97,10 @@ async function handleDelete() {
     try {
       await resources.users.remove(String(deletingItem.value.id))
       await fetchData()
+      toast.success('User berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete user:', error)
+      toast.error('Gagal menghapus user')
     }
   }
   showConfirm.value = false
@@ -102,11 +110,12 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Users" button-label="Add User" @add="openAdd" />
+    <PageHeader title="Users" button-label="Add User" permission="user:create" @add="openAdd" />
     <DataTable
       :columns="columns"
       :data="data"
       search-placeholder="Cari user..."
+      permission="user"
       @edit="openEdit"
       @delete="openDelete"
     />

@@ -4,7 +4,11 @@ import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useToast } from '@/composables/useToast'
+import { usePermission } from '@/composables/usePermission'
 
+const toast = useToast()
+const { can } = usePermission()
 const router = useRouter()
 const {
   customers,
@@ -35,7 +39,7 @@ const isSubmitting = ref(false)
 
 function handleAssignJob() {
   if (!form.customer_id || !form.unit_id || !form.machine_problem.trim() || !form.technician_id) {
-    alert('Please fill all required fields.')
+    toast.warning('Please fill all required fields.')
     return
   }
 
@@ -156,7 +160,7 @@ function handleAssignJob() {
             <option v-for="t in technicians" :key="t.id" :value="t.id">{{ t.name }}</option>
           </select>
         </div>
-        <div class="form-actions">
+        <div v-if="can('service_report:create')" class="form-actions">
           <button 
             class="btn btn-primary btn-large" 
             :disabled="!form.technician_id || isSubmitting"

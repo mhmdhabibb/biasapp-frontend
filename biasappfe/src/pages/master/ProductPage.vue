@@ -7,6 +7,9 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Product } from '@/types'
+import { useToast } from '@/composables/useToast'
+
+const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Produk' },
@@ -23,6 +26,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch products:', error)
+    toast.error('Gagal mengambil data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -78,8 +82,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
+    toast.success(editingItem.value ? 'Produk berhasil diperbarui!' : 'Produk berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save product:', error)
+    toast.error('Gagal menyimpan produk: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -90,8 +96,10 @@ async function handleDelete() {
     try {
       await resources.products.remove(String(deletingItem.value.id))
       await fetchData()
+      toast.success('Produk berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete product:', error)
+      toast.error('Gagal menghapus produk')
     }
   }
   showConfirm.value = false
@@ -105,8 +113,8 @@ function formatRupiah(val: number): string {
 
 <template>
   <div>
-    <PageHeader title="Products" button-label="Add Product" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari produk..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Products" button-label="Add Product" permission="product:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari produk..." permission="product" @edit="openEdit" @delete="openDelete">
       <template #cell-price="{ value }">{{ formatRupiah(value || 0) }}</template>
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'" @close="showModal = false" @submit="handleSubmit">

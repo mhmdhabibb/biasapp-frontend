@@ -4,10 +4,14 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
 import type { TableColumn } from '@/types'
 import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+const toast = useToast()
+const { canApprove } = usePermission()
 const { customers, units, products, refresh } = useMasterStore()
 const { t } = useI18n()
 
@@ -170,16 +174,16 @@ async function handleSubmit() {
     })
     
     if (res.ok) {
-      alert(t('rentals.success'))
+      toast.success(t('rentals.success'))
       showModal.value = false
       fetchRentals() // refresh
     } else {
       const err = await res.json()
-      alert(t('rentals.failed', { error: JSON.stringify(err) }))
+      toast.error(t('rentals.failed', { error: JSON.stringify(err) }))
     }
   } catch (error) {
     console.error(error)
-    alert(t('rentals.network_error'))
+    toast.error(t('rentals.network_error'))
   } finally {
     isLoading.value = false
   }
@@ -206,9 +210,9 @@ onMounted(async () => {
 
 <template>
   <div>
-    <PageHeader :title="t('rentals.title')" :button-label="t('rentals.create_new')" @add="openAdd" />
+    <PageHeader :title="t('rentals.title')" :button-label="t('rentals.create_new')" permission="rental:create" @add="openAdd" />
     
-    <DataTable :columns="columns" :data="rentals" :search-placeholder="t('rentals.search')">
+    <DataTable :columns="columns" :data="rentals" permission="rental" :search-placeholder="t('rentals.search')">
       <template #cell-company="{ row }">
         {{ customers.find((c: any) => c.id === row.customer_id)?.company_name || customers.find((c: any) => c.id === row.customer_id)?.name || row.customer?.company_name || row.customer?.name || '-' }}
       </template>

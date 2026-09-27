@@ -158,12 +158,22 @@ export function useMasterStore() {
     return store.contractItems.filter((c) => (c.customer_id as any) == customerId);
   }
 
+  // service_report.technician_id references technicians.id (not users.id),
+  // so pages must resolve the logged-in user -> technicians row first.
+  function getTechnicianIdByUser(
+    userId: number | string | null,
+  ): string | null {
+    if (!userId) return null;
+    const tech = store.technicians.find((t: any) => t.user_id == userId);
+    return tech ? String(tech.id) : null;
+  }
+
   function getServiceReportsByTechnician(
-    technicianId: number | null,
+    technicianId: number | string | null,
   ): ServiceReport[] {
     if (!technicianId) return [];
     return store.serviceReports.filter(
-      (sr) => sr.technician_id === technicianId,
+      (sr) => (sr.technician_id as any) == technicianId,
     );
   }
 
@@ -182,6 +192,7 @@ export function useMasterStore() {
     findSalesInvoice,
     getUnitsByCustomer,
     getContractsByCustomer,
+    getTechnicianIdByUser,
     getServiceReportsByTechnician,
   };
 }

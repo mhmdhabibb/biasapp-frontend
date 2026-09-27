@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useToast } from '@/composables/useToast'
+import { usePermission } from '@/composables/usePermission'
 import { api } from '@/services/api'
 import type { JobOrder, Customer, Unit, Technician, ContractItem } from '@/types'
 
+const toast = useToast()
+const { canAny } = usePermission()
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void, (e: 'refresh'): void }>()
 
@@ -33,8 +37,12 @@ const loading = ref(false)
 const errorMsg = ref('')
 
 const activeTechnicians = computed(() => {
-  return technicians.value.filter(t => t.name)
+  return technicians.value.filter(t => (t as any).user?.name || (t as any).name)
 })
+
+function techLabel(t: any) {
+  return t.user?.name || t.name || t.employee_code || t.id
+}
 
 const customerMachines = computed(() => {
   if (!form.customer_id) return []
@@ -91,28 +99,26 @@ async function submitJob() {
       customer_id: form.customer_id,
       unit_id: form.unit_id,
       problem_description: `[${form.job_type.toUpperCase()}] ${form.instructions}`,
-      status: 'pending'
+      request_date: new Date().toISOString()
     }
-    const srRes = await api.post<any>('/service-requests', srPayload)
-    const srId = srRes.data.id
+    const srRes = await api.post<any>('/service-requests/', srPayload)
+    const srId = srRes?.data?.id
 
     // 2. If technician is assigned, create Job Order too
-    if (form.technician_id) {
+    if (form.technician_id && srId) {
       const joPayload = {
         job_order_no: `JO-${Date.now().toString().slice(-6)}`,
-        job_type: form.job_type,
         service_request_id: srId,
-        customer_id: form.customer_id,
-        unit_id: form.unit_id,
         technician_id: form.technician_id,
         scheduled_date: new Date(form.scheduled_date).toISOString(),
         instructions: form.instructions
       }
-      await api.post('/job-orders', joPayload)
+      await api.post('/job-orders/', joPayload)
     }
     
     emit('refresh')
     emit('close')
+    toast.success(form.technician_id ? 'Pekerjaan berhasil dibuat dan teknisi di-assign!' : 'Service Request berhasil dibuat!')
     
     Object.assign(form, {
       job_type: 'call_service',
@@ -125,6 +131,7 @@ async function submitJob() {
     })
   } catch (err: any) {
     errorMsg.value = err.message || 'Failed to create job order'
+    toast.error(errorMsg.value)
   } finally {
     loading.value = false
   }
@@ -199,7 +206,7 @@ async function submitJob() {
             <select v-model="form.technician_id" class="form-control">
               <option :value="null">-- Leave Unassigned --</option>
               <option v-for="t in activeTechnicians" :key="t.id" :value="t.id">
-                {{ t.name }}
+                {{ techLabel(t) }}
               </option>
             </select>
           </div>
@@ -219,7 +226,7 @@ async function submitJob() {
 
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" @click="emit('close')" :disabled="loading">Cancel</button>
-        <button type="button" class="btn btn-primary" @click="submitJob" :disabled="loading">
+        <button v-if="canAny('job_order:create', 'service_request:create')" type="button" class="btn btn-primary" @click="submitJob" :disabled="loading">
           {{ loading ? 'Saving...' : 'Create Job' }}
         </button>
       </div>

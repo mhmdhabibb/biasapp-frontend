@@ -7,7 +7,10 @@ import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import type { TableColumn, ServiceReport } from '@/types'
+
+const { can } = usePermission()
 
 const {
   serviceReports: data,
@@ -535,7 +538,7 @@ function printReport(item: any) {
 
 <template>
   <div>
-    <PageHeader title="Service Reports" button-label="Add Service Report" @add="openAdd" />
+    <PageHeader title="Service Reports" button-label="Add Service Report" permission="service_report:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari laporan servis..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
@@ -546,20 +549,20 @@ function printReport(item: any) {
         </span>
       </template>
       <template #actions="{ row }">
-        <button class="action-btn" title="Print Laporan" @click="printReport(row)" style="color: var(--color-primary); border-color: transparent;">
+        <button v-if="can('service_report:read')" class="action-btn" title="Print Laporan" @click="printReport(row)" style="color: var(--color-primary); border-color: transparent;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
             <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
-        <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
+        <button v-if="can('service_report:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
             <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
           </svg>
         </button>
-        <button class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
+        <button v-if="can('service_report:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>

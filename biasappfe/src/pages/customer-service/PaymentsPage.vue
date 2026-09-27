@@ -5,9 +5,13 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import { useResourcesStore } from '@/stores/resources.store'
+import { useToast } from '@/composables/useToast'
 import type { TableColumn, Payment } from '@/types'
 
+const toast = useToast()
+const { can, canApprove } = usePermission()
 const {
   payments: data,
   rentalInvoices,
@@ -105,6 +109,7 @@ async function handleSubmit() {
     }
     useMasterStore().refresh(true)
     showModal.value = false
+    toast.success(editingItem.value ? "Pembayaran berhasil diperbarui!" : "Pembayaran berhasil disimpan!")
 
     // Auto-print receipt when approved
     if (form.status === 'approved') {
@@ -113,7 +118,7 @@ async function handleSubmit() {
       }, 500)
     }
   } catch (error) {
-    alert("Gagal menyimpan pembayaran!")
+    toast.error("Gagal menyimpan pembayaran!")
   }
 }
 
@@ -123,8 +128,9 @@ async function handleDelete() {
     try {
       await resources.remove("payments", deletingItem.value.id as any)
       useMasterStore().refresh(true)
+      toast.success("Pembayaran berhasil dihapus!")
     } catch (error) {
-      alert("Gagal menghapus pembayaran!")
+      toast.error("Gagal menghapus pembayaran!")
     }
   }
   showConfirm.value = false
@@ -248,7 +254,7 @@ function printReceipt(item: Payment) {
 
 <template>
   <div>
-    <PageHeader title="Payments" button-label="Add Payment" @add="openAdd" />
+    <PageHeader title="Payments" button-label="Add Payment" permission="payment:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari pembayaran..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-invoice_type="{ row }">{{ row.sales_invoice_id ? 'Sales' : 'Rental' }}</template>
@@ -263,20 +269,20 @@ function printReceipt(item: Payment) {
       </template>
       
       <template #actions="{ row }">
-        <button class="action-btn" title="Print Kwitansi" @click="printReceipt(row)">
+        <button v-if="can('payment:read')" class="action-btn" title="Print Kwitansi" @click="printReceipt(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
             <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
-        <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
+        <button v-if="can('payment:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
             <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
           </svg>
         </button>
-        <button class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
+        <button v-if="can('payment:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
@@ -341,8 +347,8 @@ function printReceipt(item: Payment) {
         <label for="pay-status" class="form-label">Status (Approval Finance)</label>
         <select id="pay-status" v-model="form.status" class="form-select">
           <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
+          <option v-if="canApprove('payment')" value="approved">Approved</option>
+          <option v-if="canApprove('payment')" value="rejected">Rejected</option>
         </select>
       </div>
     </FormModal>

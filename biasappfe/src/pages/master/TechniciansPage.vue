@@ -1,26 +1,34 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Technician } from '@/types'
 
+const toast = useToast()
 const data = ref<Technician[]>([])
+const users = ref<any[]>([])
 const masterStore = useMasterStore()
 
 async function fetchData() {
   try {
-    const res = await resources.technicians.list()
-    data.value = res.data.map((t: any) => ({
+    const [techRes, userRes] = await Promise.all([
+      resources.technicians.list(),
+      resources.users.list()
+    ])
+    data.value = techRes.data.map((t: any) => ({
       ...t,
       name: t.user?.name || '-',
       phone: t.user?.phone || '-'
     }))
+    users.value = userRes.data
   } catch (error) {
     console.error('Failed to fetch technicians:', error)
+    toast.error('Gagal mengambil data technician: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -35,35 +43,61 @@ const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Technician | null>(null)
 const deletingItem = ref<Technician | null>(null)
-const form = reactive({ name: '', phone: '' })
+const form = reactive({ user_id: null as string | null, employee_code: '', name: '', phone: '' })
+
+// Users that are not already linked to a technician (for the Add form)
+const availableUsers = computed(() => {
+  const linked = new Set(data.value.map((t: any) => String(t.user_id)))
+  return users.value.filter(u => !linked.has(String(u.id)))
+})
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { name: '', phone: '' })
+  Object.assign(form, { user_id: null, employee_code: '', name: '', phone: '' })
   showModal.value = true
 }
 
 function openEdit(item: Technician) {
   editingItem.value = item
-  // the original form only edits name and phone. Note: the backend actually maps name and phone to User model.
-  // The actual create/update might need to hit a different endpoint or handle it. Assuming backend handles it.
-  Object.assign(form, { name: (item as any).name, phone: (item as any).phone })
+  Object.assign(form, {
+    user_id: (item as any).user_id || null,
+    employee_code: (item as any).employee_code || '',
+    name: (item as any).name || '',
+    phone: (item as any).phone || ''
+  })
   showModal.value = true
 }
 
 async function handleSubmit() {
-  if (!form.name.trim()) return
   try {
     if (editingItem.value) {
-      await resources.technicians.update(String(editingItem.value.id), form)
+      // Backend: name/phone update the linked user, employee_code updates the technician row
+      await resources.technicians.update(String(editingItem.value.id), {
+        user_id: form.user_id,
+        employee_code: form.employee_code,
+        name: form.name.trim() || undefined,
+        phone: form.phone.trim() || undefined
+      })
     } else {
-      await resources.technicians.create(form)
+      if (!form.user_id) {
+        return toast.warning('Pilih user untuk dijadikan technician!')
+      }
+      if (!form.employee_code.trim()) {
+        return toast.warning('Employee code wajib diisi!')
+      }
+      // Backend create requires user_id + employee_code only
+      await resources.technicians.create({
+        user_id: form.user_id,
+        employee_code: form.employee_code.trim()
+      })
     }
     await fetchData()
     masterStore.refresh()
     showModal.value = false
+    toast.success(editingItem.value ? 'Technician berhasil diperbarui!' : 'Technician berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save technician:', error)
+    toast.error('Gagal menyimpan technician: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -75,8 +109,10 @@ async function handleDelete() {
       await resources.technicians.remove(String(deletingItem.value.id))
       await fetchData()
       masterStore.refresh()
+      toast.success('Technician berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete technician:', error)
+      toast.error('Gagal menghapus technician')
     }
   }
   showConfirm.value = false
@@ -86,8 +122,8 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Technicians" button-label="Add Technician" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search technician..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Technicians" button-label="Add Technician" permission="technician:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search technician..." permission="technician" @edit="openEdit" @delete="openDelete">
       <template #cell-status="{ value }">
         <span
           class="badge"
@@ -103,13 +139,28 @@ async function handleDelete() {
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Technician' : 'Add Technician'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="tech-name" class="form-label">Name</label>
-        <input id="tech-name" v-model="form.name" type="text" class="form-input" placeholder="Technician name">
+        <label for="tech-user" class="form-label">User</label>
+        <select id="tech-user" v-model="form.user_id" class="form-select" :disabled="!!editingItem">
+          <option :value="null">-- Select User --</option>
+          <option v-for="u in (editingItem ? users : availableUsers)" :key="u.id" :value="String(u.id)">
+            {{ u.name }}{{ u.email ? ` (${u.email})` : '' }}
+          </option>
+        </select>
       </div>
       <div class="form-group">
-        <label for="tech-phone" class="form-label">Phone</label>
-        <input id="tech-phone" v-model="form.phone" type="tel" inputmode="numeric" pattern="[0-9]*" class="form-input" placeholder="08xxxxxxxxxx" @input="form.phone = form.phone.replace(/[^0-9]/g, '')">
+        <label for="tech-code" class="form-label">Employee Code</label>
+        <input id="tech-code" v-model="form.employee_code" type="text" class="form-input" placeholder="e.g. TCH-001">
       </div>
+      <template v-if="editingItem">
+        <div class="form-group">
+          <label for="tech-name" class="form-label">Name</label>
+          <input id="tech-name" v-model="form.name" type="text" class="form-input" placeholder="Technician name">
+        </div>
+        <div class="form-group">
+          <label for="tech-phone" class="form-label">Phone</label>
+          <input id="tech-phone" v-model="form.phone" type="tel" inputmode="numeric" pattern="[0-9]*" class="form-input" placeholder="08xxxxxxxxxx" @input="form.phone = form.phone.replace(/[^0-9]/g, '')">
+        </div>
+      </template>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Technician" :message="`Are you sure you want to delete technician '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>

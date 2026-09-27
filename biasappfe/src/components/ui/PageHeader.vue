@@ -1,16 +1,29 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue'
+import { usePermission } from '@/composables/usePermission'
+
+const props = defineProps<{
   title: string
   buttonLabel?: string
+  /** Full permission key required to show the Add button, e.g. "customer:create" */
+  permission?: string
 }>()
 defineEmits<{ (e: 'add'): void }>()
+
+const { can } = usePermission()
+
+const showAddButton = computed(() => {
+  if (!props.buttonLabel) return false
+  if (!props.permission) return true
+  return can(props.permission)
+})
 </script>
 
 <template>
   <div class="page-header">
     <h2 class="page-header-title">{{ title }}</h2>
     <button
-      v-if="buttonLabel"
+      v-if="showAddButton"
       class="btn btn-accent"
       @click="$emit('add')"
     >

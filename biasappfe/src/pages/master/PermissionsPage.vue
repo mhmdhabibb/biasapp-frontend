@@ -6,9 +6,11 @@ import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useModules } from '@/composables/useModules'
+import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Permission } from '@/types'
 
+const toast = useToast()
 const { modules } = useModules()
 
 const moduleOptions = computed(() =>
@@ -112,17 +114,17 @@ async function handleSubmit() {
   try {
     if (editingItem.value) {
       if (!form.module_id) {
-        alert('Modul wajib dipilih!')
+        toast.warning('Modul wajib dipilih!')
         return
       }
       if (!form.name.trim()) {
-        alert('Nama permission wajib diisi!')
+        toast.warning('Nama permission wajib diisi!')
         return
       }
       await resources.permissions.update(String(editingItem.value.id), { name: form.name, module_id: form.module_id })
     } else {
       if (form.module_ids.length === 0) {
-        alert('Pilih minimal satu modul!')
+        toast.warning('Pilih minimal satu modul!')
         return
       }
       
@@ -147,7 +149,7 @@ async function handleSubmit() {
       }
       
       if (permissionsToCreate.length === 0) {
-        alert('Pilih minimal satu tindakan standar atau isi tindakan tambahan!')
+        toast.warning('Pilih minimal satu tindakan standar atau isi tindakan tambahan!')
         return
       }
       
@@ -157,9 +159,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
+    toast.success(editingItem.value ? "Permission berhasil diperbarui!" : "Permission berhasil disimpan!")
   } catch (error: any) {
     console.error('Failed to save permission:', error)
-    alert('Gagal menyimpan permission: ' + (error.message || 'Error'))
+    toast.error('Gagal menyimpan permission: ' + (error.message || 'Error'))
   }
 }
 
@@ -170,8 +173,10 @@ async function handleDelete() {
     try {
       await resources.permissions.remove(String(deletingItem.value.id))
       await fetchData()
+      toast.success("Permission berhasil dihapus!")
     } catch (error) {
       console.error('Failed to delete permission:', error)
+      toast.error('Gagal menghapus permission')
     }
   }
   showConfirm.value = false
@@ -181,8 +186,8 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Permissions" button-label="Add Permission" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari permission..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Permissions" button-label="Add Permission" permission="permission:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari permission..." permission="permission" @edit="openEdit" @delete="openDelete">
       <template #cell-module_id="{ value }">
         {{ getModuleName(value) }}
       </template>

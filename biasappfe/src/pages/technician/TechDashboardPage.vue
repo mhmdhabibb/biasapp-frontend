@@ -3,13 +3,16 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CreateJobModal from './CreateJobModal.vue'
 
 const router = useRouter()
 const { currentUser } = useAuth()
+const { canAny } = usePermission()
 const {
   jobOrders,
+  serviceReports,
   technicians,
   findCustomer,
   findUnit,
@@ -88,7 +91,13 @@ function getUnitName(unitId: string | null) {
 }
 
 function goToDetail(id: number) {
-  router.push(`/technician/call-services/${id}`)
+  // Route expects a service-report id; job cards are job orders
+  const sr: any = serviceReports.value.find((s: any) => s.job_order_id === id || s.id === id)
+  if (sr) {
+    router.push(`/technician/call-services/${sr.id}`)
+  } else {
+    router.push('/technician/call-services')
+  }
 }
 </script>
 
@@ -99,7 +108,7 @@ function goToDetail(id: number) {
         <h1 class="greeting-title">Halo, {{ currentUser?.name || 'Teknisi' }}! 👋</h1>
         <p class="greeting-subtitle">Berikut adalah ringkasan pekerjaan Anda hari ini.</p>
       </div>
-      <button class="btn btn-primary create-job-btn" type="button" @click="openCreateJob">
+      <button v-if="canAny('job_order:create', 'service_request:create')" class="btn btn-primary create-job-btn" type="button" @click="openCreateJob">
         Buat Job
       </button>
     </div>

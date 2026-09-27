@@ -1,17 +1,30 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, useSlots } from 'vue'
 import type { TableColumn } from '@/types'
+import { usePermission } from '@/composables/usePermission'
 
 const props = defineProps<{
   columns: TableColumn[]
   data: any[]
   searchPlaceholder?: string
+  /** Backend module key (e.g. "customer") used to gate default edit/delete buttons */
+  permission?: string
 }>()
 
 defineEmits<{
   (e: 'edit', item: any): void
   (e: 'delete', item: any): void
 }>()
+
+const slots = useSlots()
+const { can } = usePermission()
+
+const showEdit = computed(() => !props.permission || can(`${props.permission}:update`))
+const showDelete = computed(() => !props.permission || can(`${props.permission}:delete`))
+const showDefaultActions = computed(() => showEdit.value || showDelete.value)
+// ACTION column: always shown when a custom #actions slot decides its own content,
+// otherwise only when at least one default action button is visible.
+const showActionsColumn = computed(() => Boolean(slots.actions) || showDefaultActions.value)
 
 const searchQuery = ref('')
 const currentPage = ref(1)
@@ -104,7 +117,7 @@ const visiblePages = computed(() => {
             >
               {{ col.label }}
             </th>
-            <th class="th-actions">ACTION</th>
+            <th v-if="showActionsColumn" class="th-actions">ACTION</th>
           </tr>
         </thead>
         <tbody>
@@ -115,9 +128,10 @@ const visiblePages = computed(() => {
                 {{ row[col.key] ?? '-' }}
               </slot>
             </td>
-            <td class="td-actions">
+            <td v-if="showActionsColumn" class="td-actions">
               <slot name="actions" :row="row">
                 <button
+                  v-if="showEdit"
                   class="action-btn action-btn--edit"
                   title="Edit"
                   @click="$emit('edit', row)"
@@ -128,6 +142,7 @@ const visiblePages = computed(() => {
                   </svg>
                 </button>
                 <button
+                  v-if="showDelete"
                   class="action-btn action-btn--delete"
                   title="Delete"
                   @click="$emit('delete', row)"
