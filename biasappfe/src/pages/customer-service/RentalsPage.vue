@@ -79,7 +79,7 @@ function onItemSelectChange(item: any) {
     const u = units.value.find((target: any) => String(target.id) === String(unitId));
     if (u) {
       item.is_copier = !!u.is_copier;
-      item.is_computer = !!u.is_computer;
+      item.is_computer = !!(u as any).is_computer;
       if (u.current_meter_bw !== undefined) item.start_meter_bw = u.current_meter_bw;
       if (u.current_meter_color !== undefined) item.start_meter_color = u.current_meter_color;
       if (u.free_quota_color !== undefined) item.free_quota_color = u.free_quota_color;
@@ -96,7 +96,7 @@ function onItemSelectChange(item: any) {
     const p = products.value.find((target: any) => String(target.id) === String(prodId));
     if (p) {
       item.is_copier = false;
-      item.is_computer = !!p.is_computer;
+      item.is_computer = !!(p as any).is_computer;
     }
   }
 }

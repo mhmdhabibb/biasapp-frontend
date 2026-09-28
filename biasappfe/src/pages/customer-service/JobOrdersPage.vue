@@ -262,13 +262,12 @@ async function onDrop(techId: string | number) {
             <div class="card-grip" aria-hidden="true">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
             </div>
-            <div class="card-main">
+              <div class="card-main">
               <div class="card-header">
                 <span class="ref-no">{{ req.request_no }}</span>
                 <span class="date-tag">{{ formatDateDisplay(req.created_at) }}</span>
               </div>
               <div class="card-body">
-                <div class="customer-name">{{ req.customer?.company_name || req.customer?.name }}</div>
                 <div class="problem-text">{{ req.problem_description }}</div>
               </div>
             </div>
@@ -326,7 +325,6 @@ async function onDrop(techId: string | number) {
                     <span class="date-tag">{{ formatDateDisplay(job.scheduled_date) }}</span>
                   </div>
                   <div class="card-body">
-                    <div class="customer-name">{{ job.service_request?.customer?.name }}</div>
                     <div class="problem-text">{{ job.instructions }}</div>
                   </div>
                 </div>
@@ -828,19 +826,21 @@ async function onDrop(techId: string | number) {
 .job-card {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  padding: 16px;
   width: 100%;
   box-shadow: var(--shadow-xs);
   transition: transform var(--transition-base), box-shadow var(--transition-base), border-color var(--transition-base);
+  position: relative;
+  overflow: hidden;
 }
 
 .job-card:hover {
   border-color: var(--color-border);
-  box-shadow: var(--shadow-base);
+  box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
 }
 
@@ -868,49 +868,59 @@ async function onDrop(techId: string | number) {
 }
 
 .job-card.assigned {
-  width: 286px;
-  border-left: 3px solid var(--color-primary);
+  width: 320px;
+}
+
+.job-card.assigned::before {
+  content: '';
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 0;
+  width: 4px;
+  background: var(--color-primary);
+  border-radius: 0 4px 4px 0;
+}
+
+.job-card.assigned .card-main {
+  padding-left: 4px;
 }
 
 .job-card.assigned:hover {
   border-color: var(--color-border);
-  border-left-color: var(--color-primary);
 }
 
 .card-header {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  margin-bottom: 5px;
   flex-wrap: wrap;
+  margin-bottom: 12px;
 }
 
 .ref-no {
   color: var(--color-primary);
   font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-base);
+  white-space: nowrap;
 }
 
 .date-tag {
   margin-left: auto;
   background: var(--color-surface-sunken);
   color: var(--color-text-secondary);
-  padding: 2px 7px;
+  padding: 4px 8px;
   border-radius: var(--radius-full);
-  font-size: 10px;
-  font-weight: var(--font-weight-semibold);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
 }
 
 .card-body {
-  font-size: var(--font-size-xs);
-  line-height: 1.45;
-}
-
-.customer-name {
-  color: var(--color-text);
-  font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-sm);
-  margin-bottom: 3px;
+  line-height: 1.5;
+  border-top: 1px solid var(--color-border-light);
+  padding-top: 12px;
 }
 
 .problem-text {

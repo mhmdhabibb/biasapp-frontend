@@ -31,11 +31,11 @@ function getTechnician(id: number | null) {
 
 function printServiceHistory(item: any) {
   // item is DeliveryOrder
-  const customer = findCustomer(item.customer_id) || {}
+  const customer: any = findCustomer(item.customer_id) || {}
   const ci = useMasterStore().findContractItem(item.contract_item_id)
-  const u = ci ? useMasterStore().findUnit(ci.unit_id) || {} : {}
-  const brand = useMasterStore().brands.find((b: any) => b.id === u.brand_id)
-  const tech = findTechnician(item.assigned_to) || {}
+  const u: any = (ci ? useMasterStore().findUnit(ci.unit_id) : null) || {}
+  const brand = useMasterStore().findBrand(u.brand_id)
+  const tech: any = findTechnician(item.assigned_to) || {}
   
   const custName = customer.company_name || customer.name || '-'
   const custPhone = customer.phone || '-'
@@ -168,7 +168,7 @@ function printServiceHistory(item: any) {
             <div style="width: 45%; text-align: center; display: flex; flex-direction: column; justify-content: flex-end;">
               <div style="margin-bottom: 10px;">COMPLETE \${item.is_completed ? 'YES' : 'NO'}</div>
               <div style="border-bottom: 1px solid #000; padding-bottom: 5px; min-height: 50px;">
-                COSTUMER<br>
+                CUSTOMER<br>
                 \${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : ''}
               </div>
               <div style="background-color: #000; color: #fff; padding: 4px; font-size: 10px;">Signature & Company Stamp</div>
@@ -194,7 +194,6 @@ import { ref, reactive } from 'vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useResourcesStore } from '@/stores/resources.store'
-const resources = useResourcesStore()
 
 const showModal = ref(false)
 const editingItem = ref<any>(null)
@@ -227,9 +226,8 @@ function openEdit(item: any) {
 async function handleSubmit() {
   try {
     if (editingItem.value) {
-      await resources.deliveryOrders.update(String(editingItem.value.id), form)
-      const store = useMasterStore()
-      await store.syncFromApi(true)
+      await useResourcesStore().update('deliveryOrders', String(editingItem.value.id), form)
+      await useMasterStore().refresh(true)
     }
     showModal.value = false
   } catch (err) {

@@ -28,7 +28,7 @@ async function fetchData() {
 onMounted(fetchData)
 
 const columns: TableColumn[] = [
-  { key: 'company_name', label: 'Company' },
+  { key: 'company_name', label: 'Customer' },
   { key: 'pic_name', label: 'PIC Name' },
   { key: 'phone', label: 'Phone' },
 ]
@@ -91,13 +91,13 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Companies" :button-label="isTechnician ? undefined : 'Add Company'" permission="customer:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search companies..." 
+    <PageHeader title="Customers" :button-label="isTechnician ? undefined : 'Add Customer'" permission="customer:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search customers..."
                permission="customer"
                @edit="openEdit" @delete="openDelete" />
-    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Company' : 'Add Company'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Customer' : 'Add Customer'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="cust-company" class="form-label">Company Name</label>
+        <label for="cust-company" class="form-label">Customer Name</label>
         <input id="cust-company" v-model="form.company_name" type="text" class="form-input" placeholder="PT Example">
       </div>
       <div class="form-group">
@@ -140,7 +140,7 @@ async function handleDelete() {
         <textarea id="cust-address" v-model="form.address" class="form-textarea" placeholder="Full address"></textarea>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Company" :message="`Are you sure you want to delete company '${deletingItem?.company_name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Customer" :message="`Are you sure you want to delete customer '${deletingItem?.company_name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

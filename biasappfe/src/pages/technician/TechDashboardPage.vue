@@ -49,8 +49,8 @@ const isToday = (dateStr: string) => {
   const d = new Date(dateStr)
   const today = new Date()
   return d.getDate() === today.getDate() &&
-         d.getMonth() === today.getMonth() &&
-         d.getFullYear() === today.getFullYear()
+    d.getMonth() === today.getMonth() &&
+    d.getFullYear() === today.getFullYear()
 }
 
 const getSlaHours = (createdStr: string) => {
@@ -76,9 +76,7 @@ const formatSla = (createdStr: string) => {
 
 const showModal = ref(false)
 
-function openCreateJob() {
-  showModal.value = true
-}
+
 
 function getCustomerName(id: number | null) {
   return findCustomer(id as any)?.company_name || '-'
@@ -91,13 +89,7 @@ function getUnitName(unitId: string | null) {
 }
 
 function goToDetail(id: number) {
-  // Route expects a service-report id; job cards are job orders
-  const sr: any = serviceReports.value.find((s: any) => s.job_order_id === id || s.id === id)
-  if (sr) {
-    router.push(`/technician/call-services/${sr.id}`)
-  } else {
-    router.push('/technician/call-services')
-  }
+  router.push(`/technician/call-services/${id}`)
 }
 </script>
 
@@ -108,26 +100,35 @@ function goToDetail(id: number) {
         <h1 class="greeting-title">Halo, {{ currentUser?.name || 'Teknisi' }}! 👋</h1>
         <p class="greeting-subtitle">Berikut adalah ringkasan pekerjaan Anda hari ini.</p>
       </div>
-      <button v-if="canAny('job_order:create', 'service_request:create')" class="btn btn-primary create-job-btn" type="button" @click="openCreateJob">
-        Buat Job
-      </button>
+
     </div>
 
     <!-- Summary Grid -->
     <div class="stats-grid">
       <div class="stat-box primary">
         <div class="stat-icon-wrapper">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
         </div>
         <div class="stat-content">
           <span class="stat-value">{{ newJobs }}</span>
           <span class="stat-label">Baru</span>
         </div>
       </div>
-      
+
       <div class="stat-box info">
         <div class="stat-icon-wrapper">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
         </div>
         <div class="stat-content">
           <span class="stat-value">{{ inProgressJobs }}</span>
@@ -137,7 +138,11 @@ function goToDetail(id: number) {
 
       <div class="stat-box success">
         <div class="stat-icon-wrapper">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
         </div>
         <div class="stat-content">
           <span class="stat-value">{{ completedToday }}</span>
@@ -147,7 +152,12 @@ function goToDetail(id: number) {
 
       <div class="stat-box danger">
         <div class="stat-icon-wrapper">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
         </div>
         <div class="stat-content">
           <span class="stat-value">{{ slaBreached }}</span>
@@ -167,38 +177,68 @@ function goToDetail(id: number) {
         <div v-for="job in activeJobs" :key="job.id" class="job-card" @click="goToDetail(job.id)">
           <div class="job-card-header">
             <span class="job-number">{{ job.job_order_no }}</span>
-            <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'scheduled' || job.status === 'assigned' ? 'warning' : 'danger')">
+            <span class="badge"
+              :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'scheduled' || job.status === 'assigned' ? 'warning' : 'danger')">
               {{ job.status.toUpperCase().replace('_', ' ') }}
             </span>
           </div>
-          
+
           <div class="job-details">
             <div class="detail-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+              </svg>
               <span>{{ getCustomerName(job.service_request?.customer_id || null) }}</span>
             </div>
             <div class="detail-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+                <rect x="9" y="9" width="6" height="6"></rect>
+                <line x1="9" y1="1" x2="9" y2="4"></line>
+                <line x1="15" y1="1" x2="15" y2="4"></line>
+                <line x1="9" y1="20" x2="9" y2="23"></line>
+                <line x1="15" y1="20" x2="15" y2="23"></line>
+                <line x1="20" y1="9" x2="23" y2="9"></line>
+                <line x1="20" y1="14" x2="23" y2="14"></line>
+                <line x1="1" y1="9" x2="4" y2="9"></line>
+                <line x1="1" y1="14" x2="4" y2="14"></line>
+              </svg>
               <span>{{ findUnit(job.service_request?.unit_id || null)?.model || '-' }}</span>
             </div>
             <div class="detail-row problem-desc">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-              <span class="truncate">{{ job.instructions || job.service_request?.problem_description || 'Tanpa deskripsi' }}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <span class="truncate">{{ job.instructions || job.service_request?.problem_description || `Tanpa
+                deskripsi` }}</span>
             </div>
           </div>
-          
+
           <div class="job-card-footer">
             <div class="sla-indicator" :class="{ 'breached': getSlaHours(job.created_at) > 2 }">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
               <span>SLA: {{ formatSla(job.created_at) }}</span>
             </div>
             <div class="action-arrow">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
             </div>
           </div>
         </div>
       </div>
-      
+
       <div v-else class="empty-state">
         <div class="empty-icon">🎉</div>
         <h3>Semua Beres!</h3>
@@ -255,7 +295,7 @@ function goToDetail(id: number) {
   flex-direction: column;
   gap: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-  border: 1px solid rgba(0,0,0,0.04);
+  border: 1px solid rgba(0, 0, 0, 0.04);
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -272,10 +312,25 @@ function goToDetail(id: number) {
   justify-content: center;
 }
 
-.primary .stat-icon-wrapper { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-.info .stat-icon-wrapper { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; }
-.success .stat-icon-wrapper { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-.danger .stat-icon-wrapper { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.primary .stat-icon-wrapper {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+.info .stat-icon-wrapper {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0ea5e9;
+}
+
+.success .stat-icon-wrapper {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.danger .stat-icon-wrapper {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
 
 .stat-content {
   display: flex;
@@ -329,7 +384,7 @@ function goToDetail(id: number) {
   border-radius: 16px;
   padding: 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0,0,0,0.03);
+  border: 1px solid rgba(0, 0, 0, 0.03);
   display: flex;
   flex-direction: column;
   gap: 14px;

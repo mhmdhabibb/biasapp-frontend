@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { allowedRouteNamesByRole, homeRouteNameByRole, normalizeRole } from '@/router/role-access'
+import { canView, routeNamesByMenuOrder } from '@/router/permission-map'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -69,6 +70,11 @@ const router = createRouter({
       path: '/master/product-categories',
       name: 'productCategories',
       component: () => import('@/pages/master/ProductCategoriesPage.vue'),
+    },
+    {
+      path: '/master/uoms',
+      name: 'uoms',
+      component: () => import('@/pages/master/UomPage.vue'),
     },
     {
       path: '/master/products',
@@ -233,6 +239,21 @@ const router = createRouter({
       component: () => import('@/pages/technician/TechCallServiceDetailPage.vue'),
     },
     {
+      path: '/technician/call-services/:id/service-report',
+      name: 'techFormServiceReport',
+      component: () => import('@/pages/technician/forms/TechFormServiceReportPage.vue'),
+    },
+    {
+      path: '/technician/call-services/:id/technical-report',
+      name: 'techFormTechnicalReport',
+      component: () => import('@/pages/technician/forms/TechFormTechnicalReportPage.vue'),
+    },
+    {
+      path: '/technician/call-services/:id/copier-report',
+      name: 'techFormCopierReport',
+      component: () => import('@/pages/technician/forms/TechFormCopierReportPage.vue'),
+    },
+    {
       path: '/technician/maintenance',
       name: 'techMaintenance',
       component: () => import('@/pages/technician/TechMaintenancePage.vue'),
@@ -251,6 +272,12 @@ const router = createRouter({
       path: '/technician/service-history',
       name: 'techServiceHistory',
       component: () => import('@/pages/technician/TechServiceHistoryPage.vue'),
+    },
+    // Shared Routes
+    {
+      path: '/shared/service-reports/:id',
+      name: 'sharedServiceReportView',
+      component: () => import('@/pages/shared/ServiceReportViewPage.vue'),
     },
   ],
 })
@@ -275,6 +302,22 @@ router.beforeEach((to) => {
   const allowed = allowedRouteNamesByRole[role]
   if (allowed && to.name && !allowed.includes(to.name as string)) {
     return { name: homeRouteNameByRole[role] }
+  }
+
+  // `view` gate: a page is only reachable when the role holds `<key>:view`
+  // for the route's permission key (read alone unlocks the API only).
+  if (role !== 'admin') {
+    const perms = currentUser.value?.permissions || []
+    if (!canView(to.name as string, perms)) {
+      const home = homeRouteNameByRole[role]
+      if (home && home !== to.name && canView(home, perms)) {
+        return { name: home }
+      }
+      const fallback = routeNamesByMenuOrder.find(name => name !== to.name && canView(name, perms))
+      if (fallback) return { name: fallback }
+      // Nothing this role can view: stay put instead of looping.
+      return true
+    }
   }
 
   return true

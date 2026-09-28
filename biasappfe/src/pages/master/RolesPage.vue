@@ -68,11 +68,12 @@ const selectedRole = computed(() => roles.value.find(r => String(r.id) === selec
 const permissionsByModule = computed(() => {
   const grouped = new Map<string, Permission[]>()
   allPermissions.value.forEach(p => {
-    const modId = String(p.module_id)
-    if (!grouped.has(modId)) {
-      grouped.set(modId, [])
+    const hasModule = p.module_id !== null && p.module_id !== undefined && String(p.module_id) !== 'null'
+    const key = hasModule ? String(p.module_id) : `none:${(p.name.split(':')[0] || p.name).toLowerCase()}`
+    if (!grouped.has(key)) {
+      grouped.set(key, [])
     }
-    grouped.get(modId)?.push(p)
+    grouped.get(key)?.push(p)
   })
   
   const result: { module: Module, permissions: Permission[] }[] = []
@@ -83,6 +84,19 @@ const permissionsByModule = computed(() => {
         permissions: grouped.get(String(m.id)) || []
       })
     }
+  })
+
+  // Permission tanpa modul (module_id NULL, mis. purchase_order:view)
+  grouped.forEach((perms, key) => {
+    if (!key.startsWith('none:')) return
+    result.push({
+      module: {
+        id: key,
+        name: `${key.slice(5)} (Tanpa Modul)`,
+        is_active: true,
+      } as Module,
+      permissions: perms
+    })
   })
   return result
 })

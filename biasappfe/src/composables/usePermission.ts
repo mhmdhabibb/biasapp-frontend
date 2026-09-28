@@ -23,6 +23,10 @@ export function usePermission() {
   function canRead(module: string) {
     return can(`${module}:read`);
   }
+  /** Page/sidebar visibility grant. `read` only unlocks the API. */
+  function canView(module: string) {
+    return can(`${module}:view`);
+  }
   function canUpdate(module: string) {
     return can(`${module}:update`);
   }

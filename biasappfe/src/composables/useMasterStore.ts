@@ -2,6 +2,7 @@
 import { useResourcesStore } from "@/stores/resources.store";
 import { useAuthStore } from "@/stores/auth.store";
 import type {
+  Brand,
   ContractItem,
   Customer,
   DeliveryOrder,
@@ -27,6 +28,7 @@ import { reactive, toRefs } from "vue";
 const store = reactive({
   customers: [] as Customer[],
   technicians: [] as Technician[],
+  brands: [] as Brand[],
   units: [] as Unit[],
   products: [] as Product[],
   warranties: [] as Warranty[],
@@ -77,6 +79,7 @@ export function useMasterStore() {
     const tasks: Promise<void>[] = [
       safeFetch(resources.fetchAll("customers"), items => store.customers = items),
       safeFetch(resources.fetchAll("technicians"), items => store.technicians = items),
+      safeFetch(resources.fetchAll("brands"), items => store.brands = items),
       safeFetch(resources.fetchAll("units"), items => store.units = items),
       safeFetch(resources.fetchAll("products"), items => store.products = items),
       safeFetch(resources.fetchAll("warranties"), items => store.warranties = items),
@@ -90,8 +93,15 @@ export function useMasterStore() {
       safeFetch(resources.fetchAll("salesInvoices"), items => store.salesInvoices = items),
       safeFetch(resources.fetchAll("payments"), items => store.payments = items),
       safeFetch(resources.fetchAll("warrantyClaims"), items => store.warrantyClaims = items),
-      safeFetch(resources.fetchAll("serviceSpareparts"), items => { if (items.length > 0) store.sparepartRequests = items; }),
-      safeFetch(resources.fetchAll("deliveryOrders"), items => store.deliveryOrders = items)
+      safeFetch(resources.fetchAll("serviceSpareparts"), items => store.sparepartRequests = items),
+      safeFetch(resources.fetchAll("purchaseOrders"), items => store.purchaseOrders = items),
+      safeFetch(resources.fetchAll("deliveryOrders"), items => {
+        store.deliveryOrders = items;
+        // Inbound (procurement) shipments are the ones linked to a purchase order.
+        store.procurementDeliveryOrders = items.filter(
+          (d: any) => d.purchase_order_id || d.do_type === "inbound",
+        );
+      }),
     ];
 
     syncPromise = Promise.all(tasks).then(() => undefined);
@@ -112,6 +122,11 @@ export function useMasterStore() {
     return store.units.find((u) => (u.id as any) == id);
   }
 
+  function findBrand(id: number | string | null | undefined): Brand | undefined {
+    if (id == null) return undefined;
+    return store.brands.find((b) => (b.id as any) == id);
+  }
+
   function findProduct(id: number | string | null): Product | undefined {
     return store.products.find((p) => (p.id as any) == id);
   }
@@ -120,8 +135,9 @@ export function useMasterStore() {
     return store.warranties.find((w) => (w.id as any) == id);
   }
 
-  function findContractItem(id: number | null): ContractItem | undefined {
-    return store.contractItems.find((ci) => ci.id === id);
+  function findContractItem(id: number | string | null): ContractItem | undefined {
+    if (id == null) return undefined;
+    return store.contractItems.find((ci) => (ci.id as any) == id);
   }
 
   function findServiceReport(id: number | null): ServiceReport | undefined {
@@ -183,6 +199,7 @@ export function useMasterStore() {
     findCustomer,
     findTechnician,
     findUnit,
+    findBrand,
     findProduct,
     findWarranty,
     findContractItem,

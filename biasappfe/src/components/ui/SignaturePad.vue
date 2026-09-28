@@ -19,9 +19,10 @@ function getCoordinates(event: MouseEvent | TouchEvent) {
   if (!canvasRef.value) return { x: 0, y: 0 }
   const rect = canvasRef.value.getBoundingClientRect()
   if (event instanceof TouchEvent) {
+    const touch = event.touches[0]
     return {
-      x: event.touches[0].clientX - rect.left,
-      y: event.touches[0].clientY - rect.top
+      x: (touch ? touch.clientX : 0) - rect.left,
+      y: (touch ? touch.clientY : 0) - rect.top
     }
   }
   return {

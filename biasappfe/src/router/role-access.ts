@@ -6,11 +6,13 @@ export const allowedRouteNamesByRole: Record<string, string[]> = {
     'csDashboard', 'customers', 'contractItems', 'units', 'csCallService',
     'csMonitoringService', 'csSparepartRequest', 'csIndent', 'csDelivery',
     'warrantyClaims', 'rentalInvoices', 'csReports', 'rentals',
-    'serviceRequests', 'jobOrders',
+    'serviceRequests', 'jobOrders', 'sharedServiceReportView',
   ],
   technician: [
     'techDashboard', 'techCallServices', 'techCallServiceDetail', 'techMaintenance',
     'techSparepartRequest', 'techMeterReadings', 'techServiceHistory',
+    'techFormServiceReport', 'techFormTechnicalReport', 'techFormCopierReport',
+    'sharedServiceReportView',
     // No master-data routes: technicians only consume master APIs (dropdowns/lookups)
     // through useMasterStore — they must never open /master/* pages.
   ],

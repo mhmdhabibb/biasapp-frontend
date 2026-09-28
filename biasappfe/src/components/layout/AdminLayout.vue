@@ -52,6 +52,7 @@ const pageTitle = computed(() => {
     '/master/paper-size': 'Paper Size',
     '/master/paper-type': 'Paper Type',
     '/master/product-categories': 'Product Categories',
+    '/master/uoms': 'UOM',
     '/master/products': 'Products',
     '/master/units': 'Units',
     '/master/warranties': 'Warranties',

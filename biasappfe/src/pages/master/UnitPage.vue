@@ -7,7 +7,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
-import type { TableColumn, Unit } from '@/types'
+import type { TableColumn, Unit, UOM } from '@/types'
 import { computed, reactive, ref, onMounted, watch, onUnmounted } from 'vue'
 
 const toast = useToast()
@@ -19,11 +19,15 @@ const columns: TableColumn[] = [
   { key: 'brand_id', label: 'Brand' },
   { key: 'model', label: 'Model' },
   { key: 'serial_no', label: 'Serial Number' },
+  { key: 'uom.name', label: 'UOM' },
+  { key: 'is_computer', label: 'Computer' },
+  { key: 'is_copier', label: 'Copier' },
 ]
 
-const brands = ref<{id: string, name: string}[]>([])
-const unitTypes = ref<{id: string, name: string}[]>([])
-const paperSizes = ref<{id: string, name: string}[]>([])
+const brands = ref<{ id: string, name: string }[]>([])
+const unitTypes = ref<{ id: string, name: string }[]>([])
+const paperSizes = ref<{ id: string, name: string }[]>([])
+const uoms = ref<UOM[]>([])
 
 const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label: b.name })))
 const typeOptions = computed(() => unitTypes.value.map(t => ({ value: t.id, label: t.name })))
@@ -33,16 +37,18 @@ const data = ref<Unit[]>([])
 
 async function fetchData() {
   try {
-    const [resUnits, resBrands, resTypes, resPaperSizes] = await Promise.all([
+    const [resUnits, resBrands, resTypes, resPaperSizes, resUoms] = await Promise.all([
       resources.units.list(),
       resources.brands.list(),
       resources.unitTypes.list(),
-      resources.paperSizes.list()
+      resources.paperSizes.list(),
+      resources.uoms.list()
     ])
     data.value = resUnits.data as any
     brands.value = resBrands.data as any
     unitTypes.value = resTypes.data as any
     paperSizes.value = resPaperSizes.data as any
+    uoms.value = resUoms.data as any
   } catch (error: any) {
     console.error('Failed to fetch data:', error)
     toast.error('Gagal mengambil data dari server: ' + (error.message || 'Error'))
@@ -60,8 +66,9 @@ const form = reactive({
   serial_no: '',
   brand_id: null as string | null,
   type_id: null as string | null,
+  uom_id: '' as string | null,
   model: '',
-  name: '', 
+  name: '',
   is_copier: false,
   is_computer: false,
   current_meter_bw: 0,
@@ -97,7 +104,7 @@ watch([() => form.brand_id, () => form.model], ([newBrand, newModel]) => {
 })
 
 function openAdd() {
-  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
+  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
   showModal.value = true
 }
 
@@ -107,6 +114,7 @@ function openEdit(item: any) {
     serial_no: item.serial_no,
     brand_id: item.brand_id,
     type_id: item.type_id,
+    uom_id: item.uom_id ?? '',
     model: item.model,
     name: item.name || '',
     is_copier: !!item.is_copier,
@@ -175,40 +183,33 @@ function getBrandName(id: string | null): string {
 
 <template>
   <div>
-    <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" permission="unit:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search units..." 
-               permission="unit"
-               @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" permission="unit:create"
+      @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search units..." permission="unit" @edit="openEdit"
+      @delete="openDelete">
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
       </template>
     </DataTable>
-    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'"
+      @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="unit-serial" class="form-label">Serial Number</label>
-        <input id="unit-serial" v-model="form.serial_no" type="text" class="form-input" placeholder="Unit serial number">
+        <input id="unit-serial" v-model="form.serial_no" type="text" class="form-input"
+          placeholder="Unit serial number">
       </div>
       <div class="form-group">
         <label for="unit-name" class="form-label">Unit Name</label>
-        <input id="unit-name" v-model="form.name" type="text" class="form-input" placeholder="Auto-generated" disabled style="background-color: var(--color-surface-hover); cursor: not-allowed;">
+        <input id="unit-name" v-model="form.name" type="text" class="form-input" placeholder="Auto-generated" disabled
+          style="background-color: var(--color-surface-hover); cursor: not-allowed;">
       </div>
       <div class="form-group" style="position: relative;">
         <label for="unit-brand" class="form-label">Brand</label>
-        <CustomSelect
-          id="unit-brand"
-          v-model="form.brand_id"
-          :options="brandOptions"
-          placeholder="Select brand"
-        />
+        <CustomSelect id="unit-brand" v-model="form.brand_id" :options="brandOptions" placeholder="Select brand" />
       </div>
       <div class="form-group" style="position: relative;">
         <label for="unit-type" class="form-label">Unit Type</label>
-        <CustomSelect
-          id="unit-type"
-          v-model="form.type_id"
-          :options="typeOptions"
-          placeholder="Select unit type"
-        />
+        <CustomSelect id="unit-type" v-model="form.type_id" :options="typeOptions" placeholder="Select unit type" />
       </div>
       <div class="form-group">
         <label for="unit-model" class="form-label">Model</label>
@@ -227,7 +228,8 @@ function getBrandName(id: string | null): string {
         </label>
       </div>
 
-      <div v-if="form.is_computer" style="margin-top: 1rem; border-top: 1px solid var(--color-border-light); padding-top: 1rem;">
+      <div v-if="form.is_computer"
+        style="margin-top: 1rem; border-top: 1px solid var(--color-border-light); padding-top: 1rem;">
         <h4 style="margin-bottom: 1rem; font-weight: 600;">Spesifikasi Komputer / Desktop</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group">
@@ -244,7 +246,9 @@ function getBrandName(id: string | null): string {
           </div>
           <div class="form-group">
             <label class="form-label">Storage Type</label>
-            <CustomSelect v-model="form.specsData.storage_type" :options="[{id:'SSD',name:'SSD'},{id:'HDD',name:'HDD'},{id:'NVMe',name:'NVMe'}]" placeholder="Pilih Tipe" />
+            <CustomSelect v-model="form.specsData.storage_type"
+              :options="[{ value: 'SSD', label: 'SSD' }, { value: 'HDD', label: 'HDD' }, { value: 'NVMe', label: 'NVMe' }]"
+              placeholder="Pilih Tipe" />
           </div>
           <div class="form-group">
             <label class="form-label">OS</label>
@@ -256,13 +260,13 @@ function getBrandName(id: string | null): string {
           </div>
           <div class="form-group" style="grid-column: span 2;">
             <label class="form-label">Paket Office</label>
-            <input v-model="form.specsData.office" type="text" class="form-input" placeholder="e.g. Office Home & Student 2021">
+            <input v-model="form.specsData.office" type="text" class="form-input"
+              placeholder="e.g. Office Home & Student 2021">
           </div>
         </div>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Unit" :message="`Are you sure you want to delete this unit?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Unit" :message="`Are you sure you want to delete this unit?`"
+      @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
-
-

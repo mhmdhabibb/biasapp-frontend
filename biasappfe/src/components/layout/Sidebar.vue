@@ -4,8 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
 import { useI18n } from 'vue-i18n'
+import { useToast } from '@/composables/useToast'
 import type { MenuGroup } from '@/types'
 import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
+import { canView, permissionKeysFor } from '@/router/permission-map'
+
+const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
 
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -15,6 +19,7 @@ const router = useRouter()
 const { currentUser, logout } = useAuth()
 const { modules } = useModules()
 const { t } = useI18n()
+const { success: toastSuccess } = useToast()
 
 const allMenuGroups: MenuGroup[] = [
   {
@@ -32,6 +37,7 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.paper_size', icon: 'file', route: '/master/paper-size' },
       { label: 'sidebar.paper_type', icon: 'file-text', route: '/master/paper-type' },
       { label: 'sidebar.product_categories', icon: 'folder', route: '/master/product-categories' },
+      { label: 'sidebar.uoms', icon: 'ruler', route: '/master/uoms' },
       { label: 'sidebar.products', icon: 'box', route: '/master/products' },
       { label: 'sidebar.units', icon: 'printer', route: '/master/units' },
       { label: 'sidebar.warranties', icon: 'shield-check', route: '/master/warranties' },
@@ -103,35 +109,25 @@ const menuGroups = computed(() => {
         if (!itemName || !allowedNames.includes(String(itemName))) return false
       }
 
-      const translatedLabel = item.label.includes('.') ? t(item.label) : item.label
+      // 4. Visibility is driven by the `<key>:view` permission of the route
+      //    (see router/permission-map.ts). `read` alone never opens a menu.
+      const routeName = String(router.resolve(item.route).name || '')
+      const permKeys = permissionKeysFor(routeName)
 
-      // 4. Match against active database modules + user permissions
-      const dbModule = modules.value.find(m => {
-        const mBase = m.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
-        const tBase = translatedLabel.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
-        const routeBase = (item.route.split('/').pop() || '').replace(/[^a-z]/g, '').replace(/s/g, '')
-        return mBase === tBase || mBase === routeBase || routeBase.includes(mBase) || mBase.includes(routeBase)
-      })
-
-      if (dbModule) {
-        if (!dbModule.is_active) return false
-
-        const perms = currentUser.value?.permissions || []
-        const mBaseForPerm = dbModule.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
-
-        return perms.some(p => {
-          const pModPart = p.toLowerCase().split(':')[0] ?? ''
-          const pBase = pModPart.replace(/[^a-z]/g, '').replace(/s/g, '')
-          return pBase === mBaseForPerm
-        })
+      if (!permKeys) {
+        // No permission key mapped (dashboards, shared pages) -> visible
+        return true
       }
 
-      // Not registered as a module (dashboards, notifications, settings) -> visible
-      const label = translatedLabel.toLowerCase()
-      if (label.includes('dashboard') || label.includes('notification') || label.includes('setting')) return true
+      if (!canView(routeName, currentUser.value?.permissions || [])) return false
 
-      // Default DENY if not in DB to prevent leaking menus to users without rights
-      return false
+      // Respect a deactivated module that owns this permission key.
+      // Module names are display names ("Job Order") while permission keys use
+      // snake_case ("job_order"), so normalize before comparing.
+      const matches = modules.value.filter(m => permKeys.includes(moduleKey(String(m.name))))
+      if (matches.length > 0 && !matches.some(m => m.is_active)) return false
+
+      return true
     }).map(item => ({
       ...item,
       label: item.label.includes('.') ? t(item.label) : item.label
@@ -160,6 +156,7 @@ function navigate(itemRoute: string) {
 
 function handleLogout() {
   logout()
+  toastSuccess('Logout berhasil')
   router.push('/login')
 }
 
@@ -181,6 +178,7 @@ const iconPaths: Record<string, string> = {
   file: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6',
   'file-text': 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
   folder: 'M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z',
+  ruler: 'M3 17h18v-2H3v2zM3 7h18v2H3V7zm2 4v-2H4v2h1zm2 0v-2H6v2h1zm2 0v-2H8v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm-12 6v-2H2v2h1zm2 0v-2H4v2h1zm2 0v-2H6v2h1zm2 0v-2H8v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1z',
   box: 'M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12',
   printer: 'M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z',
   'shield-check': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9 12l2 2 4-4',
