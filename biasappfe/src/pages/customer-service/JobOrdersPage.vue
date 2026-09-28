@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import FormModal from '@/components/ui/FormModal.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
-import { ref, onMounted, computed } from 'vue'
-import FormModal from '@/components/ui/FormModal.vue'
+import { api } from '@/services/api'
+import { computed, onMounted, ref } from 'vue'
 
 const toast = useToast()
 const { technicians } = useMasterStore()
@@ -16,18 +17,13 @@ const dragOverTechId = ref<string | number | null>(null)
 
 async function fetchJobOrders() {
   try {
-    const res = await fetch('http://localhost:4008/api/job-orders', {
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('bias_token')}` }
-    })
-    if (res.ok) {
-      const data = await res.json()
-      jobOrders.value = data.data.map((j: any) => ({
-        ...j,
-        service_request_no: j.service_request?.request_no || '-',
-        customer_name: j.service_request?.customer?.company_name || j.service_request?.customer?.name || '-',
-        problem: j.service_request?.problem_description || '-',
-      }))
-    }
+    const data = await api.get<{ data: any[] }>('/job-orders')
+    jobOrders.value = data.data.map((j: any) => ({
+      ...j,
+      service_request_no: j.service_request?.request_no || '-',
+      customer_name: j.service_request?.customer?.company_name || j.service_request?.customer?.name || '-',
+      problem: j.service_request?.problem_description || '-',
+    }))
   } catch (error) {
     console.error("Failed to fetch data", error)
   }
@@ -35,13 +31,8 @@ async function fetchJobOrders() {
 
 async function fetchServiceRequests() {
   try {
-    const res = await fetch('http://localhost:4008/api/service-requests', {
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('bias_token')}` }
-    })
-    if (res.ok) {
-      const data = await res.json()
-      serviceRequests.value = data.data
-    }
+    const data = await api.get<{ data: any[] }>('/service-requests')
+    serviceRequests.value = data.data
   } catch (error) {
     console.error("Failed to fetch data SR", error)
   }

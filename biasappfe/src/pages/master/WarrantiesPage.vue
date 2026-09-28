@@ -1,20 +1,21 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
-import DataTable from '@/components/ui/DataTable.vue'
-import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
+import DataTable from '@/components/ui/DataTable.vue'
+import FormModal from '@/components/ui/FormModal.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Warranty } from '@/types'
 import { formatDateDDMMYYYY } from '@/utils/format'
+import { onMounted, reactive, ref } from 'vue'
 
 const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'warranty_type', label: 'Warranty Type' },
-  { key: 'duration', label: 'Duration (months)' },
+  { key: 'duration_months', label: 'Duration (months)' },
+  { key: 'duration_days', label: 'Duration (days)' },
   { key: 'start_date', label: 'Start Date' },
   { key: 'end_date', label: 'End Date' },
   { key: 'status', label: 'Status' },

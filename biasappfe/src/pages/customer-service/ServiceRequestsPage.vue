@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
 import type { TableColumn } from '@/types'
-import { computed, reactive, ref, onMounted, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -15,9 +15,9 @@ const { customers, units, sales, findProduct, getUnitsByCustomer } = useMasterSt
 
 const columns: TableColumn[] = [
   { key: 'request_no', label: 'Request No' },
-  { key: 'customer', label: 'Customer' },
+  { key: 'request.customer.company_name', label: 'Company' },
+  { key: 'request.customer.pic_name', label: 'PIC Name' },
   { key: 'request_date', label: 'Tgl Request' },
-  { key: 'problem_description', label: 'Keluhan' },
   { key: 'status', label: 'Status' }
 ]
 
@@ -41,14 +41,8 @@ const form = reactive({
 // Fetch all rentals to know which units are rented by which customer
 async function fetchRentals() {
   try {
-    const token = sessionStorage.getItem("bias_token")
-    const res = await fetch('http://localhost:4008/api/rents', {
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-    })
-    if (res.ok) {
-      const data = await res.json()
-      rentalsData.value = data.data || []
-    }
+    const data = await api.get<{ data: any[] }>('/rents')
+    rentalsData.value = data.data || []
   } catch (e) {
     console.warn("Could not fetch rentals for unit list", e)
   }
@@ -132,16 +126,11 @@ function openAdd() {
 
 async function fetchRequests() {
   try {
-    const res = await fetch('http://localhost:4008/api/service-requests', {
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('bias_token')}` }
-    })
-    if (res.ok) {
-      const data = await res.json()
-      serviceRequests.value = data.data.map((r: any) => ({
-        ...r,
-        customer: r.customer?.name || '-',
-      }))
-    }
+    const data = await api.get<{ data: any[] }>('/service-requests')
+    serviceRequests.value = data.data.map((r: any) => ({
+      ...r,
+      customer: r.customer?.name || '-',
+    }))
   } catch (error) {
     console.error("Gagal mengambil data", error)
   }

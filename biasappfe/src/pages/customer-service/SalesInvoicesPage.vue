@@ -1,15 +1,15 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive, computed } from 'vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
-import { useResourcesStore } from '@/stores/resources.store'
 import { useToast } from '@/composables/useToast'
-import type { TableColumn, SalesInvoice } from '@/types'
+import { useResourcesStore } from '@/stores/resources.store'
+import type { SalesInvoice, TableColumn } from '@/types'
+import { computed, reactive, ref } from 'vue'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -145,15 +145,15 @@ async function handleSubmit() {
   try {
     if (editingItem.value) {
       await resources.update("salesInvoices", editingItem.value.id as any, form)
-      toast.success("Invoice berhasil diperbarui!")
+      toast.success("Invoice Update Successfully!")
     } else {
       await resources.create("salesInvoices", form)
-      toast.success("Invoice berhasil disimpan!")
+      toast.success("Success create new invoice")
     }
     useMasterStore().refresh(true)
     showModal.value = false
   } catch (error) {
-    toast.error("Gagal menyimpan invoice!")
+    toast.error("Failed to save invoice")
   }
 }
 

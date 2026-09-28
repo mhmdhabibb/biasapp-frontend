@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, onMounted, computed, watch, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import { resources } from '@/services/resource.service'
-import { api } from '@/services/api'
-import type { Role, Permission, Module } from '@/types'
-import { useAuthStore } from '@/stores/auth.store'
+import FormModal from '@/components/ui/FormModal.vue'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
+import { resources } from '@/services/resource.service'
+import { useAuthStore } from '@/stores/auth.store'
+import type { Module, Permission, Role } from '@/types'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 const toast = useToast()
 const authStore = useAuthStore()
@@ -24,6 +24,7 @@ const searchQuery = ref('')
 const selectedRoleId = ref<string | null>(null)
 const selectedPermissions = ref<string[]>([])
 const isSaving = ref(false)
+const isLoading = ref(true)
 
 // Modals
 const showModal = ref(false)
@@ -51,6 +52,8 @@ async function fetchData() {
     }
   } catch (error) {
     console.error('Failed to fetch data:', error)
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -262,7 +265,11 @@ async function savePermissions() {
       </div>
       
       <div class="roles-list">
+        <template v-if="isLoading">
+          <span v-for="item in 5" :key="item" class="role-skeleton" />
+        </template>
         <div 
+          v-else
           v-for="role in filteredRoles" 
           :key="role.id" 
           class="role-item"
@@ -287,7 +294,14 @@ async function savePermissions() {
 
     <!-- Right Panel: Permissions Matrix -->
     <div class="permissions-content">
-      <div v-if="!selectedRole" class="empty-state">
+      <div v-if="isLoading" class="permission-loading-grid" role="status" aria-label="Memuat permissions">
+        <div v-for="item in 6" :key="item" class="permission-skeleton">
+          <span class="permission-skeleton-title" />
+          <span class="permission-skeleton-line" />
+          <span class="permission-skeleton-line short" />
+        </div>
+      </div>
+      <div v-else-if="!selectedRole" class="empty-state">
         <p>Pilih role di panel kiri untuk mengatur permissions.</p>
       </div>
       
@@ -464,11 +478,12 @@ async function savePermissions() {
   padding: 16px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
   margin-bottom: 8px;
 }
 .role-item:hover {
   background: #f8fafc;
+  transform: translateX(3px);
 }
 .role-item.active {
   background: #eff6ff;
@@ -559,15 +574,55 @@ async function savePermissions() {
   flex: 1;
 }
 
+.role-skeleton,
+.permission-skeleton-title,
+.permission-skeleton-line {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(100deg, #edf0f4 20%, #f8fafc 38%, #edf0f4 56%);
+  background-size: 220% 100%;
+  animation: role-shimmer 1.35s ease-in-out infinite;
+}
+
+.role-skeleton { height: 64px; margin-bottom: 8px; }
+
+.permission-loading-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.permission-skeleton {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.permission-skeleton-title { width: 56%; height: 15px; }
+.permission-skeleton-line { width: 88%; height: 12px; }
+.permission-skeleton-line.short { width: 62%; }
+
+@keyframes role-shimmer {
+  to { background-position-x: -220%; }
+}
+
 .perm-card {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 12px 16px;
   background: #f8fafc;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 .perm-card:hover {
   border-color: #cbd5e1;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.06);
 }
 .perm-card-header {
   display: flex;
@@ -679,6 +734,14 @@ input:checked + .toggle-slider:before {
 }
 .toggle-switch.small input:checked + .toggle-slider:before {
   transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .role-skeleton,
+  .permission-skeleton-title,
+  .permission-skeleton-line { animation: none; }
+  .role-item,
+  .perm-card { transition: none; }
 }
 </style>
 

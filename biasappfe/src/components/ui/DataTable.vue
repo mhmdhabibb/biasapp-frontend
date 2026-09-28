@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, useSlots } from 'vue'
-import type { TableColumn } from '@/types'
-import { usePermission } from '@/composables/usePermission'
+import { usePermission } from '@/composables/usePermission';
+import { activeApiRequests } from '@/services/api';
+import type { TableColumn } from '@/types';
+import { computed, ref, useSlots } from 'vue';
 
 const props = defineProps<{
   columns: TableColumn[]
@@ -25,6 +26,8 @@ const showDefaultActions = computed(() => showEdit.value || showDelete.value)
 // ACTION column: always shown when a custom #actions slot decides its own content,
 // otherwise only when at least one default action button is visible.
 const showActionsColumn = computed(() => Boolean(slots.actions) || showDefaultActions.value)
+const isLoading = computed(() => activeApiRequests.value > 0)
+const skeletonRows = Array.from({ length: 6 }, (_, index) => index)
 
 const searchQuery = ref('')
 const currentPage = ref(1)
@@ -82,10 +85,36 @@ const visiblePages = computed(() => {
           @input="currentPage = 1"
         >
       </div>
-      <span class="data-count">{{ filteredData.length }} items</span>
+      <span class="data-count" aria-live="polite">
+        {{ isLoading ? 'Memuat...' : `${filteredData.length} items` }}
+      </span>
     </div>
 
-    <div v-if="data.length === 0" class="empty-state">
+    <div v-if="isLoading" class="table-scroll" role="status" aria-label="Memuat data">
+      <table class="data-table skeleton-table" aria-hidden="true">
+        <thead>
+          <tr>
+            <th class="th-num">#</th>
+            <th v-for="col in columns" :key="col.key">{{ col.label }}</th>
+            <th v-if="showActionsColumn" class="th-actions">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in skeletonRows" :key="row">
+            <td class="td-num"><span class="skeleton skeleton-index" /></td>
+            <td v-for="(col, colIndex) in columns" :key="col.key">
+              <span class="skeleton" :class="`skeleton-width-${(row + colIndex) % 3}`" />
+            </td>
+            <td v-if="showActionsColumn" class="td-actions">
+              <span class="skeleton skeleton-action" />
+              <span class="skeleton skeleton-action" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div v-else-if="data.length === 0" class="empty-state">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5">
         <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
         <polyline points="14 2 14 8 20 8"/>
@@ -230,6 +259,34 @@ const visiblePages = computed(() => {
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+
+.skeleton {
+  display: block;
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(
+    100deg,
+    var(--color-border-light) 20%,
+    var(--color-surface-raised) 38%,
+    var(--color-border-light) 56%
+  );
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.skeleton-width-0 { width: 42%; }
+.skeleton-width-1 { width: 68%; }
+.skeleton-width-2 { width: 86%; }
+.skeleton-index { width: 18px; margin: 0 auto; }
+.skeleton-action { width: 32px; height: 32px; border-radius: 8px; }
+
+@keyframes skeleton-shimmer {
+  to { background-position-x: -220%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }
 
 .empty-state {

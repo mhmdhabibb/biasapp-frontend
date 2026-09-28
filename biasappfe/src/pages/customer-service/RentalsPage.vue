@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
 import type { TableColumn } from '@/types'
-import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const toast = useToast()
@@ -110,23 +110,17 @@ async function openAdd() {
 
 async function fetchRentals() {
   try {
-    const token = sessionStorage.getItem("bias_token");
-    const res = await fetch('http://localhost:4008/api/rents', {
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    const data = await api.get<{ data: any[] }>('/rents')
+    rentals.value = data.data.map((r: any) => {
+      const c = customers.value.find((cust: any) => cust.id === r.customer_id)
+      const companyName = c ? (c.company_name || c.name || '-') : (r.customer?.company_name || r.customer?.name || '-')
+      const picName = c ? (c.pic_name || '-') : (r.customer?.pic_name || '-')
+      return {
+        ...r,
+        company: companyName,
+        pic_name: picName,
+      }
     })
-    if (res.ok) {
-      const data = await res.json()
-      rentals.value = data.data.map((r: any) => {
-        const c = customers.value.find((cust: any) => cust.id === r.customer_id)
-        const companyName = c ? (c.company_name || c.name || '-') : (r.customer?.company_name || r.customer?.name || '-')
-        const picName = c ? (c.pic_name || '-') : (r.customer?.pic_name || '-')
-        return {
-          ...r,
-          company: companyName,
-          pic_name: picName,
-        }
-      })
-    }
   } catch (error) {
     console.error("Gagal mengambil data rentals", error)
   }

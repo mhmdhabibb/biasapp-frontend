@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed, watchEffect } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useToast } from '@/composables/useToast'
 import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import { computed, onMounted, watchEffect } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -58,32 +58,40 @@ const isAllFormsCompleted = computed(() => {
   if (!job.value) return false
   const techOk = !!job.value.remarks && job.value.is_tested
   const srOk = !!job.value.repair_action
+  const signaturesOk = !!serviceReport.value?.customer_signature && !!serviceReport.value?.technician_signature
   let copierOk = true
   if (unit.value?.is_copier || unit.value?.model?.toLowerCase().includes('copier')) {
     copierOk = job.value.reading_counter !== null && job.value.reading_counter !== undefined && Number(job.value.reading_counter) > 0
   }
-  return techOk && srOk && copierOk
+  return techOk && srOk && signaturesOk && copierOk
 })
 
-let isRecovering = false
-watchEffect(() => {
-  if (job.value?.status === 'in_progress' && !serviceReport.value && !isRecovering) {
-    isRecovering = true
-    acceptJob(true).finally(() => {
-      isRecovering = false
-    })
-  }
-})
+onMounted(() => refresh(true))
 
-async function acceptJob(silent = false) {
+async function acceptJob() {
   if (!job.value) return
-  if (!silent && !confirm('Yakin ingin menerima pekerjaan ini sekarang? Waktu mulai (time_in) akan dicatat.')) {
+  if (job.value.status === 'in_progress') {
+    await refresh(true)
+    if (!serviceReport.value) {
+      toast.error('Laporan servis belum ditemukan. Tidak ada laporan baru yang dibuat.')
+    }
     return
   }
-    try {
-      const now = new Date().toISOString()
-      await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
-      
+  if (!confirm('Yakin ingin menerima pekerjaan ini sekarang? Waktu mulai (time_in) akan dicatat.')) {
+    return
+  }
+  try {
+    await refresh(true)
+    const existingReport = serviceReport.value
+    const now = new Date().toISOString()
+    await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
+
+    if (existingReport) {
+      await api.patch(`/service-reports/${existingReport.id}`, {
+        status: 'in_progress',
+        time_in: existingReport.time_in || now,
+      })
+    } else {
       await api.post('/service-reports', {
         report_no: `SR-${Date.now().toString().slice(-6)}`,
         job_order_id: job.value.id,
@@ -99,12 +107,13 @@ async function acceptJob(silent = false) {
         service_date: now,
         time_out: '-'
       })
-      
-      toast.success('Pekerjaan diterima. Waktu mulai tercatat.')
-      await refresh(true)
-    } catch (err: any) {
-      toast.error(err.message || 'Gagal menerima pekerjaan')
     }
+
+    toast.success('Pekerjaan diterima. Waktu mulai tercatat.')
+    await refresh(true)
+  } catch (err: any) {
+    toast.error(err.message || 'Gagal menerima pekerjaan')
+  }
 }
 
 function requestSparepart() {
