@@ -15,7 +15,8 @@ const {
 
 let intervalId: any = null
 
-onMounted(() => {
+onMounted(async () => {
+  await refresh(true)
   intervalId = setInterval(() => {
     refresh(true)
   }, 30000)
@@ -68,18 +69,7 @@ const pendingWarrantyClaims = computed(() => warrantyClaims.value.filter(c => c.
 const totalJobsAll = computed(() => newCalls.value + assignedJobs.value + inProgressJobs.value + waitingSparepartJobs.value + completedJobs.value)
 const completionPercentage = computed(() => totalJobsAll.value === 0 ? 0 : Math.round((completedJobs.value / totalJobsAll.value) * 100))
 
-// Job Analytics Categorization
-const jobAnalytics = computed(() => {
-  return [
-    { label: 'Delivery', count: jobOrders.value.filter(j => j.job_type === 'delivery').length, color: '#3b82f6' },
-    { label: 'Installation', count: jobOrders.value.filter(j => j.job_type === 'installation' || j.job_type === 'delivery_installation').length, color: '#8b5cf6' },
-    { label: 'Call Service', count: jobOrders.value.filter(j => j.job_type === 'call_service').length, color: '#ef4444' },
-    { label: 'Maintenance', count: jobOrders.value.filter(j => j.job_type === 'maintenance_visit').length, color: '#10b981' },
-    { label: 'Meter Reading', count: jobOrders.value.filter(j => j.job_type === 'meter_reading').length, color: '#f59e0b' },
-    { label: 'Pickup/Return', count: jobOrders.value.filter(j => j.job_type === 'pickup_return').length, color: '#64748b' },
-  ]
-})
-const maxAnalytics = computed(() => Math.max(...jobAnalytics.value.map(a => a.count), 1))
+// Removed Job Analytics
 </script>
 
 <template>
@@ -148,22 +138,6 @@ const maxAnalytics = computed(() => Math.max(...jobAnalytics.value.map(a => a.co
 
     <!-- Main Grid -->
     <div class="secondary-grid">
-      <!-- Left Column -->
-      <div class="card section-card">
-        <div class="section-header">
-          <h3 class="section-title">Job Analytics (Categories)</h3>
-        </div>
-        <div class="bars-container">
-          <div class="bar-group" v-for="cat in jobAnalytics" :key="cat.label">
-            <div class="bar-bg" :title="`${cat.label}: ${cat.count}`">
-              <div class="bar-fill" :style="{ height: `${(cat.count / maxAnalytics) * 100}%`, background: cat.color }"></div>
-            </div>
-            <span style="font-size: 11px;">{{ cat.label.substring(0,6) }}.</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Right Column -->
       <div class="card section-card">
         <div class="section-header">
           <h3 class="section-title">Contracts</h3>
@@ -189,9 +163,7 @@ const maxAnalytics = computed(() => Math.max(...jobAnalytics.value.map(a => a.co
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="secondary-grid mt-4">
       <div class="card section-card">
         <div class="section-header">
           <h3 class="section-title">Pending Requests</h3>
@@ -331,7 +303,7 @@ const maxAnalytics = computed(() => Math.max(...jobAnalytics.value.map(a => a.co
 /* Secondary Grid */
 .secondary-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
 }
 .mt-4 {

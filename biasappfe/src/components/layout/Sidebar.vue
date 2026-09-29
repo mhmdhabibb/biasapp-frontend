@@ -5,7 +5,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
 import { useI18n } from 'vue-i18n'
 import type { MenuGroup } from '@/types'
-import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
+import { canAccessRoute, normalizeRole } from '@/router/role-access'
 
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -63,8 +63,6 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.tech_dashboard', icon: 'grid', route: '/technician/dashboard' },
       { label: 'sidebar.acc_dashboard', icon: 'grid', route: '/accounting/dashboard' },
       { label: 'sidebar.monitoring_service', icon: 'activity', route: '/customer-service/monitoring-service' },
-      { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
-      { label: 'sidebar.cs_reports', icon: 'file-text', route: '/customer-service/reports' },
     ],
   },
   {
@@ -81,10 +79,11 @@ const allMenuGroups: MenuGroup[] = [
 
 const menuGroups = computed(() => {
   const role = normalizeRole(currentUser.value?.role)
+  const permissions: string[] = currentUser.value?.permissions || []
 
   const groups: MenuGroup[] = JSON.parse(JSON.stringify(allMenuGroups))
 
-  // Filter dynamically based on role route access, permissions and active database modules
+  // Filter dynamically based on user's actual permissions from the database
   return groups.map(group => ({
     ...group,
     title: group.title.includes('.') ? t(group.title) : group.title,
@@ -92,20 +91,19 @@ const menuGroups = computed(() => {
       // 1. Superadmin (admin) sees everything
       if (role === 'admin') return true
 
-      // 2. Role-restricted items (technician menu): role decides, no module/permission checks
+      // 2. Role-restricted items (technician menu): role decides, no permission checks
       if (item.roles) return item.roles.includes(role)
 
-      // 3. Mirror the router guard: only show routes this role may actually open
-      //    (fixes wrong dashboards / bouncing menus for built-in roles)
-      const allowedNames = allowedRouteNamesByRole[role]
-      if (allowedNames) {
-        const itemName = router.resolve(item.route).name
-        if (!itemName || !allowedNames.includes(String(itemName))) return false
-      }
+      // 3. Check via the permission-based access system
+      const resolved = router.resolve(item.route)
+      const routeName = resolved.name ? String(resolved.name) : ''
+      if (!routeName) return false
 
+      // Use canAccessRoute which checks user's permissions against the route's required module
+      if (!canAccessRoute(routeName, role, permissions)) return false
+
+      // 4. Also check if the corresponding module is active in the database
       const translatedLabel = item.label.includes('.') ? t(item.label) : item.label
-
-      // 4. Match against active database modules + user permissions
       const dbModule = modules.value.find(m => {
         const mBase = m.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
         const tBase = translatedLabel.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
@@ -113,25 +111,10 @@ const menuGroups = computed(() => {
         return mBase === tBase || mBase === routeBase || routeBase.includes(mBase) || mBase.includes(routeBase)
       })
 
-      if (dbModule) {
-        if (!dbModule.is_active) return false
+      // If module exists in DB and is inactive, hide the menu
+      if (dbModule && !dbModule.is_active) return false
 
-        const perms = currentUser.value?.permissions || []
-        const mBaseForPerm = dbModule.name.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '')
-
-        return perms.some(p => {
-          const pModPart = p.toLowerCase().split(':')[0] ?? ''
-          const pBase = pModPart.replace(/[^a-z]/g, '').replace(/s/g, '')
-          return pBase === mBaseForPerm
-        })
-      }
-
-      // Not registered as a module (dashboards, notifications, settings) -> visible
-      const label = translatedLabel.toLowerCase()
-      if (label.includes('dashboard') || label.includes('notification') || label.includes('setting')) return true
-
-      // Default DENY if not in DB to prevent leaking menus to users without rights
-      return false
+      return true
     }).map(item => ({
       ...item,
       label: item.label.includes('.') ? t(item.label) : item.label
