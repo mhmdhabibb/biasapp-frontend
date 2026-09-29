@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { allowedRouteNamesByRole, homeRouteNameByRole, normalizeRole } from '@/router/role-access'
 import { canView, routeNamesByMenuOrder } from '@/router/permission-map'
+import { canAccessRoute, getHomeRoute, normalizeRole } from '@/router/role-access'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -285,11 +286,11 @@ const router = createRouter({
 router.beforeEach((to) => {
   const { isAuthenticated, currentUser } = useAuth()
   const role = normalizeRole(currentUser.value?.role)
+  const permissions: string[] = currentUser.value?.permissions || []
 
   if (to.meta.requiresAuth === false) {
     if (isAuthenticated.value) {
-      const home = homeRouteNameByRole[role]
-      return { name: home || 'users' }
+      return { name: getHomeRoute(role, permissions) }
     }
     return true
   }
@@ -298,10 +299,9 @@ router.beforeEach((to) => {
     return { name: 'login' }
   }
 
-  // Role route allowlists (see role-access.ts). Admin/custom roles are unrestricted here.
-  const allowed = allowedRouteNamesByRole[role]
-  if (allowed && to.name && !allowed.includes(to.name as string)) {
-    return { name: homeRouteNameByRole[role] }
+  // Dynamic permission-based route access check
+  if (to.name && !canAccessRoute(String(to.name), role, permissions)) {
+    return { name: getHomeRoute(role, permissions) }
   }
 
   // `view` gate: a page is only reachable when the role holds `<key>:view`
@@ -324,3 +324,4 @@ router.beforeEach((to) => {
 })
 
 export default router
+
