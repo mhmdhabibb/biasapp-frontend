@@ -1,54 +1,42 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useToast } from '@/composables/useToast'
-import { usePermission } from '@/composables/usePermission'
-import { api } from '@/services/api'
-import { resources } from '@/services/resource.service'
 import PageHeader from '@/components/ui/PageHeader.vue'
-
-const toast = useToast()
-const { can } = usePermission()
 
 const { currentUser } = useAuth()
 const {
   monthlyMeterReadings,
+  rentalInvoices,
   contractItems,
   findCustomer,
-  findUnit,
-  refresh
+  findUnit
 } = useMasterStore()
 
-const data = computed(() => monthlyMeterReadings.value)
-
-const paperSizes = ref<any[]>([])
-onMounted(async () => {
-  try {
-    paperSizes.value = (await resources.paperSizes.list()).data
-  } catch (err) {
-    console.warn('Failed to load paper sizes:', err)
-  }
+// We will just show all meter readings for now, or maybe only those submitted by this tech?
+// The DB doesn't have a technician_id directly on MonthlyMeterReading in the mock, it has service_report_id.
+// For simplicity, we just show all readings, but tech can only CREATE new ones.
+const data = computed(() => {
+  return monthlyMeterReadings.value
 })
 
 const showAddModal = ref(false)
 const form = ref({
   contract_item_id: null as any,
-  paper_size_id: null as any,
-  color_mode: 'BW/Color',
-  end_meter: 0
+  period: new Date().toISOString().slice(0,7), // YYYY-MM
+  counter_mono_end: 0,
+  counter_color_end: 0
 })
 
 const selectedContract = computed(() => contractItems.value.find(c => c.id === form.value.contract_item_id))
 const previousReading = computed(() => {
-  if (!selectedContract.value) return 0
+  if (!selectedContract.value) return null
+  // Find latest reading for this contract
   const readings = data.value.filter(r => r.contract_item_id === selectedContract.value?.id)
-  if (readings.length === 0) return selectedContract.value.start_meter_bw || 0
-  const latest = readings.reduce((prev, curr) =>
-    new Date(prev.created_at).getTime() > new Date(curr.created_at).getTime() ? prev : curr
-  )
-  return latest.end_meter || 0
+  if (readings.length === 0) return { mono: 0, color: 0 }
+  const latest = readings.reduce((prev, curr) => (prev.id > curr.id) ? prev : curr)
+  return { mono: latest.counter_mono_end, color: latest.counter_color_end }
 })
 
 function getCustomerName(contractId: number | null) {
@@ -66,41 +54,87 @@ function getSerialNumber(contractId: number | null) {
   return ci ? findUnit(ci.unit_id)?.serial_no || '-' : '-'
 }
 
-async function submitReading() {
-  if (!form.value.contract_item_id) return toast.warning('Pilih kontrak/unit!')
-  if (!form.value.paper_size_id) return toast.warning('Pilih ukuran kertas!')
-
-  const startMeter = previousReading.value || 0
-  const endMeter = form.value.end_meter
-  if (endMeter < startMeter) {
-    return toast.warning('Current Meter tidak boleh lebih kecil dari sebelumnya!')
+function submitReading() {
+  if (!form.value.contract_item_id) return alert('Pilih kontrak/unit!')
+  
+  if (previousReading.value) {
+    if (form.value.counter_mono_end < previousReading.value.mono) {
+      return alert('Current Meter Mono tidak boleh lebih kecil dari sebelumnya!')
+    }
+    if (form.value.counter_color_end < previousReading.value.color) {
+      return alert('Current Meter Color tidak boleh lebih kecil dari sebelumnya!')
+    }
   }
 
   const ci = selectedContract.value
-  try {
-    await api.post('/monthly-meter-readings/', {
-      user_id: currentUser.value?.id,
-      contract_item_id: ci.id,
-      unit_id: ci.unit_id,
-      paper_size_id: form.value.paper_size_id,
-      color_mode: form.value.color_mode,
-      start_meter: startMeter,
-      end_meter: endMeter,
-      total_usage: Math.max(0, endMeter - startMeter)
-    })
-    await refresh(true)
-    showAddModal.value = false
-    toast.success('Meter Reading berhasil disimpan!')
-    form.value.end_meter = 0
-  } catch (err: any) {
-    toast.error(err.message || 'Gagal menyimpan meter reading')
-  }
+  const monoStart = previousReading.value?.mono || 0
+  const colorStart = previousReading.value?.color || 0
+  const monoEnd = form.value.counter_mono_end
+  const colorEnd = form.value.counter_color_end
+
+  const usageMono = Math.max(0, monoEnd - monoStart)
+  const usageColor = Math.max(0, colorEnd - colorStart)
+
+  const freeQuotaColor = ci?.free_quota_color || ci?.free_copy_quota || 0
+  const bwRate = ci?.rates?.[0]?.rate_per_page_bw || ci?.rate_per_page_bw || 150
+  const colorRate = ci?.rates?.[0]?.rate_per_page_color || ci?.rate_per_page_color || 1300
+
+  const excessColor = Math.max(0, usageColor - freeQuotaColor)
+  const excessAmount = (excessColor * colorRate) + (usageMono * bwRate)
+  const baseRent = ci?.monthly_rent_fee || ci?.total_value || 0
+  const subtotal = baseRent + excessAmount
+
+  const readingId = Date.now()
+  monthlyMeterReadings.value.push({
+    id: readingId,
+    service_report_id: null,
+    contract_item_id: form.value.contract_item_id,
+    period: form.value.period,
+    counter_mono_start: monoStart,
+    counter_mono_end: monoEnd,
+    counter_color_start: colorStart,
+    counter_color_end: colorEnd,
+    color_mode: 'BW/Color',
+    total_usage: usageMono + usageColor,
+    total_amount: excessAmount,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    deleted_at: null
+  })
+
+  // Auto-generate Rental Invoice for Copier
+  const invNo = `INV-R-${Date.now().toString().slice(-6)}`
+  const now = new Date()
+  const dueDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+  rentalInvoices.value.push({
+    id: Date.now() + 1,
+    invoice_no: invNo,
+    customer_id: ci?.customer_id,
+    contract_item_id: ci?.id,
+    period_start: `${form.value.period}-01`,
+    period_end: `${form.value.period}-30`,
+    monthly_date: now.toISOString().slice(0, 10),
+    due_date: dueDate,
+    basis_rental_fee: baseRent,
+    excess_amount: excessAmount,
+    subtotal: subtotal,
+    tax: 0,
+    total_pay: subtotal,
+    status: 'unpaid',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    deleted_at: null
+  })
+
+  showAddModal.value = false
+  alert(`Meter Reading berhasil ditambahkan!\nRental Invoice ${invNo} sebesar Rp ${subtotal.toLocaleString('id-ID')} otomatis diterbitkan.`)
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Meter Reading" button-label="Input Meter Reading" permission="monthly_meter_reading:create" @add="showAddModal = true" />
+    <PageHeader title="Meter Reading" button-label="Input Meter Reading" @add="showAddModal = true" />
 
     <div class="card">
       <div class="table-responsive">
@@ -111,19 +145,19 @@ async function submitReading() {
               <th>Customer</th>
               <th>Unit</th>
               <th>Serial Number</th>
-              <th>Prev Meter</th>
-              <th>Curr Meter</th>
+              <th>Prev (Mono/Color)</th>
+              <th>Curr (Mono/Color)</th>
               <th>Total Usage</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="reading in data" :key="reading.id">
-              <td>{{ reading.created_at ? new Date(reading.created_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'short' }) : '-' }}</td>
+              <td>{{ reading.period }}</td>
               <td>{{ getCustomerName(reading.contract_item_id) }}</td>
               <td>{{ getUnitName(reading.contract_item_id) }}</td>
               <td>{{ getSerialNumber(reading.contract_item_id) }}</td>
-              <td>{{ reading.start_meter }}</td>
-              <td>{{ reading.end_meter }}</td>
+              <td>{{ reading.counter_mono_start }} / {{ reading.counter_color_start }}</td>
+              <td>{{ reading.counter_mono_end }} / {{ reading.counter_color_end }}</td>
               <td>{{ reading.total_usage }}</td>
             </tr>
             <tr v-if="data.length === 0">
@@ -155,31 +189,30 @@ async function submitReading() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">Ukuran Kertas <span class="text-danger">*</span></label>
-            <select v-model="form.paper_size_id" class="form-select">
-              <option :value="null">-- Pilih Ukuran Kertas --</option>
-              <option v-for="ps in paperSizes" :key="ps.id" :value="ps.id">{{ ps.name }}</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Color Mode</label>
-            <select v-model="form.color_mode" class="form-select">
-              <option value="BW/Color">BW / Color</option>
-              <option value="BW">BW</option>
-              <option value="Color">Color</option>
-            </select>
+            <label class="form-label">Periode (Bulan)</label>
+            <input type="month" v-model="form.period" class="form-input">
           </div>
 
           <div v-if="selectedContract" class="meter-inputs">
-            <div class="flex gap-md">
+            <div class="flex gap-md mb-md">
               <div class="form-group flex-1 mb-0">
-                <label class="form-label text-muted">Previous Meter</label>
-                <input type="number" :value="previousReading" class="form-input" disabled>
+                <label class="form-label text-muted">Previous Mono</label>
+                <input type="number" :value="previousReading?.mono || 0" class="form-input" disabled>
               </div>
               <div class="form-group flex-1 mb-0">
-                <label class="form-label">Current Meter <span class="text-danger">*</span></label>
-                <input type="number" v-model.number="form.end_meter" class="form-input">
+                <label class="form-label">Current Mono <span class="text-danger">*</span></label>
+                <input type="number" v-model.number="form.counter_mono_end" class="form-input">
+              </div>
+            </div>
+            
+            <div class="flex gap-md">
+              <div class="form-group flex-1 mb-0">
+                <label class="form-label text-muted">Previous Color</label>
+                <input type="number" :value="previousReading?.color || 0" class="form-input" disabled>
+              </div>
+              <div class="form-group flex-1 mb-0">
+                <label class="form-label">Current Color <span class="text-danger">*</span></label>
+                <input type="number" v-model.number="form.counter_color_end" class="form-input">
               </div>
             </div>
           </div>
@@ -189,7 +222,7 @@ async function submitReading() {
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" @click="showAddModal = false">Batal</button>
-          <button v-if="can('monthly_meter_reading:create')" class="btn btn-primary" @click="submitReading">Simpan Data</button>
+          <button class="btn btn-primary" @click="submitReading">Simpan Data</button>
         </div>
       </div>
     </div>

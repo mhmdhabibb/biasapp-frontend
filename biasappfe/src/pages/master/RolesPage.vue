@@ -1,16 +1,14 @@
 <script setup lang="ts">
 // @ts-nocheck
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import FormModal from '@/components/ui/FormModal.vue'
-import { useToast } from '@/composables/useToast'
-import { api } from '@/services/api'
-import { resources } from '@/services/resource.service'
-import { useAuthStore } from '@/stores/auth.store'
-import type { Module, Permission, Role } from '@/types'
-import { computed, onMounted, ref, watch } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import FormModal from '@/components/ui/FormModal.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { resources } from '@/services/resource.service'
+import { api } from '@/services/api'
+import type { Role, Permission, Module } from '@/types'
+import { useAuthStore } from '@/stores/auth.store'
 
-const toast = useToast()
 const authStore = useAuthStore()
 const router = useRouter()
 
@@ -24,7 +22,6 @@ const searchQuery = ref('')
 const selectedRoleId = ref<string | null>(null)
 const selectedPermissions = ref<string[]>([])
 const isSaving = ref(false)
-const isLoading = ref(true)
 
 // Modals
 const showModal = ref(false)
@@ -49,15 +46,9 @@ async function fetchData() {
     
     if (roles.value.length > 0 && !selectedRoleId.value) {
       selectedRoleId.value = String(roles.value[0].id)
-    } else if (selectedRoleId.value) {
-      // Trigger update manually if selectedRoleId was already set but data just arrived
-      const role = roles.value.find(r => String(r.id) === selectedRoleId.value)
-      selectedPermissions.value = role?.permissions ? role.permissions.map(p => String(p.id)) : []
     }
   } catch (error) {
     console.error('Failed to fetch data:', error)
-  } finally {
-    isLoading.value = false
   }
 }
 
@@ -75,12 +66,11 @@ const selectedRole = computed(() => roles.value.find(r => String(r.id) === selec
 const permissionsByModule = computed(() => {
   const grouped = new Map<string, Permission[]>()
   allPermissions.value.forEach(p => {
-    const hasModule = p.module_id !== null && p.module_id !== undefined && String(p.module_id) !== 'null'
-    const key = hasModule ? String(p.module_id) : `none:${(p.name.split(':')[0] || p.name).toLowerCase()}`
-    if (!grouped.has(key)) {
-      grouped.set(key, [])
+    const modId = String(p.module_id)
+    if (!grouped.has(modId)) {
+      grouped.set(modId, [])
     }
-    grouped.get(key)?.push(p)
+    grouped.get(modId)?.push(p)
   })
   
   const result: { module: Module, permissions: Permission[] }[] = []
@@ -92,33 +82,17 @@ const permissionsByModule = computed(() => {
       })
     }
   })
-
-  // Permission tanpa modul (module_id NULL, mis. purchase_order:view)
-  grouped.forEach((perms, key) => {
-    if (!key.startsWith('none:')) return
-    result.push({
-      module: {
-        id: key,
-        name: `${key.slice(5)} (Tanpa Modul)`,
-        is_active: true,
-      } as Module,
-      permissions: perms
-    })
-  })
   return result
 })
 
 // Watchers
-// Hanya set selectedPermissions ketika selectedRoleId berubah (saat ganti role), 
-// jangan di-watch secara live dari selectedRole untuk menghindari race condition saat user nge-klik cepat.
-watch(selectedRoleId, (newId) => {
-  const role = roles.value.find(r => String(r.id) === newId)
-  if (role && role.permissions) {
-    selectedPermissions.value = role.permissions.map(p => String(p.id))
+watch(selectedRole, (newRole) => {
+  if (newRole && newRole.permissions) {
+    selectedPermissions.value = newRole.permissions.map(p => String(p.id))
   } else {
     selectedPermissions.value = []
   }
-})
+}, { immediate: true })
 
 // Methods
 function selectRole(role: Role) {
@@ -147,16 +121,13 @@ async function handleSaveRole() {
   try {
     if (editingRole.value) {
       await resources.roles.update(String(editingRole.value.id), { name: roleForm.value.name })
-      toast.success("Role berhasil diperbarui!")
     } else {
       await resources.roles.create({ name: roleForm.value.name })
-      toast.success("Role berhasil disimpan!")
     }
     showModal.value = false
     await fetchData()
-  } catch (error: any) {
+  } catch (error) {
     console.error('Failed to save role:', error)
-    toast.error('Gagal menyimpan role: ' + (error.message || 'Error'))
   }
 }
 
@@ -169,10 +140,8 @@ async function handleDeleteRole() {
     }
     showConfirm.value = false
     await fetchData()
-    toast.success("Role berhasil dihapus!")
-  } catch (error: any) {
+  } catch (error) {
     console.error('Failed to delete role:', error)
-    toast.error('Gagal menghapus role: ' + (error.message || 'Error'))
   }
 }
 
@@ -217,22 +186,19 @@ async function savePermissions() {
     await api.patch(`/roles/${selectedRoleId.value}/permissions`, {
       permissions: selectedPermissions.value
     })
-    // Optionally update locally instead of full refetch to prevent flickering
+    // Optionally refetch role data to ensure Sync
+    const resRole = await resources.roles.get(selectedRoleId.value)
     const roleIdx = roles.value.findIndex(r => String(r.id) === selectedRoleId.value)
     if (roleIdx > -1) {
-      const currentSelection = [...selectedPermissions.value]
-      roles.value[roleIdx].permissions = allPermissions.value.filter(p => currentSelection.includes(String(p.id)))
+      roles.value[roleIdx] = resRole.data as any
     }
-    // Refresh the current user's permissions so the sidebar updates immediately
-    await authStore.refreshPermissions()
   } catch (error: any) {
     console.error(error)
-    toast.error('Gagal menyimpan: ' + (error.message || 'Error'))
+    alert('Gagal menyimpan: ' + (error.message || 'Error'))
   } finally {
     isSaving.value = false
   }
 }
-
 </script>
 
 <template>
@@ -274,11 +240,7 @@ async function savePermissions() {
       </div>
       
       <div class="roles-list">
-        <template v-if="isLoading">
-          <span v-for="item in 5" :key="item" class="role-skeleton" />
-        </template>
         <div 
-          v-else
           v-for="role in filteredRoles" 
           :key="role.id" 
           class="role-item"
@@ -303,14 +265,7 @@ async function savePermissions() {
 
     <!-- Right Panel: Permissions Matrix -->
     <div class="permissions-content">
-      <div v-if="isLoading" class="permission-loading-grid" role="status" aria-label="Memuat permissions">
-        <div v-for="item in 6" :key="item" class="permission-skeleton">
-          <span class="permission-skeleton-title" />
-          <span class="permission-skeleton-line" />
-          <span class="permission-skeleton-line short" />
-        </div>
-      </div>
-      <div v-else-if="!selectedRole" class="empty-state">
+      <div v-if="!selectedRole" class="empty-state">
         <p>Pilih role di panel kiri untuk mengatur permissions.</p>
       </div>
       
@@ -487,12 +442,11 @@ async function savePermissions() {
   padding: 16px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition: background 0.2s;
   margin-bottom: 8px;
 }
 .role-item:hover {
   background: #f8fafc;
-  transform: translateX(3px);
 }
 .role-item.active {
   background: #eff6ff;
@@ -583,55 +537,15 @@ async function savePermissions() {
   flex: 1;
 }
 
-.role-skeleton,
-.permission-skeleton-title,
-.permission-skeleton-line {
-  display: block;
-  border-radius: 6px;
-  background: linear-gradient(100deg, #edf0f4 20%, #f8fafc 38%, #edf0f4 56%);
-  background-size: 220% 100%;
-  animation: role-shimmer 1.35s ease-in-out infinite;
-}
-
-.role-skeleton { height: 64px; margin-bottom: 8px; }
-
-.permission-loading-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  align-content: start;
-  gap: 12px;
-  padding: 16px;
-}
-
-.permission-skeleton {
-  display: grid;
-  gap: 14px;
-  padding: 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.permission-skeleton-title { width: 56%; height: 15px; }
-.permission-skeleton-line { width: 88%; height: 12px; }
-.permission-skeleton-line.short { width: 62%; }
-
-@keyframes role-shimmer {
-  to { background-position-x: -220%; }
-}
-
 .perm-card {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 12px 16px;
   background: #f8fafc;
-  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s;
 }
 .perm-card:hover {
   border-color: #cbd5e1;
-  transform: translateY(-2px);
-  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.06);
 }
 .perm-card-header {
   display: flex;
@@ -744,14 +658,4 @@ input:checked + .toggle-slider:before {
 .toggle-switch.small input:checked + .toggle-slider:before {
   transform: translateX(16px);
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .role-skeleton,
-  .permission-skeleton-title,
-  .permission-skeleton-line { animation: none; }
-  .role-item,
-  .perm-card { transition: none; }
-}
 </style>
-
-

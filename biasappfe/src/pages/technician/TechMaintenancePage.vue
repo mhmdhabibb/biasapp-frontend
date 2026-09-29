@@ -4,28 +4,19 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useToast } from '@/composables/useToast'
-import { usePermission } from '@/composables/usePermission'
-import { api } from '@/services/api'
 import PageHeader from '@/components/ui/PageHeader.vue'
 
-const toast = useToast()
-const { can } = usePermission()
 const router = useRouter()
 const { currentUser } = useAuth()
 const {
   getServiceReportsByTechnician,
-  getTechnicianIdByUser,
   findCustomer,
-  findUnit,
-  refresh
+  findContractItem,
+  findUnit
 } = useMasterStore()
 
-// service_report.technician_id references technicians.id, not users.id
-const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
-
 const myJobs = computed(() => {
-  return getServiceReportsByTechnician(myTechId.value).filter(j => j.service_type === 'maintenance')
+  return getServiceReportsByTechnician(currentUser.value?.id || null).filter(j => j.service_type === 'maintenance')
 })
 
 const activeJobs = computed(() => myJobs.value.filter(j => j.status !== 'completed' && j.status !== 'cancelled'))
@@ -48,7 +39,7 @@ const meterReadingForm = ref({
   current_meter: 0
 })
 const form = ref({
-  remarks: '',
+  inspection_result: '',
   notes: ''
 })
 
@@ -56,8 +47,10 @@ function getCustomerName(id: number | null) {
   return findCustomer(id as any)?.company_name || '-'
 }
 
-function getUnitName(unitId: number | null) {
-  const u = findUnit(unitId as any)
+function getUnitName(contractItemId: number | null) {
+  const ci = findContractItem(contractItemId)
+  if (!ci) return '-'
+  const u = findUnit(ci.unit_id)
   return u ? u.model : '-'
 }
 
@@ -73,23 +66,23 @@ function openMaintenance(job: any) {
     machineTesting: false
   }
   meterReadingForm.value = {
-    previous_meter: job.meter_reading_before || 0,
-    current_meter: job.meter_reading_after || job.meter_reading_before || 0
+    previous_meter: job.reading_counter || 0,
+    current_meter: job.reading_counter || 0
   }
   form.value = {
-    remarks: job.remarks || '',
-    notes: ''
+    inspection_result: job.inspection_result || '',
+    notes: job.notes || ''
   }
   showDetailModal.value = true
 }
 
-async function completeMaintenance() {
+function completeMaintenance() {
   if (!selectedJob.value) return
   if (meterReadingForm.value.current_meter < meterReadingForm.value.previous_meter) {
-    toast.warning('Current meter tidak boleh lebih kecil dari previous meter!')
+    alert('Current meter tidak boleh lebih kecil dari previous meter!')
     return
   }
-
+  
   if (confirm('Selesaikan Maintenance?')) {
     // Serialize checklists into repair_action
     const cl = []
@@ -100,39 +93,21 @@ async function completeMaintenance() {
     if (checklist.value.paperFeeder) cl.push('Paper Feeder Check')
     if (checklist.value.machineTesting) cl.push('Machine Testing')
 
-    const remarks = [form.value.remarks, form.value.notes]
-      .map(s => s.trim()).filter(Boolean).join('\n')
-    const now = new Date().toISOString()
-
-    try {
-      await api.patch(`/service-reports/${selectedJob.value.id}`, {
-        status: 'completed',
-        is_completed: true,
-        is_tested: checklist.value.machineTesting,
-        time_in: selectedJob.value.time_in || now,
-        time_out: now,
-        repair_action: cl.join(', '),
-        remarks,
-        meter_reading_before: meterReadingForm.value.previous_meter,
-        meter_reading_after: meterReadingForm.value.current_meter
-      })
-
-      Object.assign(selectedJob.value, {
-        status: 'completed',
-        is_completed: true,
-        time_out: now,
-        repair_action: cl.join(', '),
-        remarks,
-        meter_reading_before: meterReadingForm.value.previous_meter,
-        meter_reading_after: meterReadingForm.value.current_meter
-      })
-
-      showDetailModal.value = false
-      toast.success('Maintenance Selesai!')
-      refresh(true)
-    } catch (err: any) {
-      toast.error(err.message || 'Gagal menyelesaikan maintenance')
+    selectedJob.value.repair_action = cl.join(', ')
+    selectedJob.value.inspection_result = form.value.inspection_result
+    selectedJob.value.notes = form.value.notes
+    selectedJob.value.reading_counter = meterReadingForm.value.current_meter
+    
+    selectedJob.value.status = 'completed'
+    selectedJob.value.time_out = new Date().toISOString()
+    if (!selectedJob.value.time_in) {
+      selectedJob.value.time_in = selectedJob.value.created_at // fallback
     }
+    selectedJob.value.is_complete = true
+    selectedJob.value.updated_at = new Date().toISOString()
+
+    showDetailModal.value = false
+    alert('Maintenance Selesai!')
   }
 }
 </script>
@@ -159,17 +134,15 @@ async function completeMaintenance() {
           </thead>
           <tbody>
             <tr v-for="job in activeJobs" :key="job.id">
-              <td>{{ job.report_no }}</td>
+              <td>{{ job.service_report_no }}</td>
               <td>{{ getCustomerName(job.customer_id) }}</td>
-              <td>{{ getUnitName(job.unit_id) }}</td>
-              <td>{{ job.service_date ? new Date(job.service_date).toLocaleDateString('id-ID') : '-' }}</td>
+              <td>{{ getUnitName(job.contract_item_id) }}</td>
+              <td>{{ job.visit_date }}</td>
               <td>
-                <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : 'warning')">
-                  {{ job.status.toUpperCase().replace('_', ' ') }}
-                </span>
+                <span class="badge badge-warning">ASSIGNED</span>
               </td>
               <td>
-                <button v-if="can('service_report:update')" class="btn btn-sm btn-primary" @click="openMaintenance(job)">Proses</button>
+                <button class="btn btn-sm btn-primary" @click="openMaintenance(job)">Proses</button>
               </td>
             </tr>
             <tr v-if="activeJobs.length === 0">
@@ -197,11 +170,11 @@ async function completeMaintenance() {
             </div>
             <div>
               <span class="text-xs text-muted block">Unit</span>
-              <span class="font-bold">{{ getUnitName(selectedJob?.unit_id) }}</span>
+              <span class="font-bold">{{ getUnitName(selectedJob?.contract_item_id) }}</span>
             </div>
             <div>
               <span class="text-xs text-muted block">Schedule</span>
-              <span class="font-bold">{{ selectedJob?.service_date ? new Date(selectedJob.service_date).toLocaleDateString('id-ID') : '-' }}</span>
+              <span class="font-bold">{{ selectedJob?.visit_date }}</span>
             </div>
           </div>
 
@@ -229,7 +202,7 @@ async function completeMaintenance() {
 
           <div class="form-group">
             <label class="form-label">Hasil Maintenance</label>
-            <textarea v-model="form.remarks" class="form-textarea" rows="2"></textarea>
+            <textarea v-model="form.inspection_result" class="form-textarea" rows="2"></textarea>
           </div>
           
           <div class="form-group">
@@ -239,7 +212,7 @@ async function completeMaintenance() {
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" @click="showDetailModal = false">Batal</button>
-          <button v-if="can('service_report:update')" class="btn btn-primary" @click="completeMaintenance">Selesaikan Maintenance</button>
+          <button class="btn btn-primary" @click="completeMaintenance">Selesaikan Maintenance</button>
         </div>
       </div>
     </div>

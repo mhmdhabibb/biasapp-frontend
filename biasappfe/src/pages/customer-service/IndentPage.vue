@@ -2,10 +2,7 @@
 import DataTable from '@/components/ui/DataTable.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { usePermission } from '@/composables/usePermission'
 import type { TableColumn } from '@/types'
-
-const { canApprove } = usePermission()
 
 const { indents, findProduct } = useMasterStore()
 
@@ -27,7 +24,7 @@ function getProduct(id: number | null) {
 <template>
   <div>
     <PageHeader title="Indents (Backorders)" />
-    <DataTable :columns="columns" :data="indents" permission="service_sparepart" search-placeholder="Search indents...">
+    <DataTable :columns="columns" :data="indents" search-placeholder="Search indents...">
       <template #cell-product_id="{ value }">{{ getProduct(value) }}</template>
       <template #cell-sparepart_request_id="{ row }">REQ-{{ row.sparepart_request_id || '-' }}</template>
       <template #cell-status="{ value }">

@@ -9,20 +9,14 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 const router = useRouter()
 const { currentUser } = useAuth()
 const {
-  jobOrders,
-  getTechnicianIdByUser,
+  getServiceReportsByTechnician,
   findCustomer,
+  findContractItem,
   findUnit
 } = useMasterStore()
 
-// service_report.technician_id references technicians.id, not users.id
-const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
-
-// Backend service_type enum: regular, repair, maintenance, installation,
-// emergency, meter_reading. Call service = anything that is not a scheduled
-// maintenance or meter-reading job.
 const myJobs = computed(() => {
-  return jobOrders.value.filter(j => String(j.technician_id) === String(myTechId.value) && j.job_type !== 'maintenance' && j.job_type !== 'meter_reading')
+  return getServiceReportsByTechnician(currentUser.value?.id || null).filter(j => j.service_type === 'call_service')
 })
 
 const filterStatus = ref('')
@@ -35,11 +29,10 @@ const filteredJobs = computed(() => {
     if (filterStatus.value && job.status !== filterStatus.value) return false
     if (filterDate.value && !job.created_at.startsWith(filterDate.value)) return false
     if (filterCustomer.value) {
-      const custId = job.customer_id || job.service_request?.customer_id
-      const cust = findCustomer(custId)
+      const cust = findCustomer(job.customer_id)
       if (!cust || !cust.company_name.toLowerCase().includes(filterCustomer.value.toLowerCase())) return false
     }
-    if (filterServiceNo.value && !(job.job_order_no || '').toLowerCase().includes(filterServiceNo.value.toLowerCase())) return false
+    if (filterServiceNo.value && !job.service_report_no.toLowerCase().includes(filterServiceNo.value.toLowerCase())) return false
     return true
   }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 })
@@ -48,8 +41,10 @@ function getCustomerName(id: number | null) {
   return findCustomer(id as any)?.company_name || '-'
 }
 
-function getUnitName(unitId: number | null) {
-  const u = findUnit(unitId as any)
+function getUnitName(contractItemId: number | null) {
+  const ci = findContractItem(contractItemId)
+  if (!ci) return '-'
+  const u = findUnit(ci.unit_id)
   return u ? u.model : '-'
 }
 
@@ -80,9 +75,9 @@ function goToDetail(id: number) {
           <label class="form-label">Status</label>
           <select v-model="filterStatus" class="form-select">
             <option value="">Semua Status</option>
-            <option value="pending">Pending</option>
             <option value="assigned">Assigned</option>
-            <option value="in_progress">In Progress</option>
+            <option value="on_progress">On Progress</option>
+            <option value="waiting_sparepart">Waiting Sparepart</option>
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
@@ -105,12 +100,12 @@ function goToDetail(id: number) {
           </thead>
           <tbody>
             <tr v-for="job in filteredJobs" :key="job.id">
-              <td>{{ job.job_order_no }}</td>
-              <td>{{ getCustomerName(job.customer_id || job.service_request?.customer_id) }}</td>
-              <td>{{ getUnitName(job.unit_id || job.service_request?.unit_id) }}</td>
+              <td>{{ job.service_report_no }}</td>
+              <td>{{ getCustomerName(job.customer_id) }}</td>
+              <td>{{ getUnitName(job.contract_item_id) }}</td>
               <td>{{ new Date(job.created_at).toLocaleString('id-ID') }}</td>
               <td>
-                <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'pending' || job.status === 'assigned' ? 'warning' : job.status === 'completed' ? 'success' : 'secondary')">
+                <span class="badge" :class="'badge-' + (job.status === 'on_progress' ? 'info' : job.status === 'assigned' ? 'warning' : job.status === 'completed' ? 'success' : 'secondary')">
                   {{ job.status.toUpperCase().replace('_', ' ') }}
                 </span>
               </td>

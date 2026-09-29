@@ -7,9 +7,6 @@ import type { Brand, TableColumn } from '@/types'
 import { reactive, ref } from 'vue'
 
 import { useBrands } from '@/composables/useBrands'
-import { useToast } from '@/composables/useToast'
-
-const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Brand' },
@@ -43,22 +40,20 @@ async function handleSubmit() {
     await create(form.name)
   }
   showModal.value = false
-  toast.success(editingItem.value ? 'Brand berhasil diperbarui!' : 'Brand berhasil disimpan!')
 }
 
 function openDelete(item: Brand) { deletingItem.value = item; showConfirm.value = true }
 async function handleDelete() {
   if (deletingItem.value) await remove(String(deletingItem.value.id))
   showConfirm.value = false
-  toast.success('Brand berhasil dihapus!')
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Brands" button-label="Add Brand" permission="brand:create" @add="openAdd" />
+    <PageHeader title="Brands" button-label="Add Brand" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari brand..." permission="brand" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari brand..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Add Brand'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="brand-name" class="form-label">Nama Brand</label>

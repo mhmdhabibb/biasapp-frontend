@@ -5,12 +5,8 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { usePermission } from '@/composables/usePermission'
 import type { TableColumn, ServiceReport } from '@/types'
-
-const { can } = usePermission()
 
 const {
   serviceReports: data,
@@ -23,11 +19,12 @@ const {
 } = useMasterStore()
 
 const columns: TableColumn[] = [
-  { key: 'report_no', label: 'No. Laporan' },
+  { key: 'service_report_no', label: 'No. Laporan' },
   { key: 'customer_id', label: 'Customer' },
+  { key: 'contract_item_id', label: 'Kontrak' },
   { key: 'service_type', label: 'Tipe Servis' },
   { key: 'technician_id', label: 'Teknisi' },
-  { key: 'service_date', label: 'Tanggal Kunjungan' },
+  { key: 'visit_date', label: 'Tanggal Kunjungan' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -51,13 +48,7 @@ const form = reactive({
   remarks: '',
   is_tested: false,
   is_completed: false,
-  customer_signature: '',
-  technician_signature: '',
   status: 'open',
-  next_sparepart: '',
-  spareparts: [] as any[],
-  meter_reading_before: 0,
-  meter_reading_after: 0
 })
 
 const defaultForm = { ...form }
@@ -86,46 +77,18 @@ function openEdit(item: any) {
     remarks: item.remarks,
     is_tested: item.is_tested,
     is_completed: item.is_completed,
-    customer_signature: item.customer_signature || '',
-    technician_signature: item.technician_signature || '',
     status: item.status,
-    next_sparepart: item.next_sparepart || '',
-    spareparts: item.spareparts ? JSON.parse(JSON.stringify(item.spareparts)) : [],
-    meter_reading_before: item.meter_reading_before || 0,
-    meter_reading_after: item.meter_reading_after || 0
   })
   showModal.value = true
 }
 
 function handleSubmit() {
-  if (!form.report_no.trim() && !form.service_report_no?.trim()) return
-  
-  const finalForm = { ...form, service_report_no: form.report_no }
-  
+  if (!form.service_report_no.trim()) return
   if (editingItem.value) {
     const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...finalForm, updated_at: new Date().toISOString() }
+    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...form, updated_at: new Date().toISOString() }
   } else {
-    const newId = Date.now()
-    data.value.push({ id: newId, ...finalForm, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
-    
-    // Auto-generate Sparepart Requests for accounting/procurement
-    if (form.spareparts && form.spareparts.length > 0) {
-      form.spareparts.forEach((sp: any, i: number) => {
-        if (sp.product_id && sp.qty > 0) {
-          useMasterStore().sparepartRequests.value.push({
-            id: Date.now() + i,
-            request_no: `SPR-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`,
-            service_report_id: newId,
-            product_id: sp.product_id,
-            qty: sp.qty,
-            status: 'pending',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-        }
-      })
-    }
+    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
   }
   showModal.value = false
 }
@@ -147,96 +110,22 @@ function contractNo(id: any): string {
 }
 
 function technicianName(id: any): string {
-  const t: any = findTechnician(id)
-  return t ? t.user?.name || t.name || '-' : '-'
-}
-
-import { printServiceReport } from '@/utils/printReport'
-
-function printReport(item: any) {
-  printServiceReport(item)
-}
-
-function exportToExcel() {
-  const rows = [['No. Laporan', 'Customer', 'Kontrak', 'Tipe Servis', 'Teknisi', 'Tanggal Kunjungan', 'Status']]
-  for (const item of data.value) {
-    rows.push([
-      item.report_no || item.service_report_no || '-',
-      customerName(item.customer_id),
-      contractNo(item.contract_item_id),
-      item.service_type || '-',
-      technicianName(item.technician_id),
-      item.service_date ? new Date(item.service_date).toLocaleDateString('id-ID') : '-',
-      item.status || '-'
-    ])
-  }
-  const csvContent = 'data:text/csv;charset=utf-8,' + rows.map(e => e.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
-  const encodedUri = encodeURI(csvContent)
-  const link = document.createElement('a')
-  link.setAttribute('href', encodedUri)
-  link.setAttribute('download', 'Data_Laporan_Servis.csv')
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-}
-
-function printTable() {
-  window.print()
+  const t = findTechnician(id)
+  return t ? t.name : '-'
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Service Reports" button-label="Add Service Report" permission="service_report:create" @add="openAdd">
-      <template #actions>
-        <button class="btn btn-outline" @click="exportToExcel">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-          Export Excel
-        </button>
-        <button class="btn btn-outline" @click="printTable">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-          Print / PDF
-        </button>
-      </template>
-    </PageHeader>
+    <PageHeader title="Service Reports" button-label="Add Service Report" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Cari laporan servis..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
-      <template #cell-service_date="{ value }">{{ value ? new Date(value).toLocaleDateString('id-ID') : '-' }}</template>
       <template #cell-status="{ value }">
         <span :class="value === 'open' ? 'badge badge-warning' : value === 'in_progress' ? 'badge badge-info' : value === 'completed' ? 'badge badge-success' : 'badge badge-neutral'">
           {{ value === 'open' ? 'Open' : value === 'in_progress' ? 'Proses' : value === 'completed' ? 'Selesai' : value || '-' }}
         </span>
-      </template>
-      <template #actions="{ row }">
-        <button v-if="can('service_report:read')" class="action-btn" title="Quick Look Form" @click="$router.push(`/shared/service-reports/${row.id}`)" style="color: var(--color-primary); border-color: transparent;">
-          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
-        </button>
-        <button v-if="can('service_report:read')" class="action-btn" title="Print Laporan" @click="printReport(row)" style="color: var(--color-primary); border-color: transparent;">
-          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="6 9 6 2 18 2 18 9"></polyline>
-            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
-            <rect x="6" y="14" width="12" height="8"></rect>
-          </svg>
-        </button>
-        <button v-if="can('service_report:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
-          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
-            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-          </svg>
-        </button>
-        <button v-if="can('service_report:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
-          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-            <line x1="10" y1="11" x2="10" y2="17"></line>
-            <line x1="14" y1="11" x2="14" y2="17"></line>
-          </svg>
-        </button>
       </template>
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Service Report' : 'Add Service Report'" @close="showModal = false" @submit="handleSubmit">
@@ -312,58 +201,10 @@ function printTable() {
         <label for="sr-status" class="form-label">Status</label>
         <select id="sr-status" v-model="form.status" class="form-select">
           <option value="open">Open</option>
-          <option value="in_progress">Continue (In Progress)</option>
-          <option value="completed">Done (Test OK)</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
         </select>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Meter Reading Before</label>
-          <input type="number" v-model="form.meter_reading_before" class="form-input">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Meter Reading After</label>
-          <input type="number" v-model="form.meter_reading_after" class="form-input">
-        </div>
-      </div>
-      <div class="form-group" v-if="form.status === 'in_progress' || true">
-        <label class="form-label">Change Sparepart / Component Replacement</label>
-        <div v-for="(sp, idx) in form.spareparts" :key="idx" style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <select v-model="sp.product_id" class="form-select" style="flex: 1;">
-            <option value="" disabled>Pilih Produk (Sparepart)...</option>
-            <option v-for="p in useMasterStore().products" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-          <input type="number" v-model="sp.qty" class="form-input" style="width: 80px;" min="1" placeholder="Qty">
-          <button type="button" class="btn btn-sm btn-outline" @click="form.spareparts.splice(idx, 1)">Hapus</button>
-        </div>
-        <button type="button" class="btn btn-sm btn-outline mt-2" @click="form.spareparts.push({product_id: '', qty: 1})">+ Tambah Sparepart</button>
-      </div>
-      
-      <!-- Tested and Completed Action Buttons -->
-      <div class="form-row" style="margin-top: 15px; margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
-        <div class="form-group">
-          <label class="form-label">Tested</label>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <button type="button" class="btn btn-outline" :class="{'btn-primary': form.is_tested}" @click="form.is_tested = true">
-              <svg v-if="form.is_tested" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              Tandai Tested
-            </button>
-            <span v-if="form.is_tested" class="text-success" style="font-weight: bold;">YES</span>
-            <span v-else class="text-neutral">NO</span>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Completed</label>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <button type="button" class="btn btn-outline" :class="{'btn-primary': form.is_completed}" @click="form.is_completed = true">
-              <svg v-if="form.is_completed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              Tandai Completed
-            </button>
-            <span v-if="form.is_completed" class="text-success" style="font-weight: bold;">YES</span>
-            <span v-else class="text-neutral">NO</span>
-          </div>
-        </div>
       </div>
       <div class="form-group form-check-group">
         <label class="form-check-label">
@@ -374,17 +215,6 @@ function printTable() {
         <label class="form-check-label">
           <input v-model="form.is_completed" type="checkbox" class="form-checkbox"> Is Completed?
         </label>
-      </div>
-
-      <div class="form-row mt-3">
-        <div class="form-group">
-          <label class="form-label">Tanda Tangan Teknisi</label>
-          <SignaturePad v-model="form.technician_signature" height="150px" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Tanda Tangan Customer</label>
-          <SignaturePad v-model="form.customer_signature" height="150px" />
-        </div>
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Hapus Laporan Servis" :message="`Yakin ingin menghapus laporan '${deletingItem?.report_no || (deletingItem as any)?.service_report_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
@@ -413,8 +243,5 @@ function printTable() {
   width: 16px;
   height: 16px;
   accent-color: var(--color-primary);
-}
-.mt-3 {
-  margin-top: 1rem;
 }
 </style>

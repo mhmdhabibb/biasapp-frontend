@@ -1,8 +1,6 @@
 // @ts-nocheck
 import { useResourcesStore } from "@/stores/resources.store";
-import { useAuthStore } from "@/stores/auth.store";
 import type {
-  Brand,
   ContractItem,
   Customer,
   DeliveryOrder,
@@ -28,7 +26,6 @@ import { reactive, toRefs } from "vue";
 const store = reactive({
   customers: [] as Customer[],
   technicians: [] as Technician[],
-  brands: [] as Brand[],
   units: [] as Unit[],
   products: [] as Product[],
   warranties: [] as Warranty[],
@@ -43,10 +40,41 @@ const store = reactive({
   salesInvoices: [] as SalesInvoice[],
   payments: [] as Payment[],
   warrantyClaims: [] as WarrantyClaim[],
-  sparepartRequests: [] as SparepartRequest[],
+  sparepartRequests: [
+    {
+      id: 1,
+      request_no: 'SR-2026-001',
+      service_report_id: 1,
+      product_id: 1,
+      qty: 2,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      request_no: 'SR-2026-002',
+      service_report_id: 2,
+      product_id: 2,
+      qty: 1,
+      status: 'po_created',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  ] as SparepartRequest[],
   indents: [] as Indent[],
   deliveryOrders: [] as DeliveryOrder[],
-  purchaseOrders: [] as PurchaseOrder[],
+  purchaseOrders: [
+    {
+      id: 1,
+      po_no: 'PO-2026-001',
+      sparepart_request_id: 2,
+      po_date: new Date().toISOString(),
+      status: 'approved',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+  ] as PurchaseOrder[],
   procurementDeliveryOrders: [] as ProcurementDeliveryOrder[],
 });
 
@@ -54,57 +82,63 @@ let syncPromise: Promise<void> | null = null;
 
 export function useMasterStore() {
   const resources = useResourcesStore();
-  const authStore = useAuthStore();
 
-  function hasPerm(resourceName: string) {
-    if (authStore.currentUser?.role === 'admin' || authStore.currentUser?.role === 'superadmin') return true;
-    const perms = authStore.currentUser?.permissions || [];
-    const resBase = resourceName.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '');
-    return perms.some(p => {
-      const pMod = p.split(':')[0].toLowerCase();
-      const pBase = pMod.replace(/[^a-z]/g, '').replace(/s/g, '');
-      return pBase === resBase;
-    });
-  }
-
-  function syncFromApi(force = false) {
-    if (syncPromise && !force) return syncPromise;
-    
-    const safeFetch = (fetchPromise: Promise<any>, assignCallback: (items: any) => void) => {
-      return fetchPromise
-        .then(items => { if (items) assignCallback(items); })
-        .catch(err => { console.warn("Failed to fetch data:", err); });
-    };
-
-    const tasks: Promise<void>[] = [
-      safeFetch(resources.fetchAll("customers"), items => store.customers = items),
-      safeFetch(resources.fetchAll("technicians"), items => store.technicians = items),
-      safeFetch(resources.fetchAll("brands"), items => store.brands = items),
-      safeFetch(resources.fetchAll("units"), items => store.units = items),
-      safeFetch(resources.fetchAll("products"), items => store.products = items),
-      safeFetch(resources.fetchAll("warranties"), items => store.warranties = items),
-      safeFetch(resources.fetchAll("contractItems"), items => store.contractItems = items),
-      safeFetch(resources.fetchAll("serviceReports"), items => store.serviceReports = items),
-      safeFetch(resources.fetchAll("serviceRequests"), items => store.serviceRequests = items),
-      safeFetch(resources.fetchAll("jobOrders"), items => store.jobOrders = items),
-      safeFetch(resources.fetchAll("monthlyMeterReadings"), items => store.monthlyMeterReadings = items),
-      safeFetch(resources.fetchAll("sales"), items => store.sales = items),
-      safeFetch(resources.fetchAll("rentalInvoices"), items => store.rentalInvoices = items),
-      safeFetch(resources.fetchAll("salesInvoices"), items => store.salesInvoices = items),
-      safeFetch(resources.fetchAll("payments"), items => store.payments = items),
-      safeFetch(resources.fetchAll("warrantyClaims"), items => store.warrantyClaims = items),
-      safeFetch(resources.fetchAll("serviceSpareparts"), items => store.sparepartRequests = items),
-      safeFetch(resources.fetchAll("purchaseOrders"), items => store.purchaseOrders = items),
-      safeFetch(resources.fetchAll("deliveryOrders"), items => {
-        store.deliveryOrders = items;
-        // Inbound (procurement) shipments are the ones linked to a purchase order.
-        store.procurementDeliveryOrders = items.filter(
-          (d: any) => d.purchase_order_id || d.do_type === "inbound",
-        );
+  function syncFromApi() {
+    if (syncPromise) return syncPromise;
+    syncPromise = Promise.all([
+      resources.fetchAll("customers").then((items) => {
+        store.customers = items as unknown as Customer[];
       }),
-    ];
-
-    syncPromise = Promise.all(tasks).then(() => undefined);
+      resources.fetchAll("technicians").then((items) => {
+        store.technicians = items as unknown as Technician[];
+      }),
+      resources.fetchAll("units").then((items) => {
+        store.units = items as unknown as Unit[];
+      }),
+      resources.fetchAll("products").then((items) => {
+        store.products = items as unknown as Product[];
+      }),
+      resources.fetchAll("warranties").then((items) => {
+        store.warranties = items as unknown as Warranty[];
+      }),
+      resources.fetchAll("contractItems").then((items) => {
+        store.contractItems = items as unknown as ContractItem[];
+      }),
+      resources.fetchAll("serviceReports").then((items) => {
+        store.serviceReports = items as unknown as ServiceReport[];
+      }),
+      resources.fetchAll("serviceRequests").then((items) => {
+        store.serviceRequests = items as any[];
+      }),
+      resources.fetchAll("jobOrders").then((items) => {
+        store.jobOrders = items as any[];
+      }),
+      resources.fetchAll("monthlyMeterReadings").then((items) => {
+        store.monthlyMeterReadings = items as unknown as MonthlyMeterReading[];
+      }),
+      resources.fetchAll("sales").then((items) => {
+        store.sales = items as unknown as Sale[];
+      }),
+      resources.fetchAll("rentalInvoices").then((items) => {
+        store.rentalInvoices = items as unknown as RentalInvoice[];
+      }),
+      resources.fetchAll("salesInvoices").then((items) => {
+        store.salesInvoices = items as unknown as SalesInvoice[];
+      }),
+      resources.fetchAll("payments").then((items) => {
+        store.payments = items as unknown as Payment[];
+      }),
+      resources.fetchAll("warrantyClaims").then((items) => {
+        store.warrantyClaims = items as unknown as WarrantyClaim[];
+      }),
+      resources.fetchAll("serviceSpareparts").then((items) => {
+        // Keep mock data intact if api returns empty
+        if (items.length > 0) store.sparepartRequests = items as unknown as SparepartRequest[];
+      }),
+      resources.fetchAll("deliveryOrders").then((items) => {
+        store.deliveryOrders = items as unknown as DeliveryOrder[];
+      }),
+    ]).then(() => undefined);
     return syncPromise;
   }
 
@@ -122,11 +156,6 @@ export function useMasterStore() {
     return store.units.find((u) => (u.id as any) == id);
   }
 
-  function findBrand(id: number | string | null | undefined): Brand | undefined {
-    if (id == null) return undefined;
-    return store.brands.find((b) => (b.id as any) == id);
-  }
-
   function findProduct(id: number | string | null): Product | undefined {
     return store.products.find((p) => (p.id as any) == id);
   }
@@ -135,9 +164,8 @@ export function useMasterStore() {
     return store.warranties.find((w) => (w.id as any) == id);
   }
 
-  function findContractItem(id: number | string | null): ContractItem | undefined {
-    if (id == null) return undefined;
-    return store.contractItems.find((ci) => (ci.id as any) == id);
+  function findContractItem(id: number | null): ContractItem | undefined {
+    return store.contractItems.find((ci) => ci.id === id);
   }
 
   function findServiceReport(id: number | null): ServiceReport | undefined {
@@ -150,10 +178,6 @@ export function useMasterStore() {
 
   function findSale(id: number | null): Sale | undefined {
     return store.sales.find((s) => s.id === id);
-  }
-
-  function findSalesInvoice(id: any): SalesInvoice | undefined {
-    return store.salesInvoices.find((si) => si.id === id);
   }
 
   function getUnitsByCustomer(customerId: number | string | null): Unit[] {
@@ -174,22 +198,12 @@ export function useMasterStore() {
     return store.contractItems.filter((c) => (c.customer_id as any) == customerId);
   }
 
-  // service_report.technician_id references technicians.id (not users.id),
-  // so pages must resolve the logged-in user -> technicians row first.
-  function getTechnicianIdByUser(
-    userId: number | string | null,
-  ): string | null {
-    if (!userId) return null;
-    const tech = store.technicians.find((t: any) => t.user_id == userId);
-    return tech ? String(tech.id) : null;
-  }
-
   function getServiceReportsByTechnician(
-    technicianId: number | string | null,
+    technicianId: number | null,
   ): ServiceReport[] {
     if (!technicianId) return [];
     return store.serviceReports.filter(
-      (sr) => (sr.technician_id as any) == technicianId,
+      (sr) => sr.technician_id === technicianId,
     );
   }
 
@@ -199,17 +213,14 @@ export function useMasterStore() {
     findCustomer,
     findTechnician,
     findUnit,
-    findBrand,
     findProduct,
     findWarranty,
     findContractItem,
     findServiceReport,
     findRentalInvoice,
     findSale,
-    findSalesInvoice,
     getUnitsByCustomer,
     getContractsByCustomer,
-    getTechnicianIdByUser,
     getServiceReportsByTechnician,
   };
 }

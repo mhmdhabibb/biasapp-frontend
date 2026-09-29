@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, PaperSize } from '@/types'
-import { useToast } from '@/composables/useToast'
-
-const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Ukuran Kertas' },
@@ -22,7 +19,6 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch paper sizes:', error)
-    toast.error('Gagal mengambil data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -56,10 +52,8 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? 'Ukuran Kertas berhasil diperbarui!' : 'Ukuran Kertas berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save paper size:', error)
-    toast.error('Gagal menyimpan ukuran kertas: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -70,21 +64,18 @@ async function handleDelete() {
     try {
       await resources.paperSizes.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('Ukuran Kertas berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete paper size:', error)
-      toast.error('Gagal menghapus ukuran kertas')
     }
   }
   showConfirm.value = false
 }
-
 </script>
 
 <template>
   <div>
-    <PageHeader title="Paper Size" button-label="Add Paper Size" permission="paper_size:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari ukuran kertas..." permission="paper_size" @edit="openEdit" @delete="openDelete" />
+    <PageHeader title="Paper Size" button-label="Add Paper Size" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari ukuran kertas..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Paper Size' : 'Add Paper Size'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="ps-name" class="form-label">Nama Ukuran</label>
@@ -94,5 +85,3 @@ async function handleDelete() {
     <ConfirmDialog :open="showConfirm" title="Hapus Ukuran Kertas" :message="`Yakin ingin menghapus ukuran '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
-
-

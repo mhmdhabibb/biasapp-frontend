@@ -1,33 +1,17 @@
 <script setup lang="ts">
-import { usePermission } from '@/composables/usePermission';
-import { activeApiRequests } from '@/services/api';
-import type { TableColumn } from '@/types';
-import { computed, ref, useSlots } from 'vue';
+import { ref, computed } from 'vue'
+import type { TableColumn } from '@/types'
 
 const props = defineProps<{
   columns: TableColumn[]
   data: any[]
   searchPlaceholder?: string
-  /** Backend module key (e.g. "customer") used to gate default edit/delete buttons */
-  permission?: string
 }>()
 
 defineEmits<{
   (e: 'edit', item: any): void
   (e: 'delete', item: any): void
 }>()
-
-const slots = useSlots()
-const { can } = usePermission()
-
-const showEdit = computed(() => !props.permission || can(`${props.permission}:update`))
-const showDelete = computed(() => !props.permission || can(`${props.permission}:delete`))
-const showDefaultActions = computed(() => showEdit.value || showDelete.value)
-// ACTION column: always shown when a custom #actions slot decides its own content,
-// otherwise only when at least one default action button is visible.
-const showActionsColumn = computed(() => Boolean(slots.actions) || showDefaultActions.value)
-const isLoading = computed(() => activeApiRequests.value > 0)
-const skeletonRows = Array.from({ length: 6 }, (_, index) => index)
 
 const searchQuery = ref('')
 const currentPage = ref(1)
@@ -85,36 +69,10 @@ const visiblePages = computed(() => {
           @input="currentPage = 1"
         >
       </div>
-      <span class="data-count" aria-live="polite">
-        {{ isLoading ? 'Memuat...' : `${filteredData.length} items` }}
-      </span>
+      <span class="data-count">{{ filteredData.length }} items</span>
     </div>
 
-    <div v-if="isLoading" class="table-scroll" role="status" aria-label="Memuat data">
-      <table class="data-table skeleton-table" aria-hidden="true">
-        <thead>
-          <tr>
-            <th class="th-num">#</th>
-            <th v-for="col in columns" :key="col.key">{{ col.label }}</th>
-            <th v-if="showActionsColumn" class="th-actions">ACTION</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in skeletonRows" :key="row">
-            <td class="td-num"><span class="skeleton skeleton-index" /></td>
-            <td v-for="(col, colIndex) in columns" :key="col.key">
-              <span class="skeleton" :class="`skeleton-width-${(row + colIndex) % 3}`" />
-            </td>
-            <td v-if="showActionsColumn" class="td-actions">
-              <span class="skeleton skeleton-action" />
-              <span class="skeleton skeleton-action" />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div v-else-if="data.length === 0" class="empty-state">
+    <div v-if="data.length === 0" class="empty-state">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5">
         <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
         <polyline points="14 2 14 8 20 8"/>
@@ -146,7 +104,7 @@ const visiblePages = computed(() => {
             >
               {{ col.label }}
             </th>
-            <th v-if="showActionsColumn" class="th-actions">ACTION</th>
+            <th class="th-actions">ACTION</th>
           </tr>
         </thead>
         <tbody>
@@ -157,10 +115,9 @@ const visiblePages = computed(() => {
                 {{ row[col.key] ?? '-' }}
               </slot>
             </td>
-            <td v-if="showActionsColumn" class="td-actions">
+            <td class="td-actions">
               <slot name="actions" :row="row">
                 <button
-                  v-if="showEdit"
                   class="action-btn action-btn--edit"
                   title="Edit"
                   @click="$emit('edit', row)"
@@ -171,7 +128,6 @@ const visiblePages = computed(() => {
                   </svg>
                 </button>
                 <button
-                  v-if="showDelete"
                   class="action-btn action-btn--delete"
                   title="Delete"
                   @click="$emit('delete', row)"
@@ -261,34 +217,6 @@ const visiblePages = computed(() => {
   white-space: nowrap;
 }
 
-.skeleton {
-  display: block;
-  height: 14px;
-  border-radius: 4px;
-  background: linear-gradient(
-    100deg,
-    var(--color-border-light) 20%,
-    var(--color-surface-raised) 38%,
-    var(--color-border-light) 56%
-  );
-  background-size: 220% 100%;
-  animation: skeleton-shimmer 1.35s ease-in-out infinite;
-}
-
-.skeleton-width-0 { width: 42%; }
-.skeleton-width-1 { width: 68%; }
-.skeleton-width-2 { width: 86%; }
-.skeleton-index { width: 18px; margin: 0 auto; }
-.skeleton-action { width: 32px; height: 32px; border-radius: 8px; }
-
-@keyframes skeleton-shimmer {
-  to { background-position-x: -220%; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none; }
-}
-
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -371,39 +299,30 @@ const visiblePages = computed(() => {
   padding: 0;
   border-radius: 8px;
   cursor: pointer;
-  border: none;
+  border: 1px solid var(--color-border-light);
+  background: transparent;
+  color: var(--color-text-muted);
   transition:
     background var(--transition-fast),
     border-color var(--transition-fast),
     color var(--transition-fast),
-    transform var(--transition-fast),
-    box-shadow var(--transition-fast);
+    transform var(--transition-fast);
 }
 
 .action-btn:active {
   transform: scale(0.92);
 }
 
-.action-btn--edit {
-  background: rgba(48, 92, 255, 0.1);
+.action-btn--edit:hover {
+  background: var(--color-primary-surface);
+  border-color: var(--color-primary-surface);
   color: var(--color-primary);
 }
 
-.action-btn--edit:hover {
-  background: var(--color-primary);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(48, 92, 255, 0.3);
-}
-
-.action-btn--delete {
-  background: rgba(220, 38, 38, 0.1);
-  color: var(--color-danger);
-}
-
 .action-btn--delete:hover {
-  background: var(--color-danger);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+  background: var(--color-danger-surface);
+  border-color: var(--color-danger-surface);
+  color: var(--color-danger);
 }
 
 .pagination {

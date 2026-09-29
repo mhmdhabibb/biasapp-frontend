@@ -6,12 +6,9 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { usePermission } from '@/composables/usePermission'
 import { resources } from '@/services/resource.service'
 import { onMounted } from 'vue'
 import type { TableColumn, ContractItem } from '@/types'
-
-const { can } = usePermission()
 
 const {
   contractItems: data,
@@ -192,7 +189,6 @@ function printContract(item: any) {
   const custEmail = customer?.email || '-';
   const contractNo = item.contract?.contract_no || item.contract_no || '';
   const startDate = item.contract?.start_date ? item.contract.start_date.slice(0,10) : (item.start_date ? item.start_date.slice(0,10) : '');
-  const endDate = item.contract?.end_date ? item.contract.end_date.slice(0,10) : (item.end_date ? item.end_date.slice(0,10) : '');
   
   // Calculate total monthly rent across all units in contract if multiple
   const sumUnitsFee = unitsInContract.reduce((sum: number, u: any) => sum + (u.monthly_rent_fee || u.total_value || 0), 0);
@@ -224,45 +220,6 @@ function printContract(item: any) {
   const spellYear = (y: number) => {
     return spellNumber(y);
   };
-
-  let durationText = '2 (dua) tahun';
-  if (startDate && endDate) {
-    const s = new Date(startDate);
-    const e = new Date(endDate);
-    if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
-      let years = e.getFullYear() - s.getFullYear();
-      let months = e.getMonth() - s.getMonth();
-      let days = e.getDate() - s.getDate();
-      if (days < 0) {
-        months--;
-      }
-      if (months < 0) {
-        years--;
-        months += 12;
-      }
-      
-      // If days > 25 (e.g., month end adjustment), treat it as an extra month
-      if (days >= 28) {
-        months++;
-        if (months === 12) {
-          years++;
-          months = 0;
-        }
-      }
-      
-      const parts = [];
-      if (years > 0) {
-        parts.push(`${years} (${spellNumber(years).toLowerCase()}) tahun`);
-      }
-      if (months > 0) {
-        parts.push(`${months} (${spellNumber(months).toLowerCase()}) bulan`);
-      }
-      
-      if (parts.length > 0) {
-        durationText = parts.join(' dan ');
-      }
-    }
-  }
 
   const html = `
     <!DOCTYPE html>
@@ -332,7 +289,7 @@ function printContract(item: any) {
           <!-- Document Title -->
           <div class="doc-title">
             <h3>SURAT PERJANJIAN SEWA ${machineTypeName}</h3>
-            <p>Nomor : ${contractNo}</p>
+            <p>Nomor : ${contractNo} – ${custName.toUpperCase()}</p>
           </div>
 
           <!-- Preamble -->
@@ -400,12 +357,10 @@ function printContract(item: any) {
               const uBrand = uItem.unit?.brand?.name || targetUnit?.brand?.name || 'EPSON';
               const uSerial = unitSerialNo(uItem.unit_id, uItem.unit);
               const uLoc = uItem.contract?.location || uItem.placement_location || uItem.location || '-';
-              const uStartBw = uItem.start_mono_value || uItem.start_meter_bw || 0;
-              const uStartColor = uItem.start_color_value || uItem.start_meter_color || 0;
-              
-              const showMeter = isCopier || uStartBw > 0 || uStartColor > 0;
+              const uStartBw = uItem.start_meter_bw || 0;
+              const uStartColor = uItem.start_meter_color || 0;
 
-              const meterHtml = showMeter ? `
+              const meterHtml = isCopier ? `
                     <div>Start Meter Reading</div><div>:</div><div>${uStartBw} (B/W)</div>
                     <div>Start Meter Reading</div><div>:</div><div>${uStartColor} (Colour)</div>
               ` : '';
@@ -436,7 +391,7 @@ function printContract(item: any) {
               JANGKA WAKTU PERJANJIAN
             </div>
             <div class="content-block">
-              Para Pihak sepakat bahwa Jangka Waktu Perjanjian ini adalah ${durationText}, terhitung sejak tanggal <b>${item.contract?.start_date ? item.contract.start_date.slice(0,10) : '-'} s/d ${item.contract?.end_date ? item.contract.end_date.slice(0,10) : '-'}</b> dan masa sewa dapat diperpanjang kembali atas persetujuan kedua belah pihak dengan pemberitahuan terlebih dahulu oleh Pihak Kedua selambat-lambatnya 2 (dua) minggu sebelum masa sewa berakhir. <i>Dan apabila tidak ada pemberitahuan maka kontrak ini otomatis diperpanjang</i>.
+              Para Pihak sepakat bahwa Jangka Waktu Perjanjian ini adalah 2 (dua) tahun, terhitung sejak tanggal <b>${item.contract?.start_date ? item.contract.start_date.slice(0,10) : '-'} s/d ${item.contract?.end_date ? item.contract.end_date.slice(0,10) : '-'}</b> dan masa sewa dapat diperpanjang kembali atas persetujuan kedua belah pihak dengan pemberitahuan terlebih dahulu oleh Pihak Kedua selambat-lambatnya 2 (dua) minggu sebelum masa sewa berakhir. <i>Dan apabila tidak ada pemberitahuan maka kontrak ini otomatis diperpanjang</i>.
             </div>
           </div>
 
@@ -776,7 +731,7 @@ function unitSerialNo(id: any, rowUnit?: any): string {
 
 <template>
   <div>
-    <PageHeader title="Contract Items" button-label="Add Contract" permission="contract_item:create" @add="openAdd" />
+    <PageHeader title="Contract Items" button-label="Add Contract" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search contracts..." @edit="openEdit" @delete="openDelete">
       <template #cell-contract_no="{ row }">
         <span class="cell-contract-no">{{ row.contract?.contract_no || row.contract_no || '-' }}</span>
@@ -802,26 +757,26 @@ function unitSerialNo(id: any, rowUnit?: any): string {
         </span>
       </template>
       <template #actions="{ row }">
-        <button v-if="can('contract_item:read')" class="action-btn" title="Print to PDF" @click="printContract(row)">
+        <button class="action-btn" title="Print to PDF" @click="printContract(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
             <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
-        <button v-if="can('contract_item:read')" class="action-btn" title="Detail" @click="openDetail(row)">
+        <button class="action-btn" title="Detail" @click="openDetail(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
         </button>
-        <button v-if="can('contract_item:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
+        <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
             <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
           </svg>
         </button>
-        <button v-if="can('contract_item:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
+        <button class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
@@ -995,7 +950,7 @@ function unitSerialNo(id: any, rowUnit?: any): string {
         <button type="button" class="btn btn-primary" @click="printContract(detailItem)">Print to PDF</button>
       </template>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Contract" :message="`Are you sure you want to delete contract '${deletingItem?.contract?.contract_no || deletingItem?.contract_no || '-'}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Contract" :message="`Are you sure you want to delete contract '${deletingItem?.contract_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

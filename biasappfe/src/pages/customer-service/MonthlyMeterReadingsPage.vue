@@ -6,10 +6,7 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { usePermission } from '@/composables/usePermission'
 import type { TableColumn, MonthlyMeterReading } from '@/types'
-
-const { canApprove } = usePermission()
 
 const {
   monthlyMeterReadings: data,
@@ -141,8 +138,8 @@ function formatRupiah(val: number): string {
 
 <template>
   <div>
-    <PageHeader title="Monthly Meter Readings" button-label="Add Meter Reading" permission="monthly_meter_reading:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" permission="monthly_meter_reading" search-placeholder="Cari pembacaan meter..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Monthly Meter Readings" button-label="Add Meter Reading" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari pembacaan meter..." @edit="openEdit" @delete="openDelete">
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-service_report_id="{ value }">{{ srNo(value as any) }}</template>
     </DataTable>

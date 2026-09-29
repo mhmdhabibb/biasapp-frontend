@@ -1,31 +1,22 @@
 <script setup lang="ts">
 // @ts-nocheck
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { ref, reactive, computed } from 'vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { usePermission } from '@/composables/usePermission'
-import { useToast } from '@/composables/useToast'
-import { useResourcesStore } from '@/stores/resources.store'
-import { api } from '@/services/api'
-import type { SalesInvoice, TableColumn } from '@/types'
-import { computed, reactive, ref } from 'vue'
+import type { TableColumn, SalesInvoice } from '@/types'
 
-const toast = useToast()
-const { can } = usePermission()
 const {
   salesInvoices: data,
   sales,
   customers,
   products,
-  payments,
   findCustomer,
-  findProduct,
   findSale,
+  findProduct,
 } = useMasterStore()
-
-const resources = useResourcesStore()
 
 const columns: TableColumn[] = [
   { key: 'invoice_no', label: 'No. Invoice' },
@@ -34,34 +25,8 @@ const columns: TableColumn[] = [
   { key: 'due_date', label: 'Jatuh Tempo' },
   { key: 'subtotal', label: 'Subtotal' },
   { key: 'total', label: 'Total' },
-  { key: 'approval_status', label: 'Approval Status' },
-  { key: 'payment_status', label: 'Status' },
+  { key: 'status', label: 'Status' },
 ]
-
-function formatDate(value: any): string {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (isNaN(d.getTime())) return String(value).slice(0, 10)
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function approvalStatus(status: string): string {
-  if (status === 'approved') return 'approved'
-  if (status === 'rejected') return 'rejected'
-  return 'pending'
-}
-
-function invoicePayments(item: any) {
-  return payments.value.filter((p: any) => String(p.sales_invoice_id) === String(item.id))
-}
-
-const showDetail = ref(false)
-const detailItem = ref<any>(null)
-
-function openDetail(item: any) {
-  detailItem.value = item
-  showDetail.value = true
-}
 
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -80,58 +45,6 @@ const form = reactive({
 })
 
 const defaultForm = { ...form }
-
-// Date Range & Month Filters
-const startDateFilter = ref('')
-const endDateFilter = ref('')
-const monthFilter = ref('')
-
-function onMonthFilterChange() {
-  if (!monthFilter.value) return
-  const [yearStr, monthStr] = monthFilter.value.split('-')
-  const year = parseInt(yearStr)
-  const month = parseInt(monthStr)
-  
-  const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
-  const lastDayNum = new Date(year, month, 0).getDate()
-  const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
-  
-  startDateFilter.value = firstDay
-  endDateFilter.value = lastDay
-}
-
-function resetFilters() {
-  startDateFilter.value = ''
-  endDateFilter.value = ''
-  monthFilter.value = ''
-}
-
-const filteredData = computed(() => {
-  let items = data.value
-  if (startDateFilter.value) {
-    items = items.filter(d => {
-      const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
-      if (!itemDate) return false
-      return String(itemDate).slice(0, 10) >= startDateFilter.value
-    })
-  }
-  if (endDateFilter.value) {
-    items = items.filter(d => {
-      const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
-      if (!itemDate) return false
-      return String(itemDate).slice(0, 10) <= endDateFilter.value
-    })
-  }
-  return items
-})
-
-function exportMonthToPdf() {
-  toast.info('Export PDF akan segera tersedia (contoh fungsi)')
-}
-
-function exportMonthToExcel() {
-  toast.info('Export Excel akan segera tersedia (contoh fungsi)')
-}
 
 const calcTotal = computed(() => form.subtotal + form.service_charge + form.tax)
 
@@ -168,46 +81,22 @@ function openEdit(item: SalesInvoice) {
   showModal.value = true
 }
 
-async function handleSubmit() {
+function handleSubmit() {
   if (!form.invoice_no.trim()) return
   form.total = calcTotal.value
-  try {
-    if (editingItem.value) {
-      await resources.update("salesInvoices", editingItem.value.id as any, form)
-      toast.success("Invoice Update Successfully!")
-    } else {
-      await resources.create("salesInvoices", form)
-      toast.success("Success create new invoice")
-    }
-    useMasterStore().refresh(true)
-    showModal.value = false
-  } catch (error) {
-    toast.error("Failed to save invoice")
+  if (editingItem.value) {
+    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
+    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...form, updated_at: new Date().toISOString() }
+  } else {
+    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
   }
+  showModal.value = false
 }
 
 function openDelete(item: SalesInvoice) { deletingItem.value = item; showConfirm.value = true }
-async function handleDelete() {
-  if (deletingItem.value) {
-    try {
-      await resources.remove("salesInvoices", deletingItem.value.id as any)
-      useMasterStore().refresh(true)
-      toast.success("Invoice berhasil dihapus!")
-    } catch (error) {
-      toast.error("Gagal menghapus invoice!")
-    }
-  }
+function handleDelete() {
+  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
   showConfirm.value = false
-}
-
-async function handleUpdateStatus(item: any, newStatus: string) {
-  try {
-    await api.patch(`/sales-invoices/${item.id}`, { status: newStatus })
-    await useMasterStore().refresh(true)
-    toast.success(`Status invoice berhasil diupdate menjadi ${newStatus}`)
-  } catch (error: any) {
-    toast.error('Gagal update status: ' + (error.message || 'Error'))
-  }
 }
 
 function customerName(id: any): string {
@@ -216,9 +105,7 @@ function customerName(id: any): string {
 }
 
 function saleRef(id: any): string {
-  if (!id) return '-'
-  const s = findSale(id as any)
-  return s ? s.sale_no : '-'
+  return id ? `SALE-${id}` : '-'
 }
 
 function formatRupiah(val: number): string {
@@ -226,10 +113,6 @@ function formatRupiah(val: number): string {
 }
 
 function printInvoice(item: any) {
-  if (item.status !== 'approved') {
-    toast.warning('Invoice belum disetujui, tidak dapat print receipt')
-    return
-  }
   const customer = findCustomer(item.customer_id)
   const custName = customer?.company_name || customer?.name || '-'
   const custAddress = customer?.address || '-'
@@ -251,10 +134,7 @@ function printInvoice(item: any) {
   if (sale && sale.sale_items && sale.sale_items.length > 0) {
     itemsHtml = sale.sale_items.map((si: any, idx: number) => {
       const p = findProduct(si.product_id)
-      let pName = p ? p.name : ('Produk ID: ' + si.product_id)
-      if (si.description) {
-        pName += `<br><span style="font-size: 10px; color: #555;">${si.description}</span>`
-      }
+      const pName = p ? p.name : ('Produk ID: ' + si.product_id)
       return `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
@@ -355,12 +235,10 @@ function printInvoice(item: any) {
                     <td class="label">Date :</td>
                     <td>${dateStr}</td>
                   </tr>
-                  ${item.sale?.po_no || item.po_no ? `
                   <tr>
                     <td class="label">PO NO.:</td>
-                    <td>${item.sale?.po_no || item.po_no}</td>
+                    <td></td>
                   </tr>
-                  ` : ''}
                   <tr>
                     <td colspan="2" class="bg-blue">Kepada Yth. :</td>
                   </tr>
@@ -465,92 +343,39 @@ function printInvoice(item: any) {
 
 <template>
   <div>
-    <PageHeader title="Sales Invoices" />
-
-    <!-- Filter & Export Toolbar -->
-    <div class="filter-toolbar">
-      <div class="filter-inputs">
-        <div class="filter-item">
-          <label class="filter-label">Tanggal Awal</label>
-          <input v-model="startDateFilter" type="date" class="form-input filter-input">
-        </div>
-        <div class="filter-item">
-          <label class="filter-label">Tanggal Akhir</label>
-          <input v-model="endDateFilter" type="date" class="form-input filter-input">
-        </div>
-        <div class="filter-item">
-          <label class="filter-label">Filter Bulan</label>
-          <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
-        </div>
-        <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
-          Reset Filter
-        </button>
-      </div>
-
-      <div class="export-actions">
-        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportMonthToPdf" title="Export Invoices (PDF)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-          Export PDF
-        </button>
-        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel" title="Export Invoices (Excel)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
-          Export Excel
-        </button>
-      </div>
-    </div>
-
-    <DataTable :columns="columns" :data="filteredData" search-placeholder="Cari invoice penjualan..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Sales Invoices" button-label="Add Sales Invoice" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari invoice penjualan..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-sale_id="{ value }">{{ saleRef(value) }}</template>
-      <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-approval_status="{ value }">
-        <span :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-          {{ approvalStatus(value) === 'approved' ? 'Disetujui' : approvalStatus(value) === 'rejected' ? 'Ditolak' : 'Pending' }}
-        </span>
-      </template>
-      <template #cell-payment_status="{ value }">
-        <span :class="value === 'paid' ? 'badge badge-success' : value === 'overdue' ? 'badge badge-danger' : value === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-          {{ value === 'paid' ? 'Lunas' : value === 'overdue' ? 'Lewat Jatuh Tempo' : value === 'partially_paid' ? 'Sebagian' : 'Belum Bayar' }}
+      <template #cell-status="{ value }">
+        <span :class="value === 'paid' ? 'badge badge-success' : value === 'overdue' ? 'badge badge-danger' : 'badge badge-warning'">
+          {{ value === 'paid' ? 'Lunas' : value === 'overdue' ? 'Lewat Jatuh Tempo' : 'Belum Bayar' }}
         </span>
       </template>
       <template #actions="{ row }">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft') && can('sales_invoice:update')" class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')" style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          </button>
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft') && can('sales_invoice:update')" class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')" style="color: var(--color-danger); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-          <button v-if="row.status === 'approved' && can('sales_invoice:read')" class="action-btn action-btn--edit" title="Print Receipt" @click="printInvoice(row)" style="color: var(--color-primary); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 9V2h12v7"></path>
-              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
-              <rect x="6" y="14" width="12" height="8"></rect>
-            </svg>
-          </button>
-          <button v-if="can('sales_invoice:read')" class="action-btn action-btn--edit" title="Detail" @click="openDetail(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-          </button>
-          <button v-if="can('sales_invoice:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)" style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-            </svg>
-          </button>
-          <button v-if="can('sales_invoice:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-              <line x1="10" y1="11" x2="10" y2="17"></line>
-              <line x1="14" y1="11" x2="14" y2="17"></line>
-            </svg>
-          </button>
-        </div>
+        <button class="action-btn action-btn--print" title="Print Invoice" @click="printInvoice(row)">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 9V2h12v7"></path>
+            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+        </button>
+        <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)" style="margin-left: 4px;">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          </svg>
+        </button>
+        <button class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="margin-left: 4px;">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+            <line x1="10" y1="11" x2="10" y2="17"></line>
+            <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+        </button>
       </template>
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Sales Invoice' : 'Add Sales Invoice'" @close="showModal = false" @submit="handleSubmit">
@@ -562,7 +387,7 @@ function printInvoice(item: any) {
         <label for="si-sale" class="form-label">Referensi Penjualan</label>
         <select id="si-sale" v-model="form.sale_id" class="form-select" @change="onSaleChange">
           <option :value="null">-- Pilih Penjualan --</option>
-          <option v-for="s in sales" :key="s.id" :value="s.id">{{ s.sale_no }} — {{ formatRupiah(s.total) }}</option>
+          <option v-for="s in sales" :key="s.id" :value="s.id">SALE-{{ s.id }} — {{ formatRupiah(s.total) }}</option>
         </select>
       </div>
       <div class="form-group">
@@ -603,71 +428,6 @@ function printInvoice(item: any) {
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Hapus Invoice Penjualan" :message="`Yakin ingin menghapus invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
-
-    <FormModal :open="showDetail" :title="detailItem ? `Detail Invoice ${detailItem.invoice_no}` : 'Detail Invoice'" @close="showDetail = false">
-      <template v-if="detailItem">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-          <div class="form-group">
-            <label class="form-label">No. Invoice</label>
-            <div>{{ detailItem.invoice_no }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Customer</label>
-            <div>{{ customerName(detailItem.customer_id) }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Ref. Penjualan</label>
-            <div>{{ saleRef(detailItem.sale_id) }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Total</label>
-            <div>{{ formatRupiah(detailItem.total || detailItem.subtotal || 0) }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Approval Status</label>
-            <span :class="approvalStatus(detailItem.status) === 'approved' ? 'badge badge-info' : approvalStatus(detailItem.status) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-              {{ approvalStatus(detailItem.status) === 'approved' ? 'Disetujui' : approvalStatus(detailItem.status) === 'rejected' ? 'Ditolak' : 'Pending' }}
-            </span>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Status Pembayaran</label>
-            <span :class="detailItem.payment_status === 'paid' ? 'badge badge-success' : detailItem.payment_status === 'overdue' ? 'badge badge-danger' : detailItem.payment_status === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-              {{ detailItem.payment_status === 'paid' ? 'Lunas' : detailItem.payment_status === 'overdue' ? 'Lewat Jatuh Tempo' : detailItem.payment_status === 'partially_paid' ? 'Sebagian' : 'Belum Bayar' }}
-            </span>
-          </div>
-        </div>
-
-        <div class="form-section-title" style="margin-bottom: 8px;">Riwayat Pembayaran</div>
-        <div v-if="invoicePayments(detailItem).length > 0" style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;">
-          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
-            <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
-              <tr>
-                <th style="padding: 12px;">No. Pembayaran</th>
-                <th style="padding: 12px;">Tanggal</th>
-                <th style="padding: 12px;">Metode / Bank</th>
-                <th style="padding: 12px;">No Ref</th>
-                <th style="padding: 12px; text-align: right;">Jumlah</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(pay, idx) in invoicePayments(detailItem)" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
-                <td style="padding: 12px;">{{ pay.payment_no || '-' }}</td>
-                <td style="padding: 12px;">{{ pay.payment_date ? String(pay.payment_date).substring(0, 10) : '-' }}</td>
-                <td style="padding: 12px;">{{ pay.bank_name || '-' }}</td>
-                <td style="padding: 12px;">{{ pay.reference_no || '-' }}</td>
-                <td style="padding: 12px; text-align: right; font-weight: 600; color: var(--color-success);">{{ formatRupiah(pay.amount || 0) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-else style="padding: 16px; text-align: center; color: var(--color-text-muted); background: var(--color-surface); border-radius: var(--radius-md);">
-          Belum ada riwayat pembayaran.
-        </div>
-      </template>
-      <template #footer>
-        <button class="btn btn-outline" @click="showDetail = false">Tutup</button>
-      </template>
-    </FormModal>
   </div>
 </template>
 
@@ -693,102 +453,6 @@ function printInvoice(item: any) {
 }
 .summary-total {
   font-weight: var(--font-weight-bold);
-  color: var(--color-text);
-}
-
-.filter-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  background: var(--color-surface, #ffffff);
-  padding: 16px;
-  border-radius: var(--radius-lg, 12px);
-  border: 1px solid var(--color-border-light, #e2e8f0);
-  margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-}
-
-.filter-inputs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.filter-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.filter-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--color-text-muted, #64748b);
-  letter-spacing: 0.5px;
-}
-
-.filter-input {
-  padding: 7px 12px;
-  font-size: 13px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border, #cbd5e1);
-  background: var(--color-background, #ffffff);
-}
-
-.filter-reset-btn {
-  height: 35px;
-  align-self: flex-end;
-}
-
-.export-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.btn-export-pdf {
-  display: flex;
-  align-items: center;
-  background: #dc2626;
-  color: white;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-export-pdf:hover {
-  background: #b91c1c;
-  transform: translateY(-1px);
-}
-
-.btn-export-excel {
-  display: flex;
-  align-items: center;
-  background: #16a34a;
-  color: white;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-export-excel:hover {
-  background: #15803d;
-  transform: translateY(-1px);
-}
-
-.form-section-title {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 </style>

@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Customer } from '@/types'
 
-const toast = useToast()
 const data = ref<Customer[]>([])
 const { currentUser } = useAuth()
 const isTechnician = computed(() => currentUser.value?.role === 'technician')
@@ -21,14 +19,13 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch customers:', error)
-    toast.error('Gagal mengambil data customer: ' + ((error as any).message || 'Error'))
   }
 }
 
 onMounted(fetchData)
 
 const columns: TableColumn[] = [
-  { key: 'company_name', label: 'Customer' },
+  { key: 'company_name', label: 'Company' },
   { key: 'pic_name', label: 'PIC Name' },
   { key: 'phone', label: 'Phone' },
 ]
@@ -65,10 +62,8 @@ async function handleSubmit() {
     await fetchData()
     masterStore.refresh()
     showModal.value = false
-    toast.success(editingItem.value ? 'Customer berhasil diperbarui!' : 'Customer berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save customer:', error)
-    toast.error('Gagal menyimpan customer: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -78,26 +73,23 @@ async function handleDelete() {
       await resources.customers.remove(String(deletingItem.value.id))
       await fetchData()
       masterStore.refresh()
-      toast.success('Customer berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete customer:', error)
-      toast.error('Gagal menghapus customer')
     }
   }
   showConfirm.value = false
 }
-
 </script>
 
 <template>
   <div>
-    <PageHeader title="Customers" :button-label="isTechnician ? undefined : 'Add Customer'" permission="customer:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search customers..."
-               permission="customer"
+    <PageHeader title="Companies" :button-label="isTechnician ? undefined : 'Add Company'" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search companies..." 
+               :hide-actions="isTechnician"
                @edit="openEdit" @delete="openDelete" />
-    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Customer' : 'Add Customer'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Company' : 'Add Company'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="cust-company" class="form-label">Customer Name</label>
+        <label for="cust-company" class="form-label">Company Name</label>
         <input id="cust-company" v-model="form.company_name" type="text" class="form-input" placeholder="PT Example">
       </div>
       <div class="form-group">
@@ -140,8 +132,6 @@ async function handleDelete() {
         <textarea id="cust-address" v-model="form.address" class="form-textarea" placeholder="Full address"></textarea>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Customer" :message="`Are you sure you want to delete customer '${deletingItem?.company_name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Company" :message="`Are you sure you want to delete company '${deletingItem?.company_name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
-
-

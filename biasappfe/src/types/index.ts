@@ -101,26 +101,14 @@ export interface ProductCategory {
   deleted_at: string | null
 }
 
-export interface UOM {
-  id: string | number
-  name: string
-  created_at: string
-  updated_at: string
-  deleted_at: string | null
-}
-
 export interface Product {
   id: string | number
   name: string
   sku: string
   category_id: string | number | null
   brand_id: string | number | null
-  uom_id: string | number | null
-  uom?: UOM | null
   price: number
   stock: number
-  is_computer?: boolean
-  specs?: string
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -130,11 +118,7 @@ export interface Unit {
   id: string
   name: string
   brand_id: string | null
-  brand?: any
   type_id: string | null
-  type?: any
-  uom_id?: string | null
-  uom?: UOM | null
   model: string
   serial_no: string
   is_copier?: boolean
@@ -158,22 +142,10 @@ export interface UnitRate {
 
 export interface Warranty {
   id: string | number
-  warranty_no?: string
   warranty_type: string
-  customer_id?: string | null
-  customer?: any
-  sale_id?: string | null
-  sale?: any
-  unit_id?: string | null
-  unit?: any
-  product_id?: string | null
-  product?: any
   duration: number
-  duration_months?: number
-  duration_days?: number
   start_date: string
   end_date: string
-  terms_conditions?: string
   status: string
   created_at: string
   updated_at: string
@@ -209,35 +181,6 @@ export interface ContractItemRate {
   rate_per_page_color: number
 }
 
-export interface ServiceRequest {
-  id: string
-  request_no: string
-  customer_id: string | null
-  unit_id: string | null
-  problem_description: string
-  status: string
-  request_date: string
-  created_at: string
-  updated_at: string
-}
-
-export interface JobOrder {
-  id: string
-  job_order_no: string
-  job_type: string
-  service_request_id?: string | null
-  customer_id?: string | null
-  unit_id?: string | null
-  technician_id: string
-  scheduled_date: string
-  status: string
-  instructions: string
-  assigned_at?: string | null
-  completed_at?: string | null
-  created_at: string
-  updated_at: string
-}
-
 export interface ServiceReport {
   id: string | number
   report_no: string
@@ -258,7 +201,6 @@ export interface ServiceReport {
   status: string
   service_report_no?: string
   contract_item_id?: string | null
-  job_order_id?: string | null
   visit_date?: string
   is_chargeable?: boolean
   reading_counter?: number
@@ -335,7 +277,6 @@ export interface RentalInvoice {
   tax: number
   total_pay: number
   status: string
-  payment_status: string
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -363,7 +304,6 @@ export interface SalesInvoice {
   tax: number
   total: number
   status: string
-  payment_status: string
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -417,8 +357,6 @@ export interface MenuItem {
   label: string
   icon: string
   route: string
-  /** Restrict this item to specific (normalized) roles. When set, permission/module checks are skipped. */
-  roles?: string[]
 }
 
 export interface MenuGroup {
@@ -464,12 +402,8 @@ export interface PurchaseOrder {
   id: string | number
   po_no: string
   sparepart_request_id: string | number | null
-  service_report_id?: string | number | null
-  supplier_id?: string | number | null
-  order_date: string
+  po_date: string
   status: string
-  total_amount?: number
-  purchase_order_items?: PurchaseOrderItem[]
   created_at: string
   updated_at: string
 }
@@ -477,7 +411,6 @@ export interface PurchaseOrder {
 export interface PurchaseOrderItem {
   id: string | number
   purchase_order_id: string | number | null
-  item_name?: string
   product_id: string | number | null
   qty: number
   unit_price: number
@@ -489,12 +422,11 @@ export interface PurchaseOrderItem {
 export interface ProcurementDeliveryOrder {
   id: string | number
   do_number: string
-  do_type?: string
   purchase_order_id: string | number | null
-  delivery_date: string
+  do_date: string
   status: string
-  notes?: string
-  delivery_order_items?: { product_id?: string | null; qty?: number }[]
+  receiver_name: string
+  notes: string
   created_at: string
   updated_at: string
 }

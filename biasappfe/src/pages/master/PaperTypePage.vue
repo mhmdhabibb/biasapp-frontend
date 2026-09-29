@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, PaperType } from '@/types'
-import { useToast } from '@/composables/useToast'
-
-const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Tipe Kertas' },
@@ -22,7 +19,6 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch paper types:', error)
-    toast.error('Gagal mengambil data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -56,10 +52,8 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? 'Tipe Kertas berhasil diperbarui!' : 'Tipe Kertas berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save paper type:', error)
-    toast.error('Gagal menyimpan tipe kertas: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -70,21 +64,18 @@ async function handleDelete() {
     try {
       await resources.paperTypes.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('Tipe Kertas berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete paper type:', error)
-      toast.error('Gagal menghapus tipe kertas')
     }
   }
   showConfirm.value = false
 }
-
 </script>
 
 <template>
   <div>
-    <PageHeader title="Paper Type" button-label="Add Paper Type" permission="paper_type:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari tipe kertas..." permission="paper_type" @edit="openEdit" @delete="openDelete" />
+    <PageHeader title="Paper Type" button-label="Add Paper Type" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari tipe kertas..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Paper Type' : 'Add Paper Type'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="pt-name" class="form-label">Nama Tipe Kertas</label>
@@ -94,5 +85,3 @@ async function handleDelete() {
     <ConfirmDialog :open="showConfirm" title="Hapus Tipe Kertas" :message="`Yakin ingin menghapus tipe '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
-
-

@@ -7,6 +7,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 const {
   serviceReports,
   findCustomer,
+  findContractItem,
   findUnit,
   findTechnician
 } = useMasterStore()
@@ -32,7 +33,8 @@ const filteredHistory = computed(() => {
     }
     
     if (filterUnit.value) {
-      const u = findUnit(job.unit_id as any)
+      const ci = findContractItem(job.contract_item_id)
+      const u = ci ? findUnit(ci.unit_id) : null
       const sn = u?.serial_no || ''
       const mdl = u?.model || ''
       if (!sn.toLowerCase().includes(filterUnit.value.toLowerCase()) && !mdl.toLowerCase().includes(filterUnit.value.toLowerCase())) {
@@ -43,31 +45,19 @@ const filteredHistory = computed(() => {
   }).sort((a, b) => new Date(b.time_out || b.updated_at).getTime() - new Date(a.time_out || a.updated_at).getTime())
 })
 
-const SERVICE_TYPE_LABELS: Record<string, string> = {
-  regular: 'Reguler',
-  repair: 'Repair',
-  maintenance: 'Maintenance',
-  installation: 'Instalasi',
-  emergency: 'Emergency',
-  meter_reading: 'Meter Reading'
-}
-
-function getServiceTypeLabel(type: string) {
-  return SERVICE_TYPE_LABELS[type] || type || '-'
-}
-
 function getCustomerName(id: number | null) {
   return findCustomer(id as any)?.company_name || '-'
 }
 
-function getUnitName(unitId: number | null) {
-  const u = findUnit(unitId as any)
+function getUnitName(contractItemId: number | null) {
+  const ci = findContractItem(contractItemId)
+  if (!ci) return '-'
+  const u = findUnit(ci.unit_id)
   return u ? `${u.model} (${u.serial_no})` : '-'
 }
 
 function getTechName(id: number | null) {
-  const t: any = findTechnician(id)
-  return t?.user?.name || t?.name || '-'
+  return findTechnician(id)?.name || '-'
 }
 </script>
 
@@ -89,12 +79,8 @@ function getTechName(id: number | null) {
           <label class="form-label">Jenis Service</label>
           <select v-model="filterType" class="form-select">
             <option value="">Semua Jenis</option>
-            <option value="regular">Reguler</option>
-            <option value="repair">Repair</option>
+            <option value="call_service">Call Service</option>
             <option value="maintenance">Maintenance</option>
-            <option value="installation">Instalasi</option>
-            <option value="emergency">Emergency</option>
-            <option value="meter_reading">Meter Reading</option>
           </select>
         </div>
       </div>
@@ -117,10 +103,10 @@ function getTechName(id: number | null) {
             <tr v-for="job in filteredHistory" :key="job.id">
               <td>{{ job.time_out ? new Date(job.time_out).toLocaleString('id-ID') : '-' }}</td>
               <td>{{ getCustomerName(job.customer_id) }}</td>
-              <td>{{ getUnitName(job.unit_id) }}</td>
+              <td>{{ getUnitName(job.contract_item_id) }}</td>
               <td>
-                <span class="badge" :class="job.service_type === 'maintenance' ? 'badge-info' : job.service_type === 'meter_reading' ? 'badge-secondary' : 'badge-primary'">
-                  {{ getServiceTypeLabel(job.service_type) }}
+                <span class="badge" :class="job.service_type === 'maintenance' ? 'badge-info' : 'badge-primary'">
+                  {{ job.service_type === 'maintenance' ? 'Maintenance' : 'Call Service' }}
                 </span>
               </td>
               <td>

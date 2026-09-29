@@ -6,9 +6,6 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import type { Contract, TableColumn } from '@/types'
 import { reactive, ref } from 'vue'
 import { useContracts } from '@/composables/useContracts'
-import { useToast } from '@/composables/useToast'
-
-const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'contract_no', label: 'Contract No' },
@@ -42,22 +39,20 @@ async function handleSubmit() {
     await create(form)
   }
   showModal.value = false
-  toast.success(editingItem.value ? 'Contract berhasil diperbarui!' : 'Contract berhasil disimpan!')
 }
 
 function openDelete(item: Contract) { deletingItem.value = item; showConfirm.value = true }
 async function handleDelete() {
   if (deletingItem.value) await remove(String(deletingItem.value.id))
   showConfirm.value = false
-  toast.success('Contract berhasil dihapus!')
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Contracts" button-label="Add Contract" permission="contract:create" @add="openAdd" />
+    <PageHeader title="Contracts" button-label="Add Contract" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari..." permission="contract" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari..." @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Contract' : 'Add Contract'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group" v-for="col in columns" :key="col.key">
         <label class="form-label">{{ col.label }}</label>

@@ -1,31 +1,25 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useModules } from '@/composables/useModules'
-import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Permission } from '@/types'
 
-const toast = useToast()
 const { modules } = useModules()
 
-/** Sentinel used by the edit form for permissions that have no module. */
-const NO_MODULE = '__no_module__'
-
-const moduleOptions = computed(() => [
-  { value: NO_MODULE, label: 'Tanpa Modul (permission murni)' },
-  ...modules.value.map(m => {
+const moduleOptions = computed(() =>
+  modules.value.map(m => {
     const hasPerms = data.value.some(p => String(p.module_id) === String(m.id))
     return { 
       value: m.id, 
       label: hasPerms ? `${m.name} (Terdapat Permission)` : m.name 
     }
   })
-])
+)
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Nama Permission' },
@@ -96,9 +90,9 @@ async function fetchData() {
 onMounted(fetchData)
 
 function getModuleName(id: any): string {
-  if (id === null || id === undefined || id === '' || id === NO_MODULE) return 'Tanpa Modul'
+  if (!id) return '-'
   const mod = modules.value.find(m => m.id === String(id))
-  return mod ? mod.name : 'Tanpa Modul'
+  return mod ? mod.name : '-'
 }
 
 function openAdd() {
@@ -110,21 +104,28 @@ function openAdd() {
 
 function openEdit(item: Permission) {
   editingItem.value = item
-  const moduleId = item.module_id === null || item.module_id === undefined ? NO_MODULE : item.module_id
-  Object.assign(form, { name: item.name, module_id: moduleId, module_ids: [], crudActions: [], customActions: '' })
+  Object.assign(form, { name: item.name, module_id: item.module_id, module_ids: [], crudActions: [], customActions: '' })
   showModal.value = true
 }
 
 async function handleSubmit() {
   try {
     if (editingItem.value) {
-      if (!form.name.trim()) {
-        toast.warning('Nama permission wajib diisi!')
+      if (!form.module_id) {
+        alert('Modul wajib dipilih!')
         return
       }
-      const moduleId = form.module_id === NO_MODULE ? null : form.module_id
-      await resources.permissions.update(String(editingItem.value.id), { name: form.name, module_id: moduleId })
-    } else if (form.module_ids.length > 0) {
+      if (!form.name.trim()) {
+        alert('Nama permission wajib diisi!')
+        return
+      }
+      await resources.permissions.update(String(editingItem.value.id), { name: form.name, module_id: form.module_id })
+    } else {
+      if (form.module_ids.length === 0) {
+        alert('Pilih minimal satu modul!')
+        return
+      }
+      
       const permissionsToCreate: any[] = []
       
       for (const modId of form.module_ids) {
@@ -146,28 +147,19 @@ async function handleSubmit() {
       }
       
       if (permissionsToCreate.length === 0) {
-        toast.warning('Pilih minimal satu tindakan standar atau isi tindakan tambahan!')
+        alert('Pilih minimal satu tindakan standar atau isi tindakan tambahan!')
         return
       }
       
       // Bulk create support
       const promises = permissionsToCreate.map(data => resources.permissions.create(data))
       await Promise.all(promises)
-    } else {
-      // Single permission without a module (e.g. purchase_order:view)
-      const name = form.name.trim().toLowerCase()
-      if (!name || !name.includes(':')) {
-        toast.warning('Nama permission wajib diisi dengan format resource:action (contoh: purchase_order:view)!')
-        return
-      }
-      await resources.permissions.create({ name, module_id: null })
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? "Permission berhasil diperbarui!" : "Permission berhasil disimpan!")
   } catch (error: any) {
     console.error('Failed to save permission:', error)
-    toast.error('Gagal menyimpan permission: ' + (error.message || 'Error'))
+    alert('Gagal menyimpan permission: ' + (error.message || 'Error'))
   }
 }
 
@@ -178,21 +170,18 @@ async function handleDelete() {
     try {
       await resources.permissions.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success("Permission berhasil dihapus!")
     } catch (error) {
       console.error('Failed to delete permission:', error)
-      toast.error('Gagal menghapus permission')
     }
   }
   showConfirm.value = false
 }
-
 </script>
 
 <template>
   <div>
-    <PageHeader title="Permissions" button-label="Add Permission" permission="permission:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari permission..." permission="permission" @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Permissions" button-label="Add Permission" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari permission..." @edit="openEdit" @delete="openDelete">
       <template #cell-module_id="{ value }">
         {{ getModuleName(value) }}
       </template>
@@ -230,9 +219,6 @@ async function handleDelete() {
           <label class="form-label">Tindakan Standar</label>
           <div class="checkbox-grid">
             <label class="checkbox-label">
-              <input type="checkbox" v-model="form.crudActions" value="view"> View
-            </label>
-            <label class="checkbox-label">
               <input type="checkbox" v-model="form.crudActions" value="create"> Create
             </label>
             <label class="checkbox-label">
@@ -251,37 +237,18 @@ async function handleDelete() {
           <label for="perm-custom" class="form-label">Tindakan Tambahan (Opsional, pisahkan dengan koma)</label>
           <input id="perm-custom" v-model="form.customActions" type="text" class="form-input" placeholder="Contoh: approve, print, export">
         </div>
-
-        <!-- Tanpa modul: permission murni, nama ditulis manual -->
-        <div class="form-group">
-          <label for="perm-free-name" class="form-label">
-            Nama Permission<span v-if="form.module_ids.length === 0"> (Wajib diisi, format resource:action)</span><span v-else> (Diabaikan, pakai modul terpilih)</span>
-          </label>
-          <input
-            id="perm-free-name"
-            v-model="form.name"
-            type="text"
-            class="form-input"
-            :disabled="form.module_ids.length > 0"
-            placeholder="Contoh: purchase_order:view"
-          >
-          <p v-if="form.module_ids.length === 0" class="field-hint">
-            Kosongkan pilihan modul di atas untuk membuat permission tanpa modul (mis. pembelian, penjualan, invoice).
-          </p>
-        </div>
       </template>
 
       <!-- EDIT MODE: Single module select -->
       <template v-else>
         <div class="form-group">
-          <label class="form-label">Modul (opsional)</label>
+          <label class="form-label">Modul</label>
           <CustomSelect
             v-model="form.module_id"
             :options="moduleOptions"
             placeholder="Pilih modul"
             id="perm-module"
           />
-          <p class="field-hint">Pilih "Tanpa Modul" untuk permission yang hanya dipakai sebagai kunci akses (mis. purchase_order:view).</p>
         </div>
         <div class="form-group">
           <label for="perm-name" class="form-label">Nama Permission</label>
@@ -294,12 +261,6 @@ async function handleDelete() {
 </template>
 
 <style scoped>
-.field-hint {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--color-text-muted, #64748b);
-}
-
 .checkbox-grid {
   display: flex;
   flex-wrap: wrap;
@@ -420,4 +381,3 @@ async function handleDelete() {
   margin-top: 2px;
 }
 </style>
-

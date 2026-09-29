@@ -1,18 +1,14 @@
 <script setup lang="ts">
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { usePermission } from '@/composables/usePermission'
-import { useToast } from '@/composables/useToast'
-import { api } from '@/services/api'
 import type { TableColumn } from '@/types'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const toast = useToast()
-const { canApprove } = usePermission()
-const { customers, units, products, refresh } = useMasterStore()
+const { customers, units, products } = useMasterStore()
 const { t } = useI18n()
 
 const columns = computed<TableColumn[]>(() => [
@@ -32,7 +28,7 @@ const isLoading = ref(false)
 
 const paperSizes = ref<{id: string, name: string}[]>([])
 
-const rentalItems = ref<{ selected_item: string; unit_id: string | null; product_id: string | null; qty: number; monthly_rent: number; start_meter_bw: number; start_meter_color: number; free_quota_color: number; is_copier: boolean; is_computer: boolean; specs: { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string; }; description: string; rates: { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[] }[]>([])
+const rentalItems = ref<{ selected_item: string; unit_id: string | null; product_id: string | null; qty: number; monthly_rent: number; start_meter_bw: number; start_meter_color: number; free_quota_color: number; is_copier: boolean; rates: { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[] }[]>([])
 
 const form = reactive({
   customer_id: '',
@@ -42,7 +38,6 @@ const form = reactive({
   tax: 0,
   deposit: 0,
   notes: '',
-  po_no: '',
   installation_address: '',
 })
 
@@ -57,7 +52,7 @@ const calcSubtotal = computed(() => {
 const calcTotal = computed(() => calcSubtotal.value + form.tax + form.deposit)
 
 function addRentalItem() {
-  rentalItems.value.push({ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '', rates: [] })
+  rentalItems.value.push({ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, rates: [] })
 }
 
 function removeRentalItem(idx: number) {
@@ -79,7 +74,6 @@ function onItemSelectChange(item: any) {
     const u = units.value.find((target: any) => String(target.id) === String(unitId));
     if (u) {
       item.is_copier = !!u.is_copier;
-      item.is_computer = !!(u as any).is_computer;
       if (u.current_meter_bw !== undefined) item.start_meter_bw = u.current_meter_bw;
       if (u.current_meter_color !== undefined) item.start_meter_color = u.current_meter_color;
       if (u.free_quota_color !== undefined) item.free_quota_color = u.free_quota_color;
@@ -91,36 +85,34 @@ function onItemSelectChange(item: any) {
         }));
       }
     }
-  } else if (item.selected_item.startsWith('prod_')) {
-    const prodId = item.selected_item.replace('prod_', '');
-    const p = products.value.find((target: any) => String(target.id) === String(prodId));
-    if (p) {
-      item.is_copier = false;
-      item.is_computer = !!(p as any).is_computer;
-    }
   }
 }
 
-async function openAdd() {
-  await refresh(true)
-  Object.assign(form, { customer_id: '', start_date: new Date().toISOString().slice(0, 10), duration_months: 12, duration_days: 0, tax: 0, deposit: 0, po_no: '', notes: '', installation_address: '' })
-  rentalItems.value = [{ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '', rates: [] }]
+function openAdd() {
+  Object.assign(form, { customer_id: '', start_date: new Date().toISOString().slice(0, 10), duration_months: 12, duration_days: 0, tax: 0, deposit: 0, notes: '', installation_address: '' })
+  rentalItems.value = [{ selected_item: '', unit_id: null, product_id: null, qty: 1, monthly_rent: 0, start_meter_bw: 0, start_meter_color: 0, free_quota_color: 0, is_copier: false, rates: [] }]
   showModal.value = true
 }
 
 async function fetchRentals() {
   try {
-    const data = await api.get<{ data: any[] }>('/rents')
-    rentals.value = data.data.map((r: any) => {
-      const c = customers.value.find((cust: any) => cust.id === r.customer_id)
-      const companyName = c ? (c.company_name || c.name || '-') : (r.customer?.company_name || r.customer?.name || '-')
-      const picName = c ? (c.pic_name || '-') : (r.customer?.pic_name || '-')
-      return {
-        ...r,
-        company: companyName,
-        pic_name: picName,
-      }
+    const token = sessionStorage.getItem("bias_token");
+    const res = await fetch('http://localhost:4008/api/rents', {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
     })
+    if (res.ok) {
+      const data = await res.json()
+      rentals.value = data.data.map((r: any) => {
+        const c = customers.value.find((cust: any) => cust.id === r.customer_id)
+        const companyName = c ? (c.company_name || c.name || '-') : (r.customer?.company_name || r.customer?.name || '-')
+        const picName = c ? (c.pic_name || '-') : (r.customer?.pic_name || '-')
+        return {
+          ...r,
+          company: companyName,
+          pic_name: picName,
+        }
+      })
+    }
   } catch (error) {
     console.error("Gagal mengambil data rentals", error)
   }
@@ -137,7 +129,6 @@ async function handleSubmit() {
     duration_days: form.duration_days,
     tax: form.tax,
     deposit: form.deposit,
-    po_no: form.po_no,
     notes: form.notes,
     installation_address: form.installation_address,
     items: rentalItems.value.map(item => {
@@ -149,9 +140,7 @@ async function handleSubmit() {
         qty: item.qty,
         monthly_rent: item.monthly_rent,
         start_meter_bw: item.start_meter_bw,
-        start_meter_color: item.start_meter_color,
-        specs: item.specs || {},
-        description: item.description,
+        start_meter_color: item.start_meter_color
       }
     })
   }
@@ -168,16 +157,16 @@ async function handleSubmit() {
     })
     
     if (res.ok) {
-      toast.success(t('rentals.success'))
+      alert(t('rentals.success'))
       showModal.value = false
       fetchRentals() // refresh
     } else {
       const err = await res.json()
-      toast.error(t('rentals.failed', { error: JSON.stringify(err) }))
+      alert(t('rentals.failed', { error: JSON.stringify(err) }))
     }
   } catch (error) {
     console.error(error)
-    toast.error(t('rentals.network_error'))
+    alert(t('rentals.network_error'))
   } finally {
     isLoading.value = false
   }
@@ -190,7 +179,6 @@ function formatRupiah(val: number): string {
 import { resources } from '@/services/resource.service'
 
 onMounted(async () => {
-  await refresh(true)
   fetchRentals()
   try {
     const res = await resources.paperSizes.list()
@@ -199,14 +187,13 @@ onMounted(async () => {
     console.error('Failed to fetch paper sizes:', e)
   }
 })
-
 </script>
 
 <template>
   <div>
-    <PageHeader :title="t('rentals.title')" :button-label="t('rentals.create_new')" permission="rental:create" @add="openAdd" />
+    <PageHeader :title="t('rentals.title')" :button-label="t('rentals.create_new')" @add="openAdd" />
     
-    <DataTable :columns="columns" :data="rentals" permission="rental" :search-placeholder="t('rentals.search')">
+    <DataTable :columns="columns" :data="rentals" :search-placeholder="t('rentals.search')">
       <template #cell-company="{ row }">
         {{ customers.find((c: any) => c.id === row.customer_id)?.company_name || customers.find((c: any) => c.id === row.customer_id)?.name || row.customer?.company_name || row.customer?.name || '-' }}
       </template>
@@ -216,11 +203,6 @@ onMounted(async () => {
       <template #cell-start_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
       <template #cell-end_date="{ value }">{{ new Date(value).toLocaleDateString('id-ID') }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
-      <template #cell-status="{ value }">
-        <span class="status-badge" :class="'status-' + (value || 'unknown').toLowerCase()">
-          {{ value || '-' }}
-        </span>
-      </template>
     </DataTable>
 
     <FormModal :open="showModal" :title="t('rentals.modal_title')" @close="showModal = false" @submit="handleSubmit">
@@ -249,12 +231,8 @@ onMounted(async () => {
           <input id="duration-days" v-model.number="form.duration_days" type="number" class="form-input" min="0">
         </div>
         <div class="form-group">
-          <label for="po-no" class="form-label">PO No (Opsional)</label>
-          <input id="po-no" v-model="form.po_no" type="text" class="form-input" placeholder="Misal: PO-2024-001">
-        </div>
-        <div class="form-group">
           <label for="notes" class="form-label">Catatan</label>
-          <textarea id="notes" v-model="form.notes" class="form-input" placeholder="Opsional" rows="2"></textarea>
+          <input id="notes" v-model="form.notes" type="text" class="form-input" placeholder="Opsional">
         </div>
       </div>
       
@@ -342,15 +320,6 @@ onMounted(async () => {
             <div v-if="!item.rates || item.rates.length === 0" style="text-align: center; color: var(--color-text-muted, #64748b); font-size: 0.8rem; padding: 0.75rem; border: 1px dashed var(--color-border-light, #cbd5e1); border-radius: 6px;">
               Belum ada ukuran kertas yang ditambahkan.
             </div>
-          </div>
-        </div>
-        
-        
-
-        <div style="margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
-          <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">Deskripsi / Keterangan (Tampil di Invoice)</label>
-            <textarea v-model="item.description" class="form-input" placeholder="Misal: Kondisi mulus, termasuk kabel power..." rows="2"></textarea>
           </div>
         </div>
         
@@ -483,87 +452,4 @@ onMounted(async () => {
 .text-center { text-align: center; }
 .text-sm { font-size: 0.875rem; }
 .text-gray-500 { color: var(--color-text-muted); }
-
-/* Status Badges */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: capitalize;
-  white-space: nowrap;
-}
-.status-badge::before {
-  content: '';
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-/* Active - Green */
-.status-active {
-  background: rgba(22, 163, 74, 0.12);
-  color: #15803d;
-}
-.status-active::before {
-  background: #16a34a;
-  box-shadow: 0 0 6px rgba(22, 163, 74, 0.5);
-}
-
-/* Pending - Blue */
-.status-pending {
-  background: rgba(48, 92, 255, 0.1);
-  color: #305CFF;
-}
-.status-pending::before {
-  background: #305CFF;
-  box-shadow: 0 0 6px rgba(48, 92, 255, 0.4);
-}
-
-/* Expired - Orange */
-.status-expired {
-  background: rgba(245, 158, 11, 0.12);
-  color: #b45309;
-}
-.status-expired::before {
-  background: #f59e0b;
-  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
-}
-
-/* Cancelled - Red */
-.status-cancelled, .status-canceled {
-  background: rgba(220, 38, 38, 0.1);
-  color: #dc2626;
-}
-.status-cancelled::before, .status-canceled::before {
-  background: #dc2626;
-  box-shadow: 0 0 6px rgba(220, 38, 38, 0.4);
-}
-
-/* Completed - Teal */
-.status-completed {
-  background: rgba(13, 148, 136, 0.12);
-  color: #0f766e;
-}
-.status-completed::before {
-  background: #0d9488;
-  box-shadow: 0 0 6px rgba(13, 148, 136, 0.5);
-}
-
-/* Unknown / fallback */
-.status-unknown {
-  background: rgba(100, 116, 139, 0.1);
-  color: #64748b;
-}
-.status-unknown::before {
-  background: #94a3b8;
-}
 </style>
-
-

@@ -1,15 +1,10 @@
 <script setup lang="ts">
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
-import { useToast } from '@/composables/useToast'
-import { canView, permissionKeysFor } from '@/router/permission-map'
-import { canAccessRoute, normalizeRole } from '@/router/role-access'
-import type { MenuGroup } from '@/types'
-import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
-
-const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
+import type { MenuGroup } from '@/types'
 
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -19,7 +14,6 @@ const router = useRouter()
 const { currentUser, logout } = useAuth()
 const { modules } = useModules()
 const { t } = useI18n()
-const { success: toastSuccess } = useToast()
 
 const allMenuGroups: MenuGroup[] = [
   {
@@ -37,7 +31,6 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.paper_size', icon: 'file', route: '/master/paper-size' },
       { label: 'sidebar.paper_type', icon: 'file-text', route: '/master/paper-type' },
       { label: 'sidebar.product_categories', icon: 'folder', route: '/master/product-categories' },
-      { label: 'sidebar.uoms', icon: 'ruler', route: '/master/uoms' },
       { label: 'sidebar.products', icon: 'box', route: '/master/products' },
       { label: 'sidebar.units', icon: 'printer', route: '/master/units' },
       { label: 'sidebar.warranties', icon: 'shield-check', route: '/master/warranties' },
@@ -69,60 +62,150 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.tech_dashboard', icon: 'grid', route: '/technician/dashboard' },
       { label: 'sidebar.acc_dashboard', icon: 'grid', route: '/accounting/dashboard' },
       { label: 'sidebar.monitoring_service', icon: 'activity', route: '/customer-service/monitoring-service' },
+      { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
+      { label: 'sidebar.cs_reports', icon: 'file-text', route: '/customer-service/reports' },
     ],
   },
   {
-    title: 'sidebar.technician_menu',
+    title: 'sidebar.system',
     items: [
-      { label: 'sidebar.my_jobs', icon: 'tool', route: '/technician/call-services', roles: ['technician'] },
-      { label: 'sidebar.maintenance', icon: 'wrench', route: '/technician/maintenance', roles: ['technician'] },
-      { label: 'sidebar.sparepart_requests', icon: 'box', route: '/technician/sparepart-request', roles: ['technician'] },
-      { label: 'sidebar.meter_readings', icon: 'activity', route: '/technician/meter-readings', roles: ['technician'] },
-      { label: 'sidebar.service_history', icon: 'file-text', route: '/technician/service-history', roles: ['technician'] },
-    ],
+      { label: 'sidebar.system_settings', icon: 'settings', route: '/master/system-settings' },
+      { label: 'sidebar.notifications', icon: 'bell', route: '/master/notifications' },
+    ]
   }
 ]
 
 const menuGroups = computed(() => {
-  const role = normalizeRole(currentUser.value?.role)
-  const permissions: string[] = currentUser.value?.permissions || []
-
-  const groups: MenuGroup[] = JSON.parse(JSON.stringify(allMenuGroups))
-
-  // Filter dynamically based on user's actual permissions from the database
+  const role = currentUser.value?.role
+  let groups: MenuGroup[] = []
+  
+  if (role === 'admin') {
+    groups = allMenuGroups
+  } else if (role === 'customer_service') {
+    groups = [
+      {
+        title: 'Customer Service',
+        items: [
+          { label: 'Dashboard', icon: 'grid', route: '/customer-service/dashboard' },
+        ]
+      },
+      {
+        title: 'Customer',
+        items: [
+          { label: 'Customer', icon: 'user', route: '/master/customers' },
+        ]
+      },
+      {
+        title: 'Contract & Rental',
+        items: [
+          { label: 'Contract', icon: 'clipboard', route: '/customer-service/contract-items' },
+          { label: 'Contract Units', icon: 'printer', route: '/master/units' },
+        ]
+      },
+      {
+        title: 'Call Service',
+        items: [
+          { label: 'Call Service', icon: 'tool', route: '/customer-service/call-service' },
+          { label: 'Monitoring Service', icon: 'activity', route: '/customer-service/monitoring-service' },
+        ]
+      },
+      {
+        title: 'Sparepart',
+        items: [
+          { label: 'Sparepart Request', icon: 'box', route: '/customer-service/sparepart-request' },
+          { label: 'Indent', icon: 'layers', route: '/customer-service/indent' },
+        ]
+      },
+      {
+        title: 'Delivery & Installation',
+        items: [
+          { label: 'Delivery & Installation', icon: 'truck', route: '/customer-service/delivery' },
+        ]
+      },
+      {
+        title: 'Warranty',
+        items: [
+          { label: 'Warranty Claim', icon: 'shield-check', route: '/customer-service/warranty-claims' },
+        ]
+      },
+      {
+        title: 'Invoice',
+        items: [
+          { label: 'Monitoring Invoice', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
+        ]
+      },
+      {
+        title: 'Reports',
+        items: [
+          { label: 'Reports', icon: 'file-text', route: '/customer-service/reports' },
+        ]
+      }
+    ]
+  } else if (role === 'technician') {
+    groups = [
+      {
+        title: 'Technician',
+        items: [
+          { label: 'Dashboard', icon: 'grid', route: '/technician/dashboard' },
+        ]
+      },
+      {
+        title: 'My Jobs',
+        items: [
+          { label: 'Call Service', icon: 'tool', route: '/technician/call-services' },
+          { label: 'Maintenance', icon: 'shield-check', route: '/technician/maintenance' },
+        ],
+      },
+      {
+        title: 'Sparepart',
+        items: [
+          { label: 'Sparepart Request', icon: 'box', route: '/technician/sparepart-request' },
+        ],
+      },
+      {
+        title: 'Meter Reading',
+        items: [
+          { label: 'Meter Reading', icon: 'activity', route: '/technician/meter-readings' },
+        ],
+      },
+      {
+        title: 'Service History',
+        items: [
+          { label: 'Service History', icon: 'clipboard', route: '/technician/service-history' },
+        ],
+      },
+      {
+        title: 'References',
+        items: [
+          { label: 'Companies', icon: 'building', route: '/master/customers' },
+          { label: 'Units', icon: 'printer', route: '/master/units' },
+        ],
+      },
+    ]
+  } else if (role === 'accounting') {
+    groups = [
+      {
+        title: 'Accounting',
+        items: [
+          { label: 'Dashboard', icon: 'grid', route: '/accounting/dashboard' },
+          { label: 'Sparepart Requests', icon: 'box', route: '/accounting/sparepart-requests' },
+          { label: 'Purchase Orders', icon: 'clipboard', route: '/accounting/purchase-orders' },
+          { label: 'Delivery Orders', icon: 'truck', route: '/accounting/delivery-orders' },
+        ],
+      },
+    ]
+  }
+  
+  // Filter dynamically based on database modules
   return groups.map(group => ({
     ...group,
     title: group.title.includes('.') ? t(group.title) : group.title,
     items: group.items.filter(item => {
-      // 1. Superadmin (admin) sees everything
-      if (role === 'admin') return true
-
-      // 2. Role-restricted items (technician menu): role decides, no permission checks
-      if (item.roles) return item.roles.includes(role)
-
-      // 3. Check via the permission-based access system
-      const resolved = router.resolve(item.route)
-      const routeName = resolved.name ? String(resolved.name) : ''
-      if (!routeName) return false
-
-      // 4. Visibility is driven by the `<key>:view` permission of the route
-      //    (see router/permission-map.ts). `read` alone never opens a menu.
-  if (!canAccessRoute(routeName, role, permissions)) return false
-      const permKeys = permissionKeysFor(routeName)
-
-      if (!permKeys) {
-        // No permission key mapped (dashboards, shared pages) -> visible
-        return true
+      const translatedLabel = item.label.includes('.') ? t(item.label) : item.label
+      const dbModule = modules.value.find(m => m.name.toLowerCase() === translatedLabel.toLowerCase())
+      if (dbModule) {
+        return dbModule.is_active
       }
-
-      if (!canView(routeName, currentUser.value?.permissions || [])) return false
-
-      // Respect a deactivated module that owns this permission key.
-      // Module names are display names ("Job Order") while permission keys use
-      // snake_case ("job_order"), so normalize before comparing.
-      const matches = modules.value.filter(m => permKeys.includes(moduleKey(String(m.name))))
-      if (matches.length > 0 && !matches.some(m => m.is_active)) return false
-
       return true
     }).map(item => ({
       ...item,
@@ -152,7 +235,6 @@ function navigate(itemRoute: string) {
 
 function handleLogout() {
   logout()
-  toastSuccess('Logout berhasil')
   router.push('/login')
 }
 
@@ -174,7 +256,6 @@ const iconPaths: Record<string, string> = {
   file: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6',
   'file-text': 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
   folder: 'M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z',
-  ruler: 'M3 17h18v-2H3v2zM3 7h18v2H3V7zm2 4v-2H4v2h1zm2 0v-2H6v2h1zm2 0v-2H8v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm-12 6v-2H2v2h1zm2 0v-2H4v2h1zm2 0v-2H6v2h1zm2 0v-2H8v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1zm2 0v-2h-1v2h1z',
   box: 'M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12',
   printer: 'M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z',
   'shield-check': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M9 12l2 2 4-4',
@@ -263,8 +344,10 @@ const iconPaths: Record<string, string> = {
         </div>
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
-          <span class="sidebar-user-role">{{
-            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Superadmin'
+          <span class="sidebar-user-role">{{ 
+            currentUser?.role === 'customer_service' ? 'Customer Service' : 
+            currentUser?.role === 'technician' ? 'Technician' : 
+            currentUser?.role === 'accounting' ? 'Accounting' : 'Superadmin' 
           }}</span>
         </div>
       </div>

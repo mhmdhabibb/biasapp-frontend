@@ -5,12 +5,10 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
-import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
-import type { TableColumn, Unit, UOM } from '@/types'
-import { computed, reactive, ref, onMounted, watch, onUnmounted } from 'vue'
+import type { TableColumn, Unit } from '@/types'
+import { computed, reactive, ref, onMounted, watch } from 'vue'
 
-const toast = useToast()
 const { currentUser } = useAuth()
 const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
@@ -18,42 +16,34 @@ const columns: TableColumn[] = [
   { key: 'name', label: 'Unit Name' },
   { key: 'brand_id', label: 'Brand' },
   { key: 'model', label: 'Model' },
-  { key: 'uom.name', label: 'UOM' },
   { key: 'serial_no', label: 'Serial Number' },
-  { key: 'status', label: 'Status' },
-  { key: 'is_computer', label: 'Computer' },
-  { key: 'is_copier', label: 'Copier' },
 ]
 
-const brands = ref<{ id: string, name: string }[]>([])
-const unitTypes = ref<{ id: string, name: string }[]>([])
-const paperSizes = ref<{ id: string, name: string }[]>([])
-const uoms = ref<UOM[]>([])
+const brands = ref<{id: string, name: string}[]>([])
+const unitTypes = ref<{id: string, name: string}[]>([])
+const paperSizes = ref<{id: string, name: string}[]>([])
 
 const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label: b.name })))
 const typeOptions = computed(() => unitTypes.value.map(t => ({ value: t.id, label: t.name })))
 const paperSizeOptions = computed(() => paperSizes.value.map(p => ({ value: p.id, label: p.name })))
-const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
 const data = ref<Unit[]>([])
 
 async function fetchData() {
   try {
-    const [resUnits, resBrands, resTypes, resPaperSizes, resUoms] = await Promise.all([
+    const [resUnits, resBrands, resTypes, resPaperSizes] = await Promise.all([
       resources.units.list(),
       resources.brands.list(),
       resources.unitTypes.list(),
-      resources.paperSizes.list(),
-      resources.uoms.list()
+      resources.paperSizes.list()
     ])
     data.value = resUnits.data as any
     brands.value = resBrands.data as any
     unitTypes.value = resTypes.data as any
     paperSizes.value = resPaperSizes.data as any
-    uoms.value = resUoms.data as any
   } catch (error: any) {
     console.error('Failed to fetch data:', error)
-    toast.error('Gagal mengambil data dari server: ' + (error.message || 'Error'))
+    alert('Gagal mengambil data dari server: ' + (error.message || 'Error'))
   }
 }
 
@@ -68,24 +58,13 @@ const form = reactive({
   serial_no: '',
   brand_id: null as string | null,
   type_id: null as string | null,
-  uom_id: '' as string | null,
   model: '',
-  name: '',
+  name: '', 
   is_copier: false,
-  is_computer: false,
   current_meter_bw: 0,
   current_meter_color: 0,
   free_quota_color: 0,
   rates: [] as { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[],
-  specsData: {
-    cpu: '',
-    ram: '',
-    storage: '',
-    storage_type: '',
-    os: '',
-    vga: '',
-    office: ''
-  },
 })
 
 function addRate() {
@@ -106,7 +85,8 @@ watch([() => form.brand_id, () => form.model], ([newBrand, newModel]) => {
 })
 
 function openAdd() {
-  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
+  editingItem.value = null
+  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, model: '', name: '', is_copier: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, rates: [] })
   showModal.value = true
 }
 
@@ -116,11 +96,9 @@ function openEdit(item: any) {
     serial_no: item.serial_no,
     brand_id: item.brand_id,
     type_id: item.type_id,
-    uom_id: item.uom_id ?? '',
     model: item.model,
     name: item.name || '',
     is_copier: !!item.is_copier,
-    is_computer: !!item.is_computer,
     current_meter_bw: item.current_meter_bw || 0,
     current_meter_color: item.current_meter_color || 0,
     free_quota_color: item.free_quota_color || 0,
@@ -129,33 +107,26 @@ function openEdit(item: any) {
       rate_per_page_bw: r.rate_per_page_bw,
       rate_per_page_color: r.rate_per_page_color
     })) : [],
-    specsData: item.specs ? (typeof item.specs === 'string' ? JSON.parse(item.specs || '{}') : item.specs) : { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
   })
   showModal.value = true
 }
 
 async function handleSubmit() {
   if (!form.brand_id || !form.type_id || !form.name.trim() || !form.serial_no.trim()) {
-    toast.warning('Harap lengkapi semua field yang wajib (Nama Unit, Brand, Tipe, Serial Number).')
+    alert('Harap lengkapi semua field yang wajib (Nama Unit, Brand, Tipe, Serial Number).')
     return
   }
   try {
-    const payload = {
-      ...form,
-      specs: form.is_computer ? JSON.stringify(form.specsData) : ''
-    }
     if (editingItem.value) {
-      await resources.units.update(String(editingItem.value.id), payload)
-      toast.success("Unit berhasil diperbarui!")
+      await resources.units.update(String(editingItem.value.id), form)
     } else {
-      await resources.units.create(payload)
-      toast.success("Unit berhasil disimpan!")
+      await resources.units.create(form)
     }
     await fetchData()
     showModal.value = false
   } catch (error: any) {
     console.error('Failed to save unit:', error)
-    toast.error('Gagal menyimpan data Unit: ' + (error.message || 'Terjadi kesalahan'))
+    alert('Gagal menyimpan data Unit: ' + (error.message || 'Terjadi kesalahan'))
   }
 }
 
@@ -166,10 +137,8 @@ async function handleDelete() {
     try {
       await resources.units.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success("Unit berhasil dihapus!")
     } catch (error) {
       console.error('Failed to delete unit:', error)
-      toast.error('Gagal menghapus data Unit')
     }
   }
   showConfirm.value = false
@@ -180,76 +149,44 @@ function getBrandName(id: string | null): string {
   const b = brands.value.find(b => b.id === id)
   return b ? b.name : '-'
 }
-
-const badgeTrue = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '24px',
-  height: '24px',
-  borderRadius: '50%',
-  backgroundColor: '#dcfce7',
-  color: '#16a34a',
-}
-
-const badgeFalse = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '24px',
-  height: '24px',
-  borderRadius: '50%',
-  backgroundColor: '#fee2e2',
-  color: '#dc2626',
-}
-
 </script>
 
 <template>
   <div>
-    <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" permission="unit:create"
-      @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search units..." permission="unit" @edit="openEdit"
-      @delete="openDelete">
+    <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search units..." 
+               :hide-actions="isTechnician"
+               @edit="openEdit" @delete="openDelete">
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
       </template>
-      <template #cell-is_computer="{ value }">
-        <span :style="value ? badgeTrue : badgeFalse">
-          <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          <svg v-else xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </span>
-      </template>
-      <template #cell-is_copier="{ value }">
-        <span :style="value ? badgeTrue : badgeFalse">
-          <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          <svg v-else xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </span>
-      </template>
     </DataTable>
-    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'"
-      @close="showModal = false" @submit="handleSubmit">
+    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="unit-serial" class="form-label">Serial Number</label>
-        <input id="unit-serial" v-model="form.serial_no" type="text" class="form-input"
-          placeholder="Unit serial number">
+        <input id="unit-serial" v-model="form.serial_no" type="text" class="form-input" placeholder="Unit serial number">
       </div>
       <div class="form-group">
         <label for="unit-name" class="form-label">Unit Name</label>
-        <input id="unit-name" v-model="form.name" type="text" class="form-input" placeholder="Auto-generated" disabled
-          style="background-color: var(--color-surface-hover); cursor: not-allowed;">
+        <input id="unit-name" v-model="form.name" type="text" class="form-input" placeholder="Auto-generated" disabled style="background-color: var(--color-surface-hover); cursor: not-allowed;">
       </div>
       <div class="form-group" style="position: relative;">
         <label for="unit-brand" class="form-label">Brand</label>
-        <CustomSelect id="unit-brand" v-model="form.brand_id" :options="brandOptions" placeholder="Select brand" />
+        <CustomSelect
+          id="unit-brand"
+          v-model="form.brand_id"
+          :options="brandOptions"
+          placeholder="Select brand"
+        />
       </div>
       <div class="form-group" style="position: relative;">
         <label for="unit-type" class="form-label">Unit Type</label>
-        <CustomSelect id="unit-type" v-model="form.type_id" :options="typeOptions" placeholder="Select unit type" />
-      </div>
-          <div class="form-group" style="position: relative;">
-        <label for="uom" class="form-label">Unit Of Measure</label>
-        <CustomSelect id="uom" v-model="form.uom_id" :options="uomOptions" placeholder="Select UOM type" />
+        <CustomSelect
+          id="unit-type"
+          v-model="form.type_id"
+          :options="typeOptions"
+          placeholder="Select unit type"
+        />
       </div>
       <div class="form-group">
         <label for="unit-model" class="form-label">Model</label>
@@ -261,52 +198,50 @@ const badgeFalse = {
           Adalah Mesin Fotocopy
         </label>
       </div>
-      <div class="form-group" style="margin-top: 1rem;">
-        <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-          <input type="checkbox" v-model="form.is_computer" style="width: 1rem; height: 1rem;" />
-          Adalah Komputer / PC / Laptop
-        </label>
-      </div>
 
-      <div v-if="form.is_computer"
-        style="margin-top: 1rem; border-top: 1px solid var(--color-border-light); padding-top: 1rem;">
-        <h4 style="margin-bottom: 1rem; font-weight: 600;">Spesifikasi Komputer / Desktop</h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+      <div v-if="form.is_copier" style="margin-top: 1rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+        <h4 style="margin-bottom: 1rem; font-weight: 600;">Data Mesin Fotocopy</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
           <div class="form-group">
-            <label class="form-label">CPU</label>
-            <input v-model="form.specsData.cpu" type="text" class="form-input" placeholder="e.g. Intel Core i5">
+            <label class="form-label">Current BW Meter</label>
+            <input v-model.number="form.current_meter_bw" type="number" class="form-input" min="0">
           </div>
           <div class="form-group">
-            <label class="form-label">RAM</label>
-            <input v-model="form.specsData.ram" type="text" class="form-input" placeholder="e.g. 8GB DDR4">
+            <label class="form-label">Current Color Meter</label>
+            <input v-model.number="form.current_meter_color" type="number" class="form-input" min="0">
           </div>
           <div class="form-group">
-            <label class="form-label">Storage</label>
-            <input v-model="form.specsData.storage" type="text" class="form-input" placeholder="e.g. 512GB">
+            <label class="form-label">Free Quota Color</label>
+            <input v-model.number="form.free_quota_color" type="number" class="form-input" min="0">
           </div>
-          <div class="form-group">
-            <label class="form-label">Storage Type</label>
-            <CustomSelect v-model="form.specsData.storage_type"
-              :options="[{ value: 'SSD', label: 'SSD' }, { value: 'HDD', label: 'HDD' }, { value: 'NVMe', label: 'NVMe' }]"
-              placeholder="Pilih Tipe" />
+        </div>
+
+        <div style="margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <label class="form-label" style="margin: 0;">Daftar Harga Kertas (Rates)</label>
+            <button type="button" @click="addRate" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">+ Tambah Harga</button>
           </div>
-          <div class="form-group">
-            <label class="form-label">OS</label>
-            <input v-model="form.specsData.os" type="text" class="form-input" placeholder="e.g. Windows 11">
+          
+          <div v-for="(rate, index) in form.rates" :key="index" style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; background: var(--bg-color); padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border-color);">
+            <div>
+              <CustomSelect v-model="rate.paper_size_id" :options="paperSizeOptions" placeholder="Pilih Ukuran" />
+            </div>
+            <div>
+              <input v-model.number="rate.rate_per_page_bw" type="number" class="form-input" min="0" placeholder="Tarif BW">
+            </div>
+            <div>
+              <input v-model.number="rate.rate_per_page_color" type="number" class="form-input" min="0" placeholder="Tarif Warna">
+            </div>
+            <button type="button" @click="removeRate(index)" style="background: none; border: none; color: var(--danger-color); cursor: pointer; padding: 0.5rem;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
           </div>
-          <div class="form-group">
-            <label class="form-label">VGA</label>
-            <input v-model="form.specsData.vga" type="text" class="form-input" placeholder="e.g. Intel Iris Xe">
-          </div>
-          <div class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Paket Office</label>
-            <input v-model="form.specsData.office" type="text" class="form-input"
-              placeholder="e.g. Office Home & Student 2021">
+          <div v-if="form.rates.length === 0" style="text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 1rem; border: 1px dashed var(--border-color); border-radius: 8px;">
+            Belum ada ukuran kertas yang ditambahkan.
           </div>
         </div>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Unit" :message="`Are you sure you want to delete this unit?`"
-      @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Unit" :message="`Are you sure you want to delete this unit?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>

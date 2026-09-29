@@ -1,14 +1,12 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Module } from '@/types'
 
-const toast = useToast()
 const data = ref<Module[]>([])
 
 async function fetchData() {
@@ -17,7 +15,6 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch modules:', error)
-    toast.error('Gagal mengambil data module: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -56,10 +53,8 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? 'Module berhasil diperbarui!' : 'Module berhasil disimpan!')
   } catch (error) {
     console.error('Failed to save module:', error)
-    toast.error('Gagal menyimpan module: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -70,21 +65,18 @@ async function handleDelete() {
     try {
       await resources.modules.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('Module berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete module:', error)
-      toast.error('Gagal menghapus module')
     }
   }
   showConfirm.value = false
 }
-
 </script>
 
 <template>
   <div>
-    <PageHeader title="Modules" button-label="Add Module" permission="module:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari module..." permission="module" @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Modules" button-label="Add Module" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Cari module..." @edit="openEdit" @delete="openDelete">
       <template #cell-is_active="{ value }">
         <span :class="value ? 'badge badge-success' : 'badge badge-neutral'">
           {{ value ? 'Aktif' : 'Nonaktif' }}
@@ -106,5 +98,3 @@ async function handleDelete() {
     <ConfirmDialog :open="showConfirm" title="Hapus Module" :message="`Yakin ingin menghapus module '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
-
-
