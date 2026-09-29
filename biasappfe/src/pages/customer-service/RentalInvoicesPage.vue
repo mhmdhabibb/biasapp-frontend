@@ -1,16 +1,16 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive, computed } from 'vue'
-import * as XLSX from 'xlsx'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
-import type { TableColumn, RentalInvoice } from '@/types'
+import type { RentalInvoice, TableColumn } from '@/types'
+import { computed, reactive, ref } from 'vue'
+import * as XLSX from 'xlsx'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -288,6 +288,7 @@ function exportMonthToExcel() {
   XLSX.writeFile(wb, `RentalInvoice_${periodLabel}.xlsx`)
 }
 
+/*
 function exportMonthToPdf() {
   const items = filteredData.value
   if (items.length === 0) {
@@ -526,6 +527,65 @@ function exportMonthToPdf() {
   if (ci) {
     form.customer_id = ci.customer_id
       XLSX.writeFile(wb, `RentalInvoice_${periodLabel}.xlsx`)
+    recalculate()
+  }
+}
+
+*/
+function exportMonthToPdf() {
+  const items = filteredData.value
+  if (items.length === 0) {
+    toast.warning('Tidak ada data rental invoice untuk diekspor ke PDF!')
+    return
+  }
+
+  const tableRows = items.map((item: any, index: number) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${item.invoice_no || `INV-R-${item.id}`}</td>
+      <td>${formatDate(item.monthly_date || item.period_start)}</td>
+      <td>${customerName(item.customer_id)}</td>
+      <td>${contractNo(item.contract_item_id)}</td>
+      <td>${formatRupiah(item.total_pay || item.subtotal || 0)}</td>
+      <td>${String(item.status || 'unpaid').toUpperCase()}</td>
+    </tr>
+  `).join('')
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) return
+
+  printWindow.document.write(`<!doctype html><html><head><title>Rental Invoices</title><style>
+    body{font:12px Arial,sans-serif;color:#222}h1,h2{text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #777;padding:6px}th{background:#e8f1ff}
+    </style></head><body><h1>PT. BIAS SURYA TEKNOLOGI</h1><h2>Rental Invoices</h2><table><thead><tr><th>No</th><th>Invoice</th><th>Tanggal</th><th>Customer</th><th>Kontrak</th><th>Total</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`)
+  printWindow.document.close()
+}
+
+const form = reactive({
+  invoice_no: '',
+  contract_item_id: null as any,
+  customer_id: null as any,
+  period_start: '',
+  period_end: '',
+  monthly_date: '',
+  due_date: '',
+  basis_rental_fee: 0,
+  excess_amount: 0,
+  subtotal: 0,
+  tax: 0,
+  total_pay: 0,
+  status: 'unpaid',
+  meter_start: 0,
+  meter_end: 0,
+  free_copies: 2000,
+  rate_per_page: 150
+})
+
+const defaultForm = { ...form }
+
+function onContractChange() {
+  const ci = findContractItem(form.contract_item_id)
+  if (ci) {
+    form.customer_id = ci.customer_id
+    form.basis_rental_fee = ci.monthly_rent_fee
     recalculate()
   }
 }

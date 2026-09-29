@@ -254,7 +254,7 @@ onMounted(async () => {
         </div>
         <div class="form-group">
           <label for="notes" class="form-label">Catatan</label>
-          <input id="notes" v-model="form.notes" type="text" class="form-input" placeholder="Opsional">
+          <textarea id="notes" v-model="form.notes" class="form-input" placeholder="Opsional" rows="2"></textarea>
         </div>
       </div>
       

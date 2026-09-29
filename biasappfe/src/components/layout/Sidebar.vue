@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
-import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
-import type { MenuGroup } from '@/types'
-import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
 import { canView, permissionKeysFor } from '@/router/permission-map'
+import { canAccessRoute, normalizeRole } from '@/router/role-access'
+import type { MenuGroup } from '@/types'
+import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 
 const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
 
@@ -69,8 +69,6 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.tech_dashboard', icon: 'grid', route: '/technician/dashboard' },
       { label: 'sidebar.acc_dashboard', icon: 'grid', route: '/accounting/dashboard' },
       { label: 'sidebar.monitoring_service', icon: 'activity', route: '/customer-service/monitoring-service' },
-      { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
-      { label: 'sidebar.cs_reports', icon: 'file-text', route: '/customer-service/reports' },
     ],
   },
   {
@@ -87,10 +85,11 @@ const allMenuGroups: MenuGroup[] = [
 
 const menuGroups = computed(() => {
   const role = normalizeRole(currentUser.value?.role)
+  const permissions: string[] = currentUser.value?.permissions || []
 
   const groups: MenuGroup[] = JSON.parse(JSON.stringify(allMenuGroups))
 
-  // Filter dynamically based on role route access, permissions and active database modules
+  // Filter dynamically based on user's actual permissions from the database
   return groups.map(group => ({
     ...group,
     title: group.title.includes('.') ? t(group.title) : group.title,
@@ -98,20 +97,17 @@ const menuGroups = computed(() => {
       // 1. Superadmin (admin) sees everything
       if (role === 'admin') return true
 
-      // 2. Role-restricted items (technician menu): role decides, no module/permission checks
+      // 2. Role-restricted items (technician menu): role decides, no permission checks
       if (item.roles) return item.roles.includes(role)
 
-      // 3. Mirror the router guard: only show routes this role may actually open
-      //    (fixes wrong dashboards / bouncing menus for built-in roles)
-      const allowedNames = allowedRouteNamesByRole[role]
-      if (allowedNames) {
-        const itemName = router.resolve(item.route).name
-        if (!itemName || !allowedNames.includes(String(itemName))) return false
-      }
+      // 3. Check via the permission-based access system
+      const resolved = router.resolve(item.route)
+      const routeName = resolved.name ? String(resolved.name) : ''
+      if (!routeName) return false
 
       // 4. Visibility is driven by the `<key>:view` permission of the route
       //    (see router/permission-map.ts). `read` alone never opens a menu.
-      const routeName = String(router.resolve(item.route).name || '')
+  if (!canAccessRoute(routeName, role, permissions)) return false
       const permKeys = permissionKeysFor(routeName)
 
       if (!permKeys) {
