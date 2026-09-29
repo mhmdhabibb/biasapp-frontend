@@ -220,14 +220,17 @@ async function handleSubmit() {
   };
 
   try {
-    const res = await fetch("http://localhost:4008/api/service-requests", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+    const res = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/service-requests`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+    );
 
     if (res.ok) {
       toast.success("Service Request berhasil dibuat!");
@@ -275,14 +278,17 @@ async function handleAssignSubmit() {
   };
 
   try {
-    const res = await fetch("http://localhost:4008/api/job-orders", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+    const res = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/service-requests`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+    );
 
     if (res.ok) {
       toast.success("Teknisi berhasil di-assign! Job Order telah dibuat.");
