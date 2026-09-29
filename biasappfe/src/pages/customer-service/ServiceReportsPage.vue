@@ -25,7 +25,6 @@ const {
 const columns: TableColumn[] = [
   { key: 'report_no', label: 'No. Laporan' },
   { key: 'customer_id', label: 'Customer' },
-  { key: 'contract_item_id', label: 'Kontrak' },
   { key: 'service_type', label: 'Tipe Servis' },
   { key: 'technician_id', label: 'Teknisi' },
   { key: 'service_date', label: 'Tanggal Kunjungan' },

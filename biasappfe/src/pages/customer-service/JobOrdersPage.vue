@@ -251,9 +251,16 @@ async function onDrop(techId: string | number) {
             @click="openRequestDetail(req)"
           >
             <div class="card-grip" aria-hidden="true">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="9" cy="6" r="1.6"/>
+                <circle cx="15" cy="6" r="1.6"/>
+                <circle cx="9" cy="12" r="1.6"/>
+                <circle cx="15" cy="12" r="1.6"/>
+                <circle cx="9" cy="18" r="1.6"/>
+                <circle cx="15" cy="18" r="1.6"/>
+              </svg>
             </div>
-              <div class="card-main">
+            <div class="card-main">
               <div class="card-header">
                 <span class="ref-no">{{ req.request_no }}</span>
                 <span class="date-tag">{{ formatDateDisplay(req.created_at) }}</span>
@@ -296,31 +303,41 @@ async function onDrop(techId: string | number) {
               @drop="onDrop(t.id)"
             >
               <div class="lane-empty" v-if="getJobsForTech(t.id).length === 0">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
                 <span>{{ dragOverTechId === t.id ? 'Drop here' : 'Drag a request here to assign to this technician' }}</span>
               </div>
 
               <div
-                class="job-card assigned"
                 v-for="job in getJobsForTech(t.id)"
                 :key="job.id"
+                class="job-card assigned"
                 role="button"
                 tabindex="0"
                 @click="openJobDetail(job)"
                 @keydown.enter="openJobDetail(job)"
               >
-                <div class="card-main">
-                  <div class="card-header">
-                    <span class="ref-no">{{ job.job_order_no }}</span>
-                    <span class="badge" :class="statusBadgeClass(job.status)">{{ String(job.status || 'new').replace('_', ' ') }}</span>
-                    <span class="date-tag">{{ formatDateDisplay(job.scheduled_date) }}</span>
-                  </div>
-                  <div class="card-body">
-                    <div class="problem-text">{{ job.instructions }}</div>
-                  </div>
+                <div class="ac-row">
+                  <span class="ref-no">{{ job.service_request_no || job.job_order_no }}</span>
+                  <span class="badge" :class="statusBadgeClass(job.status)">
+                    {{ String(job.status || 'new').replace('_', ' ') }}
+                  </span>
+                </div>
+                <div class="ac-row muted">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="17" rx="2"/>
+                    <path d="M8 2v4M16 2v4M3 10h18"/>
+                  </svg>
+                  <span>{{ formatDateDisplay(job.scheduled_date) }}</span>
+                  <span class="ac-dot">·</span>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                  </svg>
+                  <span class="ac-company">{{ job.customer_name || '-' }}</span>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
@@ -730,15 +747,19 @@ async function onDrop(techId: string | number) {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  padding: 6px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
 }
 
 .tech-avatar {
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-full);
   background: var(--color-primary);
   color: var(--color-text-on-primary);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: var(--font-weight-bold);
   display: inline-flex;
   align-items: center;
@@ -748,20 +769,21 @@ async function onDrop(techId: string | number) {
 }
 
 .tech-label {
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .tech-status {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-secondary);
   background: var(--color-surface-sunken);
-  padding: 2px 8px;
+  padding: 2px 10px;
   border-radius: var(--radius-full);
+  text-transform: lowercase;
 }
 
 .tech-status.online {
@@ -774,6 +796,9 @@ async function onDrop(techId: string | number) {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   font-weight: var(--font-weight-semibold);
+  background: var(--color-surface-sunken);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
 }
 
 .tech-lane {
@@ -859,26 +884,55 @@ async function onDrop(techId: string | number) {
 }
 
 .job-card.assigned {
-  width: 320px;
+  width: 240px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  cursor: pointer;
 }
 
 .job-card.assigned::before {
-  content: '';
-  position: absolute;
-  top: 16px;
-  bottom: 16px;
-  left: 0;
-  width: 4px;
-  background: var(--color-primary);
-  border-radius: 0 4px 4px 0;
-}
-
-.job-card.assigned .card-main {
-  padding-left: 4px;
+  display: none;
 }
 
 .job-card.assigned:hover {
-  border-color: var(--color-border);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.job-card.assigned:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.ac-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.ac-row.muted {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  gap: 4px;
+}
+
+.ac-row.muted svg {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.ac-dot {
+  color: var(--color-border);
+}
+
+.ac-company {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
 }
 
 .card-header {
@@ -920,10 +974,6 @@ async function onDrop(techId: string | number) {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-.job-card.assigned {
-  cursor: pointer;
 }
 
 .job-card.assigned:focus-visible {

@@ -49,6 +49,10 @@ async function fetchData() {
     
     if (roles.value.length > 0 && !selectedRoleId.value) {
       selectedRoleId.value = String(roles.value[0].id)
+    } else if (selectedRoleId.value) {
+      // Trigger update manually if selectedRoleId was already set but data just arrived
+      const role = roles.value.find(r => String(r.id) === selectedRoleId.value)
+      selectedPermissions.value = role?.permissions ? role.permissions.map(p => String(p.id)) : []
     }
   } catch (error) {
     console.error('Failed to fetch data:', error)
@@ -105,13 +109,16 @@ const permissionsByModule = computed(() => {
 })
 
 // Watchers
-watch(selectedRole, (newRole) => {
-  if (newRole && newRole.permissions) {
-    selectedPermissions.value = newRole.permissions.map(p => String(p.id))
+// Hanya set selectedPermissions ketika selectedRoleId berubah (saat ganti role), 
+// jangan di-watch secara live dari selectedRole untuk menghindari race condition saat user nge-klik cepat.
+watch(selectedRoleId, (newId) => {
+  const role = roles.value.find(r => String(r.id) === newId)
+  if (role && role.permissions) {
+    selectedPermissions.value = role.permissions.map(p => String(p.id))
   } else {
     selectedPermissions.value = []
   }
-}, { immediate: true })
+})
 
 // Methods
 function selectRole(role: Role) {
@@ -210,12 +217,14 @@ async function savePermissions() {
     await api.patch(`/roles/${selectedRoleId.value}/permissions`, {
       permissions: selectedPermissions.value
     })
-    // Optionally refetch role data to ensure Sync
-    const resRole = await resources.roles.get(selectedRoleId.value)
+    // Optionally update locally instead of full refetch to prevent flickering
     const roleIdx = roles.value.findIndex(r => String(r.id) === selectedRoleId.value)
     if (roleIdx > -1) {
-      roles.value[roleIdx] = resRole.data as any
+      const currentSelection = [...selectedPermissions.value]
+      roles.value[roleIdx].permissions = allPermissions.value.filter(p => currentSelection.includes(String(p.id)))
     }
+    // Refresh the current user's permissions so the sidebar updates immediately
+    await authStore.refreshPermissions()
   } catch (error: any) {
     console.error(error)
     toast.error('Gagal menyimpan: ' + (error.message || 'Error'))

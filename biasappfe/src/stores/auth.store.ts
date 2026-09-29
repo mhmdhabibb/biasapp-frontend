@@ -83,6 +83,29 @@ export function useAuthStore() {
     sessionStorage.removeItem("bias_permissions");
   }
 
+  async function refreshPermissions(): Promise<void> {
+    if (!token.value) return;
+    try {
+      const response = await authService.me();
+      const me = (response.data as any);
+      const role = me.role === "superadmin" ? "admin" : me.role || "";
+      const perms: string[] = me.permissions || [];
+
+      currentUser.value = {
+        id: me.id,
+        name: me.name || currentUser.value?.name || "User",
+        username: me.username || currentUser.value?.username || "",
+        role,
+        permissions: perms,
+      };
+
+      sessionStorage.setItem("bias_user", JSON.stringify(currentUser.value));
+      sessionStorage.setItem("bias_permissions", JSON.stringify(perms));
+    } catch (reason) {
+      console.warn("Failed to refresh permissions:", reason);
+    }
+  }
+
   function hasPermission(permissionName: string): boolean {
     if (!currentUser.value) return false;
     // Superadmin has all permissions
@@ -100,5 +123,6 @@ export function useAuthStore() {
     login,
     logout,
     hasPermission,
+    refreshPermissions,
   };
 }

@@ -15,8 +15,8 @@ const { customers, units, sales, findProduct, getUnitsByCustomer } = useMasterSt
 
 const columns: TableColumn[] = [
   { key: 'request_no', label: 'Request No' },
-  { key: 'request.customer.company_name', label: 'Company' },
-  { key: 'request.customer.pic_name', label: 'PIC Name' },
+  { key: '_company_name', label: 'Company' },
+  { key: '_pic_name', label: 'PIC Name' },
   { key: 'request_date', label: 'Tgl Request' },
   { key: 'status', label: 'Status' }
 ]
@@ -27,8 +27,26 @@ const showRequestDetailModal = ref(false)
 const selectedRequest = ref<any>(null)
 const isLoading = ref(false)
 const rentalsData = ref<any[]>([])
+const warrantiesData = ref<any[]>([])
 
 const { jobOrders, serviceReports, technicians } = useMasterStore()
+
+// Check if a unit or product is still under warranty for a given customer
+function getWarrantyStatus(customerId: string, unitId?: string | null, productId?: string | null): { active: boolean; endDate?: string } {
+  const today = new Date()
+  const match = warrantiesData.value.find(w => {
+    if (w.customer_id !== customerId) return false
+    if (unitId && w.unit_id === unitId) return true
+    if (productId && w.product_id === productId) return true
+    return false
+  })
+  if (!match) return { active: false }
+  const end = new Date(match.end_date)
+  return {
+    active: end >= today && match.status !== 'expired' && match.status !== 'void',
+    endDate: end.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+}
 
 const form = reactive({
   request_no: `REQ-${Date.now().toString().slice(-6)}`,
@@ -48,6 +66,15 @@ async function fetchRentals() {
   }
 }
 
+async function fetchWarranties() {
+  try {
+    const data = await api.get<{ data: any[] }>('/warranties')
+    warrantiesData.value = data.data || []
+  } catch (e) {
+    console.warn("Could not fetch warranties", e)
+  }
+}
+
 // Get units rented AND products purchased by the selected customer
 const customerRentalUnits = computed(() => {
   if (!form.customer_id) return []
@@ -62,14 +89,17 @@ const customerRentalUnits = computed(() => {
           unitMap.set(item.unit_id, {
             id: item.unit_id,
             label: `${item.unit.brand || ''} ${item.unit.model || item.unit.unit_name || ''} (SN: ${item.unit.serial_no || '-'})`.trim(),
-            source: 'rental'
+            source: 'rental',
+            warranty: { active: false }, // rental units are company-owned, no customer warranty
           })
         }
         if (item.product_id && item.product) {
+          const warranty = getWarrantyStatus(form.customer_id, null, item.product_id, null)
           unitMap.set('rent_prod_' + item.product_id, {
             id: item.product_id,
             label: `${item.product.name || 'Produk'} (Qty: ${item.qty || 1})`,
-            source: 'rental'
+            source: 'rental',
+            warranty,
           })
         }
       }
@@ -83,10 +113,13 @@ const customerRentalUnits = computed(() => {
         const prod = findProduct(si.product_id)
         const key = 'sale_prod_' + si.product_id
         if (!unitMap.has(key)) {
+          // Match by product_id OR sale_id (backend may link warranty to sale, not product)
+          const warranty = getWarrantyStatus(form.customer_id, null, si.product_id, (sale as any).id)
           unitMap.set(key, {
             id: si.product_id,
             label: `${prod?.name || 'Produk ID: ' + si.product_id} (Qty: ${si.qty || 1})`,
-            source: 'sale'
+            source: 'sale',
+            warranty,
           })
         }
       }
@@ -100,7 +133,8 @@ const customerRentalUnits = computed(() => {
       unitMap.set(u.id as string, {
         id: u.id,
         label: `${(u as any).brand || ''} ${(u as any).model || ''} (SN: ${(u as any).serial_number || '-'})`.trim(),
-        source: 'contract'
+        source: 'contract',
+        warranty: { active: false }, // contract units are company-owned, no customer warranty
       })
     }
   }
@@ -130,6 +164,8 @@ async function fetchRequests() {
     serviceRequests.value = data.data.map((r: any) => ({
       ...r,
       customer: r.customer?.name || '-',
+      _company_name: r.customer?.company_name || r.customer?.name || '-',
+      _pic_name: r.customer?.pic_name || '-',
     }))
   } catch (error) {
     console.error("Gagal mengambil data", error)
@@ -243,6 +279,7 @@ function openDetail(row: any) {
 onMounted(() => {
   fetchRequests()
   fetchRentals()
+  fetchWarranties()
 })
 </script>
 
@@ -274,57 +311,60 @@ onMounted(() => {
     </DataTable>
 
     <FormModal :open="showRequestDetailModal" title="Detail Service Request" @close="showRequestDetailModal = false">
-      <div v-if="selectedRequest" class="mb-lg p-md"
-        style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
-        <div class="form-row">
-          <div>
-            <p class="text-xs text-muted font-bold">REQUEST NO</p>
-            <p class="font-bold">{{ selectedRequest.request_no }}</p>
+      <div v-if="selectedRequest">
+        <!-- Info Cards -->
+        <div class="detail-info-grid">
+          <div class="detail-info-card">
+            <span class="detail-info-label">Request No</span>
+            <span class="detail-info-value mono">{{ selectedRequest.request_no }}</span>
           </div>
-          <div>
-            <p class="text-xs text-muted font-bold">CUSTOMER</p>
-            <p class="font-bold">{{ selectedRequest.customer }}</p>
+          <div class="detail-info-card">
+            <span class="detail-info-label">Customer</span>
+            <span class="detail-info-value">{{ selectedRequest._company_name || selectedRequest.customer || '-' }}</span>
+          </div>
+          <div class="detail-info-card">
+            <span class="detail-info-label">PIC</span>
+            <span class="detail-info-value">{{ selectedRequest._pic_name || '-' }}</span>
+          </div>
+          <div class="detail-info-card">
+            <span class="detail-info-label">Tgl Request</span>
+            <span class="detail-info-value">{{ selectedRequest.request_date ? new Date(selectedRequest.request_date).toLocaleDateString('id-ID') : '-' }}</span>
           </div>
         </div>
-        <div class="mt-2">
-          <p class="text-xs text-muted font-bold">KELUHAN / PROBLEM</p>
-          <p>{{ selectedRequest.problem_description || '-' }}</p>
-        </div>
-      </div>
 
-      <h3 class="font-bold mb-sm">History Laporan Servis</h3>
-      <div class="table-responsive">
-        <table class="table" style="font-size: 13px;">
-          <thead>
-            <tr>
-              <th>No Laporan</th>
-              <th>Tgl Servis</th>
-              <th>Tipe</th>
-              <th>Status</th>
-              <th>Aksi</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="rep in relatedReports" :key="rep.id">
-              <td>{{ rep.report_no || rep.service_report_no || '-' }}</td>
-              <td>{{ rep.service_date ? new Date(rep.service_date).toLocaleDateString('id-ID') : '-' }}</td>
-              <td>{{ rep.service_type || '-' }}</td>
-              <td>
-                <span :class="rep.status === 'completed' ? 'badge badge-success' : 'badge badge-info'">
-                  {{ rep.status === 'completed' ? 'Selesai' : rep.status }}
-                </span>
-              </td>
-              <td>
-                <button class="btn btn-sm btn-outline" @click="$router.push(`/shared/service-reports/${rep.id}`)">
-                  👁️ Quick Look
-                </button>
-              </td>
-            </tr>
-            <tr v-if="relatedReports.length === 0">
-              <td colspan="5" class="text-center text-muted py-md">Belum ada laporan servis untuk request ini.</td>
-            </tr>
-          </tbody>
-        </table>
+        <!-- Problem Description -->
+        <div class="detail-problem-box">
+          <span class="detail-info-label" style="display:block; margin-bottom: 6px;">Keluhan / Problem</span>
+          <p class="detail-problem-text">{{ selectedRequest.problem_description || '-' }}</p>
+        </div>
+
+        <!-- History -->
+        <div class="detail-section-header">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          History Laporan Servis
+        </div>
+
+        <div v-if="relatedReports.length === 0" class="detail-empty-state">
+          Belum ada laporan servis untuk request ini.
+        </div>
+        <div v-else class="detail-report-list">
+          <div v-for="rep in relatedReports" :key="rep.id" class="detail-report-row">
+            <div class="detail-report-main">
+              <span class="detail-report-no mono">{{ rep.report_no || rep.service_report_no || '-' }}</span>
+              <span class="detail-report-meta">{{ rep.service_date ? new Date(rep.service_date).toLocaleDateString('id-ID') : '-' }}</span>
+              <span class="detail-report-type">{{ rep.service_type || '-' }}</span>
+            </div>
+            <div class="detail-report-actions">
+              <span :class="rep.status === 'completed' ? 'badge badge-success' : 'badge badge-info'">
+                {{ rep.status === 'completed' ? 'Selesai' : rep.status }}
+              </span>
+              <button class="detail-look-btn" @click="$router.push(`/shared/service-reports/${rep.id}`)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                Lihat
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </FormModal>
 
@@ -366,6 +406,12 @@ onMounted(() => {
             <span class="unit-source-badge"
               :class="u.source === 'rental' ? 'badge-rental' : u.source === 'sale' ? 'badge-sale' : 'badge-contract'">
               {{ u.source === 'rental' ? 'Rental' : u.source === 'sale' ? 'Pembelian' : 'Kontrak' }}
+            </span>
+            <span v-if="u.warranty?.active" class="warranty-badge warranty-active" :title="`Garansi s/d ${u.warranty.endDate}`">
+              ✓ Garansi
+            </span>
+            <span v-else class="warranty-badge warranty-none" title="Tidak ada garansi aktif — akan dikenakan biaya">
+              Berbayar
             </span>
           </label>
         </div>
@@ -481,5 +527,171 @@ onMounted(() => {
 .badge-contract {
   background: #f0fdf4;
   color: #15803d;
+}
+
+.warranty-badge {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.warranty-active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.warranty-none {
+  background: #fef9c3;
+  color: #a16207;
+}
+
+/* Detail Modal Styles */
+.detail-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.detail-info-card {
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-info-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--color-text-muted);
+}
+
+.detail-info-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.mono {
+  font-family: monospace;
+  letter-spacing: 0.5px;
+}
+
+.detail-problem-box {
+  background: var(--color-surface-sunken);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 20px;
+}
+
+.detail-problem-text {
+  font-size: 0.88rem;
+  color: var(--color-text);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.detail-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.detail-empty-state {
+  text-align: center;
+  padding: 24px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-md);
+}
+
+.detail-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-report-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--color-surface-raised, #fff);
+  border: 1px solid var(--color-border-light, #f0f0f0);
+  border-radius: var(--radius-md);
+  transition: background 0.15s;
+}
+
+.detail-report-row:hover {
+  background: var(--color-surface-sunken);
+}
+
+.detail-report-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.detail-report-no {
+  font-weight: 600;
+  font-size: 0.85rem;
+  min-width: 90px;
+}
+
+.detail-report-meta {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.detail-report-type {
+  font-size: 0.78rem;
+  padding: 2px 10px;
+  border-radius: 20px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.detail-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-look-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.detail-look-btn:hover {
+  background: var(--color-surface-sunken);
+  border-color: var(--color-primary);
 }
 </style>

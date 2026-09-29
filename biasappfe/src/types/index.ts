@@ -158,10 +158,22 @@ export interface UnitRate {
 
 export interface Warranty {
   id: string | number
+  warranty_no?: string
   warranty_type: string
+  customer_id?: string | null
+  customer?: any
+  sale_id?: string | null
+  sale?: any
+  unit_id?: string | null
+  unit?: any
+  product_id?: string | null
+  product?: any
   duration: number
+  duration_months?: number
+  duration_days?: number
   start_date: string
   end_date: string
+  terms_conditions?: string
   status: string
   created_at: string
   updated_at: string
@@ -323,6 +335,7 @@ export interface RentalInvoice {
   tax: number
   total_pay: number
   status: string
+  payment_status: string
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -350,6 +363,7 @@ export interface SalesInvoice {
   tax: number
   total: number
   status: string
+  payment_status: string
   created_at: string
   updated_at: string
   deleted_at: string | null

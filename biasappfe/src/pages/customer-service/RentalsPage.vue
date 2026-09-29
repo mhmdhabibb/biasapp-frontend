@@ -345,48 +345,7 @@ onMounted(async () => {
           </div>
         </div>
         
-        <div v-if="item.is_computer" style="margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
-          <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Spesifikasi Komputer / PC</h4>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Processor (CPU)</label>
-              <input v-model="item.specs.cpu" type="text" class="form-input" placeholder="Misal: Intel Core i5">
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">RAM</label>
-              <input v-model="item.specs.ram" type="text" class="form-input" placeholder="Misal: 16GB DDR4">
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">VGA / GPU</label>
-              <input v-model="item.specs.vga" type="text" class="form-input" placeholder="Misal: Intel UHD Graphics">
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
-              <select v-model="item.specs.storage_type" class="form-select">
-                <option value="">Pilih</option>
-                <option value="SSD">SSD</option>
-                <option value="HDD">HDD</option>
-                <option value="NVMe">NVMe</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>
-              <input v-model="item.specs.storage" type="text" class="form-input" placeholder="Misal: 512GB">
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Operating System (OS)</label>
-              <input v-model="item.specs.os" type="text" class="form-input" placeholder="Misal: Windows 11 Pro">
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.75rem;">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Office Package</label>
-              <input v-model="item.specs.office" type="text" class="form-input" placeholder="Misal: Microsoft Office 2021">
-            </div>
-          </div>
-        </div>
+        
 
         <div style="margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
           <div class="form-group">

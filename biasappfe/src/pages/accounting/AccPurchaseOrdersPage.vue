@@ -370,50 +370,76 @@ function printInvoice(po: any) {
         </span>
       </template>
       <template #actions="{ row }">
-        <div class="action-group">
+        <div style="display: flex; align-items: center; gap: 6px;">
           <button
             v-if="can('purchase_order:read')"
-            class="btn btn-sm btn-outline"
-            title="Lihat detail purchase order"
+            class="action-btn action-btn--edit"
+            title="Detail"
             @click="openDetail(row)"
+            style="color: var(--color-text-muted); width: 36px; height: 36px;"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
-            Detail
           </button>
           <button
             v-if="row.status === 'draft' && can('purchase_order:submit')"
-            class="btn btn-sm btn-outline"
+            class="action-btn action-btn--edit"
             :disabled="busyId === row.id"
+            title="Submit"
             @click="updateStatus(row, 'submitted')"
+            style="color: var(--color-primary); width: 36px; height: 36px;"
           >
-            Submit
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13" />
+              <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+            </svg>
           </button>
           <button
             v-if="row.status === 'submitted' && can('purchase_order:approve')"
-            class="btn btn-sm btn-primary"
+            class="action-btn action-btn--edit"
             :disabled="busyId === row.id"
+            title="Approve"
             @click="updateStatus(row, 'approved')"
+            style="color: var(--color-success); width: 36px; height: 36px;"
           >
-            Approve
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </button>
+          <button
+            v-if="row.status === 'submitted' && can('purchase_order:approve')"
+            class="action-btn action-btn--delete"
+            :disabled="busyId === row.id"
+            title="Reject"
+            @click="updateStatus(row, 'rejected')"
+            style="width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
           <button
             v-if="(row.status === 'approved' || row.status === 'do_created' || row.status === 'completed') && can('purchase_order:read')"
-            class="btn btn-sm btn-outline"
-            style="color: var(--color-primary); border-color: var(--color-primary);"
+            class="action-btn action-btn--edit"
+            title="Print Invoice"
             @click="printInvoice(row)"
+            style="color: var(--color-primary); width: 36px; height: 36px;"
           >
-            Print Invoice
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
           </button>
           <button
             v-if="row.status === 'approved' && can('delivery_order:create')"
-            class="btn btn-sm btn-accent"
+            class="action-btn action-btn--edit"
             :disabled="busyId === row.id"
+            title="Generate DO"
             @click="handleGenerateDO(row)"
+            style="color: var(--color-success); width: 36px; height: 36px;"
           >
-            Generate DO
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
           </button>
           <span v-if="['do_created', 'completed'].includes(row.status)" class="text-muted text-sm">
             DO Generated

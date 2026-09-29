@@ -33,8 +33,8 @@ onMounted(async () => {
       remarks: job.value.remarks || '',
       notes: job.value.notes || '',
       is_tested: job.value.is_tested || false,
-      customer_signature: (job.value as any).customer_signature || '',
-      technician_signature: (job.value as any).technician_signature || '',
+      customer_signature: job.value.customer_signature || '',
+      technician_signature: job.value.technician_signature || '',
     }
   } catch (err: any) {
     toast.error(err.message || 'Gagal memuat service report')

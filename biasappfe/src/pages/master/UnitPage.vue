@@ -18,8 +18,9 @@ const columns: TableColumn[] = [
   { key: 'name', label: 'Unit Name' },
   { key: 'brand_id', label: 'Brand' },
   { key: 'model', label: 'Model' },
-  { key: 'serial_no', label: 'Serial Number' },
   { key: 'uom.name', label: 'UOM' },
+  { key: 'serial_no', label: 'Serial Number' },
+  { key: 'status', label: 'Status' },
   { key: 'is_computer', label: 'Computer' },
   { key: 'is_copier', label: 'Copier' },
 ]
@@ -32,6 +33,7 @@ const uoms = ref<UOM[]>([])
 const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label: b.name })))
 const typeOptions = computed(() => unitTypes.value.map(t => ({ value: t.id, label: t.name })))
 const paperSizeOptions = computed(() => paperSizes.value.map(p => ({ value: p.id, label: p.name })))
+const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
 const data = ref<Unit[]>([])
 
@@ -179,6 +181,28 @@ function getBrandName(id: string | null): string {
   return b ? b.name : '-'
 }
 
+const badgeTrue = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  borderRadius: '50%',
+  backgroundColor: '#dcfce7',
+  color: '#16a34a',
+}
+
+const badgeFalse = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  borderRadius: '50%',
+  backgroundColor: '#fee2e2',
+  color: '#dc2626',
+}
+
 </script>
 
 <template>
@@ -189,6 +213,18 @@ function getBrandName(id: string | null): string {
       @delete="openDelete">
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
+      </template>
+      <template #cell-is_computer="{ value }">
+        <span :style="value ? badgeTrue : badgeFalse">
+          <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </span>
+      </template>
+      <template #cell-is_copier="{ value }">
+        <span :style="value ? badgeTrue : badgeFalse">
+          <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </span>
       </template>
     </DataTable>
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'"
@@ -210,6 +246,10 @@ function getBrandName(id: string | null): string {
       <div class="form-group" style="position: relative;">
         <label for="unit-type" class="form-label">Unit Type</label>
         <CustomSelect id="unit-type" v-model="form.type_id" :options="typeOptions" placeholder="Select unit type" />
+      </div>
+          <div class="form-group" style="position: relative;">
+        <label for="uom" class="form-label">Unit Of Measure</label>
+        <CustomSelect id="uom" v-model="form.uom_id" :options="uomOptions" placeholder="Select UOM type" />
       </div>
       <div class="form-group">
         <label for="unit-model" class="form-label">Model</label>

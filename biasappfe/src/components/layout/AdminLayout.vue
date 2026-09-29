@@ -67,7 +67,7 @@ const pageTitle = computed(() => {
     '/accounting/dashboard': 'Accounting Dashboard',
     '/accounting/sparepart-requests': 'Sparepart Requests (Procurement)',
     '/accounting/purchase-orders': 'Purchase Orders',
-    '/accounting/delivery-orders': 'Delivery Orders (Inbound)',
+    '/accounting/delivery-orders': 'Delivery Orders',
     '/technician/dashboard': 'BIAS Technician',
     '/technician/call-services': 'My Jobs',
     '/technician/maintenance': 'Maintenance',

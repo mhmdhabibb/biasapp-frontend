@@ -29,8 +29,8 @@ onMounted(async () => {
     await refresh(true)
     if (!job.value) throw new Error('Service report tidak ditemukan')
     form.value.reading_counter = job.value.reading_counter || 0
-    form.value.customer_signature = (job.value as any).customer_signature || ''
-    form.value.technician_signature = (job.value as any).technician_signature || ''
+    form.value.customer_signature = job.value.customer_signature || ''
+    form.value.technician_signature = job.value.technician_signature || ''
   } catch (err: any) {
     toast.error(err.message || 'Gagal memuat service report')
   } finally {

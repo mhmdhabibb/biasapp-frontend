@@ -18,10 +18,10 @@ const busyId = ref<string | number | null>(null)
 
 const columns: TableColumn[] = [
   { key: 'do_number', label: 'DO Number' },
+  { key: 'do_type', label: 'Type' },
   { key: 'delivery_date', label: 'Date' },
   { key: 'purchase_order_id', label: 'PO Ref' },
-  { key: 'status', label: 'Status' },
-  { key: 'actions', label: 'Action' }
+  { key: 'status', label: 'Status' }
 ]
 
 function getPONo(id: number | null) {
@@ -37,6 +37,8 @@ async function updateStatus(doItem: ProcurementDeliveryOrder, newStatus: string)
     await store.refresh(true)
     if (newStatus === 'received') {
       toast.success(`DO ${doItem.do_number} diterima. Stok inventori telah diperbarui.`)
+    } else if (newStatus === 'delivered' || newStatus === 'completed') {
+      toast.success(`DO ${doItem.do_number} berhasil diselesaikan.`)
     }
   } catch (err) {
     toast.error(toast.fromError(err, 'Gagal memperbarui delivery order'))
@@ -47,13 +49,14 @@ async function updateStatus(doItem: ProcurementDeliveryOrder, newStatus: string)
 
 // Receiving books the delivered quantities into inventory (server side).
 function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
-  return updateStatus(doItem, 'received')
+  const newStatus = doItem.do_type === 'inbound' ? 'received' : 'delivered'
+  return updateStatus(doItem, newStatus)
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Delivery Orders (Inbound)" />
+    <PageHeader title="Delivery Orders" />
 
     <div class="info-alert mb-4">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -61,12 +64,15 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
         <line x1="12" y1="16" x2="12" y2="12" />
         <line x1="12" y1="8" x2="12.01" y2="8" />
       </svg>
-      <span>Track inbound shipments for sparepart procurement. Marking a DO as "Received" will automatically update inventory stock.</span>
+      <span>Manage all Delivery Orders (Inbound and Outbound).</span>
     </div>
 
-    <DataTable :columns="columns" :data="store.procurementDeliveryOrders.value" permission="delivery_order" search-placeholder="Search delivery orders...">
+    <DataTable :columns="columns" :data="store.deliveryOrders.value" permission="delivery_order" search-placeholder="Search delivery orders...">
+      <template #cell-do_type="{ value }">
+        <span class="badge badge-info">{{ (value || '').toUpperCase() }}</span>
+      </template>
       <template #cell-delivery_date="{ value }">
-        {{ value ? new Date(value).toLocaleDateString() : '-' }}
+        {{ (value && new Date(value).getFullYear() > 2000) ? new Date(value).toLocaleDateString() : '-' }}
       </template>
       <template #cell-purchase_order_id="{ value }">
         <span class="font-mono text-sm">{{ getPONo(value) }}</span>
@@ -75,14 +81,14 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
         <span class="badge"
               :class="{
                 'badge-warning': value === 'draft' || value === 'pending',
-                'badge-info': value === 'issued',
-                'badge-success': value === 'received',
+                'badge-info': value === 'issued' || value === 'shipped',
+                'badge-success': value === 'received' || value === 'delivered' || value === 'completed',
                 'badge-danger': value === 'cancelled'
               }">
           {{ (value || '').toUpperCase() }}
         </span>
       </template>
-      <template #cell-actions="{ row }">
+      <template #actions="{ row }">
         <div class="action-group">
           <button
             v-if="row.status === 'draft' && can('delivery_order:update')"
@@ -93,18 +99,18 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
             Issue
           </button>
           <button
-            v-if="row.status === 'issued' && can('delivery_order:update')"
+            v-if="(row.status === 'issued' || row.status === 'shipped') && can('delivery_order:update')"
             class="btn btn-sm btn-success"
             :disabled="busyId === row.id"
             @click="handleReceiveDO(row)"
           >
-            {{ busyId === row.id ? 'Saving...' : 'Mark Received' }}
+            {{ busyId === row.id ? 'Saving...' : (row.do_type === 'inbound' ? 'Mark Received' : 'Mark Delivered') }}
           </button>
-          <span v-if="row.status === 'received'" class="text-success font-medium text-sm">
+          <span v-if="row.status === 'received' || row.status === 'delivered' || row.status === 'completed'" class="text-success font-medium text-sm">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline; margin-bottom:2px;">
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
-            Stock Updated
+            {{ row.do_type === 'inbound' ? 'Stock Updated' : 'Completed' }}
           </span>
         </div>
       </template>

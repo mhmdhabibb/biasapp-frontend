@@ -98,7 +98,7 @@ async function acceptJob() {
         unit_id: unit.value?.id,
         customer_id: customer.value?.id,
         technician_id: job.value.technician_id,
-        service_type: job.value.job_type || 'repair',
+        service_type: 'repair',
         status: 'in_progress',
         time_in: now,
         machine_problem: job.value.instructions || job.value.service_request?.problem_description || '-',
