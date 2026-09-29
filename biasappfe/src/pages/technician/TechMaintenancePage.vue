@@ -189,12 +189,12 @@ function completeMaintenance() {
           </div>
 
           <h3 class="text-sm font-bold mb-sm mt-md border-b pb-xs">Meter Reading</h3>
-          <div class="flex gap-md mb-md">
-            <div class="form-group flex-1 mb-0">
+          <div class="meter-grid mb-md">
+            <div class="form-group mb-0">
               <label class="form-label">Previous Meter</label>
               <input type="number" v-model.number="meterReadingForm.previous_meter" class="form-input" disabled>
             </div>
-            <div class="form-group flex-1 mb-0">
+            <div class="form-group mb-0">
               <label class="form-label">Current Meter</label>
               <input type="number" v-model.number="meterReadingForm.current_meter" class="form-input">
             </div>
@@ -266,7 +266,7 @@ function completeMaintenance() {
 
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: var(--space-md);
   background: var(--color-surface-sunken);
   padding: var(--space-md);
@@ -275,8 +275,32 @@ function completeMaintenance() {
 
 .checklist-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--space-sm);
+}
+
+.meter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+@media (max-width: 600px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+  .checklist-grid {
+    grid-template-columns: 1fr;
+  }
+  .meter-grid {
+    grid-template-columns: 1fr;
+  }
+  .modal-footer {
+    flex-direction: column;
+  }
+  .modal-footer .btn {
+    width: 100%;
+  }
 }
 
 .border-b { border-bottom: 1px solid var(--color-border-light); }

@@ -19,6 +19,9 @@ function readUser(): AuthUser | null {
   const value = sessionStorage.getItem("bias_user");
   if (!value) return null;
   const user = JSON.parse(value) as AuthUser;
+  // Normalize legacy role values
+  if (user.role === "cs") user.role = "customer_service";
+  if (user.role === "superadmin") user.role = "admin";
   // Fallback if permissions isn't in session storage yet
   if (!user.permissions) {
     const perms = sessionStorage.getItem("bias_permissions");
@@ -33,7 +36,8 @@ function decodeUser(jwt: string): AuthUser {
     username?: string;
     role?: string;
   };
-  const role = payload.role === "superadmin" ? "admin" : payload.role || "";
+  const rawRole = payload.role || "";
+  const role = rawRole === "superadmin" ? "admin" : rawRole === "cs" ? "customer_service" : rawRole;
   return {
     id: payload.user_id,
     name: payload.username || "User",

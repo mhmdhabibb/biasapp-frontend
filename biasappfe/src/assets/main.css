@@ -179,4 +179,29 @@
   .hide-mobile {
     display: none;
   }
+  
+  /* Force all standard grids to 1 column on mobile */
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns: 2fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr 1fr"],
+  [style*="grid-template-columns: 2fr 1fr 1fr auto"],
+  .form-row,
+  .sale-item-row,
+  .info-grid,
+  .checklist-grid,
+  .meter-grid {
+    grid-template-columns: 1fr !important;
+  }
+  
+  /* Adjust modal sizes on mobile */
+  .modal-content, .modal {
+    width: 95% !important;
+    max-height: 95vh !important;
+  }
+  
+  /* Ensure data table scrolls easily */
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
