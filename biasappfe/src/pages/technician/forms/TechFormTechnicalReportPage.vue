@@ -13,7 +13,8 @@ const toast = useToast()
 const { serviceReports, refresh } = useMasterStore()
 
 const serviceId = String(route.params.id)
-const job = computed(() => serviceReports.value.find(sr => String(sr.id) === serviceId))
+const reportRecord = ref<any>(null)
+const job = computed(() => reportRecord.value || serviceReports.value.find(sr => String(sr.id) === serviceId))
 
 const form = ref({
   remarks: '',
@@ -27,7 +28,8 @@ const isSaving = ref(false)
 
 onMounted(async () => {
   try {
-    await refresh(true)
+    const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
+    reportRecord.value = response.data
     if (!job.value) throw new Error('Service report tidak ditemukan')
     form.value = {
       remarks: job.value.remarks || '',

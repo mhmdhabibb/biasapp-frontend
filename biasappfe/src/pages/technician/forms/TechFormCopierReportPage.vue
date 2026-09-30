@@ -10,13 +10,29 @@ import { useRoute, useRouter } from 'vue-router'
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { serviceReports, refresh } = useMasterStore()
+const { serviceReports, findUnit, refresh } = useMasterStore()
 
 const serviceId = String(route.params.id)
-const job = computed(() => serviceReports.value.find(sr => String(sr.id) === serviceId))
+const reportRecord = ref<any>(null)
+const job = computed(() => reportRecord.value || serviceReports.value.find((sr: any) => String(sr.id) === serviceId))
+
+const unit = computed(() => {
+  const unitId = job.value?.unit_id || job.value?.unit?.id
+  if (!unitId) return job.value?.unit || null
+  return findUnit(unitId) || job.value?.unit || null
+})
+
+// Before meter: prioritas dari data tersimpan, fallback ke meter unit saat ini.
+// Read-only di form — dikunci saat pertama kali disimpan.
+const beforeMeter = computed(() => {
+  const saved = Number(job.value?.meter_reading_before ?? job.value?.reading_counter ?? 0)
+  if (saved > 0) return saved
+  const fromUnit = Number(unit.value?.current_meter_bw ?? unit.value?.current_meter_color ?? 0)
+  return fromUnit > 0 ? fromUnit : 0
+})
 
 const form = ref({
-  reading_counter: 0,
+  meter_after: 0,
   copy_quality: 'Good',
   customer_signature: '',
   technician_signature: '',
@@ -24,11 +40,16 @@ const form = ref({
 const isLoading = ref(true)
 const isSaving = ref(false)
 
+const usage = computed(() => Math.max(0, Number(form.value.meter_after || 0) - beforeMeter.value))
+
 onMounted(async () => {
   try {
     await refresh(true)
+    const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
+    reportRecord.value = response.data
     if (!job.value) throw new Error('Service report tidak ditemukan')
-    form.value.reading_counter = job.value.reading_counter || 0
+    const after = Number(job.value.meter_reading_after ?? job.value.reading_counter ?? 0)
+    form.value.meter_after = after > 0 ? after : beforeMeter.value
     form.value.customer_signature = job.value.customer_signature || ''
     form.value.technician_signature = job.value.technician_signature || ''
   } catch (err: any) {
@@ -40,6 +61,10 @@ onMounted(async () => {
 
 async function saveForm() {
   if (isLoading.value || !job.value || isSaving.value) return
+  if (Number(form.value.meter_after) < beforeMeter.value) {
+    toast.warning(`Meter After (${form.value.meter_after}) tidak boleh lebih kecil dari Before (${beforeMeter.value}).`)
+    return
+  }
   if (!form.value.customer_signature || !form.value.technician_signature) {
     toast.warning('Tanda tangan customer dan teknisi wajib dilengkapi.')
     return
@@ -47,7 +72,9 @@ async function saveForm() {
   isSaving.value = true
   try {
     await api.patch(`/service-reports/${serviceId}`, {
-      reading_counter: form.value.reading_counter,
+      meter_reading_before: beforeMeter.value,
+      meter_reading_after: Number(form.value.meter_after),
+      reading_counter: Number(form.value.meter_after),
       customer_signature: form.value.customer_signature,
       technician_signature: form.value.technician_signature,
     })
@@ -68,11 +95,19 @@ async function saveForm() {
       <div v-if="isLoading" class="form-loading" role="status">Memuat laporan servis...</div>
       <div v-else-if="!job" class="form-loading" role="alert">Laporan servis tidak ditemukan. Data baru tidak dibuat.</div>
       <template v-else>
-      <div class="form-group">
-        <label class="form-label">Meter Reading (Counter) <span class="text-danger">*</span></label>
-        <input type="number" v-model="form.reading_counter" class="form-input" min="0">
+      <div class="meter-grid">
+        <div class="form-group">
+          <label class="form-label">Before Meter (Read Only)</label>
+          <input type="number" :value="beforeMeter" class="form-input" readonly disabled>
+          <p class="form-hint">Meter awal otomatis dari data terakhir.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">After Meter <span class="text-danger">*</span></label>
+          <input type="number" v-model.number="form.meter_after" class="form-input" :min="beforeMeter" placeholder="Isi meter setelah servis">
+          <p class="form-hint">Pemakaian: <b>{{ usage }}</b> lembar.</p>
+        </div>
       </div>
-      
+
       <div class="form-group">
         <label class="form-label">Copy Quality Check</label>
         <select v-model="form.copy_quality" class="form-select">
@@ -104,10 +139,22 @@ async function saveForm() {
 </template>
 
 <style scoped>
+.meter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-base);
+}
+
 .signature-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-base);
+}
+
+.form-hint {
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
 }
 
 .form-loading {
@@ -119,6 +166,7 @@ async function saveForm() {
 }
 
 @media (max-width: 640px) {
+  .meter-grid { grid-template-columns: 1fr; }
   .signature-grid { grid-template-columns: 1fr; }
 }
 </style>

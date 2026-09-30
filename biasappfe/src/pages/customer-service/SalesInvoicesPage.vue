@@ -11,6 +11,8 @@ import { useResourcesStore } from '@/stores/resources.store'
 import { api } from '@/services/api'
 import type { SalesInvoice, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
+import { downloadStyledExcel, filterByYear, type StyledCell } from '@/utils/exportHelpers'
+import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -85,6 +87,7 @@ const defaultForm = { ...form }
 const startDateFilter = ref('')
 const endDateFilter = ref('')
 const monthFilter = ref('')
+const yearFilter = ref(new Date().getFullYear())
 
 function onMonthFilterChange() {
   if (!monthFilter.value) return
@@ -131,6 +134,175 @@ function exportMonthToPdf() {
 
 function exportMonthToExcel() {
   toast.info('Export Excel akan segera tersedia (contoh fungsi)')
+}
+
+async function exportAnnualExcel() {
+  const year = yearFilter.value
+  const items = filterByYear(data.value, year, ['invoice_date', 'due_date', 'created_at'])
+  if (items.length === 0) {
+    toast.warning(`Tidak ada data sales invoice untuk tahun ${year}!`)
+    return
+  }
+  await exportInvoicesToExcel(items, `SalesInvoice_Tahunan_${year}`)
+}
+
+async function exportInvoicesToExcel(items: any[], filename: string) {
+  const groups = new Map<string, any[]>()
+  for (const item of items) {
+    const key = String(item.customer_id ?? 'unknown')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  }
+
+  const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
+  // Lebar kolom dalam satuan karakter Excel (bukan pixel) agar tidak melebar
+  const columnWidths = [6, 40, 8, 10, 7, 16]
+
+  for (const [customerId, groupItems] of groups) {
+    const sortedItems = [...groupItems].sort((a, b) => {
+      const da = a.invoice_date || a.created_at || a.due_date || ''
+      const db = b.invoice_date || b.created_at || b.due_date || ''
+      return String(da).localeCompare(String(db))
+    })
+
+    const firstCustomer = findCustomer(sortedItems[0].customer_id)
+    const sheetName = firstCustomer?.company_name || firstCustomer?.name || 'Customer_' + customerId
+
+    const rows: StyledCell[][] = []
+    const addRow = (cells: StyledCell[]) => rows.push(cells)
+
+    const addInvoice = (item: any) => {
+      const customer = findCustomer(item.customer_id)
+      const custName = customer?.company_name || customer?.name || '-'
+      const dateLabel = item.invoice_date || item.created_at
+        ? new Date(item.invoice_date || item.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+        : '-'
+      const poNo = item.sale?.po_no || item.po_no || '-'
+
+      // Header blok
+      addRow([{ v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 2, style: 'plainBold' }, {}, {}, { v: 'Inv No. :', style: 'border' }, { v: item.invoice_no || '-', mergeAcross: 1, style: 'border' }])
+      addRow([{ v: 'Ruko Purimas Blok A No.47 Kota Batam', mergeAcross: 2 }, {}, {}, { v: 'Date :', style: 'border' }, { v: dateLabel, mergeAcross: 1, style: 'border' }])
+      addRow([{ v: 'Kepulauan Riau - Indonesia', mergeAcross: 2 }, {}, {}, { v: 'PO No. :', style: 'border' }, { v: poNo, mergeAcross: 1, style: 'border' }])
+      addRow([{ v: 'Phone : +62811 704 5657', mergeAcross: 2 }, {}, {}, { v: 'Kepada Yth.', style: 'headerCell', mergeAcross: 2 }])
+      addRow([{ v: 'Email : admin@biasbst.com', mergeAcross: 2 }, {}, {}, { v: custName, style: 'borderBold', mergeAcross: 2 }])
+      addRow([{}, {}, {}, { v: customer?.address || '-', mergeAcross: 2, style: 'border' }])
+      addRow([{}, {}, {}, { v: 'Up : ' + (customer?.pic_name || '-'), mergeAcross: 2, style: 'border' }])
+
+      addRow([{ v: 'INVOICE', mergeAcross: 5, style: 'titleCell' }])
+      addRow([])
+
+      // Header tabel items
+      addRow([
+        { v: 'No', style: 'headerCell' },
+        { v: 'Description', style: 'headerCell' },
+        { v: 'Qty', style: 'headerCell' },
+        { v: 'UOM', style: 'headerCell' },
+        { v: 'Rp', style: 'headerCell' },
+        { v: 'Amount', style: 'headerCell' },
+      ])
+
+      const sale = findSale(item.sale_id)
+      const saleItems: any[] = (sale && sale.sale_items) ? sale.sale_items : []
+      if (saleItems.length > 0) {
+        saleItems.forEach((si: any, idx: number) => {
+          const p: any = findProduct(si.product_id)
+          const pName = p ? p.name : 'Produk ID: ' + si.product_id
+          const qty = si.qty || 1
+          const unitPrice = si.unit_price || si.price || 0
+          const amount = unitPrice * qty
+          addRow([
+            { v: idx + 1, style: 'borderCenter' },
+            { v: pName, style: 'border' },
+            { v: qty, style: 'borderCenter' },
+            { v: 'unit', style: 'borderCenter' },
+            { v: 'Rp', style: 'border' },
+            { v: amount, style: 'borderRight' },
+          ])
+        })
+      } else {
+        addRow([
+          { v: 1, style: 'borderCenter' },
+          { v: 'Data item tidak tersedia', style: 'border' },
+          { v: '', style: 'border' },
+          { v: '', style: 'border' },
+          { v: 'Rp', style: 'border' },
+          { v: 0, style: 'borderRight' },
+        ])
+      }
+
+      const subTotal = item.subtotal || item.total_amount || item.total || 0
+      const grandTotal = item.total_amount || item.total || 0
+      addRow([{}, {}, {}, { v: 'Sub Total', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: subTotal, style: 'totalCell' }])
+      addRow([{}, {}, {}, { v: 'Discount', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: '-', style: 'totalCell' }])
+      addRow([{}, {}, {}, { v: 'Amount', style: 'grandTotalCell' }, { v: 'Rp', style: 'grandTotalCell' }, { v: grandTotal, style: 'grandTotalCell' }])
+
+      addRow([])
+      addRow([{ v: 'Pembayaran Transfer ke rekening :', mergeAcross: 2 }, {}, {}, { v: 'Received By,' }, {}, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
+      addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Rek No. 106-08-85757', mergeAcross: 2 }, {}, {}, {}, {}, {}])
+      addRow([{ v: 'A/N : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 2 }, {}, {}, {}, {}, { v: 'Grace', style: 'plainBold' }])
+      addRow([])
+    }
+
+    for (const item of sortedItems) addInvoice(item)
+    sheets.push({ name: sheetName, columnWidths, rows })
+  }
+
+  await downloadStyledExcel(sheets, filename)
+  toast.success('Report Excel berhasil diunduh')
+}
+
+async function exportAnnualPdf() {
+  const year = yearFilter.value
+  const items = filterByYear(data.value, year, ['invoice_date', 'due_date', 'created_at'])
+  if (items.length === 0) {
+    toast.warning(`Tidak ada data sales invoice untuk tahun ${year}!`)
+    return
+  }
+
+  const style = `@media print { @page { margin: 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; color: #000; font-size: 12px; margin: 0; }
+  .container { max-width: 900px; margin: 0 auto; padding: 20px; page-break-after: always; }
+  .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  .header-table td { vertical-align: top; padding: 0; }
+  .logo-col { width: 50%; padding-right: 20px; }
+  .info-col { width: 50%; }
+  .company-details h1 { margin: 0; font-size: 22px; font-weight: bold; }
+  .company-details h2 { margin: 0; font-size: 14px; font-style: italic; font-weight: normal; margin-bottom: 10px; color: #333; }
+  .company-details p { margin: 0; font-size: 11px; line-height: 1.4; }
+  .invoice-text { font-size: 28px; font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 10px; letter-spacing: 1px; }
+  .meta-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #7ea8ce; }
+  .meta-table td, .meta-table th { border: 1px solid #7ea8ce; padding: 4px 8px; }
+  .meta-table .bg-blue { background-color: #003366; color: white; font-weight: bold; }
+  .meta-table .label { width: 90px; font-weight: bold; }
+  .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .items-table th { background-color: #003366; color: white; border: 1px solid #7ea8ce; padding: 8px; text-align: center; font-size: 12px; }
+  .items-table td { border: 1px solid #7ea8ce; padding: 8px; vertical-align: top; }
+  .items-table .rp-col { border-right: none; width: 20px; padding-right: 2px; }
+  .items-table .val-col { border-left: none; text-align: right; }
+  .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 0; margin-bottom: 20px; }
+  .summary-table td { border: 1px solid #7ea8ce; padding: 6px; background-color: #dbeaf4; font-weight: bold; }
+  .summary-table .label { text-align: right; padding-right: 10px; }
+  .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
+  .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
+  .sig-box { width: 250px; }
+  .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }`
+
+  const body = items.map((inv: any) => {
+    const html = invoiceHtml(inv)
+    const bodyMatch = html.match(/<body>([\s\S]*?)<\/body>/)
+    if (!bodyMatch) return ''
+    return `<div style="page-break-after: always;">${bodyMatch[1]}</div>`
+  }).join('')
+
+  const fullHtml = `<!DOCTYPE html>
+<html>
+<head><title>Laporan Tahunan Sales Invoice ${year}</title><style>${style}</style></head>
+<body>${body}
+<script>window.onload=function(){setTimeout(()=>{window.print()},500)}<\/script>
+</body></html>`
+
+  const w = window.open('', '_blank')
+  if (w) { w.document.write(fullHtml); w.document.close() }
 }
 
 const calcTotal = computed(() => form.subtotal + form.service_charge + form.tax)
@@ -225,11 +397,7 @@ function formatRupiah(val: number): string {
   return 'Rp ' + val.toLocaleString('id-ID')
 }
 
-function printInvoice(item: any) {
-  if (item.status !== 'approved') {
-    toast.warning('Invoice belum disetujui, tidak dapat print receipt')
-    return
-  }
+function invoiceHtml(item: any): string {
   const customer = findCustomer(item.customer_id)
   const custName = customer?.company_name || customer?.name || '-'
   const custAddress = customer?.address || '-'
@@ -328,11 +496,7 @@ function printInvoice(item: any) {
             <tr>
               <td class="logo-col">
                 <div class="logo-container">
-                  <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-                    <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-                    <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-                  </svg>
+                  <img src="${BIAS_LOGO_DATA_URL}" class="logo"  alt="BiAS Logo" />
                   <div class="company-details">
                     <h1>PT. BIAS SURYA</h1>
                     <h1>TEKNOLOGI</h1>
@@ -447,14 +611,18 @@ function printInvoice(item: any) {
             </div>
           </div>
         </div>
-        <script>
-          window.onload = function() {
-            setTimeout(() => { window.print(); }, 500);
-          }
-        <\/script>
       </body>
     </html>
   `
+  return html
+}
+
+function printInvoice(item: any) {
+  if (item.status !== 'approved') {
+    toast.warning('Invoice belum disetujui, tidak dapat print receipt')
+    return
+  }
+  const html = invoiceHtml(item).replace('</body>', '<script>window.onload=function(){setTimeout(()=>{window.print()},500)}<\/script></body>')
   const printWindow = window.open('', '_blank')
   if (printWindow) {
     printWindow.document.write(html)
@@ -482,6 +650,10 @@ function printInvoice(item: any) {
           <label class="filter-label">Filter Bulan</label>
           <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
         </div>
+        <div class="filter-item">
+          <label class="filter-label">Tahun</label>
+          <input v-model.number="yearFilter" type="number" min="1900" max="9999" class="form-input filter-input">
+        </div>
         <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
           Reset Filter
         </button>
@@ -495,6 +667,14 @@ function printInvoice(item: any) {
         <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel" title="Export Invoices (Excel)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
           Export Excel
+        </button>
+        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf" title="Export Tahunan (PDF)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Tahunan PDF
+        </button>
+        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportAnnualExcel" title="Export Tahunan (Excel)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
+          Tahunan Excel
         </button>
       </div>
     </div>

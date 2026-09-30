@@ -86,11 +86,7 @@ function printServiceHistory(item: any) {
           <table class="header-table">
             <tr>
               <td class="logo-col">
-                <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-                  <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-                  <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-                </svg>
+                <img src="${BIAS_LOGO_DATA_URL}" class="logo"  alt="BiAS Logo" />
               </td>
               <td class="info-col">
                 <div class="company-name">PT. BIAS SURYA TEKNOLOGI</div>
@@ -194,6 +190,7 @@ import { ref, reactive } from 'vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useResourcesStore } from '@/stores/resources.store'
+import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 
 const showModal = ref(false)
 const editingItem = ref<any>(null)

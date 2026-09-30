@@ -6,7 +6,7 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
-import { computed, onMounted, watchEffect } from 'vue'
+import { computed, onMounted, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const toast = useToast()
@@ -31,6 +31,7 @@ const serviceReport = computed(() => serviceReports.value.find(sr => String(sr.j
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
+const isPreparingForm = ref(false)
 
 watchEffect(() => {
   if (job.value && myTechId.value && String(job.value.technician_id) !== String(myTechId.value)) {
@@ -68,51 +69,74 @@ const isAllFormsCompleted = computed(() => {
 
 onMounted(() => refresh(true))
 
+async function ensureServiceReport(now: string) {
+  await refresh(true)
+  if (serviceReport.value) return serviceReport.value
+
+  const unitId = job.value?.unit_id || job.value?.service_request?.unit_id || unit.value?.id
+  const customerId = job.value?.customer_id || job.value?.service_request?.customer_id || customer.value?.id
+  if (!unitId || !customerId) {
+    throw new Error('Unit atau customer pada pekerjaan belum lengkap. Hubungi admin untuk melengkapi data.')
+  }
+
+  await api.post('/service-reports', {
+    report_no: `SR-${Date.now().toString().slice(-6)}`,
+    job_order_id: job.value.id,
+    unit_id: String(unitId),
+    customer_id: String(customerId),
+    technician_id: job.value.technician_id,
+    service_type: 'repair',
+    status: 'in_progress',
+    time_in: now,
+    machine_problem: job.value.instructions || job.value.service_request?.problem_description || '-',
+    project_name: '-',
+    repair_action: '-',
+    service_date: now,
+    time_out: '-',
+  })
+
+  await refresh(true)
+  if (!serviceReport.value) {
+    throw new Error('Laporan berhasil dibuat, tetapi belum dapat dimuat. Tekan coba lagi.')
+  }
+  return serviceReport.value
+}
+
 async function acceptJob() {
   if (!job.value) return
+  if (isPreparingForm.value) return
+  isPreparingForm.value = true
+
   if (job.value.status === 'in_progress') {
-    await refresh(true)
-    if (!serviceReport.value) {
-      toast.error('Laporan servis belum ditemukan. Tidak ada laporan baru yang dibuat.')
+    try {
+      await ensureServiceReport(new Date().toISOString())
+      toast.success('Form pemeriksaan siap digunakan.')
+    } catch (err: any) {
+      toast.error(err.message || 'Gagal menyiapkan form pemeriksaan')
+    } finally {
+      isPreparingForm.value = false
     }
     return
   }
   if (!confirm('Yakin ingin menerima pekerjaan ini sekarang? Waktu mulai (time_in) akan dicatat.')) {
+    isPreparingForm.value = false
     return
   }
   try {
-    await refresh(true)
-    const existingReport = serviceReport.value
     const now = new Date().toISOString()
+    const report = await ensureServiceReport(now)
+    await api.patch(`/service-reports/${report.id}`, {
+      status: 'in_progress',
+      time_in: report.time_in || now,
+    })
     await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
-
-    if (existingReport) {
-      await api.patch(`/service-reports/${existingReport.id}`, {
-        status: 'in_progress',
-        time_in: existingReport.time_in || now,
-      })
-    } else {
-      await api.post('/service-reports', {
-        report_no: `SR-${Date.now().toString().slice(-6)}`,
-        job_order_id: job.value.id,
-        unit_id: unit.value?.id,
-        customer_id: customer.value?.id,
-        technician_id: job.value.technician_id,
-        service_type: 'repair',
-        status: 'in_progress',
-        time_in: now,
-        machine_problem: job.value.instructions || job.value.service_request?.problem_description || '-',
-        project_name: '-',
-        repair_action: '-',
-        service_date: now,
-        time_out: '-'
-      })
-    }
 
     toast.success('Pekerjaan diterima. Waktu mulai tercatat.')
     await refresh(true)
   } catch (err: any) {
     toast.error(err.message || 'Gagal menerima pekerjaan')
+  } finally {
+    isPreparingForm.value = false
   }
 }
 
@@ -216,13 +240,16 @@ async function completeJob() {
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
           <p class="mb-lg text-muted">Anda belum menerima pekerjaan ini.</p>
           <button v-if="can('service_report:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptJob">
-            Terima Pekerjaan
+            {{ isPreparingForm ? 'Menyiapkan form...' : 'Terima Pekerjaan' }}
           </button>
         </div>
 
         <div v-else-if="job.status === 'in_progress'">
           <div v-if="!serviceReport" class="mb-lg p-md text-center text-muted" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
-            <p class="text-sm">🔄 Sedang menyiapkan data form...</p>
+            <p class="text-sm mb-sm">Form pemeriksaan belum tersedia.</p>
+            <button v-if="can('service_report:update')" class="btn btn-outline" :disabled="isPreparingForm" @click="acceptJob">
+              {{ isPreparingForm ? 'Menyiapkan form...' : 'Coba Siapkan Form' }}
+            </button>
           </div>
           <div v-else>
             <div class="mb-lg p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
@@ -246,12 +273,7 @@ async function completeJob() {
             </button>
           </div>
 
-          <div class="mt-lg">
-            <button v-if="can('service_sparepart:create')" class="btn btn-outline text-sm" @click="requestSparepart">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-sm"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
-              Request Sparepart ke Gudang
-            </button>
-          </div>
+       
 
           <div class="mt-xl pt-md" style="border-top: 1px solid var(--color-border-light)">
             <button v-if="can('service_report:update')" class="btn btn-primary w-full" :disabled="!isAllFormsCompleted" style="padding: var(--space-md); font-size: 16px;" @click="completeJob">

@@ -6,12 +6,13 @@ import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
+import { resources } from "@/services/resource.service";
 import type { TableColumn } from "@/types";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 const toast = useToast();
-const { canApprove } = usePermission();
+const { can } = usePermission();
 const { customers, units, products, refresh } = useMasterStore();
 const { t } = useI18n();
 
@@ -22,6 +23,7 @@ const columns = computed<TableColumn[]>(() => [
   { key: "start_date", label: t("rentals.start") },
   { key: "end_date", label: t("rentals.end") },
   { key: "total", label: t("rentals.total") },
+  { key: "invoice_actions", label: "Invoices" },
   { key: "status", label: t("rentals.status") },
 ]);
 
@@ -29,6 +31,31 @@ const rentals = ref<any[]>([]);
 
 const showModal = ref(false);
 const isLoading = ref(false);
+const showInvoiceModal = ref(false);
+const isLoadingRentalInvoices = ref(false);
+const selectedRental = ref<any>(null);
+const selectedInvoice = ref<any>(null);
+const isSavingPayment = ref(false);
+const paymentForm = reactive({
+  amount: 0,
+  payment_date: new Date().toISOString().slice(0, 10),
+  payment_method: "transfer",
+  bank_name: "",
+  account_number: "",
+  sender_name: "",
+  reference_no: "",
+});
+
+const visibleRentalInvoices = computed(() => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const hasCopier = selectedRental.value?.rental_items?.some((item: any) => item.unit?.is_copier);
+  return (selectedRental.value?.rental_invoices || []).filter((invoice: any) => {
+    const periodStart = new Date(invoice.period_start);
+    if (Number.isNaN(periodStart.getTime()) || periodStart > today) return false;
+    return !hasCopier || (invoice.meter_details?.length || 0) > 0;
+  });
+});
 
 const paperSizes = ref<{ id: string; name: string }[]>([]);
 
@@ -284,7 +311,66 @@ function formatRupiah(val: number): string {
   return "Rp " + (val || 0).toLocaleString("id-ID");
 }
 
-import { resources } from "@/services/resource.service";
+async function openRentalInvoices(rental: any) {
+  selectedRental.value = rental;
+  showInvoiceModal.value = true;
+  isLoadingRentalInvoices.value = true;
+  try {
+    const response = await api.get<{ data: any }>(`/rents/${rental.id}`);
+    selectedRental.value = response.data;
+  } catch (error: any) {
+    toast.error(toast.fromError(error, "Gagal memuat invoice rental"));
+  } finally {
+    isLoadingRentalInvoices.value = false;
+  }
+}
+
+function openInvoicePayment(invoice: any) {
+  selectedInvoice.value = invoice;
+  paymentForm.amount = Number(invoice.total_pay || invoice.subtotal || 0);
+  paymentForm.payment_date = new Date().toISOString().slice(0, 10);
+  paymentForm.payment_method = "transfer";
+  paymentForm.bank_name = "";
+  paymentForm.account_number = "";
+  paymentForm.sender_name = "";
+  paymentForm.reference_no = "";
+}
+
+async function submitInvoicePayment() {
+  if (!selectedInvoice.value || paymentForm.amount <= 0) {
+    toast.warning("Jumlah pembayaran harus lebih dari 0.");
+    return;
+  }
+  if (paymentForm.payment_method === "transfer" && (!paymentForm.bank_name.trim() || !paymentForm.account_number.trim() || !paymentForm.sender_name.trim())) {
+    toast.warning("Lengkapi bank, nomor rekening, dan nama pengirim.");
+    return;
+  }
+
+  isSavingPayment.value = true;
+  const invoiceId = String(selectedInvoice.value.id);
+  try {
+    const bankName = paymentForm.payment_method === "cash"
+      ? "CASH"
+      : `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`;
+    await api.post("/payments", {
+      payment_no: `PAY-${Date.now()}`,
+      rental_invoice_id: invoiceId,
+      payment_date: `${paymentForm.payment_date}T00:00:00Z`,
+      amount: paymentForm.amount,
+      bank_name: bankName,
+      reference_no: paymentForm.reference_no.trim() || "-",
+    });
+    toast.success("Pembayaran dicatat dan menunggu approval.");
+    selectedInvoice.value = null;
+    const rentalResponse = await api.get<{ data: any }>(`/rents/${selectedRental.value.id}`);
+    selectedRental.value = rentalResponse.data;
+    selectedInvoice.value = selectedRental.value?.rental_invoices?.find((invoice: any) => String(invoice.id) === invoiceId) || null;
+  } catch (error: any) {
+    toast.error(toast.fromError(error, "Gagal mencatat pembayaran"));
+  } finally {
+    isSavingPayment.value = false;
+  }
+}
 
 onMounted(async () => {
   await refresh(true);
@@ -344,7 +430,102 @@ onMounted(async () => {
           {{ value || "-" }}
         </span>
       </template>
+      <template #cell-invoice_actions="{ row }">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline"
+          @click="openRentalInvoices(row)"
+        >
+          Detail Invoice
+        </button>
+      </template>
     </DataTable>
+
+    <FormModal
+      :open="showInvoiceModal"
+      :title="selectedRental ? `Invoice Rental ${selectedRental.rental_no}` : 'Invoice Rental'"
+      max-width="900px"
+      @close="showInvoiceModal = false; selectedInvoice = null"
+    >
+      <div v-if="isLoadingRentalInvoices" class="text-muted text-center py-lg">Memuat invoice rental...</div>
+      <div v-else-if="selectedRental" class="rental-invoice-list">
+        <article v-for="invoice in visibleRentalInvoices" :key="invoice.id" class="rental-invoice-row">
+          <div class="rental-invoice-info">
+            <strong>{{ invoice.invoice_no }}</strong>
+            <span>{{ invoice.period_start ? new Date(invoice.period_start).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }} – {{ invoice.period_end ? new Date(invoice.period_end).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }}</span>
+          </div>
+          <div class="rental-invoice-total">
+            <strong>{{ formatRupiah(invoice.total_pay || invoice.subtotal || 0) }}</strong>
+            <span class="badge" :class="invoice.payment_status === 'paid' ? 'badge-success' : invoice.payment_status === 'partially_paid' ? 'badge-info' : 'badge-warning'">
+              {{ invoice.payment_status === 'paid' ? 'Lunas' : invoice.payment_status === 'partially_paid' ? 'Sebagian' : 'Belum Bayar' }}
+            </span>
+          </div>
+          <button
+            v-if="invoice.payment_status !== 'paid' && can('payment:create')"
+            type="button"
+            class="btn btn-sm btn-primary"
+            :disabled="isSavingPayment"
+            @click="openInvoicePayment(invoice)"
+          >
+            Payment
+          </button>
+        </article>
+        <div v-if="!visibleRentalInvoices.length" class="rental-invoice-empty">
+          <strong>{{ selectedRental.rental_items?.some((item: any) => item.unit?.is_copier) ? 'Belum ada invoice untuk periode ini.' : 'Belum ada invoice yang periodenya dimulai.' }}</strong>
+          <span v-if="selectedRental.rental_items?.some((item: any) => item.unit?.is_copier)">Masukkan meter reading copier terlebih dahulu untuk membuat invoice.</span>
+        </div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showInvoiceModal = false; selectedInvoice = null">Tutup</button>
+      </template>
+    </FormModal>
+
+    <FormModal
+      :open="!!selectedInvoice"
+      :title="selectedInvoice ? `Payment ${selectedInvoice.invoice_no}` : 'Payment'"
+      @close="selectedInvoice = null"
+      @submit="submitInvoicePayment"
+    >
+      <div class="form-group">
+        <label class="form-label">Tanggal Pembayaran</label>
+        <input v-model="paymentForm.payment_date" type="date" class="form-input" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Metode Pembayaran</label>
+        <select v-model="paymentForm.payment_method" class="form-select">
+          <option value="transfer">Transfer Bank</option>
+          <option value="cash">Tunai</option>
+        </select>
+      </div>
+      <template v-if="paymentForm.payment_method === 'transfer'">
+        <div class="form-group">
+          <label class="form-label">Nama Bank</label>
+          <input v-model="paymentForm.bank_name" type="text" class="form-input" placeholder="BCA, Mandiri, BRI" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nomor Rekening</label>
+          <input v-model="paymentForm.account_number" type="text" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nama Pengirim</label>
+          <input v-model="paymentForm.sender_name" type="text" class="form-input" required>
+        </div>
+      </template>
+      <div class="form-group">
+        <label class="form-label">Jumlah Pembayaran</label>
+        <input v-model.number="paymentForm.amount" type="number" class="form-input" min="1" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">No. Referensi</label>
+        <input v-model="paymentForm.reference_no" type="text" class="form-input" placeholder="Opsional">
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" :disabled="isSavingPayment" @click="selectedInvoice = null">Batal</button>
+        <button type="button" class="btn btn-primary" :disabled="isSavingPayment" @click="submitInvoicePayment">
+          {{ isSavingPayment ? 'Menyimpan...' : 'Catat Pembayaran' }}
+        </button>
+      </template>
+    </FormModal>
 
     <FormModal
       :open="showModal"
@@ -936,6 +1117,77 @@ onMounted(async () => {
 }
 .text-gray-500 {
   color: var(--color-text-muted);
+}
+
+.rental-invoice-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rental-invoice-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.rental-invoice-info,
+.rental-invoice-total {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rental-invoice-info strong,
+.rental-invoice-total strong {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.rental-invoice-info span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.rental-invoice-total {
+  justify-items: end;
+}
+
+.rental-invoice-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 32px 16px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  text-align: center;
+  font-size: var(--font-size-sm);
+}
+
+.rental-invoice-empty strong {
+  color: var(--color-text);
+}
+
+@media (max-width: 640px) {
+  .rental-invoice-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .rental-invoice-total {
+    justify-items: start;
+  }
+
+  .rental-invoice-row > button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
 }
 
 /* Status Badges */

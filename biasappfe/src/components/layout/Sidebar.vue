@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
-import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
-import type { MenuGroup } from '@/types'
-import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
+import type AccDeliveryOrdersPage from '@/pages/accounting/AccDeliveryOrdersPage.vue'
+import type AccPurchaseOrdersPage from '@/pages/accounting/AccPurchaseOrdersPage.vue'
 import { canView, permissionKeysFor } from '@/router/permission-map'
+import { canAccessRoute, normalizeRole, routeToModule } from '@/router/role-access'
+import type { MenuGroup } from '@/types'
+import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 
 const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
 
@@ -69,8 +71,6 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.tech_dashboard', icon: 'grid', route: '/technician/dashboard' },
       { label: 'sidebar.acc_dashboard', icon: 'grid', route: '/accounting/dashboard' },
       { label: 'sidebar.monitoring_service', icon: 'activity', route: '/customer-service/monitoring-service' },
-      { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
-      { label: 'sidebar.cs_reports', icon: 'file-text', route: '/customer-service/reports' },
     ],
   },
   {
@@ -87,52 +87,192 @@ const allMenuGroups: MenuGroup[] = [
 
 const menuGroups = computed(() => {
   const role = normalizeRole(currentUser.value?.role)
+  const permissions: string[] = currentUser.value?.permissions || []
 
-  const groups: MenuGroup[] = JSON.parse(JSON.stringify(allMenuGroups))
+  // --- DERIVE MENU ITEMS FROM REGISTERED ROUTES (dynamic) ---
+  const routeNames = new Set(
+    router.getRoutes().map(r => r.name).filter((name): name is string => name != null)
+  )
 
-  // Filter dynamically based on role route access, permissions and active database modules
-  return groups.map(group => ({
+  // Map route name -> human readable group title using i18n sidebar keys
+  // Fallback: infer group from route path prefix
+  const routeToGroup: Record<string, string> = {
+    // Master Data
+    users: 'sidebar.master_data',
+    roles: 'sidebar.master_data',
+    permissions: 'sidebar.master_data',
+    modules: 'sidebar.master_data',
+    customers: 'sidebar.master_data',
+    technicians: 'sidebar.master_data',
+    suppliers: 'sidebar.master_data',
+    unitTypes: 'sidebar.master_data',
+    brands: 'sidebar.master_data',
+    paperSize: 'sidebar.master_data',
+    paperType: 'sidebar.master_data',
+    productCategories: 'sidebar.master_data',
+    uoms: 'sidebar.master_data',
+    products: 'sidebar.master_data',
+    units: 'sidebar.master_data',
+    warranties: 'sidebar.master_data',
+    contracts: 'sidebar.master_data',
+    systemSettings: 'sidebar.master_data',
+    notifications: 'sidebar.master_data',
+
+    // Customer Service / Transactions
+    contractItems: 'sidebar.transaction',
+    serviceRequests: 'sidebar.transaction',
+    jobOrders: 'sidebar.transaction',
+    serviceReports: 'sidebar.transaction',
+    monthlyMeterReadings: 'sidebar.transaction',
+    rentals: 'sidebar.transaction',
+    sales: 'sidebar.transaction',
+    csSparepartRequest: 'sidebar.transaction',
+    accPurchaseOrders: 'sidebar.transaction',
+    accDeliveryOrders: 'sidebar.transaction',
+    payments: 'sidebar.transaction',
+    warrantyClaims: 'sidebar.transaction',
+    csMonitoringService: 'sidebar.monitoring',
+    csDelivery: 'sidebar.monitoring',
+    csReports: 'sidebar.monitoring',
+    rentalInvoices: 'sidebar.transaction',
+    salesInvoices: 'sidebar.transaction',
+
+    // Monitoring
+    csDashboard: 'sidebar.monitoring',
+    techDashboard: 'sidebar.monitoring',
+    accDashboard: 'sidebar.monitoring',
+
+    // Technician
+    myJobs: 'sidebar.technician_menu',
+    callService: 'sidebar.technician_menu',
+    maintenance: 'sidebar.technician_menu',
+    sparepartRequests: 'sidebar.technician_menu',
+    meterReadings: 'sidebar.technician_menu',
+    serviceHistory: 'sidebar.technician_menu',
+
+    // Accounting
+    accSparepartRequests: 'sidebar.accounting',
+    AccPurchaseOrdersPage: 'sidebar.accounting',
+    AccDeliveryOrdersPage: 'sidebar.accounting',
+  }
+
+  // Build candidate items from registered routes that have permission keys
+  const candidates: { route: string; label: string; icon: string; group: string }[] = []
+  for (const routeName of routeNames) {
+    // Skip always-allowed routes (dashboards etc.) for now; they have their own logic
+    if (routeName === 'login') continue
+
+    const permKeys = permissionKeysFor(routeName)
+    if (!permKeys) {
+      // No permission key mapped -> visible to all authenticated roles
+      // Use route name as label, icon from viewbox
+      const route = router.getRoutes().find(r => r.name === routeName)
+      if (!route) continue
+      candidates.push({
+        route: routeName,
+        label: routeName,
+        icon: 'grid',
+        group: 'sidebar.monitoring', // default, will be overridden if i18n has it
+      })
+      continue
+    }
+
+    // Check if user can view this route (requires `<key>:view`)
+    if (!canView(routeName, permissions)) continue
+
+    // Respect module is_active
+    const permKey = permKeys[0] // take first key, e.g. "contract"
+    const moduleName = routeToModule[routeName] // e.g. "contract"
+    if (!moduleName) continue
+
+    const mod = modules.value.find(m => m.name === moduleName || m.slug === moduleName)
+    if (!mod || !mod.is_active) continue
+
+    // Get display label + icon from route definition if available, else use routeName
+    const routeDef = router.getRoutes().find(r => r.name === routeName)
+    const label = routeDef?.props?.label as string | undefined
+    const icon = routeDef?.props?.icon as string | undefined
+
+    candidates.push({
+      route: routeName,
+      label: label || routeName,
+      icon: icon || 'file',
+      group: routeToGroup[routeName] || 'sidebar.monitoring',
+    })
+  }
+
+  // Group candidates by their group title
+  const groupsMap = new Map<string, { titleKey: string; items: any[] }>()
+  for (const c of candidates) {
+    const existing = groupsMap.get(c.group)
+    if (!existing) {
+      // Use i18n key as title; will be translated later
+      groupsMap.set(c.group, { titleKey: c.group, items: [] })
+    }
+    // Push to existing group's items array (safe - we're pushing to array, not reassigning the const)
+    groupsMap.get(c.group)!.items.push(c)
+  }
+
+  // Convert to MenuGroup format, translate titles, filter empty groups
+  const groups: MenuGroup[] = []
+  for (const [, groupData] of groupsMap) {
+    const titleKey = groupData.titleKey
+    const items = groupData.items
+    const translatedTitle = t(titleKey)
+    if (!translatedTitle || translatedTitle === titleKey) {
+      // fallback: human-readable from snake_case
+      const fallback = titleKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      groups.push({
+        title: fallback,
+        items: items.map(item => ({
+          label: item.label,
+          icon: item.icon,
+          route: item.route,
+          // persist role restriction from route definition if any
+          roles: undefined,
+        })),
+      })
+    } else {
+      groups.push({
+        title: translatedTitle,
+        items: items.map(item => ({
+          label: item.label,
+          icon: item.icon,
+          route: item.route,
+          roles: undefined,
+        })),
+      })
+    }
+  }
+
+  // --- NOW APPLY PER-PERMISSION FILTERS ---
+  const finalGroups: MenuGroup[] = allMenuGroups.map(group => ({
     ...group,
     title: group.title.includes('.') ? t(group.title) : group.title,
     items: group.items.filter(item => {
-      // 1. Superadmin (admin) sees everything
       if (role === 'admin') return true
-
-      // 2. Role-restricted items (technician menu): role decides, no module/permission checks
       if (item.roles) return item.roles.includes(role)
 
-      // 3. Mirror the router guard: only show routes this role may actually open
-      //    (fixes wrong dashboards / bouncing menus for built-in roles)
-      const allowedNames = allowedRouteNamesByRole[role]
-      if (allowedNames) {
-        const itemName = router.resolve(item.route).name
-        if (!itemName || !allowedNames.includes(String(itemName))) return false
-      }
+      const resolved = router.resolve(item.route)
+      const routeName = resolved.name ? String(resolved.name) : ''
+      if (!routeName) return false
 
-      // 4. Visibility is driven by the `<key>:view` permission of the route
-      //    (see router/permission-map.ts). `read` alone never opens a menu.
-      const routeName = String(router.resolve(item.route).name || '')
+      if (!canAccessRoute(routeName, role, permissions)) return false
       const permKeys = permissionKeysFor(routeName)
-
-      if (!permKeys) {
-        // No permission key mapped (dashboards, shared pages) -> visible
-        return true
-      }
-
+      if (!permKeys) return true
       if (!canView(routeName, currentUser.value?.permissions || [])) return false
 
-      // Respect a deactivated module that owns this permission key.
-      // Module names are display names ("Job Order") while permission keys use
-      // snake_case ("job_order"), so normalize before comparing.
       const matches = modules.value.filter(m => permKeys.includes(moduleKey(String(m.name))))
       if (matches.length > 0 && !matches.some(m => m.is_active)) return false
 
       return true
     }).map(item => ({
       ...item,
-      label: item.label.includes('.') ? t(item.label) : item.label
-    }))
+      label: item.label.includes('.') ? t(item.label) : item.label,
+    })),
   })).filter(group => group.items.length > 0)
+
+  return finalGroups
 })
 
 const expandedGroups = ref<Set<string>>(new Set(allMenuGroups.map(g => g.title.includes('.') ? t(g.title) : g.title)))
@@ -191,18 +331,14 @@ const iconPaths: Record<string, string> = {
   'credit-card': 'M1 4h22v16H1z M1 10h22',
   'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 8v4 M12 16h.01',
   'truck': 'M1 3h15v13H1z M16 8h4l3 3v5h-7z M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z M18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
-  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01', 
+  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01',
   'bell': 'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0',
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="open"
-      class="sidebar-backdrop"
-      @click="emit('close')"
-    />
+    <div v-if="open" class="sidebar-backdrop" @click="emit('close')" />
   </Teleport>
 
   <aside class="sidebar" :class="{ 'sidebar-open': open }">
@@ -213,44 +349,21 @@ const iconPaths: Record<string, string> = {
 
     <nav class="sidebar-nav" aria-label="Main navigation menu">
       <div v-for="group in menuGroups" :key="group.title" class="menu-group">
-        <button
-          class="menu-group-toggle"
-          :aria-expanded="expandedGroups.has(group.title)"
-          @click="toggleGroup(group.title)"
-        >
+        <button class="menu-group-toggle" :aria-expanded="expandedGroups.has(group.title)"
+          @click="toggleGroup(group.title)">
           <span class="menu-group-title">{{ group.title }}</span>
-          <svg
-            class="menu-group-chevron"
-            :class="{ 'chevron-open': expandedGroups.has(group.title) }"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="6 9 12 15 18 9"/>
+          <svg class="menu-group-chevron" :class="{ 'chevron-open': expandedGroups.has(group.title) }" width="14"
+            height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
 
         <ul v-show="expandedGroups.has(group.title)" class="menu-list">
           <li v-for="item in group.items" :key="item.route">
-            <button
-              class="menu-item"
-              :class="{ 'menu-item-active': isActive(item.route) }"
-              @click="navigate(item.route)"
-            >
-              <svg
-                class="menu-icon"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
+            <button class="menu-item" :class="{ 'menu-item-active': isActive(item.route) }"
+              @click="navigate(item.route)">
+              <svg class="menu-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path :d="iconPaths[item.icon] || iconPaths.grid" />
               </svg>
               <span>{{ item.label }}</span>
@@ -268,13 +381,15 @@ const iconPaths: Record<string, string> = {
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
           <span class="sidebar-user-role">{{
-            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Superadmin'
-          }}</span>
+            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c =>
+              c.toUpperCase()) : 'Superadmin'
+            }}</span>
         </div>
       </div>
       <button class="btn-logout" title="Logout" @click="handleLogout">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
         </svg>
       </button>
     </div>
@@ -313,6 +428,7 @@ const iconPaths: Record<string, string> = {
   .sidebar-backdrop {
     display: none;
   }
+
   .sidebar {
     transform: translateX(0);
   }

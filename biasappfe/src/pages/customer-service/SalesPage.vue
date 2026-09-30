@@ -6,10 +6,11 @@ import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
-import { useResourcesStore } from '@/stores/resources.store'
 import { useToast } from '@/composables/useToast'
+import { useResourcesStore } from '@/stores/resources.store'
 import type { Sale, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
+import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 
 const toast = useToast()
 const { can, canApprove } = usePermission()
@@ -162,11 +163,7 @@ function generateSingleInvoiceHtml(item: any) {
         <tr>
           <td class="logo-col">
             <div class="logo-container">
-              <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-                <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-                <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-              </svg>
+              <img src="${BIAS_LOGO_DATA_URL}" class="logo"  alt="BiAS Logo" />
               <div class="company-details">
                 <h1>PT. BIAS SURYA</h1>
                 <h1>TEKNOLOGI</h1>
@@ -456,6 +453,7 @@ const form = reactive({
   customer_id: null as string | null,
   sale_date: '',
   po_no: '',
+  installation_address: '',
   total_amount: 0,
   status: 'pending',
   has_warranty: true,
@@ -491,7 +489,7 @@ function onProductChange(idx: number) {
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', total_amount: 0, status: 'pending', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
+  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, status: 'pending', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
   saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
   showModal.value = true
 }
@@ -507,6 +505,7 @@ function openEdit(item: any) {
     sale_no: item.sale_no || `SLS-${item.id}`,
     customer_id: item.customer_id,
     po_no: item.po_no || '',
+      installation_address: item.installation_address || '',
     sale_date: item.sale_date ? item.sale_date.slice(0, 10) : '',
     total_amount: item.total_amount || item.total,
     status: item.status || 'pending',
@@ -546,6 +545,10 @@ function openEdit(item: any) {
 
 async function handleSubmit() {
   if (!form.customer_id) return
+  if (!form.installation_address.trim()) {
+    toast.warning('Alamat instalasi/pengiriman wajib diisi.')
+    return
+  }
   const saleData = {
     ...form,
     subtotal: calcSubtotal.value,
@@ -683,7 +686,8 @@ function printInvoice(item: any, existingWindow?: Window | null) {
 
 function generateSingleReceiptHtml(item: any) {
   const customer = findCustomer(item.customer_id)
-  const custName = customer?.company_name || customer?.name || '-'
+  const compName = customer?.company_name 
+  const custName = customer?.pic_name
   
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
@@ -696,11 +700,7 @@ function generateSingleReceiptHtml(item: any) {
     <div class="page-break" style="padding: 40px; box-sizing: border-box; max-width: 800px; margin: 0 auto; font-family: 'Segoe UI', sans-serif;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 2px solid #003366; padding-bottom: 20px;">
         <div class="logo-container" style="display: flex; align-items: center;">
-          <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 70px; height: 70px; margin-right: 15px;">
-            <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-            <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-            <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-          </svg>
+          <img src="${BIAS_LOGO_DATA_URL}" class="logo" style="width: 70px; height: 70px; margin-right: 15px;" alt="BiAS Logo" />
           <div class="company-details" style="color: #003366;">
             <h1 style="margin: 0; font-size: 20px;">PT. BIAS SURYA TEKNOLOGI</h1>
             <p style="margin: 5px 0 0 0; font-size: 11px;">Ruko Purimas Blok A No.47 Kota Batam</p>
@@ -718,7 +718,7 @@ function generateSingleReceiptHtml(item: any) {
           <tr>
             <td style="padding: 15px 0; width: 180px; color: #64748b; font-weight: bold;">Telah Diterima Dari</td>
             <td style="padding: 15px 0; width: 20px;">:</td>
-            <td style="padding: 15px 0; font-weight: bold; font-size: 18px; border-bottom: 1px dashed #cbd5e1;">${custName}</td>
+            <td style="padding: 15px 0; font-weight: bold; font-size: 18px; border-bottom: 1px dashed #cbd5e1;">${compName} - ${custName}</td>
           </tr>
           <tr>
             <td style="padding: 15px 0; color: #64748b; font-weight: bold;">Uang Sejumlah</td>
@@ -881,14 +881,10 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <input id="sale-po-no" v-model="form.po_no" type="text" class="form-input" placeholder="Misal: PO-2024-001">
       </div>
       <div class="form-group">
-        <label for="sale-status" class="form-label">Status</label>
-        <select id="sale-status" v-model="form.status" class="form-select">
-          <option value="pending">Pending</option>
-          <option v-if="canApprove('sale')" value="approved">Approved</option>
-          <option value="paid">Paid</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
+        <label for="sale-installation-address" class="form-label">Alamat Instalasi / Pengiriman (Delivery Order)</label>
+        <textarea id="sale-installation-address" v-model="form.installation_address" class="form-textarea" rows="3" placeholder="Masukkan alamat lengkap pengiriman..." required></textarea>
       </div>
+    
 
       <div class="form-section-title">Item Penjualan</div>
       <div v-for="(item, idx) in saleItems" :key="idx" class="sale-item-row">

@@ -29,6 +29,7 @@ export interface Permission {
 export interface Module {
   id: string | number;
   name: string;
+  slug?: string;
   is_active: boolean;
   created_at: string;
   deleted_at: string | null;
@@ -262,6 +263,8 @@ export interface ServiceReport {
   visit_date?: string;
   is_chargeable?: boolean;
   reading_counter?: number;
+  meter_reading_before?: number;
+  meter_reading_after?: number;
   is_complete?: boolean;
   inspection_result?: string;
   notes?: string;
@@ -299,6 +302,7 @@ export interface Sale {
   sale_no: string;
   customer_id: string | null;
   sale_date: string;
+  installation_address?: string;
   total_amount: number;
   status: string;
   subtotal?: number;
@@ -493,10 +497,23 @@ export interface ProcurementDeliveryOrder {
   do_number: string;
   do_type?: string;
   purchase_order_id: string | number | null;
+  rental_id?: string | number | null;
+  rental?: { rental_no?: string } | null;
+  recipient_name?: string;
+  recipient_phone?: string;
+  delivery_address?: string;
   delivery_date: string;
   status: string;
   notes?: string;
-  delivery_order_items?: { product_id?: string | null; qty?: number }[];
+  delivery_order_items?: {
+    id?: string | number;
+    product_id?: string | null;
+    product?: { name?: string } | null;
+    unit_id?: string | null;
+    unit?: { model?: string; serial_no?: string } | null;
+    qty?: number;
+    remarks?: string;
+  }[];
   created_at: string;
   updated_at: string;
 }

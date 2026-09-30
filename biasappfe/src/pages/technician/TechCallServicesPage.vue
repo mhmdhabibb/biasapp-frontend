@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const { currentUser } = useAuth()
@@ -12,8 +12,20 @@ const {
   jobOrders,
   getTechnicianIdByUser,
   findCustomer,
-  findUnit
+  findUnit,
+  refresh
 } = useMasterStore()
+
+let refreshInterval: ReturnType<typeof setInterval> | undefined
+
+onMounted(() => {
+  void refresh(true)
+  refreshInterval = setInterval(() => void refresh(true), 30000)
+})
+
+onUnmounted(() => {
+  if (refreshInterval) clearInterval(refreshInterval)
+})
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
