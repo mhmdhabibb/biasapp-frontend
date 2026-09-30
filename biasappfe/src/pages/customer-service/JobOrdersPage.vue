@@ -10,6 +10,8 @@ const { technicians } = useMasterStore();
 
 const jobOrders = ref<any[]>([]);
 const serviceRequests = ref<any[]>([]);
+const deliveryOrders = ref<any[]>([]);
+const activeTab = ref("sr");
 
 const searchUnassigned = ref("");
 const searchTech = ref("");
@@ -41,9 +43,19 @@ async function fetchServiceRequests() {
   }
 }
 
+async function fetchDeliveryOrders() {
+  try {
+    const data = await api.get<{ data: any[] }>("/delivery-orders?do_type=rental");
+    deliveryOrders.value = data.data.filter((d: any) => d.do_type === 'rental' || d.do_type === 'Rental');
+  } catch (error) {
+    console.error("Failed to fetch data DO", error);
+  }
+}
+
 onMounted(() => {
   fetchJobOrders();
   fetchServiceRequests();
+  fetchDeliveryOrders();
 });
 
 const unassignedRequests = computed(() => {
@@ -51,7 +63,7 @@ const unassignedRequests = computed(() => {
   const assignedSrIds = new Set(
     jobOrders.value.map((j) => j.service_request_id),
   );
-  return serviceRequests.value.filter(
+  return serviceRequests.value.map(sr => ({ ...sr, taskType: 'sr' })).filter(
     (sr) =>
       (sr.status === "pending" || sr.status === "open") &&
       !assignedSrIds.has(sr.id) &&
@@ -62,6 +74,20 @@ const unassignedRequests = computed(() => {
           .toLowerCase()
           .includes(searchUnassigned.value.toLowerCase())),
   );
+});
+
+const unassignedDeliveries = computed(() => {
+  return deliveryOrders.value.map(d => ({ ...d, taskType: 'do' })).filter(
+    (d) =>
+      !d.technician_id &&
+      (d.status === 'pending' || d.status === 'draft') &&
+      (d.do_number.toLowerCase().includes(searchUnassigned.value.toLowerCase()) ||
+        (d.customer?.name || "").toLowerCase().includes(searchUnassigned.value.toLowerCase())),
+  );
+});
+
+const displayedUnassigned = computed(() => {
+  return activeTab.value === 'sr' ? unassignedRequests.value : unassignedDeliveries.value;
 });
 
 const filteredTechs = computed(() => {
@@ -76,7 +102,9 @@ const filteredTechs = computed(() => {
 });
 
 function getJobsForTech(techId: string | number) {
-  return jobOrders.value.filter((j) => j.technician_id === techId);
+  const jobs = jobOrders.value.filter((j) => j.technician_id === techId).map(j => ({ ...j, taskType: 'sr' }));
+  const dos = deliveryOrders.value.filter((d) => d.technician_id === techId).map(d => ({ ...d, taskType: 'do' }));
+  return [...jobs, ...dos];
 }
 
 function statusBadgeClass(status: string) {
@@ -193,33 +221,60 @@ async function onDrop(techId: string | number) {
   if (!draggedRequest) return;
   dragOverTechId.value = null;
 
-  const payload = {
-    job_order_no: `JO-${Date.now().toString().slice(-6)}`,
-    service_request_id: draggedRequest.id,
-    technician_id: techId,
-    scheduled_date: new Date().toISOString(),
-    instructions: draggedRequest.problem_description || "Please check the unit",
-  };
+  if (draggedRequest.taskType === 'do') {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/delivery-orders/${draggedRequest.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+        },
+        body: JSON.stringify({
+          ...draggedRequest,
+          technician_id: techId,
+          status: 'issued' // Update status to issued when assigned to a technician
+        }),
+      });
 
-  try {
-    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/job-orders`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (res.ok) {
-      draggedRequest = null;
-      fetchJobOrders();
-      toast.success("Job order berhasil di-assign ke teknisi.");
-    } else {
-      toast.error("Failed to assign job order");
+      if (res.ok) {
+        draggedRequest = null;
+        fetchDeliveryOrders();
+        toast.success("Delivery order berhasil di-assign ke teknisi.");
+      } else {
+        toast.error("Failed to assign delivery order");
+      }
+    } catch (error) {
+      toast.error("Something went wrong");
     }
-  } catch (error) {
-    toast.error("Something went wrong");
+  } else {
+    const payload = {
+      job_order_no: `JO-${Date.now().toString().slice(-6)}`,
+      service_request_id: draggedRequest.id,
+      technician_id: techId,
+      scheduled_date: new Date().toISOString(),
+      instructions: draggedRequest.problem_description || "Please check the unit",
+    };
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/job-orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        draggedRequest = null;
+        fetchJobOrders();
+        toast.success("Job order berhasil di-assign ke teknisi.");
+      } else {
+        toast.error("Failed to assign job order");
+      }
+    } catch (error) {
+      toast.error("Something went wrong");
+    }
   }
 }
 </script>
@@ -250,11 +305,19 @@ async function onDrop(techId: string | number) {
       <aside class="sidebar panel">
         <div class="sidebar-header">
           <div class="panel-title-wrap">
-            <h3 class="title">Service Requests</h3>
-            <span class="count-pill">{{ unassignedRequests.length }}</span>
+            <h3 class="title">Tasks</h3>
           </div>
-          <button class="btn btn-accent btn-sm">Action</button>
         </div>
+
+        <div class="sidebar-tabs" style="display: flex; gap: 8px; margin-top: -8px;">
+          <button class="btn btn-sm" :class="activeTab === 'sr' ? 'btn-primary' : 'btn-outline'" style="flex: 1" @click="activeTab = 'sr'">
+            Requests ({{ unassignedRequests.length }})
+          </button>
+          <button class="btn btn-sm" :class="activeTab === 'do' ? 'btn-primary' : 'btn-outline'" style="flex: 1" @click="activeTab = 'do'">
+            Deliveries ({{ unassignedDeliveries.length }})
+          </button>
+        </div>
+
         <div class="sidebar-search">
           <input
             v-model="searchUnassigned"
@@ -265,7 +328,7 @@ async function onDrop(techId: string | number) {
           <button
             class="btn-icon refresh-btn"
             title="Refresh"
-            @click="fetchServiceRequests"
+            @click="activeTab === 'sr' ? fetchServiceRequests() : fetchDeliveryOrders()"
           >
             <svg
               width="16"
@@ -283,7 +346,7 @@ async function onDrop(techId: string | number) {
           </button>
         </div>
         <div class="unassigned-list">
-          <div v-if="unassignedRequests.length === 0" class="empty-state">
+          <div v-if="displayedUnassigned.length === 0" class="empty-state">
             <svg
               width="28"
               height="28"
@@ -295,10 +358,10 @@ async function onDrop(techId: string | number) {
               <rect x="3" y="4" width="18" height="17" rx="3" />
               <path d="M8 2v4M16 2v4M3 10h18" />
             </svg>
-            <span>No new requests yet</span>
+            <span>No new tasks yet</span>
           </div>
           <div
-            v-for="req in unassignedRequests"
+            v-for="req in displayedUnassigned"
             :key="req.id"
             class="job-card draggble"
             draggable="true"
@@ -323,13 +386,38 @@ async function onDrop(techId: string | number) {
             </div>
             <div class="card-main">
               <div class="card-header">
-                <span class="ref-no">{{ req.request_no }}</span>
+                <span class="ref-no">{{ req.request_no || req.do_number }}</span>
                 <span class="date-tag">{{
                   formatDateDisplay(req.created_at)
                 }}</span>
               </div>
               <div class="card-body">
-                <div class="problem-text">{{ req.problem_description }}</div>
+                <template v-if="req.taskType === 'do'">
+                  <div class="card-customer" v-if="req.customer">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span>{{ req.customer.company_name || req.customer.name }}</span>
+                  </div>
+                  <div class="card-address" v-if="req.delivery_address">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>{{ req.delivery_address }}</span>
+                  </div>
+                  <div class="card-recipient" v-if="req.recipient_name">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                      <circle cx="12" cy="7" r="4" />
+                    </svg>
+                    <span>{{ req.recipient_name }}</span>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="problem-text">{{ req.problem_description || 'No description' }}</div>
+                </template>
               </div>
             </div>
           </div>
@@ -424,7 +512,7 @@ async function onDrop(techId: string | number) {
               >
                 <div class="ac-row">
                   <span class="ref-no">{{
-                    job.service_request_no || job.job_order_no
+                    job.service_request_no || job.job_order_no || job.do_number
                   }}</span>
                   <span class="badge" :class="statusBadgeClass(job.status)">
                     {{ String(job.status || "new").replace("_", " ") }}
@@ -444,7 +532,7 @@ async function onDrop(techId: string | number) {
                     <rect x="3" y="4" width="18" height="17" rx="2" />
                     <path d="M8 2v4M16 2v4M3 10h18" />
                   </svg>
-                  <span>{{ formatDateDisplay(job.scheduled_date) }}</span>
+                  <span>{{ formatDateDisplay(job.scheduled_date || job.delivery_date) }}</span>
                   <span class="ac-dot">·</span>
                   <svg
                     width="11"
@@ -459,7 +547,7 @@ async function onDrop(techId: string | number) {
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                     <polyline points="9 22 9 12 15 12 15 22" />
                   </svg>
-                  <span class="ac-company">{{ job.customer_name || "-" }}</span>
+                  <span class="ac-company">{{ job.customer_name || job.customer?.company_name || job.customer?.name || "-" }}</span>
                 </div>
               </div>
             </div>
@@ -478,13 +566,13 @@ async function onDrop(techId: string | number) {
       <template v-if="selectedJob">
         <div class="detail-hero">
           <div class="detail-hero-main">
-            <span class="detail-hero-id">{{ selectedJob.job_order_no }}</span>
+            <span class="detail-hero-id">{{ selectedJob.job_order_no || selectedJob.do_number }}</span>
             <span class="badge" :class="statusBadgeClass(selectedJob.status)">
               {{ String(selectedJob.status || "new").replace("_", " ") }}
             </span>
           </div>
           <span class="detail-hero-scheduled"
-            >Scheduled {{ formatFullDate(selectedJob.scheduled_date) }}</span
+            >Scheduled {{ formatFullDate(selectedJob.scheduled_date || selectedJob.delivery_date) }}</span
           >
         </div>
 
@@ -498,7 +586,7 @@ async function onDrop(techId: string | number) {
           <div class="detail-item">
             <span class="detail-label">Scheduled Date</span>
             <span class="detail-value">{{
-              formatFullDate(selectedJob.scheduled_date)
+              formatFullDate(selectedJob.scheduled_date || selectedJob.delivery_date)
             }}</span>
           </div>
           <div class="detail-item">
@@ -565,22 +653,22 @@ async function onDrop(techId: string | number) {
         </div>
 
         <div class="detail-section">
-          <div class="detail-section-title">Problem</div>
+          <div class="detail-section-title">Problem / Notes</div>
           <p class="detail-text">
-            {{ selectedJob.service_request?.problem_description || "-" }}
+            {{ selectedJob.service_request?.problem_description || selectedJob.notes || selectedJob.problem || "-" }}
           </p>
         </div>
 
-        <div class="detail-section" v-if="selectedJob.instructions">
-          <div class="detail-section-title">Instructions</div>
-          <p class="detail-text">{{ selectedJob.instructions }}</p>
+        <div class="detail-section" v-if="selectedJob.instructions || selectedJob.action">
+          <div class="detail-section-title">Instructions / Action</div>
+          <p class="detail-text">{{ selectedJob.instructions || selectedJob.action }}</p>
         </div>
       </template>
 
       <template v-else-if="selectedRequest">
         <div class="detail-hero">
           <div class="detail-hero-main">
-            <span class="detail-hero-id">{{ selectedRequest.request_no }}</span>
+            <span class="detail-hero-id">{{ selectedRequest.request_no || selectedRequest.do_number }}</span>
             <span class="badge badge-neutral">{{
               String(selectedRequest.status || "-").replace("_", " ")
             }}</span>
@@ -592,9 +680,9 @@ async function onDrop(techId: string | number) {
 
         <div class="detail-grid">
           <div class="detail-item">
-            <span class="detail-label">Request Date</span>
+            <span class="detail-label">Date</span>
             <span class="detail-value">{{
-              formatFullDate(selectedRequest.request_date)
+              formatFullDate(selectedRequest.request_date || selectedRequest.delivery_date)
             }}</span>
           </div>
           <div class="detail-item">
@@ -632,9 +720,9 @@ async function onDrop(techId: string | number) {
         </div>
 
         <div class="detail-section">
-          <div class="detail-section-title">Problem</div>
+          <div class="detail-section-title">Problem / Notes</div>
           <p class="detail-text">
-            {{ selectedRequest.problem_description || "-" }}
+            {{ selectedRequest.problem_description || selectedRequest.notes || selectedRequest.problem || "-" }}
           </p>
         </div>
       </template>
@@ -1135,6 +1223,45 @@ async function onDrop(techId: string | number) {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.card-customer,
+.card-address,
+.card-recipient {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.card-customer svg,
+.card-address svg,
+.card-recipient svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  opacity: 0.55;
+}
+
+.card-customer {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.card-address span,
+.card-recipient span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.card-body > .card-customer + .card-address,
+.card-body > .card-customer + .card-recipient,
+.card-body > .card-address + .card-recipient {
+  margin-top: 4px;
 }
 
 .job-card.assigned:focus-visible {

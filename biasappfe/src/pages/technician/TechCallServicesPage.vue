@@ -60,7 +60,7 @@ function goToDetail(id: number) {
 
 <template>
   <div class="tech-call-services">
-    <PageHeader title="Call Service (Pekerjaan Saya)" />
+    <PageHeader title="Call Service (My Jobs)" />
 
     <div class="card mb-lg p-lg">
       <div class="filters-grid">
@@ -73,13 +73,13 @@ function goToDetail(id: number) {
           <input v-model="filterCustomer" type="text" class="form-input" placeholder="Search customer...">
         </div>
         <div class="form-group mb-0">
-          <label class="form-label">Tanggal</label>
+          <label class="form-label">Date</label>
           <input v-model="filterDate" type="date" class="form-input">
         </div>
         <div class="form-group mb-0">
           <label class="form-label">Status</label>
           <select v-model="filterStatus" class="form-select">
-            <option value="">Semua Status</option>
+            <option value="">All Statuses</option>
             <option value="pending">Pending</option>
             <option value="assigned">Assigned</option>
             <option value="in_progress">In Progress</option>
@@ -98,7 +98,7 @@ function goToDetail(id: number) {
               <th>Service No</th>
               <th>Customer</th>
               <th>Unit</th>
-              <th>Tanggal</th>
+              <th>Date</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
@@ -108,7 +108,7 @@ function goToDetail(id: number) {
               <td>{{ job.job_order_no }}</td>
               <td>{{ getCustomerName(job.customer_id || job.service_request?.customer_id) }}</td>
               <td>{{ getUnitName(job.unit_id || job.service_request?.unit_id) }}</td>
-              <td>{{ new Date(job.created_at).toLocaleString('id-ID') }}</td>
+              <td>{{ new Date(job.created_at).toLocaleString() }}</td>
               <td>
                 <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'pending' || job.status === 'assigned' ? 'warning' : job.status === 'completed' ? 'success' : 'secondary')">
                   {{ job.status.toUpperCase().replace('_', ' ') }}
@@ -119,7 +119,7 @@ function goToDetail(id: number) {
               </td>
             </tr>
             <tr v-if="filteredJobs.length === 0">
-              <td colspan="6" class="text-center py-lg text-muted">Tidak ada call service yang ditemukan.</td>
+              <td colspan="6" class="text-center py-lg text-muted">No call service found.</td>
             </tr>
           </tbody>
         </table>

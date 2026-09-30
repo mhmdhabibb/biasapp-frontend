@@ -77,8 +77,6 @@ const allMenuGroups: MenuGroup[] = [
     items: [
       { label: 'sidebar.my_jobs', icon: 'tool', route: '/technician/call-services', roles: ['technician'] },
       { label: 'sidebar.maintenance', icon: 'wrench', route: '/technician/maintenance', roles: ['technician'] },
-      { label: 'sidebar.sparepart_requests', icon: 'box', route: '/technician/sparepart-request', roles: ['technician'] },
-      { label: 'sidebar.meter_readings', icon: 'activity', route: '/technician/meter-readings', roles: ['technician'] },
       { label: 'sidebar.service_history', icon: 'file-text', route: '/technician/service-history', roles: ['technician'] },
     ],
   }

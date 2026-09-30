@@ -68,7 +68,6 @@ function getSerialNumber(contractId: number | null) {
 
 async function submitReading() {
   if (!form.value.contract_item_id) return toast.warning('Pilih kontrak/unit!')
-  if (!form.value.paper_size_id) return toast.warning('Pilih ukuran kertas!')
 
   const startMeter = previousReading.value || 0
   const endMeter = form.value.end_meter
@@ -154,22 +153,6 @@ async function submitReading() {
             </select>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">Ukuran Kertas <span class="text-danger">*</span></label>
-            <select v-model="form.paper_size_id" class="form-select">
-              <option :value="null">-- Pilih Ukuran Kertas --</option>
-              <option v-for="ps in paperSizes" :key="ps.id" :value="ps.id">{{ ps.name }}</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Color Mode</label>
-            <select v-model="form.color_mode" class="form-select">
-              <option value="BW/Color">BW / Color</option>
-              <option value="BW">BW</option>
-              <option value="Color">Color</option>
-            </select>
-          </div>
 
           <div v-if="selectedContract" class="meter-inputs">
             <div class="flex gap-md">

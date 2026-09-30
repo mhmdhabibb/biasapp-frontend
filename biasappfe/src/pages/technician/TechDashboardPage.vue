@@ -97,71 +97,67 @@ function goToDetail(id: number) {
   <div class="tech-dashboard">
     <div class="welcome-header">
       <div class="user-greeting">
-        <h1 class="greeting-title">Halo, {{ currentUser?.name || 'Teknisi' }}! 👋</h1>
-        <p class="greeting-subtitle">Berikut adalah ringkasan pekerjaan Anda hari ini.</p>
+        <h1 class="greeting-title">Hello, {{ currentUser?.name || 'Technician' }}! 👋</h1>
+        <p class="greeting-subtitle">Here is your job summary for today.</p>
       </div>
 
     </div>
 
     <!-- Summary Grid -->
-    <div class="stats-grid">
-      <div class="stat-box primary">
-        <div class="stat-icon-wrapper">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <polyline points="10 9 9 9 8 9"></polyline>
-          </svg>
+    <div class="top-cards">
+      <div class="card card-primary">
+        <div class="card-header">
+          <span>New Jobs</span>
+          <span class="icon-wrapper">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+          </span>
         </div>
-        <div class="stat-content">
-          <span class="stat-value">{{ newJobs }}</span>
-          <span class="stat-label">Baru</span>
+        <div class="card-value">{{ newJobs }}</div>
+        <div class="card-footer">
+          <span class="icon-up"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg></span>
+          Waiting for assignment
         </div>
       </div>
 
-      <div class="stat-box info">
-        <div class="stat-icon-wrapper">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
+      <div class="card">
+        <div class="card-header">
+          <span>In Progress</span>
+          <span class="icon-wrapper">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+          </span>
         </div>
-        <div class="stat-content">
-          <span class="stat-value">{{ inProgressJobs }}</span>
-          <span class="stat-label">Berjalan</span>
-        </div>
-      </div>
-
-      <div class="stat-box success">
-        <div class="stat-icon-wrapper">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-            <polyline points="22 4 12 14.01 9 11.01"></polyline>
-          </svg>
-        </div>
-        <div class="stat-content">
-          <span class="stat-value">{{ completedToday }}</span>
-          <span class="stat-label">Selesai</span>
+        <div class="card-value">{{ inProgressJobs }}</div>
+        <div class="card-footer">
+          <span class="icon-up text-success-color"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg></span>
+          Assigned and working
         </div>
       </div>
 
-      <div class="stat-box danger">
-        <div class="stat-icon-wrapper">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-            <line x1="12" y1="9" x2="12" y2="13"></line>
-            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-          </svg>
+      <div class="card">
+        <div class="card-header">
+          <span>Completed Today</span>
+          <span class="icon-wrapper">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+          </span>
         </div>
-        <div class="stat-content">
-          <span class="stat-value">{{ slaBreached }}</span>
-          <span class="stat-label">SLA Lewat</span>
+        <div class="card-value">{{ completedToday }}</div>
+        <div class="card-footer">
+          <span class="icon-up text-success-color"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg></span>
+          Successfully resolved
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span>Breached SLA</span>
+          <span class="icon-wrapper">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+          </span>
+        </div>
+        <div class="card-value text-danger-color">{{ slaBreached }}</div>
+        <div class="card-footer">
+          <span class="icon-up text-danger-color" style="background: rgba(239, 68, 68, 0.1);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
+          Action required immediately
         </div>
       </div>
     </div>
@@ -169,7 +165,7 @@ function goToDetail(id: number) {
     <!-- Active Jobs Section -->
     <div class="jobs-section">
       <div class="section-header">
-        <h2 class="section-title">Pekerjaan Aktif</h2>
+        <h2 class="section-title">Active Jobs</h2>
         <span class="badge badge-primary">{{ activeJobs.length }} Total</span>
       </div>
 
@@ -215,8 +211,7 @@ function goToDetail(id: number) {
                 <line x1="12" y1="8" x2="12" y2="12"></line>
                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
               </svg>
-              <span class="truncate">{{ job.instructions || job.service_request?.problem_description || `Tanpa
-                deskripsi` }}</span>
+              <span class="truncate">{{ job.instructions || job.service_request?.problem_description || `No description` }}</span>
             </div>
           </div>
 
@@ -241,8 +236,8 @@ function goToDetail(id: number) {
 
       <div v-else class="empty-state">
         <div class="empty-icon">🎉</div>
-        <h3>Semua Beres!</h3>
-        <p>Tidak ada pekerjaan aktif untuk Anda saat ini.</p>
+        <h3>All Caught Up!</h3>
+        <p>You have no active jobs at the moment.</p>
       </div>
     </div>
     <!-- Create Job Modal -->
@@ -280,76 +275,93 @@ function goToDetail(id: number) {
   margin: 0;
 }
 
-/* 2x2 Grid for Mobile */
-.stats-grid {
+/* Top Cards (CS Dashboard Style) */
+.top-cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
 }
 
-.stat-box {
+.card {
   background: var(--color-surface, #fff);
-  border-radius: 16px;
-  padding: 16px;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.03);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-  border: 1px solid rgba(0, 0, 0, 0.04);
-  transition: transform 0.2s, box-shadow 0.2s;
+  border: 1px solid var(--color-border);
 }
 
-.stat-box:active {
-  transform: scale(0.98);
+.card-primary {
+  background: var(--color-primary);
+  color: white;
+  border: none;
 }
 
-.stat-icon-wrapper {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+.card-primary .card-subtitle,
+.card-primary .icon-wrapper {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.card:not(.card-primary) .card-header {
+  color: var(--color-text);
+}
+
+.icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  opacity: 0.6;
+}
+
+.card-value {
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1;
+  margin: 8px 0;
+}
+
+.card-footer {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card:not(.card-primary) .card-footer {
+  color: var(--color-text-muted);
+}
+
+.icon-up {
+  width: 20px;
+  height: 20px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.primary .stat-icon-wrapper {
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
+.card-primary .icon-up {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
 }
 
-.info .stat-icon-wrapper {
-  background: rgba(14, 165, 233, 0.1);
-  color: #0ea5e9;
-}
-
-.success .stat-icon-wrapper {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
-}
-
-.danger .stat-icon-wrapper {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-}
-
-.stat-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.stat-value {
-  font-size: 28px;
-  font-weight: 800;
-  line-height: 1.1;
-  color: var(--color-text);
-  margin-bottom: 2px;
-}
-
-.stat-label {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-}
+.text-success-color { color: #10b981; }
+.text-danger-color { color: #ef4444; }
 
 /* Jobs Section */
 .jobs-section {
