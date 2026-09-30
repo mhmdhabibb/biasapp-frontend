@@ -14,7 +14,7 @@ function navigate(path: string) {
 
 function handleLogout() {
   logout()
-  toastSuccess('Logout berhasil')
+  toastSuccess('Logout successful')
   router.push('/login')
 }
 </script>
@@ -27,7 +27,7 @@ function handleLogout() {
       @click="navigate('/technician/dashboard')"
     >
       <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-      <span class="nav-label">Beranda</span>
+      <span class="nav-label">Home</span>
     </button>
     
     <button 
@@ -36,7 +36,7 @@ function handleLogout() {
       @click="navigate('/technician/call-services')"
     >
       <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
-      <span class="nav-label">Servis</span>
+      <span class="nav-label">Service</span>
     </button>
 
     <button 
@@ -45,7 +45,7 @@ function handleLogout() {
       @click="navigate('/technician/meter-readings')"
     >
       <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-      <span class="nav-label">Meteran</span>
+      <span class="nav-label">Meters</span>
     </button>
 
     <button 
@@ -59,7 +59,7 @@ function handleLogout() {
 
     <button class="nav-item text-danger" @click="handleLogout">
       <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
-      <span class="nav-label">Keluar</span>
+      <span class="nav-label">Logout</span>
     </button>
   </nav>
 </template>

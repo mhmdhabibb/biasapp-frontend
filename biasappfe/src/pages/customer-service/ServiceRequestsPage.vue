@@ -18,7 +18,7 @@ const columns: TableColumn[] = [
   { key: "request_no", label: "Request No" },
   { key: "_company_name", label: "Company" },
   { key: "_pic_name", label: "PIC Name" },
-  { key: "request_date", label: "Tgl Request" },
+  { key: "request_date", label: "Request Date" },
   { key: "status", label: "Status" },
 ];
 
@@ -57,7 +57,7 @@ function getWarrantyStatus(
   return {
     active:
       end >= today && match.status !== "expired" && match.status !== "void",
-    endDate: end.toLocaleDateString("id-ID", {
+    endDate: end.toLocaleDateString("en-GB", {
       day: "numeric",
       month: "short",
       year: "numeric",
@@ -120,7 +120,7 @@ const customerRentalUnits = computed(() => {
           );
           unitMap.set("rent_prod_" + item.product_id, {
             id: item.product_id,
-            label: `${item.product.name || "Produk"} (Qty: ${item.qty || 1})`,
+            label: `${item.product.name || "Product"} (Qty: ${item.qty || 1})`,
             source: "rental",
             warranty,
           });
@@ -148,7 +148,7 @@ const customerRentalUnits = computed(() => {
           );
           unitMap.set(key, {
             id: si.product_id,
-            label: `${prod?.name || "Produk ID: " + si.product_id} (Qty: ${si.qty || 1})`,
+            label: `${prod?.name || "Product ID: " + si.product_id} (Qty: ${si.qty || 1})`,
             source: "sale",
             warranty,
           });
@@ -203,7 +203,7 @@ async function fetchRequests() {
       _pic_name: r.customer?.pic_name || "-",
     }));
   } catch (error) {
-    console.error("Gagal mengambil data", error);
+    console.error("Failed to fetch data", error);
   }
 }
 
@@ -233,15 +233,15 @@ async function handleSubmit() {
     );
 
     if (res.ok) {
-      toast.success("Service Request berhasil dibuat!");
+      toast.success("Service request created successfully!");
       showModal.value = false;
       fetchRequests();
     } else {
       const err = await res.json();
-      toast.error("Gagal: " + JSON.stringify(err));
+      toast.error("Failed: " + JSON.stringify(err));
     }
   } catch (error) {
-    toast.error("Terjadi kesalahan jaringan.");
+    toast.error("A network error occurred.");
   } finally {
     isLoading.value = false;
   }
@@ -260,7 +260,7 @@ function openAssign(row: any) {
   Object.assign(assignForm, {
     technician_id: "",
     scheduled_date: new Date().toISOString().slice(0, 10),
-    instructions: `Lanjutan dari keluhan: ${row.problem_description}`,
+    instructions: `Follow-up on complaint: ${row.problem_description}`,
   });
   showAssignModal.value = true;
 }
@@ -291,15 +291,15 @@ async function handleAssignSubmit() {
     );
 
     if (res.ok) {
-      toast.success("Teknisi berhasil di-assign! Job Order telah dibuat.");
+      toast.success("Technician assigned successfully! Job order created.");
       showAssignModal.value = false;
       fetchRequests(); // To maybe refresh status if backend updates SR status automatically
     } else {
       const err = await res.json();
-      toast.error("Gagal: " + JSON.stringify(err));
+      toast.error("Failed: " + JSON.stringify(err));
     }
   } catch (error) {
-    toast.error("Terjadi kesalahan jaringan.");
+    toast.error("A network error occurred.");
   } finally {
     isLoading.value = false;
   }
@@ -331,8 +331,8 @@ onMounted(() => {
 <template>
   <div>
     <PageHeader
-      title="Manajemen Service Request"
-      button-label="Buat Request Baru"
+      title="Service Request Management"
+      button-label="Create New Request"
       permission="service_request:create"
       @add="openAdd"
     />
@@ -340,10 +340,10 @@ onMounted(() => {
     <DataTable
       :columns="columns"
       :data="serviceRequests"
-      search-placeholder="Cari keluhan..."
+      search-placeholder="Search complaints..."
     >
       <template #cell-request_date="{ value }">{{
-        new Date(value).toLocaleDateString("id-ID")
+        new Date(value).toLocaleDateString("en-GB")
       }}</template>
       <template #cell-status="{ value }">
         <span
@@ -389,14 +389,14 @@ onMounted(() => {
           @click="openAssign(row)"
           style="margin-left: 8px"
         >
-          Assign Teknisi
+          Assign Technician
         </button>
       </template>
     </DataTable>
 
     <FormModal
       :open="showRequestDetailModal"
-      title="Detail Service Request"
+      title="Service Request Details"
       @close="showRequestDetailModal = false"
     >
       <div v-if="selectedRequest">
@@ -421,11 +421,11 @@ onMounted(() => {
             }}</span>
           </div>
           <div class="detail-info-card">
-            <span class="detail-info-label">Tgl Request</span>
+            <span class="detail-info-label">Request Date</span>
             <span class="detail-info-value">{{
               selectedRequest.request_date
                 ? new Date(selectedRequest.request_date).toLocaleDateString(
-                    "id-ID",
+                    "en-GB",
                   )
                 : "-"
             }}</span>
@@ -437,7 +437,7 @@ onMounted(() => {
           <span
             class="detail-info-label"
             style="display: block; margin-bottom: 6px"
-            >Keluhan / Problem</span
+            >Complaint / Problem</span
           >
           <p class="detail-problem-text">
             {{ selectedRequest.problem_description || "-" }}
@@ -461,11 +461,11 @@ onMounted(() => {
             />
             <polyline points="14 2 14 8 20 8" />
           </svg>
-          History Laporan Servis
+          Service Report History
         </div>
 
         <div v-if="relatedReports.length === 0" class="detail-empty-state">
-          Belum ada laporan servis untuk request ini.
+          No service reports for this request yet.
         </div>
         <div v-else class="detail-report-list">
           <div
@@ -479,7 +479,7 @@ onMounted(() => {
               }}</span>
               <span class="detail-report-meta">{{
                 rep.service_date
-                  ? new Date(rep.service_date).toLocaleDateString("id-ID")
+                  ? new Date(rep.service_date).toLocaleDateString("en-GB")
                   : "-"
               }}</span>
               <span class="detail-report-type">{{
@@ -494,7 +494,7 @@ onMounted(() => {
                     : 'badge badge-info'
                 "
               >
-                {{ rep.status === "completed" ? "Selesai" : rep.status }}
+                {{ rep.status === "completed" ? "Completed" : rep.status }}
               </span>
               <button
                 class="detail-look-btn"
@@ -513,7 +513,7 @@ onMounted(() => {
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
-                Lihat
+                View
               </button>
             </div>
           </div>
@@ -523,13 +523,13 @@ onMounted(() => {
 
     <FormModal
       :open="showModal"
-      title="Input Keluhan (Service Request)"
+      title="Log Complaint (Service Request)"
       @close="showModal = false"
       @submit="handleSubmit"
     >
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Nomor Request</label>
+          <label class="form-label">Request Number</label>
           <input
             v-model="form.request_no"
             type="text"
@@ -538,7 +538,7 @@ onMounted(() => {
           />
         </div>
         <div class="form-group">
-          <label class="form-label">Tanggal Masuk</label>
+          <label class="form-label">Received Date</label>
           <input
             v-model="form.request_date"
             type="date"
@@ -551,7 +551,7 @@ onMounted(() => {
       <div class="form-group mt-3">
         <label class="form-label">Customer</label>
         <select v-model="form.customer_id" class="form-select" required>
-          <option value="">-- Pilih Customer --</option>
+          <option value="">-- Select Customer --</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">
             {{ (c as any).company_name || (c as any).name
             }}{{ (c as any).pic_name ? " - PIC: " + (c as any).pic_name : "" }}
@@ -560,7 +560,7 @@ onMounted(() => {
       </div>
 
       <div class="form-group mt-3">
-        <label class="form-label">Mesin yang Bermasalah</label>
+        <label class="form-label">Faulty Machine</label>
         <div
           v-if="!form.customer_id"
           style="
@@ -571,7 +571,7 @@ onMounted(() => {
             font-size: var(--font-size-sm);
           "
         >
-          Pilih customer terlebih dahulu
+          Select a customer first
         </div>
         <div
           v-else-if="customerRentalUnits.length === 0"
@@ -583,7 +583,7 @@ onMounted(() => {
             font-size: var(--font-size-sm);
           "
         >
-          Tidak ada unit/mesin yang sedang dirental oleh customer ini
+          No units/machines currently rented by this customer
         </div>
         <div v-else class="unit-checkbox-list">
           <label
@@ -607,61 +607,61 @@ onMounted(() => {
                 u.source === "rental"
                   ? "Rental"
                   : u.source === "sale"
-                    ? "Pembelian"
-                    : "Kontrak"
+                    ? "Purchase"
+                    : "Contract"
               }}
             </span>
             <span
               v-if="u.warranty?.active"
               class="warranty-badge warranty-active"
-              :title="`Garansi s/d ${u.warranty.endDate}`"
+              :title="`Warranty until ${u.warranty.endDate}`"
             >
-              ✓ Garansi
+              ✓ Warranty
             </span>
             <span
               v-else
               class="warranty-badge warranty-none"
-              title="Tidak ada garansi aktif — akan dikenakan biaya"
+              title="No active warranty — charges will apply"
             >
-              Berbayar
+              Billable
             </span>
           </label>
         </div>
       </div>
 
       <div class="form-group mt-3">
-        <label class="form-label">Deskripsi Keluhan (Problem)</label>
+        <label class="form-label">Complaint Description (Problem)</label>
         <textarea
           v-model="form.problem_description"
           class="form-input"
           rows="4"
-          placeholder="Jelaskan keluhan secara rinci"
+          placeholder="Describe the complaint in detail"
           required
         ></textarea>
       </div>
 
       <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">
-        Menyimpan data...
+        Saving data...
       </div>
     </FormModal>
 
     <FormModal
       :open="showAssignModal"
-      title="Assign Teknisi (Buat Job Order)"
+      title="Assign Technician (Create Job Order)"
       @close="showAssignModal = false"
       @submit="handleAssignSubmit"
     >
       <div class="form-group mt-3">
-        <label class="form-label">Pilih Teknisi</label>
+        <label class="form-label">Select Technician</label>
         <select v-model="assignForm.technician_id" class="form-select" required>
-          <option value="">-- Pilih Teknisi --</option>
+          <option value="">-- Select Technician --</option>
           <option v-for="t in technicians" :key="t.id" :value="t.id">
             {{ t.name }}
           </option>
         </select>
       </div>
       <div class="form-group mt-3">
-        <label class="form-label">Tanggal Penugasan</label>
+        <label class="form-label">Assignment Date</label>
         <input
           v-model="assignForm.scheduled_date"
           type="date"
@@ -670,7 +670,7 @@ onMounted(() => {
         />
       </div>
       <div class="form-group mt-3">
-        <label class="form-label">Instruksi / Catatan untuk Teknisi</label>
+        <label class="form-label">Instructions / Notes for Technician</label>
         <textarea
           v-model="assignForm.instructions"
           class="form-input"
@@ -679,7 +679,7 @@ onMounted(() => {
         ></textarea>
       </div>
       <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">
-        Menyimpan data...
+        Saving data...
       </div>
     </FormModal>
   </div>

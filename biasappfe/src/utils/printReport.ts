@@ -21,7 +21,7 @@ function fmtTime(v: any): string {
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
-      return d.toLocaleString("id-ID", {
+      return d.toLocaleString("en-GB", {
         dateStyle: "short",
         timeStyle: "short",
       });
@@ -38,6 +38,16 @@ function buildCtx(item: any): ReportCtx {
   const brand: any = masterStore.findBrand(u.brand_id);
   const tech: any = masterStore.findTechnician(item.technician_id) || {};
 
+  const contractItems: any[] =
+    (masterStore.contractItems as any)?.value || masterStore.contractItems || [];
+  // Service reports have no contract_item_id — find the contract via the unit.
+  // Contract item rates = copies of rental_item_rates (auto-created with the rental).
+  const contractByUnit = contractItems.find(
+    (ci: any) =>
+      String(ci.unit_id || ci.unit?.id || "") === String(item.unit_id || u?.id || "") &&
+      String(ci.unit_id || ci.unit?.id || "") !== "",
+  );
+
   return {
     masterStore,
     customer,
@@ -49,9 +59,10 @@ function buildCtx(item: any): ReportCtx {
     picName: customer.pic_name || "-",
     custAddress: customer.address || "-",
     dateStr: item.service_date
-      ? new Date(item.service_date).toLocaleDateString("id-ID")
+      ? new Date(item.service_date).toLocaleDateString("en-GB")
       : "-",
-    contract: masterStore.findContractItem(item.contract_item_id),
+    contract:
+      masterStore.findContractItem(item.contract_item_id) || contractByUnit,
     isCopier: !!u.is_copier,
   };
 }
@@ -86,6 +97,40 @@ function sparepartsListHtml(item: any, ctx: ReportCtx): string {
       );
     })
     .join("");
+}
+
+/** List of paper types/sizes on the copier service report.
+ *  Primary source: monthly meter readings linked to this report
+ *  (paper_size preloaded by backend). Fallback: contract rates. */
+function paperTypesHtml(item: any, ctx: ReportCtx): string {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: any) => {
+    const label = String(raw || "").trim();
+    if (label && !seen.has(label)) {
+      seen.add(label);
+      labels.push(label);
+    }
+  };
+
+  const readings: any[] =
+    item.monthly_meter_readings || item.monthlyMeterReadings || [];
+  for (const r of readings) {
+    const name =
+      r.paper_size?.name || r.paper_size_name || r.paper_size_id || "";
+    const mode = r.color_mode ? ` (${r.color_mode})` : "";
+    push(`${name}${mode}`.trim());
+  }
+
+  // Fallback: paper sizes from contract rates when no readings exist.
+  const rates: any[] =
+    ctx.contract?.rates || item.contract_item?.rates || item.contract?.rates || [];
+  for (const rate of rates) {
+    push(rate.paper_size?.name || rate.paper_size_name || rate.paper_size_id || "");
+  }
+
+  if (labels.length === 0) return "-";
+  return labels.map((n, i) => "<div>" + (i + 1) + ". " + n + "</div>").join("");
 }
 
 function componentsGridHtml(item: any, ctx: ReportCtx): string {
@@ -132,6 +177,40 @@ function testedCompleteTableHtml(item: any): string {
   `;
 }
 
+function numVal(v: any): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Print "before" meter: same fallback as the technician form.
+ *  1. saved meter_reading_before / reading_counter
+ *  2. largest end_meter from linked monthly readings
+ *  3. unit current_meter (||, not ??)
+ *  4. contract start_mono/color values. */
+function resolveMeterBefore(item: any, ctx: ReportCtx): string {
+  const saved = numVal(item.meter_reading_before) || numVal(item.reading_counter)
+  if (saved > 0) return String(saved)
+  const readings: any[] =
+    item.monthly_meter_readings || item.monthlyMeterReadings || []
+  let lastEnd = 0
+  for (const r of readings) {
+    lastEnd = Math.max(lastEnd, numVal(r.end_meter) || numVal(r.start_meter))
+  }
+  if (lastEnd > 0) return String(lastEnd)
+  const fromUnit = numVal(ctx.u?.current_meter_bw) || numVal(ctx.u?.current_meter_color)
+  if (fromUnit > 0) return String(fromUnit)
+  const rates: any = ctx.contract
+  const fromContract = numVal(rates?.start_mono_value) || numVal(rates?.start_color_value)
+  if (fromContract > 0) return String(fromContract)
+  return item.meter_reading_before ?? item.reading_counter ?? ""
+}
+
+function resolveMeterAfter(item: any): string {
+  const after = numVal(item.meter_reading_after) || numVal(item.reading_counter)
+  if (after > 0) return String(after)
+  return item.meter_reading_after ?? item.reading_counter ?? ""
+}
+
 function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
   return `
     <table class="grid-table" style="border-top: none;">
@@ -146,7 +225,7 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
         </td>
       </tr>
       <tr>
-        <td style="text-align: center;">TECHNISI<br>${ctx.tech.name || ctx.tech.full_name || ""}</td>
+          <td style="text-align: center;">TECHNICIAN<br>${ctx.tech.name || ctx.tech.full_name || ""}</td>
         <td style="padding: 0; vertical-align: bottom;">
           <div style="text-align: center; margin-bottom: 2px;">CUSTOMER</div>
           <div class="bg-black" style="font-size: 9px; padding: 2px;">Signature & Company Stamp</div>
@@ -160,7 +239,7 @@ function signatureBlockHtml(item: any, ctx: ReportCtx): string {
   return `
     <div class="signature-block">
       <div class="sig-side">
-        <div>TECHNISI</div>
+        <div>TECHNICIAN</div>
         <div class="sig-line">${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
         <div class="sig-name">${ctx.tech.name || ctx.tech.full_name || ""}</div>
       </div>
@@ -184,7 +263,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
       <div class="title-bar" style="font-size: 22px;">Technical Report Form</div>
       <table class="meta-table">
         <tr>
-          <td>PRODUCT TYPES : ${ctx.u.is_computer ? "Komputer/Desktop" : ctx.isCopier ? "Fotocopy" : "Printer / Non-Fotocopy"}</td>
+          <td>PRODUCT TYPES : ${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td>
           <td class="right-col">DATE : ${ctx.dateStr}</td>
         </tr>
      
@@ -195,7 +274,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.customer.category || "-"}</td></tr>
         <tr><td class="label-col">Project Name</td><td class="val-col"> ${item.project_name || "-"}</td></tr>
         <tr><td class="label-col">Address</td><td class="val-col"> ${ctx.custAddress}</td></tr>
-        <tr><td class="label-col">Telepon / Handphone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
+        <tr><td class="label-col">Phone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
         <tr><td class="label-col">Personnel Incharges</td><td class="val-col"> ${ctx.picName}</td></tr>
       </table>
       <div class="section-title">PRODUCT DETAIL</div>
@@ -257,13 +336,13 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.customer.category || "-"}</td></tr>
         <tr><td class="label-col">Project Name</td><td class="val-col"> ${item.project_name || "-"}</td></tr>
         <tr><td class="label-col">Address</td><td class="val-col"> ${ctx.custAddress}</td></tr>
-        <tr><td class="label-col">Telepon / Handphone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
+        <tr><td class="label-col">Phone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
         <tr><td class="label-col">Personnel Incharges</td><td class="val-col"> ${ctx.picName}</td></tr>
       </table>
        <div class="section-title">PRODUCT DETAIL</div>
       <table class="data-table">
         <tr><td class="label-col">Brand</td><td class="val-col"> ${ctx.brand?.name || "-"}</td></tr>
-        <tr><td class="label-col">Product Type</td><td class="val-col">  ${ctx.u.is_computer ? "Komputer/Desktop" : ctx.isCopier ? "Fotocopy" : "Printer / Non-Fotocopy"}</td></tr>
+        <tr><td class="label-col">Product Type</td><td class="val-col">  ${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td></tr>
         <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.u.model || "-"}</td></tr>
         <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.u.serial_no || "-"}</td></tr>
         <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || "-"}</td></tr>
@@ -290,7 +369,7 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
 }
 
 /* =========================================================
-   FORM 3 — COPIER SERVICE REPORT (hanya unit is_copier)
+   FORM 3 — COPIER SERVICE REPORT (copier units only)
    ========================================================= */
 function copierServiceReportBody(item: any, ctx: ReportCtx): string {
   return `
@@ -318,7 +397,7 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
           <td style="text-align: center;">${!ctx.contract ? "✓" : ""}</td>
         </tr>
         <tr>
-          <td class="bg-black">TELP :</td>
+          <td class="bg-black">PHONE :</td>
           <td>${ctx.custPhone}</td>
           <td style="text-align: right;">SALES</td>
           <td style="text-align: center;"></td>
@@ -326,7 +405,7 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
         <tr>
           <td class="bg-black">PRODUCT/TYPE</td>
           <td class="bg-black">SERIAL NUMBER</td>
-          <td colspan="2" rowspan="11" style="vertical-align: top;">
+          <td colspan="2" rowspan="13" style="vertical-align: top;">
             <div class="text-center" style="border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 3px;">REMARKS</div>
             <div style="font-weight: normal;">${item.remarks || ""}</div>
           </td>
@@ -341,8 +420,12 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
           <td class="text-center">AFTER</td>
         </tr>
         <tr>
-          <td class="text-center">${item.meter_reading_before ?? ""}</td>
-          <td class="text-center">${item.meter_reading_after ?? ""}</td>
+          <td class="text-center">${resolveMeterBefore(item, ctx)}</td>
+          <td class="text-center">${resolveMeterAfter(item)}</td>
+        </tr>
+        <tr><td colspan="2" class="bg-black">PAPER SIZE</td></tr>
+        <tr>
+          <td colspan="2" style="vertical-align: top; font-weight: normal;">${paperTypesHtml(item, ctx)}</td>
         </tr>
         <tr><td colspan="2" class="bg-black">CHANGE SPAREPART</td></tr>
         <tr>
@@ -367,7 +450,7 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
 export type ReportType = 'technical' | 'history' | 'copier';
 
 /**
- * Semua form yang berlaku untuk laporan ini, berurutan atau berdasarkan tipe.
+ * All forms applicable to this report, in order or by type.
  */
 function getReportPages(item: any, type?: ReportType): string[] {
   const ctx = buildCtx(item);
@@ -443,7 +526,7 @@ function wrapDocument(pages: string[], autoPrint: boolean): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>${body}${printScript}</body></html>`;
 }
 
-/** Print/PDF — semua form dalam satu jendela, tiap form satu halaman. */
+/** Print/PDF — all forms in one window, one page per form. */
 export function printServiceReport(item: any, type?: ReportType) {
   const pages = getReportPages(item, type);
   if (pages.length === 0) {
@@ -474,7 +557,7 @@ export function printMultipleServiceReports(items: any[], type?: ReportType) {
 
 /**
  * Returns the form HTML string without auto-print, suitable for iframe preview.
- * Berisi semua form berurutan (Technical, Service, + Copier jika unit copier).
+ * Contains all forms in order (Technical, Service, + Copier for copier units).
  */
 export function getServiceReportFormHtml(item: any, type?: ReportType): string {
   return wrapDocument(getReportPages(item, type), false);

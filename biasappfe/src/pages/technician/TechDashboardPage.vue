@@ -3,8 +3,9 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
-import PageHeader from '@/components/ui/PageHeader.vue'
 import CreateJobModal from './CreateJobModal.vue'
+import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const router = useRouter()
 const { currentUser } = useAuth()

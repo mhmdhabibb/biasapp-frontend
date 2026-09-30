@@ -31,7 +31,7 @@ const showAddButton = computed(() => {
         v-if="backButton"
         type="button"
         class="page-header-back"
-        aria-label="Kembali"
+        aria-label="Back"
         @click="$emit('back')"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

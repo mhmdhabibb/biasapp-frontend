@@ -12,7 +12,7 @@ import { useToast } from '@/composables/useToast'
 const toast = useToast()
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Nama Brand' },
+  { key: 'name', label: 'Brand Name' },
 ]
 
 const { brands: data, fetchAll, create, update, remove, error } = useBrands()
@@ -43,14 +43,14 @@ async function handleSubmit() {
     await create(form.name)
   }
   showModal.value = false
-  toast.success(editingItem.value ? 'Brand berhasil diperbarui!' : 'Brand berhasil disimpan!')
+  toast.success(editingItem.value ? 'Brand updated successfully!' : 'Brand saved successfully!')
 }
 
 function openDelete(item: Brand) { deletingItem.value = item; showConfirm.value = true }
 async function handleDelete() {
   if (deletingItem.value) await remove(String(deletingItem.value.id))
   showConfirm.value = false
-  toast.success('Brand berhasil dihapus!')
+  toast.success('Brand deleted successfully!')
 }
 </script>
 
@@ -58,13 +58,13 @@ async function handleDelete() {
   <div>
     <PageHeader title="Brands" button-label="Add Brand" permission="brand:create" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari brand..." permission="brand" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search brands..." permission="brand" @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Add Brand'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="brand-name" class="form-label">Nama Brand</label>
-        <input id="brand-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Canon, HP, Epson">
+        <label for="brand-name" class="form-label">Brand Name</label>
+        <input id="brand-name" v-model="form.name" type="text" class="form-input" placeholder="Example: Canon, HP, Epson">
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Brand" :message="`Yakin ingin menghapus brand '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Brand" :message="`Are you sure you want to delete brand '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>

@@ -25,15 +25,15 @@ const {
 const resources = useResourcesStore()
 
 const columns: TableColumn[] = [
-  { key: 'payment_no', label: 'No. Pembayaran' },
+  { key: 'payment_no', label: 'Payment No.' },
   { key: 'customer_id', label: 'Customer' },
-  { key: 'invoice_type', label: 'Jenis Invoice' },
-  { key: 'invoice_no', label: 'No. Invoice' },
-  { key: 'payment_date', label: 'Tanggal Bayar' },
-  { key: 'amount', label: 'Jumlah' },
-  { key: 'tax_deduction', label: 'Potongan Pajak' },
-  { key: 'balance', label: 'Saldo' },
-  { key: 'reference_no', label: 'No. Referensi' },
+  { key: 'invoice_type', label: 'Invoice Type' },
+  { key: 'invoice_no', label: 'Invoice No.' },
+  { key: 'payment_date', label: 'Payment Date' },
+  { key: 'amount', label: 'Amount' },
+  { key: 'tax_deduction', label: 'Tax Deduction' },
+  { key: 'balance', label: 'Balance' },
+  { key: 'reference_no', label: 'Reference No.' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -109,7 +109,7 @@ async function handleSubmit() {
     }
     useMasterStore().refresh(true)
     showModal.value = false
-    toast.success(editingItem.value ? "Pembayaran berhasil diperbarui!" : "Pembayaran berhasil disimpan!")
+    toast.success(editingItem.value ? "Payment successfully updated!" : "Payment successfully saved!")
 
     // Auto-print receipt when approved
     if (form.status === 'approved') {
@@ -118,7 +118,7 @@ async function handleSubmit() {
       }, 500)
     }
   } catch (error) {
-    toast.error("Gagal menyimpan pembayaran!")
+    toast.error("Failed to save payment!")
   }
 }
 
@@ -128,9 +128,9 @@ async function handleDelete() {
     try {
       await resources.remove("payments", deletingItem.value.id as any)
       useMasterStore().refresh(true)
-      toast.success("Pembayaran berhasil dihapus!")
+      toast.success("Payment successfully deleted!")
     } catch (error) {
-      toast.error("Gagal menghapus pembayaran!")
+      toast.error("Failed to delete payment!")
     }
   }
   showConfirm.value = false
@@ -155,15 +155,15 @@ function formatRupiah(val: number): string {
 }
 
 const spellNumber = (n: number): string => {
-  const words = ['Nol', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'];
-  if (n < 12) return words[n] || '';
-  if (n < 20) return spellNumber(n - 10) + ' Belas';
-  if (n < 100) return spellNumber(Math.floor(n / 10)) + ' Puluh' + (n % 10 ? ' ' + spellNumber(n % 10) : '');
-  if (n < 200) return 'Seratus' + (n % 100 ? ' ' + spellNumber(n % 100) : '');
-  if (n < 1000) return spellNumber(Math.floor(n / 100)) + ' Ratus' + (n % 100 ? ' ' + spellNumber(n % 100) : '');
-  if (n < 2000) return 'Seribu' + (n % 1000 ? ' ' + spellNumber(n % 1000) : '');
-  if (n < 1000000) return spellNumber(Math.floor(n / 1000)) + ' Ribu' + (n % 1000 ? ' ' + spellNumber(n % 1000) : '');
-  if (n < 1000000000) return spellNumber(Math.floor(n / 1000000)) + ' Juta' + (n % 1000000 ? ' ' + spellNumber(n % 1000000) : '');
+  const words = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  if (n < 20) return words[n] || '';
+  if (n < 100) {
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + words[n % 10] : '');
+  }
+  if (n < 1000) return words[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + spellNumber(n % 100) : '');
+  if (n < 1000000) return spellNumber(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + spellNumber(n % 1000) : '');
+  if (n < 1000000000) return spellNumber(Math.floor(n / 1000000)) + ' Million' + (n % 1000000 ? ' ' + spellNumber(n % 1000000) : '');
   return n.toString();
 };
 
@@ -173,7 +173,7 @@ function printReceipt(item: Payment) {
 
   const invNo = invoiceNo(item);
   const custName = customerName(item.customer_id);
-  const payDateStr = new Date(item.payment_date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+  const payDateStr = new Date(item.payment_date).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
   const amountStr = formatRupiah(item.amount);
   const spelledOut = spellNumber(item.amount) + ' Rupiah';
 
@@ -181,7 +181,7 @@ function printReceipt(item: Payment) {
     <!DOCTYPE html>
     <html>
       <head>
-        <title>Tanda Terima - ${item.payment_no}</title>
+        <title>Receipt - ${item.payment_no}</title>
         <style>
           @page { size: A5 landscape; margin: 1.5cm; }
           body { font-family: "Arial", sans-serif; font-size: 11pt; color: #000; margin: 0; padding: 0; }
@@ -204,7 +204,7 @@ function printReceipt(item: Payment) {
           <div class="header">
             <div class="header-left">
               <h1>PT. BIAS SURYA TEKNOLOGI</h1>
-              <h2>Kwitansi / Tanda Terima</h2>
+              <h2>Receipt</h2>
             </div>
             <div class="header-right">
               No. ${item.payment_no}
@@ -212,19 +212,19 @@ function printReceipt(item: Payment) {
           </div>
           
           <div class="row">
-            <div class="label">Telah terima dari</div>
+            <div class="label">Received from</div>
             <div class="value">${custName}</div>
           </div>
           <div class="row">
-            <div class="label">Uang sejumlah</div>
+            <div class="label">Amount in words</div>
             <div class="value" style="font-style: italic;"># ${spelledOut} #</div>
           </div>
           <div class="row">
-            <div class="label">Untuk pembayaran</div>
-            <div class="value">Pembayaran Invoice No: ${invNo}</div>
+            <div class="label">For payment</div>
+            <div class="value">Invoice Payment No: ${invNo}</div>
           </div>
           <div class="row">
-            <div class="label">Catatan / Ref</div>
+            <div class="label">Notes / Ref</div>
             <div class="value">${item.reference_no || '-'}</div>
           </div>
           
@@ -234,7 +234,7 @@ function printReceipt(item: Payment) {
             </div>
             <div class="sign-box">
               <div>Batam, ${payDateStr}</div>
-              <div class="sign-line">Penerima</div>
+              <div class="sign-line">Recipient</div>
             </div>
           </div>
         </div>
@@ -255,7 +255,7 @@ function printReceipt(item: Payment) {
 <template>
   <div>
     <PageHeader title="Payments" button-label="Add Payment" permission="payment:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari pembayaran..." @edit="openEdit" @delete="openDelete">
+    <DataTable :columns="columns" :data="data" search-placeholder="Search payments..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-invoice_type="{ row }">{{ row.sales_invoice_id ? 'Sales' : 'Rental' }}</template>
       <template #cell-invoice_no="{ row }">{{ invoiceNo(row) }}</template>
@@ -269,7 +269,7 @@ function printReceipt(item: Payment) {
       </template>
       
       <template #actions="{ row }">
-        <button v-if="can('payment:read')" class="action-btn" title="Print Kwitansi" @click="printReceipt(row)">
+        <button v-if="can('payment:read')" class="action-btn" title="Print Receipt" @click="printReceipt(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
@@ -294,57 +294,57 @@ function printReceipt(item: Payment) {
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Payment' : 'Add Payment'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="pay-no" class="form-label">No. Pembayaran</label>
+        <label for="pay-no" class="form-label">Payment No.</label>
         <input id="pay-no" v-model="form.payment_no" type="text" class="form-input" placeholder="PAY-XXXXXX">
       </div>
       <div class="form-group">
-        <label for="pay-inv-type" class="form-label">Jenis Invoice</label>
+        <label for="pay-inv-type" class="form-label">Invoice Type</label>
         <select id="pay-inv-type" v-model="form.invoice_type" class="form-select" @change="onInvoiceChange">
-          <option value="rental">Rental / Sewa</option>
-          <option value="sales">Sales / Penjualan</option>
+          <option value="rental">Rental</option>
+          <option value="sales">Sales</option>
         </select>
       </div>
       <div class="form-group" v-if="form.invoice_type === 'rental'">
-        <label for="pay-invoice" class="form-label">Pilih Invoice Sewa</label>
+        <label for="pay-invoice" class="form-label">Select Rental Invoice</label>
         <select id="pay-invoice" v-model="form.rental_invoice_id" class="form-select" @change="onInvoiceChange">
-          <option :value="null">-- Pilih Invoice --</option>
+          <option :value="null">-- Select Invoice --</option>
           <option v-for="inv in rentalInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_no }} — {{ formatRupiah((inv as any).total_pay || (inv as any).total || 0) }}</option>
         </select>
       </div>
       <div class="form-group" v-else>
-        <label for="pay-invoice-sales" class="form-label">Pilih Invoice Penjualan</label>
+        <label for="pay-invoice-sales" class="form-label">Select Sales Invoice</label>
         <select id="pay-invoice-sales" v-model="form.sales_invoice_id" class="form-select" @change="onInvoiceChange">
-          <option :value="null">-- Pilih Invoice --</option>
+          <option :value="null">-- Select Invoice --</option>
           <option v-for="inv in salesInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_no }} — {{ formatRupiah(inv.total || 0) }}</option>
         </select>
       </div>
       <div class="form-group">
         <label for="pay-customer" class="form-label">Customer</label>
         <select id="pay-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Pilih Customer --</option>
+          <option :value="null">-- Select Customer --</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="pay-date" class="form-label">Tanggal Pembayaran</label>
+        <label for="pay-date" class="form-label">Payment Date</label>
         <input id="pay-date" v-model="form.payment_date" type="date" class="form-input">
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label for="pay-amount" class="form-label">Jumlah (Rp)</label>
+          <label for="pay-amount" class="form-label">Amount (Rp)</label>
           <input id="pay-amount" v-model.number="form.amount" type="number" class="form-input" min="0">
         </div>
         <div class="form-group">
-          <label for="pay-tax" class="form-label">Potongan Pajak (Rp)</label>
+          <label for="pay-tax" class="form-label">Tax Deduction (Rp)</label>
           <input id="pay-tax" v-model.number="form.tax_deduction" type="number" class="form-input" min="0">
         </div>
       </div>
       <div class="form-group">
-        <label for="pay-ref" class="form-label">No. Referensi</label>
-        <input id="pay-ref" v-model="form.reference_no" type="text" class="form-input" placeholder="No. transfer / kwitansi">
+        <label for="pay-ref" class="form-label">Reference No.</label>
+        <input id="pay-ref" v-model="form.reference_no" type="text" class="form-input" placeholder="Transfer / receipt no.">
       </div>
       <div class="form-group">
-        <label for="pay-status" class="form-label">Status (Approval Finance)</label>
+        <label for="pay-status" class="form-label">Status (Finance Approval)</label>
         <select id="pay-status" v-model="form.status" class="form-select">
           <option value="pending">Pending</option>
           <option v-if="canApprove('payment')" value="approved">Approved</option>
@@ -352,7 +352,7 @@ function printReceipt(item: Payment) {
         </select>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Pembayaran" :message="`Yakin ingin menghapus pembayaran '${deletingItem?.payment_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Payment" :message="`Are you sure you want to delete payment '${deletingItem?.payment_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

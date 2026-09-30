@@ -51,7 +51,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (!response.ok) {
       if (response.status === 401) sessionStorage.removeItem("bias_token");
       throw new ApiError(
-        body?.message || body?.error || "Terjadi kesalahan pada server",
+        body?.message || body?.error || "A server error occurred",
         response.status,
       );
     }
@@ -85,7 +85,7 @@ export async function downloadFile(path: string, filename: string): Promise<void
       error?: string;
     } | null;
     throw new ApiError(
-      body?.message || body?.error || "Terjadi kesalahan pada server",
+      body?.message || body?.error || "A server error occurred",
       response.status,
     );
   }

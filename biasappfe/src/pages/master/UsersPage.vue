@@ -12,9 +12,9 @@ import { resources } from '@/services/resource.service'
 const toast = useToast()
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Nama' },
+  { key: 'name', label: 'Name' },
   { key: 'username', label: 'Username' },
-  { key: 'phone', label: 'Telepon' },
+  { key: 'phone', label: 'Phone' },
   { key: 'role_name', label: 'Role' },
 ]
 
@@ -51,7 +51,7 @@ async function fetchData() {
     }))
   } catch (error) {
     console.error('Failed to fetch data:', error)
-    toast.error('Gagal mengambil data user: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch user data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -80,10 +80,10 @@ async function handleSubmit() {
     }
     showModal.value = false
     await fetchData()
-    toast.success(editingItem.value ? 'User berhasil diperbarui!' : 'User berhasil disimpan!')
+    toast.success(editingItem.value ? 'User updated successfully!' : 'User saved successfully!')
   } catch (error) {
     console.error('Failed to save user:', error)
-    toast.error('Gagal menyimpan user: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save user: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -97,10 +97,10 @@ async function handleDelete() {
     try {
       await resources.users.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('User berhasil dihapus!')
+      toast.success('User deleted successfully!')
     } catch (error) {
       console.error('Failed to delete user:', error)
-      toast.error('Gagal menghapus user')
+      toast.error('Failed to delete user')
     }
   }
   showConfirm.value = false
@@ -114,7 +114,7 @@ async function handleDelete() {
     <DataTable
       :columns="columns"
       :data="data"
-      search-placeholder="Cari user..."
+      search-placeholder="Search users..."
       permission="user"
       @edit="openEdit"
       @delete="openDelete"
@@ -127,28 +127,28 @@ async function handleDelete() {
       @submit="handleSubmit"
     >
       <div class="form-group">
-        <label for="user-name" class="form-label">Nama</label>
-        <input id="user-name" v-model="form.name" type="text" class="form-input" placeholder="Nama lengkap">
+        <label for="user-name" class="form-label">Name</label>
+        <input id="user-name" v-model="form.name" type="text" class="form-input" placeholder="Full name">
       </div>
       <div class="form-group">
         <label for="user-username" class="form-label">Username</label>
-        <input id="user-username" v-model="form.username" type="text" class="form-input" placeholder="Username login">
+        <input id="user-username" v-model="form.username" type="text" class="form-input" placeholder="Login username">
       </div>
       <div class="form-group">
-        <label for="user-phone" class="form-label">Telepon</label>
+        <label for="user-phone" class="form-label">Phone</label>
         <input id="user-phone" v-model="form.phone" type="tel" class="form-input" placeholder="08xxxxxxxxxx">
       </div>
       <div class="form-group">
         <label for="user-role" class="form-label">Role</label>
         <select id="user-role" v-model="form.role_id" class="form-select">
-          <option :value="null">-- Pilih Role --</option>
+          <option :value="null">-- Select Role --</option>
           <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.name }}</option>
         </select>
       </div>
       <div class="form-group">
         <label for="user-password" class="form-label">Password</label>
         <div style="position: relative; display: flex; align-items: center;">
-          <input id="user-password" v-model="form.password" :type="showPassword ? 'text' : 'password'" class="form-input" :placeholder="editingItem ? 'Kosongkan jika tidak diubah' : 'Password login'" style="padding-right: 40px; width: 100%;">
+          <input id="user-password" v-model="form.password" :type="showPassword ? 'text' : 'password'" class="form-input" :placeholder="editingItem ? 'Leave empty if unchanged' : 'Login password'" style="padding-right: 40px; width: 100%;">
           <button type="button" @click="showPassword = !showPassword" style="position: absolute; right: 10px; background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--color-text-muted); padding: 0;">
             <svg v-if="showPassword" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
             <svg v-else xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
@@ -159,8 +159,8 @@ async function handleDelete() {
 
     <ConfirmDialog
       :open="showConfirm"
-      title="Hapus User"
-      :message="`Yakin ingin menghapus user '${deletingItem?.name}'?`"
+      title="Delete User"
+      :message="`Are you sure you want to delete user '${deletingItem?.name}'?`"
       @close="showConfirm = false"
       @confirm="handleDelete"
     />

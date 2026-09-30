@@ -40,7 +40,7 @@ function printServiceHistory(item: any) {
   const custName = customer.company_name || customer.name || '-'
   const custPhone = customer.phone || '-'
   const picName = customer.pic_name || '-'
-  const dateStr = item.delivery_date ? new Date(item.delivery_date).toLocaleDateString('id-ID') : '-'
+  const dateStr = item.delivery_date ? new Date(item.delivery_date).toLocaleDateString('en-GB') : '-'
   
   const html = `
     <html>
@@ -116,14 +116,14 @@ function printServiceHistory(item: any) {
             <tr><td class="label-col">Project Name</td><td class="val-col">: \${item.project_name || '-'}</td></tr>
             <tr><td class="label-col">Address</td><td class="val-col">: \${customer.address || '-'}</td></tr>
             <tr><td class="label-col">Installation Address</td><td class="val-col">: \${item.delivery_address || '-'}</td></tr>
-            <tr><td class="label-col">Telepon</td><td class="val-col">: \${custPhone}</td></tr>
-            <tr><td class="label-col">Personal Incharges</td><td class="val-col">: \${picName}</td></tr>
+            <tr><td class="label-col">Phone</td><td class="val-col">: \${custPhone}</td></tr>
+            <tr><td class="label-col">Person in Charge</td><td class="val-col">: \${picName}</td></tr>
           </table>
           
           <div class="section-title">PRODUCT DETAIL</div>
           <table class="data-table">
             <tr><td class="label-col">Brand</td><td class="val-col">: \${brand?.name || '-'}</td></tr>
-            <tr><td class="label-col">Product Types</td><td class="val-col">: \${u.is_computer ? 'Komputer/Desktop' : 'Fotocopy'}</td></tr>
+            <tr><td class="label-col">Product Types</td><td class="val-col">: \${u.is_computer ? 'Computer/Desktop' : 'Photocopy'}</td></tr>
             <tr><td class="label-col">Model/Type</td><td class="val-col">: \${u.model || '-'}</td></tr>
             <tr><td class="label-col">Serial Number</td><td class="val-col">: \${u.serial_number || '-'}</td></tr>
             <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col">: \${item.problem || ''}</td></tr>
@@ -140,7 +140,7 @@ function printServiceHistory(item: any) {
                   <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Tested</div><div style="padding: 2px;">: \${item.is_tested ? 'YES' : 'NO'}</div>
                 </div>
                 <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Comple</div><div style="padding: 2px;">: \${item.is_completed ? 'YES' : 'NO'}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Complete</div><div style="padding: 2px;">: \${item.is_completed ? 'YES' : 'NO'}</div>
                 </div>
                 <div style="display: flex; border-top: 1px solid #000;">
                   <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time in</div><div style="padding: 2px;">: \${item.time_in || ''}</div>
@@ -155,7 +155,7 @@ function printServiceHistory(item: any) {
           <div style="display: flex; justify-content: space-between; padding: 5px 20px 20px; font-weight: bold; border-top: 2px solid #000;">
             <div style="width: 45%; text-align: center;">
               <div>TESTED \${item.is_tested ? 'YES' : 'NO'}</div>
-              <div style="margin-top: 10px; text-align: left;">TECHNISI</div>
+              <div style="margin-top: 10px; text-align: left;">TECHNICIAN</div>
               <div style="min-height: 50px; border-bottom: 1px solid #000; text-align: center;">
                 \${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : ''}
               </div>
@@ -284,11 +284,11 @@ async function handleSubmit() {
       
       <div style="display: flex; gap: 1rem; margin-top: 1rem;">
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Tanda Tangan Teknisi</label>
+          <label class="form-label">Technician Signature</label>
           <SignaturePad v-model="form.technician_signature" height="150px" />
         </div>
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Tanda Tangan Customer</label>
+          <label class="form-label">Customer Signature</label>
           <SignaturePad v-model="form.customer_signature" height="150px" />
         </div>
       </div>

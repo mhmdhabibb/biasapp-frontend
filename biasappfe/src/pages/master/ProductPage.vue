@@ -12,11 +12,11 @@ import { useToast } from '@/composables/useToast'
 const toast = useToast()
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Nama Produk' },
+  { key: 'name', label: 'Product Name' },
   { key: 'sku', label: 'SKU' },
-  { key: 'price', label: 'Harga' },
-  { key: 'stock', label: 'Stok' },
-  { key: 'category.name', label: 'Kategori' },
+  { key: 'price', label: 'Price' },
+  { key: 'stock', label: 'Stock' },
+  { key: 'category.name', label: 'Category' },
   { key: 'uom.name', label: 'UOM' },
 ]
 
@@ -30,7 +30,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch products:', error)
-    toast.error('Gagal mengambil data: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -40,7 +40,7 @@ async function fetchCategories() {
     categories.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch categories:', error)
-    toast.error('Gagal mengambil data: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -50,7 +50,7 @@ async function fetchUoms() {
     uoms.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch UOMs:', error)
-    toast.error('Gagal mengambil data UOM: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch UOM data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -109,13 +109,13 @@ function openEdit(item: Product) {
 
 async function handleSubmit() {
   if (!form.name.trim()) {
-    toast.warning('Nama produk wajib diisi!')
+    toast.warning('Product name is required!')
     return
   }
   if (!form.category_id) {
     toast.warning(categories.value.length === 0
-      ? 'Belum ada kategori produk, buat dulu di Master > Product Categories'
-      : 'Kategori wajib dipilih!')
+      ? 'No product categories yet, please create one first in Master > Product Categories'
+      : 'Category is required!')
     return
   }
   try {
@@ -130,10 +130,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? 'Produk berhasil diperbarui!' : 'Produk berhasil disimpan!')
+    toast.success(editingItem.value ? 'Product updated successfully!' : 'Product saved successfully!')
   } catch (error) {
     console.error('Failed to save product:', error)
-    toast.error('Gagal menyimpan produk: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save product: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -144,10 +144,10 @@ async function handleDelete() {
     try {
       await resources.products.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('Produk berhasil dihapus!')
+      toast.success('Product deleted successfully!')
     } catch (error) {
       console.error('Failed to delete product:', error)
-      toast.error('Gagal menghapus produk')
+      toast.error('Failed to delete product')
     }
   }
   showConfirm.value = false
@@ -162,7 +162,7 @@ function formatRupiah(val: number): string {
 <template>
   <div>
     <PageHeader title="Products" button-label="Add Product" permission="product:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari produk..." permission="product" @edit="openEdit"
+    <DataTable :columns="columns" :data="data" search-placeholder="Search products..." permission="product" @edit="openEdit"
       @delete="openDelete">
       <template #cell-price="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-category.name="{ row }">{{ row.category?.name ?? '-' }}</template>
@@ -171,8 +171,8 @@ function formatRupiah(val: number): string {
     <FormModal :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'" @close="showModal = false"
       @submit="handleSubmit">
       <div class="form-group">
-        <label for="prod-name" class="form-label">Nama Produk</label>
-        <input id="prod-name" v-model="form.name" type="text" class="form-input" placeholder="Nama produk">
+        <label for="prod-name" class="form-label">Product Name</label>
+        <input id="prod-name" v-model="form.name" type="text" class="form-input" placeholder="Product name">
       </div>
       <div class="form-group">
         <label for="prod-sku" class="form-label">SKU</label>
@@ -180,48 +180,50 @@ function formatRupiah(val: number): string {
           placeholder="Auto-generated SKU">
       </div>
       <div class="form-group">
-        <label for="category_id" class="form-label">Kategori</label>
+        <label for="category_id" class="form-label">Category</label>
         <select name="category_id" id="category_id" v-model="form.category_id" class="form-input">
-          <option value="">-- Pilih Kategori --</option>
+          <option value="">-- Select Category --</option>
           <option v-for="category in categories" :key="category.id" :value="category.id">
             {{ category.name }}
           </option>
         </select>
         <p v-if="categories.length === 0"
-          style="margin-top: 6px; font-size: 12px; color: var(--color-text-muted, #64748b);">Belum ada kategori. Buat
-          dulu
-          di menu Master &gt; Product Categories.</p>
+          style="margin-top: 6px; font-size: 12px; color: var(--color-text-muted, #64748b);">No categories yet. Please create
+          one
+          first
+          in Master &gt; Product Categories.</p>
       </div>
       <div class="form-group">
-        <label for="uom_id" class="form-label">UOM (Satuan)</label>
+        <label for="uom_id" class="form-label">UOM (Unit)</label>
         <select name="uom_id" id="uom_id" v-model="form.uom_id" class="form-input">
-          <option value="">-- Pilih UOM --</option>
+          <option value="">-- Select UOM --</option>
           <option v-for="uom in uoms" :key="uom.id" :value="uom.id">
             {{ uom.name }}
           </option>
         </select>
         <p v-if="uoms.length === 0"
-          style="margin-top: 6px; font-size: 12px; color: var(--color-text-muted, #64748b);">Belum ada UOM. Buat
-          dulu
-          di menu Master &gt; UOMs.</p>
+          style="margin-top: 6px; font-size: 12px; color: var(--color-text-muted, #64748b);">No UOMs yet. Please create
+          one
+          first
+          in Master &gt; UOMs.</p>
       </div>
       <div class="form-group">
-        <label for="prod-price" class="form-label">Harga (Rp)</label>
+        <label for="prod-price" class="form-label">Price (Rp)</label>
         <input id="prod-price" v-model.number="form.price" type="number" class="form-input" placeholder="0" min="0">
       </div>
       <div class="form-group">
-        <label for="prod-stock" class="form-label">Stok</label>
+        <label for="prod-stock" class="form-label">Stock</label>
         <input id="prod-stock" v-model.number="form.stock" type="number" class="form-input" placeholder="0" min="0">
       </div>
       <div class="form-group" style="margin-top: 1rem;">
         <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" v-model="form.is_computer" style="width: 1rem; height: 1rem;" />
-          Adalah Komputer / PC / Laptop
+          Is a Computer / PC / Laptop
         </label>
       </div>
       <div v-if="form.is_computer"
         style="margin-top: 1rem; border-top: 1px solid var(--color-border-light); padding-top: 1rem;">
-        <h4 style="margin-bottom: 1rem; font-weight: 600;">Spesifikasi Komputer / Desktop</h4>
+        <h4 style="margin-bottom: 1rem; font-weight: 600;">Computer / Desktop Specifications</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group">
             <label class="form-label">CPU</label>
@@ -239,7 +241,7 @@ function formatRupiah(val: number): string {
             <label class="form-label">Storage Type</label>
             <CustomSelect v-model="form.specsData.storage_type"
               :options="[{ value: 'SSD', label: 'SSD' }, { value: 'HDD', label: 'HDD' }, { value: 'NVMe', label: 'NVMe' }]"
-              placeholder="Pilih Tipe" />
+              placeholder="Select Type" />
           </div>
           <div class="form-group">
             <label class="form-label">OS</label>
@@ -250,15 +252,15 @@ function formatRupiah(val: number): string {
             <input v-model="form.specsData.vga" type="text" class="form-input" placeholder="e.g. Intel Iris Xe">
           </div>
           <div class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Paket Office</label>
+            <label class="form-label">Office Package</label>
             <input v-model="form.specsData.office" type="text" class="form-input"
               placeholder="e.g. Office Home & Student 2021">
           </div>
         </div>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Produk"
-      :message="`Yakin ingin menghapus produk '${deletingItem?.name}'?`" @close="showConfirm = false"
+    <ConfirmDialog :open="showConfirm" title="Delete Product"
+      :message="`Are you sure you want to delete product '${deletingItem?.name}'?`" @close="showConfirm = false"
       @confirm="handleDelete" />
   </div>
 </template>

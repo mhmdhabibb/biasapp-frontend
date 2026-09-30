@@ -30,7 +30,7 @@ onMounted(async () => {
   try {
     const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
     reportRecord.value = response.data
-    if (!job.value) throw new Error('Service report tidak ditemukan')
+    if (!job.value) throw new Error('Service report not found')
     form.value = {
       remarks: job.value.remarks || '',
       notes: job.value.notes || '',
@@ -39,7 +39,7 @@ onMounted(async () => {
       technician_signature: job.value.technician_signature || '',
     }
   } catch (err: any) {
-    toast.error(err.message || 'Gagal memuat service report')
+    toast.error(err.message || 'Failed to load service report')
   } finally {
     isLoading.value = false
   }
@@ -48,7 +48,7 @@ onMounted(async () => {
 async function saveForm() {
   if (isLoading.value || !job.value || isSaving.value) return
   if (!form.value.customer_signature || !form.value.technician_signature) {
-    toast.warning('Tanda tangan customer dan teknisi wajib dilengkapi.')
+    toast.warning('Customer and technician signatures are required.')
     return
   }
   isSaving.value = true
@@ -74,40 +74,40 @@ async function saveForm() {
   <div style="max-width: 800px; margin: 0 auto">
     <PageHeader title="Technical Report Form" :back-button="true" @back="router.back()" />
     <div class="card p-lg mt-md">
-      <div v-if="isLoading" class="form-loading" role="status">Memuat laporan servis...</div>
-      <div v-else-if="!job" class="form-loading" role="alert">Laporan servis tidak ditemukan. Data baru tidak dibuat.</div>
+      <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
+      <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
       <template v-else>
       <div class="form-group">
-        <label class="form-label">Hasil Pemeriksaan / Root Cause <span class="text-danger">*</span></label>
-        <textarea v-model="form.remarks" class="form-textarea" rows="4" placeholder="Deskripsikan hasil pengecekan unit..."></textarea>
+        <label class="form-label">Inspection Result / Root Cause <span class="text-danger">*</span></label>
+        <textarea v-model="form.remarks" class="form-textarea" rows="4" placeholder="Describe the unit inspection result..."></textarea>
       </div>
       
       <div class="form-group">
-        <label class="form-label">Catatan Tambahan (Internal)</label>
-        <textarea v-model="form.notes" class="form-textarea" rows="3" placeholder="Catatan operasional..."></textarea>
+        <label class="form-label">Additional Notes (Internal)</label>
+        <textarea v-model="form.notes" class="form-textarea" rows="3" placeholder="Operational notes..."></textarea>
       </div>
 
       <div class="form-group mt-lg">
         <label class="flex items-center gap-sm cursor-pointer p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm)">
           <input type="checkbox" v-model="form.is_tested" style="width: 20px; height: 20px;">
-          <span class="font-bold">Mesin sudah dilakukan testing dan berfungsi normal. <span class="text-danger">*</span></span>
+          <span class="font-bold">Machine has been tested and works normally. <span class="text-danger">*</span></span>
         </label>
       </div>
 
       <div class="signature-grid">
         <div class="form-group">
-          <label class="form-label">Tanda Tangan Customer <span class="text-danger">*</span></label>
+          <label class="form-label">Customer Signature <span class="text-danger">*</span></label>
           <SignaturePad v-model="form.customer_signature" height="160px" />
         </div>
         <div class="form-group">
-          <label class="form-label">Tanda Tangan Teknisi <span class="text-danger">*</span></label>
+          <label class="form-label">Technician Signature <span class="text-danger">*</span></label>
           <SignaturePad v-model="form.technician_signature" height="160px" />
         </div>
       </div>
 
       <div class="mt-xl">
         <button class="btn btn-primary w-full" style="padding: 12px; font-size: 16px;" :disabled="isLoading || isSaving" @click="saveForm">
-          {{ isSaving ? 'Menyimpan...' : 'Perbarui Technical Report' }}
+          {{ isSaving ? 'Saving...' : 'Update Technical Report' }}
         </button>
       </div>
       </template>

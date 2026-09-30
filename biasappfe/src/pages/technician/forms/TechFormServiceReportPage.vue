@@ -32,7 +32,7 @@ onMounted(async () => {
   try {
     const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
     reportRecord.value = response.data
-    if (!job.value) throw new Error('Service report tidak ditemukan')
+    if (!job.value) throw new Error('Service report not found')
     form.value = {
       repair_action: job.value.repair_action || '',
       spareparts: (job.value.service_spareparts || []).map((item: any) => ({
@@ -44,7 +44,7 @@ onMounted(async () => {
       technician_signature: job.value.technician_signature || '',
     }
   } catch (err: any) {
-    toast.error(err.message || 'Gagal memuat service report')
+    toast.error(err.message || 'Failed to load service report')
   } finally {
     isLoading.value = false
   }
@@ -52,7 +52,7 @@ onMounted(async () => {
 
 async function saveRepairAction() {
   if (!form.value.repair_action.trim()) {
-    toast.warning('Tindakan perbaikan wajib diisi sebelum lanjut.')
+    toast.warning('Repair action is required before continuing.')
     return
   }
   if (isLoading.value || !job.value || isSaving.value) return
@@ -63,7 +63,7 @@ async function saveRepairAction() {
     })
     currentStep.value = 2
   } catch (err: any) {
-    toast.error(err.message || 'Gagal memperbarui tindakan perbaikan')
+    toast.error(err.message || 'Failed to update repair action')
   } finally {
     isSaving.value = false
   }
@@ -107,7 +107,7 @@ async function saveSparepartsAndContinue() {
     removedSparepartIds.value = []
     currentStep.value = 3
   } catch (err: any) {
-    toast.error(err.message || 'Gagal memperbarui sparepart')
+    toast.error(err.message || 'Failed to update sparepart')
   } finally {
     isSaving.value = false
   }
@@ -115,7 +115,7 @@ async function saveSparepartsAndContinue() {
 
 async function saveSignatures() {
   if (!form.value.customer_signature || !form.value.technician_signature) {
-    toast.warning('Tanda tangan customer dan teknisi wajib dilengkapi.')
+    toast.warning('Customer and technician signatures are required.')
     return
   }
   if (isLoading.value || !job.value || isSaving.value) return
@@ -125,11 +125,11 @@ async function saveSignatures() {
       customer_signature: form.value.customer_signature,
       technician_signature: form.value.technician_signature,
     })
-    toast.success('Service Report berhasil diperbarui.')
+    toast.success('Service Report successfully updated.')
     await refresh(true)
     router.back()
   } catch (err: any) {
-    toast.error(err.message || 'Gagal menyimpan tanda tangan')
+    toast.error(err.message || 'Failed to save signatures')
   } finally {
     isSaving.value = false
   }
@@ -139,11 +139,11 @@ async function saveSignatures() {
   <div style="max-width: 800px; margin: 0 auto">
     <PageHeader title="Service Report Form" :back-button="true" @back="router.back()" />
     <div class="card p-lg mt-md">
-      <div v-if="isLoading" class="form-loading" role="status">Memuat laporan servis...</div>
-      <div v-else-if="!job" class="form-loading" role="alert">Laporan servis tidak ditemukan. Data baru tidak dibuat.</div>
+      <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
+      <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
       <div v-else>
-        <div class="wizard-steps" aria-label="Tahapan service report">
-          <div v-for="(label, index) in ['Tindakan', 'Sparepart', 'Tanda tangan']" :key="label" class="wizard-step" :class="{ active: currentStep === index + 1, complete: currentStep > index + 1 }">
+        <div class="wizard-steps" aria-label="Service report steps">
+          <div v-for="(label, index) in ['Action', 'Sparepart', 'Signature']" :key="label" class="wizard-step" :class="{ active: currentStep === index + 1, complete: currentStep > index + 1 }">
             <span class="wizard-step-number">{{ currentStep > index + 1 ? '✓' : index + 1 }}</span>
             <span>{{ label }}</span>
           </div>
@@ -152,51 +152,51 @@ async function saveSignatures() {
         <Transition name="step" mode="out-in">
           <section v-if="currentStep === 1" key="repair" class="step-panel">
             <div class="form-group">
-              <label class="form-label">Tindakan Perbaikan <span class="text-danger">*</span></label>
-              <textarea v-model="form.repair_action" class="form-textarea" rows="5" placeholder="Apa yang dilakukan untuk memperbaiki masalah?"></textarea>
+              <label class="form-label">Repair Action <span class="text-danger">*</span></label>
+              <textarea v-model="form.repair_action" class="form-textarea" rows="5" placeholder="What was done to fix the problem?"></textarea>
             </div>
             <button class="btn btn-primary w-full" :disabled="isSaving" @click="saveRepairAction">
-              {{ isSaving ? 'Menyimpan...' : 'Simpan & Lanjut ke Sparepart' }}
+              {{ isSaving ? 'Saving...' : 'Save & Continue to Sparepart' }}
             </button>
           </section>
 
           <section v-else-if="currentStep === 2" key="spareparts" class="step-panel">
             <div class="form-group sparepart-list">
-              <label class="form-label">Penggantian Komponen Langsung <span class="text-muted">(Opsional)</span></label>
+              <label class="form-label">Direct Component Replacement <span class="text-muted">(Optional)</span></label>
               <div v-for="(sp, index) in form.spareparts" :key="sp.id || index" class="sparepart-row">
                 <select v-model="sp.product_id" class="form-select">
-                  <option value="" disabled>Pilih Komponen...</option>
+                  <option value="" disabled>Select Component...</option>
                   <option v-for="product in products" :key="product.id" :value="product.id">{{ product.name }}</option>
                 </select>
                 <input v-model.number="sp.qty" type="number" class="form-input qty-input" min="1" placeholder="Qty">
-                <button type="button" class="btn btn-outline remove-sparepart" :aria-label="`Hapus sparepart ${index + 1}`" @click="removeSparepart(index)">Hapus</button>
+                <button type="button" class="btn btn-outline remove-sparepart" :aria-label="`Remove sparepart ${index + 1}`" @click="removeSparepart(index)">Delete</button>
               </div>
               <button type="button" class="btn btn-outline add-sparepart" @click="form.spareparts.push({ product_id: '', qty: 1 })">
-                + Tambah Sparepart
+                + Add Sparepart
               </button>
-              <p v-if="form.spareparts.length === 0" class="form-hint">Tidak ada sparepart? Lanjutkan ke tanda tangan.</p>
+              <p v-if="form.spareparts.length === 0" class="form-hint">No spareparts? Continue to signatures.</p>
             </div>
             <div class="step-actions">
-              <button class="btn btn-outline" :disabled="isSaving" @click="currentStep = 1">Kembali</button>
+              <button class="btn btn-outline" :disabled="isSaving" @click="currentStep = 1">Back</button>
               <button class="btn btn-primary" :disabled="isSaving" @click="saveSparepartsAndContinue">
-                {{ isSaving ? 'Menyimpan...' : form.spareparts.length ? 'Simpan & Lanjut' : 'Lewati & Lanjut' }}
+                {{ isSaving ? 'Saving...' : form.spareparts.length ? 'Save & Continue' : 'Skip & Continue' }}
               </button>
             </div>
           </section>
 
           <section v-else key="signatures" class="step-panel signature-step">
             <div class="signature-field">
-              <label class="form-label">Tanda Tangan Customer <span class="text-danger">*</span></label>
+              <label class="form-label">Customer Signature <span class="text-danger">*</span></label>
               <SignaturePad v-model="form.customer_signature" height="180px" />
             </div>
             <div class="signature-field">
-              <label class="form-label">Tanda Tangan Teknisi <span class="text-danger">*</span></label>
+              <label class="form-label">Technician Signature <span class="text-danger">*</span></label>
               <SignaturePad v-model="form.technician_signature" height="180px" />
             </div>
             <div class="step-actions">
-              <button class="btn btn-outline" :disabled="isSaving" @click="currentStep = 2">Kembali</button>
+              <button class="btn btn-outline" :disabled="isSaving" @click="currentStep = 2">Back</button>
               <button class="btn btn-primary" :disabled="isSaving" @click="saveSignatures">
-                {{ isSaving ? 'Menyimpan...' : 'Simpan & Selesaikan Form' }}
+                {{ isSaving ? 'Saving...' : 'Save & Complete Form' }}
               </button>
             </div>
           </section>

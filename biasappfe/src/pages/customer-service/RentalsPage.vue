@@ -163,10 +163,8 @@ function onItemSelectChange(item: any) {
     if (u) {
       item.is_copier = !!u.is_copier;
       item.is_computer = !!(u as any).is_computer;
-      if (u.current_meter_bw !== undefined)
-        item.start_meter_bw = u.current_meter_bw;
-      if (u.current_meter_color !== undefined)
-        item.start_meter_color = u.current_meter_color;
+      // NOTE: Initial meter is NOT auto-filled from the master unit.
+      // Admin must enter it manually on the first rental to keep reports accurate.
       if (u.free_quota_color !== undefined)
         item.free_quota_color = u.free_quota_color;
       if (Array.isArray(u.rates) && u.rates.length > 0) {
@@ -246,12 +244,33 @@ async function fetchRentals() {
       };
     });
   } catch (error) {
-    console.error("Gagal mengambil data rentals", error);
+    console.error("Failed to fetch rentals data", error);
   }
 }
 
 async function handleSubmit() {
   if (!form.customer_id) return;
+
+  // Validation: copier requires an initial meter + at least 1 paper type (size + rates)
+  for (let idx = 0; idx < rentalItems.value.length; idx++) {
+    const item = rentalItems.value[idx]!;
+    if (!item!.selected_item) {
+      toast.error(`Item #${idx + 1}: select a Unit / Product first.`);
+      return;
+    }
+    if (item.is_copier) {
+      if ((item.start_meter_bw ?? 0) < 0 || (item.start_meter_color ?? 0) < 0) {
+        toast.error(`Item #${idx + 1}: initial BW / Colour meter cannot be negative.`);
+        return;
+      }
+      const validRates = (item.rates || []).filter((r: any) => r.paper_size_id);
+      if (validRates.length === 0) {
+        toast.error(`Item #${idx + 1}: at least 1 Paper Type (Size) + rate is required on the first rental.`);
+        return;
+      }
+    }
+  }
+
   isLoading.value = true;
 
   const payload = {
@@ -274,8 +293,16 @@ async function handleSubmit() {
         monthly_rent: item.monthly_rent,
         start_meter_bw: item.start_meter_bw,
         start_meter_color: item.start_meter_color,
+        free_quota_color: item.free_quota_color,
         specs: item.specs || {},
         description: item.description,
+        rates: (item.rates || [])
+          .filter((r: any) => r.paper_size_id)
+          .map((r: any) => ({
+            paper_size_id: r.paper_size_id,
+            rate_per_page_bw: Number(r.rate_per_page_bw) || 0,
+            rate_per_page_color: Number(r.rate_per_page_color) || 0,
+          })),
       };
     }),
   };
@@ -319,7 +346,7 @@ async function openRentalInvoices(rental: any) {
     const response = await api.get<{ data: any }>(`/rents/${rental.id}`);
     selectedRental.value = response.data;
   } catch (error: any) {
-    toast.error(toast.fromError(error, "Gagal memuat invoice rental"));
+    toast.error(toast.fromError(error, "Failed to load rental invoices"));
   } finally {
     isLoadingRentalInvoices.value = false;
   }
@@ -338,11 +365,11 @@ function openInvoicePayment(invoice: any) {
 
 async function submitInvoicePayment() {
   if (!selectedInvoice.value || paymentForm.amount <= 0) {
-    toast.warning("Jumlah pembayaran harus lebih dari 0.");
+    toast.warning("Payment amount must be greater than 0.");
     return;
   }
   if (paymentForm.payment_method === "transfer" && (!paymentForm.bank_name.trim() || !paymentForm.account_number.trim() || !paymentForm.sender_name.trim())) {
-    toast.warning("Lengkapi bank, nomor rekening, dan nama pengirim.");
+    toast.warning("Please complete the bank, account number, and sender name.");
     return;
   }
 
@@ -360,13 +387,13 @@ async function submitInvoicePayment() {
       bank_name: bankName,
       reference_no: paymentForm.reference_no.trim() || "-",
     });
-    toast.success("Pembayaran dicatat dan menunggu approval.");
+    toast.success("Payment recorded and pending approval.");
     selectedInvoice.value = null;
     const rentalResponse = await api.get<{ data: any }>(`/rents/${selectedRental.value.id}`);
     selectedRental.value = rentalResponse.data;
     selectedInvoice.value = selectedRental.value?.rental_invoices?.find((invoice: any) => String(invoice.id) === invoiceId) || null;
   } catch (error: any) {
-    toast.error(toast.fromError(error, "Gagal mencatat pembayaran"));
+    toast.error(toast.fromError(error, "Failed to record payment"));
   } finally {
     isSavingPayment.value = false;
   }
@@ -416,10 +443,10 @@ onMounted(async () => {
         }}
       </template>
       <template #cell-start_date="{ value }">{{
-        new Date(value).toLocaleDateString("id-ID")
+        new Date(value).toLocaleDateString("en-GB")
       }}</template>
       <template #cell-end_date="{ value }">{{
-        new Date(value).toLocaleDateString("id-ID")
+        new Date(value).toLocaleDateString("en-GB")
       }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
       <template #cell-status="{ value }">
@@ -436,28 +463,28 @@ onMounted(async () => {
           class="btn btn-sm btn-outline"
           @click="openRentalInvoices(row)"
         >
-          Detail Invoice
+          Invoice Details
         </button>
       </template>
     </DataTable>
 
     <FormModal
       :open="showInvoiceModal"
-      :title="selectedRental ? `Invoice Rental ${selectedRental.rental_no}` : 'Invoice Rental'"
+      :title="selectedRental ? `Rental Invoices ${selectedRental.rental_no}` : 'Rental Invoices'"
       max-width="900px"
       @close="showInvoiceModal = false; selectedInvoice = null"
     >
-      <div v-if="isLoadingRentalInvoices" class="text-muted text-center py-lg">Memuat invoice rental...</div>
+      <div v-if="isLoadingRentalInvoices" class="text-muted text-center py-lg">Loading rental invoices...</div>
       <div v-else-if="selectedRental" class="rental-invoice-list">
         <article v-for="invoice in visibleRentalInvoices" :key="invoice.id" class="rental-invoice-row">
           <div class="rental-invoice-info">
             <strong>{{ invoice.invoice_no }}</strong>
-            <span>{{ invoice.period_start ? new Date(invoice.period_start).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }} – {{ invoice.period_end ? new Date(invoice.period_end).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }}</span>
+            <span>{{ invoice.period_start ? new Date(invoice.period_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }} – {{ invoice.period_end ? new Date(invoice.period_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }}</span>
           </div>
           <div class="rental-invoice-total">
             <strong>{{ formatRupiah(invoice.total_pay || invoice.subtotal || 0) }}</strong>
             <span class="badge" :class="invoice.payment_status === 'paid' ? 'badge-success' : invoice.payment_status === 'partially_paid' ? 'badge-info' : 'badge-warning'">
-              {{ invoice.payment_status === 'paid' ? 'Lunas' : invoice.payment_status === 'partially_paid' ? 'Sebagian' : 'Belum Bayar' }}
+              {{ invoice.payment_status === 'paid' ? 'Paid' : invoice.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
             </span>
           </div>
           <button
@@ -471,12 +498,12 @@ onMounted(async () => {
           </button>
         </article>
         <div v-if="!visibleRentalInvoices.length" class="rental-invoice-empty">
-          <strong>{{ selectedRental.rental_items?.some((item: any) => item.unit?.is_copier) ? 'Belum ada invoice untuk periode ini.' : 'Belum ada invoice yang periodenya dimulai.' }}</strong>
-          <span v-if="selectedRental.rental_items?.some((item: any) => item.unit?.is_copier)">Masukkan meter reading copier terlebih dahulu untuk membuat invoice.</span>
+          <strong>{{ selectedRental.rental_items?.some((item: any) => item.unit?.is_copier) ? 'No invoices for this period yet.' : 'No invoices with a started period yet.' }}</strong>
+          <span v-if="selectedRental.rental_items?.some((item: any) => item.unit?.is_copier)">Enter the copier meter reading first to generate invoices.</span>
         </div>
       </div>
       <template #footer>
-        <button type="button" class="btn btn-outline" @click="showInvoiceModal = false; selectedInvoice = null">Tutup</button>
+        <button type="button" class="btn btn-outline" @click="showInvoiceModal = false; selectedInvoice = null">Close</button>
       </template>
     </FormModal>
 
@@ -487,42 +514,42 @@ onMounted(async () => {
       @submit="submitInvoicePayment"
     >
       <div class="form-group">
-        <label class="form-label">Tanggal Pembayaran</label>
+        <label class="form-label">Payment Date</label>
         <input v-model="paymentForm.payment_date" type="date" class="form-input" required>
       </div>
       <div class="form-group">
-        <label class="form-label">Metode Pembayaran</label>
+        <label class="form-label">Payment Method</label>
         <select v-model="paymentForm.payment_method" class="form-select">
-          <option value="transfer">Transfer Bank</option>
-          <option value="cash">Tunai</option>
+          <option value="transfer">Bank Transfer</option>
+          <option value="cash">Cash</option>
         </select>
       </div>
       <template v-if="paymentForm.payment_method === 'transfer'">
         <div class="form-group">
-          <label class="form-label">Nama Bank</label>
+          <label class="form-label">Bank Name</label>
           <input v-model="paymentForm.bank_name" type="text" class="form-input" placeholder="BCA, Mandiri, BRI" required>
         </div>
         <div class="form-group">
-          <label class="form-label">Nomor Rekening</label>
+          <label class="form-label">Account Number</label>
           <input v-model="paymentForm.account_number" type="text" class="form-input" required>
         </div>
         <div class="form-group">
-          <label class="form-label">Nama Pengirim</label>
+          <label class="form-label">Sender Name</label>
           <input v-model="paymentForm.sender_name" type="text" class="form-input" required>
         </div>
       </template>
       <div class="form-group">
-        <label class="form-label">Jumlah Pembayaran</label>
+        <label class="form-label">Payment Amount</label>
         <input v-model.number="paymentForm.amount" type="number" class="form-input" min="1" required>
       </div>
       <div class="form-group">
-        <label class="form-label">No. Referensi</label>
-        <input v-model="paymentForm.reference_no" type="text" class="form-input" placeholder="Opsional">
+        <label class="form-label">Reference No.</label>
+        <input v-model="paymentForm.reference_no" type="text" class="form-input" placeholder="Optional">
       </div>
       <template #footer>
-        <button type="button" class="btn btn-outline" :disabled="isSavingPayment" @click="selectedInvoice = null">Batal</button>
+        <button type="button" class="btn btn-outline" :disabled="isSavingPayment" @click="selectedInvoice = null">Cancel</button>
         <button type="button" class="btn btn-primary" :disabled="isSavingPayment" @click="submitInvoicePayment">
-          {{ isSavingPayment ? 'Menyimpan...' : 'Catat Pembayaran' }}
+          {{ isSavingPayment ? 'Saving...' : 'Record Payment' }}
         </button>
       </template>
     </FormModal>
@@ -581,7 +608,7 @@ onMounted(async () => {
 
       <div class="form-row">
         <div class="form-group">
-          <label for="duration-days" class="form-label">Tambahan Hari</label>
+          <label for="duration-days" class="form-label">Additional Days</label>
           <input
             id="duration-days"
             v-model.number="form.duration_days"
@@ -591,36 +618,36 @@ onMounted(async () => {
           />
         </div>
         <div class="form-group">
-          <label for="po-no" class="form-label">PO No (Opsional)</label>
+          <label for="po-no" class="form-label">PO No (Optional)</label>
           <input
             id="po-no"
             v-model="form.po_no"
             type="text"
             class="form-input"
-            placeholder="Misal: PO-2024-001"
+            placeholder="E.g. PO-2024-001"
           />
         </div>
         <div class="form-group">
-          <label for="notes" class="form-label">Catatan</label>
-          <textarea id="notes" v-model="form.notes" class="form-input" placeholder="Opsional" rows="2"></textarea>
+          <label for="notes" class="form-label">Notes</label>
+          <textarea id="notes" v-model="form.notes" class="form-input" placeholder="Optional" rows="2"></textarea>
         </div>
       </div>
 
       <div class="form-group" style="margin-bottom: var(--space-md)">
         <label for="install-address" class="form-label"
-          >Alamat Instalasi / Pengiriman (Otomatis Dibuatkan DO)</label
+          >Installation / Delivery Address (DO Auto-Generated)</label
         >
         <textarea
           id="install-address"
           v-model="form.installation_address"
           class="form-input"
-          placeholder="Masukkan alamat lengkap pengiriman unit..."
+          placeholder="Enter the full unit delivery address..."
           rows="2"
           required
         ></textarea>
       </div>
 
-      <div class="form-section-title">Mesin Sewa & Input Meteran Awal</div>
+      <div class="form-section-title">Rented Machines & Initial Meter Input</div>
 
       <div
         v-for="(item, idx) in rentalItems"
@@ -655,25 +682,25 @@ onMounted(async () => {
               font-weight: var(--font-weight-bold);
             "
           >
-            Centang jika item ini adalah Mesin Copier (Perlu Input Meteran Awal)
+            Check if this item is a Copier Machine (Requires Initial Meter Input)
           </label>
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
-          <label class="form-label">Pilih Unit / Produk</label>
+          <label class="form-label">Select Unit / Product</label>
           <select
             v-model="item.selected_item"
             class="form-select"
             required
             @change="onItemSelectChange(item)"
           >
-            <option value="">-- Pilih Mesin atau Produk --</option>
-            <optgroup label="Mesin (Unit)">
+            <option value="">-- Select Machine or Product --</option>
+            <optgroup label="Machines (Units)">
               <option v-for="u in units" :key="u.id" :value="'unit_' + u.id">
                 {{ u.model }} ({{ (u as any).brand?.name }})
               </option>
             </optgroup>
-            <optgroup label="Produk / Lainnya">
+            <optgroup label="Products / Others">
               <option v-for="p in products" :key="p.id" :value="'prod_' + p.id">
                 {{ p.name }} ({{ (p as any).category?.name || "-" }})
               </option>
@@ -683,7 +710,7 @@ onMounted(async () => {
 
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Biaya Sewa / Bulan (Rp)</label>
+            <label class="form-label">Rental Fee / Month (Rp)</label>
             <input
               v-model.number="item.monthly_rent"
               type="number"
@@ -693,7 +720,7 @@ onMounted(async () => {
             />
           </div>
           <div class="form-group">
-            <label class="form-label">Qty Item</label>
+            <label class="form-label">Item Qty</label>
             <input
               v-model.number="item.qty"
               type="number"
@@ -704,7 +731,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- Copier Section moved from Gambar 1 to Gambar 2 -->
+        <!-- Copier Section moved from Figure 1 to Figure 2 -->
         <div
           v-if="item.is_copier"
           style="
@@ -721,7 +748,7 @@ onMounted(async () => {
               color: var(--color-primary);
             "
           >
-            Data Mesin Fotocopy
+            Photocopy Machine Details
           </h4>
           <div
             style="
@@ -732,26 +759,28 @@ onMounted(async () => {
           >
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem"
-                >Current BW Meter</label
+                >Initial BW Meter (Rental Start) *</label
               >
               <input
                 v-model.number="item.start_meter_bw"
                 type="number"
                 class="form-input"
                 min="0"
-                placeholder="0"
+                placeholder="Required on first rental"
+                :required="item.is_copier"
               />
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem"
-                >Current Color Meter</label
+                >Initial Colour Meter (Rental Start) *</label
               >
               <input
                 v-model.number="item.start_meter_color"
                 type="number"
                 class="form-input"
                 min="0"
-                placeholder="0"
+                placeholder="Required on first rental"
+                :required="item.is_copier"
               />
             </div>
             <div class="form-group">
@@ -780,7 +809,7 @@ onMounted(async () => {
               <label
                 class="form-label"
                 style="margin: 0; font-weight: 600; font-size: 0.85rem"
-                >Daftar Harga Kertas (Rates)</label
+                >Paper Type / Size (Rates) *</label
               >
               <button
                 type="button"
@@ -788,7 +817,7 @@ onMounted(async () => {
                 class="btn btn-secondary btn-sm"
                 style="padding: 0.2rem 0.5rem; font-size: 0.75rem"
               >
-                + Tambah Harga
+                + Add Price
               </button>
             </div>
 
@@ -812,8 +841,9 @@ onMounted(async () => {
                   v-model="rate.paper_size_id"
                   class="form-select"
                   style="font-size: 0.8rem"
+                  required
                 >
-                  <option value="">Pilih Ukuran</option>
+                  <option value="">-- Select Paper Type / Size * --</option>
                   <option v-for="p in paperSizes" :key="p.id" :value="p.id">
                     {{ p.name }}
                   </option>
@@ -825,7 +855,7 @@ onMounted(async () => {
                   type="number"
                   class="form-input"
                   min="0"
-                  placeholder="Tarif BW"
+                  placeholder="BW Rate"
                   style="font-size: 0.8rem"
                 />
               </div>
@@ -835,7 +865,7 @@ onMounted(async () => {
                   type="number"
                   class="form-input"
                   min="0"
-                  placeholder="Tarif Warna"
+                  placeholder="Colour Rate"
                   style="font-size: 0.8rem"
                 />
               </div>
@@ -879,7 +909,7 @@ onMounted(async () => {
                 border-radius: 6px;
               "
             >
-              Belum ada ukuran kertas yang ditambahkan.
+              No paper types added yet. At least 1 is required on first rental.
             </div>
           </div>
         </div>
@@ -893,12 +923,12 @@ onMounted(async () => {
         >
           <div class="form-group">
             <label class="form-label" style="font-size: 0.8rem"
-              >Deskripsi / Keterangan (Tampil di Invoice)</label
+              >Description / Notes (Shown on Invoice)</label
             >
             <textarea
               v-model="item.description"
               class="form-input"
-              placeholder="Misal: Kondisi mulus, termasuk kabel power..."
+              placeholder="E.g. Good condition, including power cable..."
               rows="2"
             ></textarea>
           </div>
@@ -916,7 +946,7 @@ onMounted(async () => {
           <button
             type="button"
             class="btn-remove-item"
-            title="Hapus Mesin"
+            title="Remove Machine"
             @click="removeRentalItem(idx)"
           >
             <svg
@@ -935,7 +965,7 @@ onMounted(async () => {
                 d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
               ></path>
             </svg>
-            Hapus Mesin
+            Remove Machine
           </button>
         </div>
       </div>
@@ -945,12 +975,12 @@ onMounted(async () => {
         class="btn btn-outline btn-sm mb-4"
         @click="addRentalItem"
       >
-        + Tambah Mesin Lain
+        + Add Another Machine
       </button>
 
       <div class="form-row">
         <div class="form-group">
-          <label for="rent-tax" class="form-label">Pajak (Rp)</label>
+          <label for="rent-tax" class="form-label">Tax (Rp)</label>
           <input
             id="rent-tax"
             v-model.number="form.tax"
@@ -961,7 +991,7 @@ onMounted(async () => {
         </div>
         <div class="form-group">
           <label for="rent-deposit" class="form-label"
-            >Uang Muka / Deposit (Rp)</label
+            >Down Payment / Deposit (Rp)</label
           >
           <input
             id="rent-deposit"
@@ -975,23 +1005,23 @@ onMounted(async () => {
 
       <div class="sale-summary mt-4">
         <div class="summary-row">
-          <span>Total Biaya Sewa ({{ form.duration_months }} bln)</span
+          <span>Total Rental Fee ({{ form.duration_months }} months)</span
           ><span>{{ formatRupiah(calcSubtotal) }}</span>
         </div>
         <div class="summary-row">
-          <span>Pajak</span><span>{{ formatRupiah(form.tax) }}</span>
+          <span>Tax</span><span>{{ formatRupiah(form.tax) }}</span>
         </div>
         <div class="summary-row">
           <span>Deposit</span><span>{{ formatRupiah(form.deposit) }}</span>
         </div>
         <div class="summary-row summary-total">
-          <span>Total Tagihan Kontrak</span
+          <span>Total Contract Amount</span
           ><span>{{ formatRupiah(calcTotal) }}</span>
         </div>
       </div>
 
       <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">
-        Menyimpan data & men-generate Kontrak...
+        Saving data & generating contract...
       </div>
     </FormModal>
   </div>

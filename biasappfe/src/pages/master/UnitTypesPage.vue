@@ -11,7 +11,7 @@ import type { TableColumn, UnitType } from '@/types'
 const toast = useToast()
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Nama Tipe' },
+  { key: 'name', label: 'Type Name' },
   { key: 'slug', label: 'Slug' },
 ]
 
@@ -23,7 +23,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch unit types:', error)
-    toast.error('Gagal mengambil data unit type: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch unit type data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -58,10 +58,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? 'Unit Type berhasil diperbarui!' : 'Unit Type berhasil disimpan!')
+    toast.success(editingItem.value ? 'Unit type updated successfully!' : 'Unit type saved successfully!')
   } catch (error) {
     console.error('Failed to save unit type:', error)
-    toast.error('Gagal menyimpan unit type: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save unit type: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -72,10 +72,10 @@ async function handleDelete() {
     try {
       await resources.unitTypes.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('Unit Type berhasil dihapus!')
+      toast.success('Unit type deleted successfully!')
     } catch (error) {
       console.error('Failed to delete unit type:', error)
-      toast.error('Gagal menghapus unit type')
+      toast.error('Failed to delete unit type')
     }
   }
   showConfirm.value = false
@@ -86,18 +86,18 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Unit Types" button-label="Add Unit Type" permission="unit_type:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari tipe unit..." permission="unit_type" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search unit types..." permission="unit_type" @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Unit Type' : 'Add Unit Type'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="ut-name" class="form-label">Nama Tipe</label>
-        <input id="ut-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Printer, Copier">
+        <label for="ut-name" class="form-label">Type Name</label>
+        <input id="ut-name" v-model="form.name" type="text" class="form-input" placeholder="Example: Printer, Copier">
       </div>
       <div class="form-group">
         <label for="ut-slug" class="form-label">Slug</label>
-        <input id="ut-slug" v-model="form.slug" type="text" class="form-input" placeholder="Otomatis dari nama jika kosong">
+        <input id="ut-slug" v-model="form.slug" type="text" class="form-input" placeholder="Auto-generated from name if empty">
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Tipe Unit" :message="`Yakin ingin menghapus tipe unit '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Unit Type" :message="`Are you sure you want to delete unit type '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

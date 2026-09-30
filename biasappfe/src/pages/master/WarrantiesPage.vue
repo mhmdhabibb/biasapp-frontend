@@ -16,10 +16,10 @@ const { customers, units, products, sales } = useMasterStore()
 
 const columns: TableColumn[] = [
   { key: 'customer_id', label: 'Customer' },
-  { key: 'warranty_type', label: 'Tipe Garansi' },
-  { key: 'unit_id', label: 'Unit / Produk' },
-  { key: 'start_date', label: 'Mulai' },
-  { key: 'end_date', label: 'Selesai' },
+  { key: 'warranty_type', label: 'Warranty Type' },
+  { key: 'unit_id', label: 'Unit / Product' },
+  { key: 'start_date', label: 'Start' },
+  { key: 'end_date', label: 'End' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -31,8 +31,8 @@ const statusOptions = [
 ]
 
 const coverageOptions = [
-  { value: 'unit', label: 'Unit (Mesin)' },
-  { value: 'product', label: 'Produk / Sparepart' },
+  { value: 'unit', label: 'Unit (Machine)' },
+  { value: 'product', label: 'Product / Spare Part' },
 ]
 
 const data = ref<Warranty[]>([])
@@ -43,7 +43,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch warranties:', error)
-    toast.error('Gagal mengambil data warranty: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch warranty data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -115,7 +115,7 @@ function getUnitOrProductName(item: Warranty) {
   }
   if (item.product_id) {
     const p = products.value.find((p: any) => String(p.id) === String(item.product_id))
-    return p ? (p as any).name : `Produk #${item.product_id}`
+    return p ? (p as any).name : `Product #${item.product_id}`
   }
   return '-'
 }
@@ -160,7 +160,7 @@ function openEdit(item: Warranty) {
 
 async function handleSubmit() {
   if (!form.warranty_type.trim() || !form.customer_id || !form.start_date) {
-    toast.warning('Harap lengkapi Tipe Garansi, Customer, dan Tanggal Mulai.')
+    toast.warning('Please complete Warranty Type, Customer, and Start Date.')
     return
   }
   const payload = {
@@ -184,10 +184,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? 'Warranty berhasil diperbarui!' : 'Warranty berhasil disimpan!')
+    toast.success(editingItem.value ? 'Warranty updated successfully!' : 'Warranty saved successfully!')
   } catch (error) {
     console.error('Failed to save warranty:', error)
-    toast.error('Gagal menyimpan warranty: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save warranty: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -198,10 +198,10 @@ async function handleDelete() {
     try {
       await resources.warranties.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('Warranty berhasil dihapus!')
+      toast.success('Warranty deleted successfully!')
     } catch (error) {
       console.error('Failed to delete warranty:', error)
-      toast.error('Gagal menghapus warranty')
+      toast.error('Failed to delete warranty')
     }
   }
   showConfirm.value = false
@@ -239,48 +239,48 @@ async function handleDelete() {
       <!-- Customer -->
       <div class="form-group" style="position: relative;">
         <label class="form-label">Customer <span class="required">*</span></label>
-        <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="Pilih customer" />
+        <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="Select customer" />
       </div>
 
-      <!-- Tipe Garansi -->
+      <!-- Warranty Type -->
       <div class="form-group">
-        <label class="form-label">Tipe Garansi <span class="required">*</span></label>
+        <label class="form-label">Warranty Type <span class="required">*</span></label>
         <input v-model="form.warranty_type" type="text" class="form-input"
-          placeholder="e.g. Full Service, Sparepart Only, On-site">
+          placeholder="e.g. Full Service, Spare Part Only, On-site">
       </div>
 
       <!-- Coverage: Unit or Product -->
       <div class="form-group" style="position: relative;">
         <label class="form-label">Coverage</label>
-        <CustomSelect v-model="form.coverage" :options="coverageOptions" placeholder="Pilih jenis coverage" :searchable="false" />
+        <CustomSelect v-model="form.coverage" :options="coverageOptions" placeholder="Select coverage type" :searchable="false" />
       </div>
 
       <div v-if="form.coverage === 'unit'" class="form-group" style="position: relative;">
-        <label class="form-label">Unit (Mesin)</label>
-        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="Pilih unit" />
+        <label class="form-label">Unit (Machine)</label>
+        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="Select unit" />
       </div>
 
       <div v-else class="form-group" style="position: relative;">
-        <label class="form-label">Produk / Sparepart</label>
-        <CustomSelect v-model="form.product_id" :options="productOptions" placeholder="Pilih produk" />
+        <label class="form-label">Product / Spare Part</label>
+        <CustomSelect v-model="form.product_id" :options="productOptions" placeholder="Select product" />
       </div>
 
       <!-- Linked Sale (optional) -->
       <div class="form-group" style="position: relative;">
-        <label class="form-label">Dari Transaksi Penjualan <span style="color: var(--color-text-muted); font-weight: 400;">(opsional)</span></label>
+        <label class="form-label">From Sales Transaction <span style="color: var(--color-text-muted); font-weight: 400;">(optional)</span></label>
         <CustomSelect v-model="form.sale_id" :options="saleOptions"
-          :placeholder="form.customer_id ? 'Pilih transaksi' : 'Pilih customer dulu'"
+          :placeholder="form.customer_id ? 'Select transaction' : 'Select a customer first'"
           :disabled="!form.customer_id" />
       </div>
 
       <!-- Duration -->
       <div class="form-row-2">
         <div class="form-group">
-          <label class="form-label">Durasi (bulan)</label>
+          <label class="form-label">Duration (months)</label>
           <input v-model.number="form.duration_months" type="number" class="form-input" min="0">
         </div>
         <div class="form-group">
-          <label class="form-label">Durasi (hari)</label>
+          <label class="form-label">Duration (days)</label>
           <input v-model.number="form.duration_days" type="number" class="form-input" min="0">
         </div>
       </div>
@@ -288,31 +288,31 @@ async function handleDelete() {
       <!-- Dates -->
       <div class="form-row-2">
         <div class="form-group">
-          <label class="form-label">Tanggal Mulai <span class="required">*</span></label>
+          <label class="form-label">Start Date <span class="required">*</span></label>
           <input v-model="form.start_date" type="date" class="form-input">
         </div>
         <div class="form-group">
-          <label class="form-label">Tanggal Selesai</label>
+          <label class="form-label">End Date</label>
           <input v-model="form.end_date" type="date" class="form-input">
         </div>
       </div>
 
       <!-- Terms -->
       <div class="form-group">
-        <label class="form-label">Syarat & Ketentuan</label>
+        <label class="form-label">Terms & Conditions</label>
         <textarea v-model="form.terms_conditions" class="form-input" rows="3"
-          placeholder="Ketentuan garansi..."></textarea>
+          placeholder="Warranty terms..."></textarea>
       </div>
 
       <!-- Status -->
       <div class="form-group" style="position: relative;">
         <label class="form-label">Status</label>
-        <CustomSelect v-model="form.status" :options="statusOptions" placeholder="Pilih status" :searchable="false" />
+        <CustomSelect v-model="form.status" :options="statusOptions" placeholder="Select status" :searchable="false" />
       </div>
     </FormModal>
 
     <ConfirmDialog :open="showConfirm" title="Delete Warranty"
-      :message="`Hapus warranty '${deletingItem?.warranty_type}'?`"
+      :message="`Are you sure you want to delete warranty '${deletingItem?.warranty_type}'?`"
       @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>

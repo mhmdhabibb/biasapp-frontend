@@ -28,7 +28,7 @@ async function fetchData() {
     users.value = userRes.data
   } catch (error) {
     console.error('Failed to fetch technicians:', error)
-    toast.error('Gagal mengambil data technician: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch technician data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -80,10 +80,10 @@ async function handleSubmit() {
       })
     } else {
       if (!form.user_id) {
-        return toast.warning('Pilih user untuk dijadikan technician!')
+        return toast.warning('Please select a user to assign as technician!')
       }
       if (!form.employee_code.trim()) {
-        return toast.warning('Employee code wajib diisi!')
+        return toast.warning('Employee code is required!')
       }
       // Backend create requires user_id + employee_code only
       await resources.technicians.create({
@@ -94,10 +94,10 @@ async function handleSubmit() {
     await fetchData()
     masterStore.refresh()
     showModal.value = false
-    toast.success(editingItem.value ? 'Technician berhasil diperbarui!' : 'Technician berhasil disimpan!')
+    toast.success(editingItem.value ? 'Technician updated successfully!' : 'Technician saved successfully!')
   } catch (error) {
     console.error('Failed to save technician:', error)
-    toast.error('Gagal menyimpan technician: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save technician: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -109,10 +109,10 @@ async function handleDelete() {
       await resources.technicians.remove(String(deletingItem.value.id))
       await fetchData()
       masterStore.refresh()
-      toast.success('Technician berhasil dihapus!')
+      toast.success('Technician deleted successfully!')
     } catch (error) {
       console.error('Failed to delete technician:', error)
-      toast.error('Gagal menghapus technician')
+      toast.error('Failed to delete technician')
     }
   }
   showConfirm.value = false

@@ -21,7 +21,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch customers:', error)
-    toast.error('Gagal mengambil data customer: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch customer data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -65,10 +65,10 @@ async function handleSubmit() {
     await fetchData()
     masterStore.refresh()
     showModal.value = false
-    toast.success(editingItem.value ? 'Customer berhasil diperbarui!' : 'Customer berhasil disimpan!')
+    toast.success(editingItem.value ? 'Customer updated successfully!' : 'Customer saved successfully!')
   } catch (error) {
     console.error('Failed to save customer:', error)
-    toast.error('Gagal menyimpan customer: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save customer: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -78,10 +78,10 @@ async function handleDelete() {
       await resources.customers.remove(String(deletingItem.value.id))
       await fetchData()
       masterStore.refresh()
-      toast.success('Customer berhasil dihapus!')
+      toast.success('Customer deleted successfully!')
     } catch (error) {
       console.error('Failed to delete customer:', error)
-      toast.error('Gagal menghapus customer')
+      toast.error('Failed to delete customer')
     }
   }
   showConfirm.value = false
@@ -117,7 +117,7 @@ async function handleDelete() {
       </div>
       <div class="form-group">
         <label for="cust-pic-position" class="form-label">PIC Position</label>
-        <input id="cust-pic-position" v-model="form.pic_position" type="text" class="form-input" placeholder="e.g. Kepala Bagian Umum">
+        <input id="cust-pic-position" v-model="form.pic_position" type="text" class="form-input" placeholder="e.g. General Affairs Head">
       </div>
       <div class="form-group">
         <label for="cust-nip" class="form-label">NIP (Optional)</label>

@@ -11,7 +11,7 @@ import { useResourcesStore } from '@/stores/resources.store'
 import { api } from '@/services/api'
 import type { SalesInvoice, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
-import { downloadStyledExcel, filterByYear, type StyledCell } from '@/utils/exportHelpers'
+import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 
 const toast = useToast()
@@ -32,8 +32,8 @@ const resources = useResourcesStore()
 const columns: TableColumn[] = [
   { key: 'invoice_no', label: 'No. Invoice' },
   { key: 'customer_id', label: 'Customer' },
-  { key: 'sale_id', label: 'Ref. Penjualan' },
-  { key: 'due_date', label: 'Jatuh Tempo' },
+  { key: 'sale_id', label: 'Sale Ref.' },
+  { key: 'due_date', label: 'Due Date' },
   { key: 'subtotal', label: 'Subtotal' },
   { key: 'total', label: 'Total' },
   { key: 'approval_status', label: 'Approval Status' },
@@ -44,7 +44,7 @@ function formatDate(value: any): string {
   if (!value) return '-'
   const d = new Date(value)
   if (isNaN(d.getTime())) return String(value).slice(0, 10)
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function approvalStatus(status: string): string {
@@ -88,6 +88,8 @@ const startDateFilter = ref('')
 const endDateFilter = ref('')
 const monthFilter = ref('')
 const yearFilter = ref(new Date().getFullYear())
+// Lock so double-clicking Export Excel does not produce 2 files.
+const isExporting = ref(false)
 
 function onMonthFilterChange() {
   if (!monthFilter.value) return
@@ -129,24 +131,76 @@ const filteredData = computed(() => {
 })
 
 function exportMonthToPdf() {
-  toast.info('Export PDF akan segera tersedia (contoh fungsi)')
+  toast.info('PDF export will be available soon (sample function)')
 }
 
-function exportMonthToExcel() {
-  toast.info('Export Excel akan segera tersedia (contoh fungsi)')
+async function exportMonthToExcel() {
+  if (isExporting.value) return
+  const items = filteredData.value
+  if (items.length === 0) {
+    toast.warning('No sales invoice data to export!')
+    return
+  }
+
+  let periodLabel = 'All_Periods'
+  if (monthFilter.value) {
+    periodLabel = monthFilter.value
+  } else if (startDateFilter.value || endDateFilter.value) {
+    periodLabel = `${startDateFilter.value || 'Start'}_to_${endDateFilter.value || 'End'}`
+  }
+
+  isExporting.value = true
+  try {
+    await exportInvoicesToExcel(items, `SalesInvoice_${periodLabel}`)
+    toast.success('Excel report downloaded successfully')
+  } finally {
+    isExporting.value = false
+  }
 }
 
 async function exportAnnualExcel() {
-  const year = yearFilter.value
-  const items = filterByYear(data.value, year, ['invoice_date', 'due_date', 'created_at'])
-  if (items.length === 0) {
-    toast.warning(`Tidak ada data sales invoice untuk tahun ${year}!`)
+  if (isExporting.value) return
+  const year = normalizeExportYear(yearFilter.value)
+  if (year === null) {
+    toast.warning('Invalid year (1900–2100)!')
     return
   }
-  await exportInvoicesToExcel(items, `SalesInvoice_Tahunan_${year}`)
+  // Annual export only for invoices that are approved AND paid.
+  const items = filterApprovedPaid(filterByYear(data.value, year, SALES_INVOICE_YEAR_FIELDS))
+  if (items.length === 0) {
+    toast.warning(`No approved & paid sales invoice data for year ${year}!`)
+    return
+  }
+  isExporting.value = true
+  try {
+    const sorted = [...items].sort((a: any, b: any) =>
+      String(a.invoice_date || a.created_at || a.due_date || '').localeCompare(
+        String(b.invoice_date || b.created_at || b.due_date || '')))
+    const recapRows: RecapRow[] = sorted.map((item: any, i: number) => {
+      const c = findCustomer(item.customer_id)
+      const dateVal = item.invoice_date || item.created_at || item.due_date
+      const period = dateVal ? new Date(dateVal).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+      return {
+        no: i + 1,
+        customer: c?.company_name || c?.name || '-',
+        invoiceNo: item.invoice_no || '-',
+        period,
+        total: item.total_amount ?? item.total ?? item.subtotal ?? 0,
+      }
+    })
+    const recap = buildRecapSheet(`Sales Invoice Recap ${year}`, `${items.length} invoice(s) (approved & paid)`, recapRows)
+    await exportInvoicesToExcel(items, `SalesInvoice_Annual_${year}`, [recap])
+    toast.success('Annual Excel report downloaded successfully')
+  } finally {
+    isExporting.value = false
+  }
 }
 
-async function exportInvoicesToExcel(items: any[], filename: string) {
+async function exportInvoicesToExcel(
+  items: any[],
+  filename: string,
+  leadingSheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = [],
+) {
   const groups = new Map<string, any[]>()
   for (const item of items) {
     const key = String(item.customer_id ?? 'unknown')
@@ -155,7 +209,9 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
   }
 
   const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
-  // Lebar kolom dalam satuan karakter Excel (bukan pixel) agar tidak melebar
+  // Sheet names must be unique (two customers may share the same company name).
+  const usedSheetNames = new Set<string>()
+  // Column widths in Excel character units (not pixels) to prevent overflow
   const columnWidths = [6, 40, 8, 10, 7, 16]
 
   for (const [customerId, groupItems] of groups) {
@@ -166,7 +222,10 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
     })
 
     const firstCustomer = findCustomer(sortedItems[0].customer_id)
-    const sheetName = firstCustomer?.company_name || firstCustomer?.name || 'Customer_' + customerId
+    const sheetName = uniqueSheetName(
+      firstCustomer?.company_name || firstCustomer?.name || 'Customer_' + customerId,
+      usedSheetNames,
+    )
 
     const rows: StyledCell[][] = []
     const addRow = (cells: StyledCell[]) => rows.push(cells)
@@ -175,7 +234,7 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
       const customer = findCustomer(item.customer_id)
       const custName = customer?.company_name || customer?.name || '-'
       const dateLabel = item.invoice_date || item.created_at
-        ? new Date(item.invoice_date || item.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+        ? new Date(item.invoice_date || item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
         : '-'
       const poNo = item.sale?.po_no || item.po_no || '-'
 
@@ -183,10 +242,10 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
       addRow([{ v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 2, style: 'plainBold' }, {}, {}, { v: 'Inv No. :', style: 'border' }, { v: item.invoice_no || '-', mergeAcross: 1, style: 'border' }])
       addRow([{ v: 'Ruko Purimas Blok A No.47 Kota Batam', mergeAcross: 2 }, {}, {}, { v: 'Date :', style: 'border' }, { v: dateLabel, mergeAcross: 1, style: 'border' }])
       addRow([{ v: 'Kepulauan Riau - Indonesia', mergeAcross: 2 }, {}, {}, { v: 'PO No. :', style: 'border' }, { v: poNo, mergeAcross: 1, style: 'border' }])
-      addRow([{ v: 'Phone : +62811 704 5657', mergeAcross: 2 }, {}, {}, { v: 'Kepada Yth.', style: 'headerCell', mergeAcross: 2 }])
+      addRow([{ v: 'Phone : +62811 704 5657', mergeAcross: 2 }, {}, {}, { v: 'To:', style: 'headerCell', mergeAcross: 2 }])
       addRow([{ v: 'Email : admin@biasbst.com', mergeAcross: 2 }, {}, {}, { v: custName, style: 'borderBold', mergeAcross: 2 }])
       addRow([{}, {}, {}, { v: customer?.address || '-', mergeAcross: 2, style: 'border' }])
-      addRow([{}, {}, {}, { v: 'Up : ' + (customer?.pic_name || '-'), mergeAcross: 2, style: 'border' }])
+      addRow([{}, {}, {}, { v: 'Attn: ' + (customer?.pic_name || '-'), mergeAcross: 2, style: 'border' }])
 
       addRow([{ v: 'INVOICE', mergeAcross: 5, style: 'titleCell' }])
       addRow([])
@@ -206,7 +265,7 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
       if (saleItems.length > 0) {
         saleItems.forEach((si: any, idx: number) => {
           const p: any = findProduct(si.product_id)
-          const pName = p ? p.name : 'Produk ID: ' + si.product_id
+          const pName = p ? p.name : 'Product ID: ' + si.product_id
           const qty = si.qty || 1
           const unitPrice = si.unit_price || si.price || 0
           const amount = unitPrice * qty
@@ -222,7 +281,7 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
       } else {
         addRow([
           { v: 1, style: 'borderCenter' },
-          { v: 'Data item tidak tersedia', style: 'border' },
+          { v: 'No item data available', style: 'border' },
           { v: '', style: 'border' },
           { v: '', style: 'border' },
           { v: 'Rp', style: 'border' },
@@ -237,9 +296,9 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
       addRow([{}, {}, {}, { v: 'Amount', style: 'grandTotalCell' }, { v: 'Rp', style: 'grandTotalCell' }, { v: grandTotal, style: 'grandTotalCell' }])
 
       addRow([])
-      addRow([{ v: 'Pembayaran Transfer ke rekening :', mergeAcross: 2 }, {}, {}, { v: 'Received By,' }, {}, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
-      addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Rek No. 106-08-85757', mergeAcross: 2 }, {}, {}, {}, {}, {}])
-      addRow([{ v: 'A/N : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 2 }, {}, {}, {}, {}, { v: 'Grace', style: 'plainBold' }])
+      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 2 }, {}, {}, { v: 'Received By,' }, {}, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
+      addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Account No. 106-08-85757', mergeAcross: 2 }, {}, {}, {}, {}, {}])
+      addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 2 }, {}, {}, {}, {}, { v: 'Grace', style: 'plainBold' }])
       addRow([])
     }
 
@@ -247,15 +306,19 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
     sheets.push({ name: sheetName, columnWidths, rows })
   }
 
-  await downloadStyledExcel(sheets, filename)
-  toast.success('Report Excel berhasil diunduh')
+  await downloadStyledExcel([...leadingSheets, ...sheets], filename)
 }
 
 async function exportAnnualPdf() {
-  const year = yearFilter.value
-  const items = filterByYear(data.value, year, ['invoice_date', 'due_date', 'created_at'])
+  const year = normalizeExportYear(yearFilter.value)
+  if (year === null) {
+    toast.warning('Invalid year (1900–2100)!')
+    return
+  }
+  // Annual export only for invoices that are approved AND paid.
+  const items = filterApprovedPaid(filterByYear(data.value, year, SALES_INVOICE_YEAR_FIELDS))
   if (items.length === 0) {
-    toast.warning(`Tidak ada data sales invoice untuk tahun ${year}!`)
+    toast.warning(`No approved & paid sales invoice data for year ${year}!`)
     return
   }
 
@@ -296,7 +359,7 @@ async function exportAnnualPdf() {
 
   const fullHtml = `<!DOCTYPE html>
 <html>
-<head><title>Laporan Tahunan Sales Invoice ${year}</title><style>${style}</style></head>
+  <head><title>Annual Sales Invoice Report ${year}</title><style>${style}</style></head>
 <body>${body}
 <script>window.onload=function(){setTimeout(()=>{window.print()},500)}<\/script>
 </body></html>`
@@ -364,9 +427,9 @@ async function handleDelete() {
     try {
       await resources.remove("salesInvoices", deletingItem.value.id as any)
       useMasterStore().refresh(true)
-      toast.success("Invoice berhasil dihapus!")
+      toast.success("Invoice deleted successfully!")
     } catch (error) {
-      toast.error("Gagal menghapus invoice!")
+      toast.error("Failed to delete invoice!")
     }
   }
   showConfirm.value = false
@@ -376,9 +439,9 @@ async function handleUpdateStatus(item: any, newStatus: string) {
   try {
     await api.patch(`/sales-invoices/${item.id}`, { status: newStatus })
     await useMasterStore().refresh(true)
-    toast.success(`Status invoice berhasil diupdate menjadi ${newStatus}`)
+    toast.success(`Invoice status updated to ${newStatus}`)
   } catch (error: any) {
-    toast.error('Gagal update status: ' + (error.message || 'Error'))
+    toast.error('Failed to update status: ' + (error.message || 'Error'))
   }
 }
 
@@ -404,22 +467,22 @@ function invoiceHtml(item: any): string {
   const custPhone = customer?.phone || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
+  let prefix = 'Mr./Mrs. '
+  if (gender === 'L') prefix = 'Mr. '
+  if (gender === 'P') prefix = 'Mrs. '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
   
   const invoiceNo = item.invoice_no || '-'
   const invoiceDate = item.created_at || item.due_date
   
-  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
   let itemsHtml = ''
   const sale = findSale(item.sale_id)
   if (sale && sale.sale_items && sale.sale_items.length > 0) {
     itemsHtml = sale.sale_items.map((si: any, idx: number) => {
       const p = findProduct(si.product_id)
-      let pName = p ? p.name : ('Produk ID: ' + si.product_id)
+      let pName = p ? p.name : ('Product ID: ' + si.product_id)
       if (si.description) {
         pName += `<br><span style="font-size: 10px; color: #555;">${si.description}</span>`
       }
@@ -435,7 +498,7 @@ function invoiceHtml(item: any): string {
       `
     }).join('')
   } else {
-    itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">Data item tidak tersedia</td></tr>`
+    itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">Item data not available</td></tr>`
   }
 
   const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
@@ -526,7 +589,7 @@ function invoiceHtml(item: any): string {
                   </tr>
                   ` : ''}
                   <tr>
-                    <td colspan="2" class="bg-blue">Kepada Yth. :</td>
+                    <td colspan="2" class="bg-blue">To:</td>
                   </tr>
                   <tr>
                     <td colspan="2" style="font-weight: bold; height: 35px; vertical-align: top;">${custName}</td>
@@ -542,7 +605,7 @@ function invoiceHtml(item: any): string {
                     <td>${custPhone}</td>
                   </tr>
                   <tr>
-                    <td class="label">Up.:</td>
+                    <td class="label">Attn:</td>
                     <td>${picDisplay}</td>
                   </tr>
                 </table>
@@ -593,10 +656,10 @@ function invoiceHtml(item: any): string {
           </table>
 
           <div class="payment-info">
-            Pembayaran Transfer ke rekening :<br>
+            Payment by transfer to account:<br>
             BANK BRKSYARIAH Cabang Batam<br>
-            Rek No. 106-08-85757<br>
-            A/N : PT. BIAS SURYA TEKNOLOGI<br>
+            Account No. 106-08-85757<br>
+            Account Name : PT. BIAS SURYA TEKNOLOGI<br>
             NPWP : 0941.8395.0822.5000
           </div>
 
@@ -606,7 +669,7 @@ function invoiceHtml(item: any): string {
               <div class="sig-line"></div>
             </div>
             <div class="sig-box">
-              Hormat Kami,
+              Sincerely,
               <div class="sig-line">Grace</div>
             </div>
           </div>
@@ -619,7 +682,7 @@ function invoiceHtml(item: any): string {
 
 function printInvoice(item: any) {
   if (item.status !== 'approved') {
-    toast.warning('Invoice belum disetujui, tidak dapat print receipt')
+    toast.warning('Invoice is not approved yet, cannot print receipt')
     return
   }
   const html = invoiceHtml(item).replace('</body>', '<script>window.onload=function(){setTimeout(()=>{window.print()},500)}<\/script></body>')
@@ -639,19 +702,19 @@ function printInvoice(item: any) {
     <div class="filter-toolbar">
       <div class="filter-inputs">
         <div class="filter-item">
-          <label class="filter-label">Tanggal Awal</label>
+          <label class="filter-label">Start Date</label>
           <input v-model="startDateFilter" type="date" class="form-input filter-input">
         </div>
         <div class="filter-item">
-          <label class="filter-label">Tanggal Akhir</label>
+          <label class="filter-label">End Date</label>
           <input v-model="endDateFilter" type="date" class="form-input filter-input">
         </div>
         <div class="filter-item">
-          <label class="filter-label">Filter Bulan</label>
+          <label class="filter-label">Month Filter</label>
           <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
         </div>
         <div class="filter-item">
-          <label class="filter-label">Tahun</label>
+          <label class="filter-label">Year</label>
           <input v-model.number="yearFilter" type="number" min="1900" max="9999" class="form-input filter-input">
         </div>
         <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
@@ -664,22 +727,22 @@ function printInvoice(item: any) {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
           Export PDF
         </button>
-        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel" title="Export Invoices (Excel)">
+        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel" :disabled="isExporting" title="Export Invoices (Excel)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
           Export Excel
         </button>
-        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf" title="Export Tahunan (PDF)">
+          <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf" title="Export Annual (PDF)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-          Tahunan PDF
+          Annual PDF
         </button>
-        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportAnnualExcel" title="Export Tahunan (Excel)">
+          <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportAnnualExcel" :disabled="isExporting" title="Export Annual (Excel)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
-          Tahunan Excel
+          Annual Excel
         </button>
       </div>
     </div>
 
-    <DataTable :columns="columns" :data="filteredData" search-placeholder="Cari invoice penjualan..." @edit="openEdit" @delete="openDelete">
+    <DataTable :columns="columns" :data="filteredData" search-placeholder="Search sales invoices..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-sale_id="{ value }">{{ saleRef(value) }}</template>
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
@@ -687,12 +750,12 @@ function printInvoice(item: any) {
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-approval_status="{ value }">
         <span :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-          {{ approvalStatus(value) === 'approved' ? 'Disetujui' : approvalStatus(value) === 'rejected' ? 'Ditolak' : 'Pending' }}
+          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' : 'Pending' }}
         </span>
       </template>
       <template #cell-payment_status="{ value }">
         <span :class="value === 'paid' ? 'badge badge-success' : value === 'overdue' ? 'badge badge-danger' : value === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-          {{ value === 'paid' ? 'Lunas' : value === 'overdue' ? 'Lewat Jatuh Tempo' : value === 'partially_paid' ? 'Sebagian' : 'Belum Bayar' }}
+          {{ value === 'paid' ? 'Paid' : value === 'overdue' ? 'Overdue' : value === 'partially_paid' ? 'Partial' : 'Unpaid' }}
         </span>
       </template>
       <template #actions="{ row }">
@@ -739,21 +802,21 @@ function printInvoice(item: any) {
         <input id="si-no" v-model="form.invoice_no" type="text" class="form-input" placeholder="INV-S-XXXXXX">
       </div>
       <div class="form-group">
-        <label for="si-sale" class="form-label">Referensi Penjualan</label>
+        <label for="si-sale" class="form-label">Sale Reference</label>
         <select id="si-sale" v-model="form.sale_id" class="form-select" @change="onSaleChange">
-          <option :value="null">-- Pilih Penjualan --</option>
+          <option :value="null">-- Select Sale --</option>
           <option v-for="s in sales" :key="s.id" :value="s.id">{{ s.sale_no }} — {{ formatRupiah(s.total) }}</option>
         </select>
       </div>
       <div class="form-group">
         <label for="si-customer" class="form-label">Customer</label>
         <select id="si-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Pilih Customer --</option>
+          <option :value="null">-- Select Customer --</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="si-due" class="form-label">Jatuh Tempo</label>
+        <label for="si-due" class="form-label">Due Date</label>
         <input id="si-due" v-model="form.due_date" type="date" class="form-input">
       </div>
       <div class="form-row">
@@ -762,12 +825,12 @@ function printInvoice(item: any) {
           <input id="si-subtotal" v-model.number="form.subtotal" type="number" class="form-input" min="0">
         </div>
         <div class="form-group">
-          <label for="si-svc" class="form-label">Biaya Jasa (Rp)</label>
+          <label for="si-svc" class="form-label">Service Fee (Rp)</label>
           <input id="si-svc" v-model.number="form.service_charge" type="number" class="form-input" min="0">
         </div>
       </div>
       <div class="form-group">
-        <label for="si-tax" class="form-label">Pajak (Rp)</label>
+        <label for="si-tax" class="form-label">Tax (Rp)</label>
         <input id="si-tax" v-model.number="form.tax" type="number" class="form-input" min="0">
       </div>
       <div class="sale-summary">
@@ -776,15 +839,15 @@ function printInvoice(item: any) {
       <div class="form-group">
         <label for="si-status" class="form-label">Status</label>
         <select id="si-status" v-model="form.status" class="form-select">
-          <option value="unpaid">Belum Bayar</option>
-          <option value="paid">Lunas</option>
-          <option value="overdue">Lewat Jatuh Tempo</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="paid">Paid</option>
+          <option value="overdue">Overdue</option>
         </select>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Invoice Penjualan" :message="`Yakin ingin menghapus invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Sales Invoice" :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
 
-    <FormModal :open="showDetail" :title="detailItem ? `Detail Invoice ${detailItem.invoice_no}` : 'Detail Invoice'" @close="showDetail = false">
+    <FormModal :open="showDetail" :title="detailItem ? `Invoice Details ${detailItem.invoice_no}` : 'Invoice Details'" @close="showDetail = false">
       <template v-if="detailItem">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
           <div class="form-group">
@@ -796,7 +859,7 @@ function printInvoice(item: any) {
             <div>{{ customerName(detailItem.customer_id) }}</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Ref. Penjualan</label>
+            <label class="form-label">Sale Ref.</label>
             <div>{{ saleRef(detailItem.sale_id) }}</div>
           </div>
           <div class="form-group">
@@ -806,27 +869,27 @@ function printInvoice(item: any) {
           <div class="form-group">
             <label class="form-label">Approval Status</label>
             <span :class="approvalStatus(detailItem.status) === 'approved' ? 'badge badge-info' : approvalStatus(detailItem.status) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-              {{ approvalStatus(detailItem.status) === 'approved' ? 'Disetujui' : approvalStatus(detailItem.status) === 'rejected' ? 'Ditolak' : 'Pending' }}
+              {{ approvalStatus(detailItem.status) === 'approved' ? 'Approved' : approvalStatus(detailItem.status) === 'rejected' ? 'Rejected' : 'Pending' }}
             </span>
           </div>
           <div class="form-group">
-            <label class="form-label">Status Pembayaran</label>
+            <label class="form-label">Payment Status</label>
             <span :class="detailItem.payment_status === 'paid' ? 'badge badge-success' : detailItem.payment_status === 'overdue' ? 'badge badge-danger' : detailItem.payment_status === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-              {{ detailItem.payment_status === 'paid' ? 'Lunas' : detailItem.payment_status === 'overdue' ? 'Lewat Jatuh Tempo' : detailItem.payment_status === 'partially_paid' ? 'Sebagian' : 'Belum Bayar' }}
+              {{ detailItem.payment_status === 'paid' ? 'Paid' : detailItem.payment_status === 'overdue' ? 'Overdue' : detailItem.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
             </span>
           </div>
         </div>
 
-        <div class="form-section-title" style="margin-bottom: 8px;">Riwayat Pembayaran</div>
+        <div class="form-section-title" style="margin-bottom: 8px;">Payment History</div>
         <div v-if="invoicePayments(detailItem).length > 0" style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;">
           <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
             <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
               <tr>
-                <th style="padding: 12px;">No. Pembayaran</th>
-                <th style="padding: 12px;">Tanggal</th>
-                <th style="padding: 12px;">Metode / Bank</th>
-                <th style="padding: 12px;">No Ref</th>
-                <th style="padding: 12px; text-align: right;">Jumlah</th>
+                <th style="padding: 12px;">Payment No.</th>
+                <th style="padding: 12px;">Date</th>
+                <th style="padding: 12px;">Method / Bank</th>
+                <th style="padding: 12px;">Ref No.</th>
+                <th style="padding: 12px; text-align: right;">Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -841,11 +904,11 @@ function printInvoice(item: any) {
           </table>
         </div>
         <div v-else style="padding: 16px; text-align: center; color: var(--color-text-muted); background: var(--color-surface); border-radius: var(--radius-md);">
-          Belum ada riwayat pembayaran.
+          No payment history yet.
         </div>
       </template>
       <template #footer>
-        <button class="btn btn-outline" @click="showDetail = false">Tutup</button>
+        <button class="btn btn-outline" @click="showDetail = false">Close</button>
       </template>
     </FormModal>
   </div>
@@ -964,6 +1027,13 @@ function printInvoice(item: any) {
 .btn-export-excel:hover {
   background: #15803d;
   transform: translateY(-1px);
+}
+
+.btn-export-excel:disabled,
+.btn-export-pdf:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .form-section-title {

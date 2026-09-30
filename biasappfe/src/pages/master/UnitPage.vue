@@ -53,7 +53,7 @@ async function fetchData() {
     uoms.value = resUoms.data as any
   } catch (error: any) {
     console.error('Failed to fetch data:', error)
-    toast.error('Gagal mengambil data dari server: ' + (error.message || 'Error'))
+    toast.error('Failed to fetch data from server: ' + (error.message || 'Error'))
   }
 }
 
@@ -136,7 +136,7 @@ function openEdit(item: any) {
 
 async function handleSubmit() {
   if (!form.brand_id || !form.type_id || !form.name.trim() || !form.serial_no.trim()) {
-    toast.warning('Harap lengkapi semua field yang wajib (Nama Unit, Brand, Tipe, Serial Number).')
+    toast.warning('Please complete all required fields (Unit Name, Brand, Type, Serial Number).')
     return
   }
   try {
@@ -146,16 +146,16 @@ async function handleSubmit() {
     }
     if (editingItem.value) {
       await resources.units.update(String(editingItem.value.id), payload)
-      toast.success("Unit berhasil diperbarui!")
+      toast.success("Unit updated successfully!")
     } else {
       await resources.units.create(payload)
-      toast.success("Unit berhasil disimpan!")
+      toast.success("Unit saved successfully!")
     }
     await fetchData()
     showModal.value = false
   } catch (error: any) {
     console.error('Failed to save unit:', error)
-    toast.error('Gagal menyimpan data Unit: ' + (error.message || 'Terjadi kesalahan'))
+    toast.error('Failed to save Unit data: ' + (error.message || 'An error occurred'))
   }
 }
 
@@ -166,10 +166,10 @@ async function handleDelete() {
     try {
       await resources.units.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success("Unit berhasil dihapus!")
+      toast.success("Unit deleted successfully!")
     } catch (error) {
       console.error('Failed to delete unit:', error)
-      toast.error('Gagal menghapus data Unit')
+      toast.error('Failed to delete Unit data')
     }
   }
   showConfirm.value = false
@@ -258,19 +258,19 @@ const badgeFalse = {
       <div class="form-group" style="margin-top: 1rem;">
         <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" v-model="form.is_copier" style="width: 1rem; height: 1rem;" />
-          Adalah Mesin Fotocopy
+          Is a Photocopy Machine
         </label>
       </div>
       <div class="form-group" style="margin-top: 1rem;">
         <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" v-model="form.is_computer" style="width: 1rem; height: 1rem;" />
-          Adalah Komputer / PC / Laptop
+          Is a Computer / PC / Laptop
         </label>
       </div>
 
       <div v-if="form.is_computer"
         style="margin-top: 1rem; border-top: 1px solid var(--color-border-light); padding-top: 1rem;">
-        <h4 style="margin-bottom: 1rem; font-weight: 600;">Spesifikasi Komputer / Desktop</h4>
+        <h4 style="margin-bottom: 1rem; font-weight: 600;">Computer / Desktop Specifications</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group">
             <label class="form-label">CPU</label>
@@ -288,7 +288,7 @@ const badgeFalse = {
             <label class="form-label">Storage Type</label>
             <CustomSelect v-model="form.specsData.storage_type"
               :options="[{ value: 'SSD', label: 'SSD' }, { value: 'HDD', label: 'HDD' }, { value: 'NVMe', label: 'NVMe' }]"
-              placeholder="Pilih Tipe" />
+              placeholder="Select Type" />
           </div>
           <div class="form-group">
             <label class="form-label">OS</label>
@@ -299,7 +299,7 @@ const badgeFalse = {
             <input v-model="form.specsData.vga" type="text" class="form-input" placeholder="e.g. Intel Iris Xe">
           </div>
           <div class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Paket Office</label>
+            <label class="form-label">Office Package</label>
             <input v-model="form.specsData.office" type="text" class="form-input"
               placeholder="e.g. Office Home & Student 2021">
           </div>

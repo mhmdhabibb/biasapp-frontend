@@ -21,15 +21,15 @@ const {
 } = useMasterStore()
 
 const columns: TableColumn[] = [
-  { key: 'period', label: 'Periode' },
-  { key: 'contract_item_id', label: 'Kontrak' },
-  { key: 'service_report_id', label: 'Laporan Servis' },
-  { key: 'counter_mono_start', label: 'Mono Awal' },
-  { key: 'counter_mono_end', label: 'Mono Akhir' },
-  { key: 'counter_color_start', label: 'Color Awal' },
-  { key: 'counter_color_end', label: 'Color Akhir' },
-  { key: 'total_usage', label: 'Total Pemakaian' },
-  { key: 'total_amount', label: 'Total Biaya' },
+  { key: 'period', label: 'Period' },
+  { key: 'contract_item_id', label: 'Contract' },
+  { key: 'service_report_id', label: 'Service Report' },
+  { key: 'counter_mono_start', label: 'Mono Start' },
+  { key: 'counter_mono_end', label: 'Mono End' },
+  { key: 'counter_color_start', label: 'Color Start' },
+  { key: 'counter_color_end', label: 'Color End' },
+  { key: 'total_usage', label: 'Total Usage' },
+  { key: 'total_amount', label: 'Total Fee' },
 ]
 
 const showModal = ref(false)
@@ -142,7 +142,7 @@ function formatRupiah(val: number): string {
 <template>
   <div>
     <PageHeader title="Monthly Meter Readings" button-label="Add Meter Reading" permission="monthly_meter_reading:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" permission="monthly_meter_reading" search-placeholder="Cari pembacaan meter..." @edit="openEdit" @delete="openDelete">
+    <DataTable :columns="columns" :data="data" permission="monthly_meter_reading" search-placeholder="Search meter readings..." @edit="openEdit" @delete="openDelete">
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-service_report_id="{ value }">{{ srNo(value as any) }}</template>
     </DataTable>
@@ -190,7 +190,7 @@ function formatRupiah(val: number): string {
         </div>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Pembacaan Meter" :message="`Yakin ingin menghapus pembacaan periode '${deletingItem?.period}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Meter Reading" :message="`Are you sure you want to delete the reading for period '${deletingItem?.period}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

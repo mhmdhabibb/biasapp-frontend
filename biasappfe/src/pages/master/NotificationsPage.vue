@@ -42,14 +42,14 @@ async function handleSubmit() {
     await create(form)
   }
   showModal.value = false
-  toast.success(editingItem.value ? 'Notification berhasil diperbarui!' : 'Notification berhasil disimpan!')
+  toast.success(editingItem.value ? 'Notification updated successfully!' : 'Notification saved successfully!')
 }
 
 function openDelete(item: Notification) { deletingItem.value = item; showConfirm.value = true }
 async function handleDelete() {
   if (deletingItem.value) await remove(String(deletingItem.value.id))
   showConfirm.value = false
-  toast.success('Notification berhasil dihapus!')
+  toast.success('Notification deleted successfully!')
 }
 </script>
 
@@ -57,13 +57,13 @@ async function handleDelete() {
   <div>
     <PageHeader title="Notifications" button-label="Add Notification" permission="notification:create" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari..." permission="notification" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search..." permission="notification" @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Notification' : 'Add Notification'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group" v-for="col in columns" :key="col.key">
         <label class="form-label">{{ col.label }}</label>
         <input v-model="form[col.key]" type="text" class="form-input">
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Notification" message="Yakin ingin menghapus item ini?" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Notification" message="Are you sure you want to delete this item?" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>

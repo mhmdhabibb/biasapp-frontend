@@ -14,7 +14,7 @@ export function useNotificationsStore() {
     try {
       notifications.value = (await notificationService.list()).data;
     } catch (reason) {
-      error.value = reason instanceof ApiError ? reason.message : "Gagal memuat data";
+      error.value = reason instanceof ApiError ? reason.message : "Failed to load data";
     } finally {
       isLoading.value = false;
     }

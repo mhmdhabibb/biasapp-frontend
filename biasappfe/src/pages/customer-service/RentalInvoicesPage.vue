@@ -9,7 +9,7 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { RentalInvoice, TableColumn } from '@/types'
-import { downloadStyledExcel, filterByYear, type StyledCell } from '@/utils/exportHelpers'
+import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { computed, reactive, ref } from 'vue'
 
 const toast = useToast()
@@ -41,7 +41,7 @@ function formatDate(value: any): string {
   if (!value) return '-'
   const d = new Date(value)
   if (isNaN(d.getTime())) return String(value).slice(0, 10)
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function approvalStatus(status: string): string {
@@ -80,6 +80,8 @@ const endDateFilter = ref('')
 const monthFilter = ref('')
 const customerFilter = ref('')
 const yearFilter = ref(new Date().getFullYear())
+// Lock so double-clicking Export Excel does not produce 2 files.
+const isExporting = ref(false)
 
 function onMonthFilterChange() {
   if (!monthFilter.value) return
@@ -125,23 +127,34 @@ const filteredData = computed(() => {
 })
 
 async function exportMonthToExcel() {
+  if (isExporting.value) return
   const items = filteredData.value
   if (items.length === 0) {
-    toast.warning('Tidak ada data rental invoice untuk diekspor!')
+    toast.warning('No rental invoice data to export!')
     return
   }
 
-  let periodLabel = 'Semua_Periode'
+  let periodLabel = 'All_Periods'
   if (monthFilter.value) {
     periodLabel = monthFilter.value
   } else if (startDateFilter.value || endDateFilter.value) {
-    periodLabel = `${startDateFilter.value || 'Awal'}_sd_${endDateFilter.value || 'Akhir'}`
+    periodLabel = `${startDateFilter.value || 'Start'}_to_${endDateFilter.value || 'End'}`
   }
 
-  await exportInvoicesToExcel(items, `RentalInvoice_${periodLabel}`)
+  isExporting.value = true
+  try {
+    await exportInvoicesToExcel(items, `RentalInvoice_${periodLabel}`)
+    toast.success('Excel report downloaded successfully')
+  } finally {
+    isExporting.value = false
+  }
 }
 
-async function exportInvoicesToExcel(items: any[], filename: string) {
+async function exportInvoicesToExcel(
+  items: any[],
+  filename: string,
+  leadingSheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = [],
+) {
   const groups = new Map<string, any[]>()
   for (const item of items) {
     const key = String(item.customer_id ?? 'unknown')
@@ -150,7 +163,9 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
   }
 
   const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
-  // Lebar kolom: A=No(5), B=Description(30), C=MeterValues(12), D=Operator/Rate(8), E=Rp(4), F=Amount(16)
+  // Sheet names must be unique (two customers may share the same company name).
+  const usedSheetNames = new Set<string>()
+  // Column widths: A=No(5), B=Description(30), C=MeterValues(12), D=Operator/Rate(8), E=Rp(4), F=Amount(16)
   const columnWidths = [5, 30, 12, 8, 4, 16]
 
   const fmtRp = (n: number) => n > 0 ? n.toLocaleString('id-ID') : (n === 0 ? '0' : String(n))
@@ -163,7 +178,10 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
     })
 
     const firstCustomer = findCustomer(sortedItems[0].customer_id)
-    const sheetName = (firstCustomer?.company_name || firstCustomer?.name || 'Customer_' + customerId || 'Customer')
+    const sheetName = uniqueSheetName(
+      firstCustomer?.company_name || firstCustomer?.name || 'Customer_' + customerId,
+      usedSheetNames,
+    )
 
     const rows: StyledCell[][] = []
     const addRow = (cells: StyledCell[]) => rows.push(cells)
@@ -176,23 +194,23 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
       const unit = findUnit(ci?.unit_id)
       const isCopier = isCopierUnit(unit)
       const invoiceDate = item.invoice_date || item.monthly_date || item.period_start
-      const dateLabel = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+      const dateLabel = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
       const periodLabel = item.period_start
-        ? new Date(item.period_start).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+        ? new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
         : '-'
       const baseRentalFee = item.base_rental_fee ?? item.basis_rental_fee ?? 0
 
       const pic = customer?.pic_name || ''
       const picGender = customer?.pic_gender
       const picPhone = customer?.phone || ''
-      const picPrefix = picGender === 'L' ? 'Bapak' : picGender === 'P' ? 'Ibu' : ''
-      const picDisplay = pic ? ('PIC. ' + (picPrefix ? picPrefix + ' ' : '') + pic + (picPhone ? ' - ' + picPhone : '')) : 'PIC. Finance'
+      const picPrefix = picGender === 'L' ? 'Mr.' : picGender === 'P' ? 'Mrs.' : ''
+      const picDisplay = pic ? ('PIC ' + (picPrefix ? picPrefix + ' ' : '') + pic + (picPhone ? ' - ' + picPhone : '')) : 'PIC Finance'
 
       const brandName = unit?.brand?.name || unit?.brand_name || ''
       const modelDesc = unit?.model || ci?.description || ''
       const serialNo = unit?.serial_no || ''
-      // Format: "Rental Charges Mesin Fotocopy <Customer> <Brand> <Model> S/N : <Serial>  1 Unit"
-      const machineType = isCopier ? 'Mesin Fotocopy' : 'Printer'
+      // Format: "Rental Charges Photocopy Machine <Customer> <Brand> <Model> S/N : <Serial>  1 Unit"
+      const machineType = isCopier ? 'Photocopy Machine' : 'Printer'
       const descParts = [`Rental Charges ${machineType} ${custName}`]
       if (brandName) descParts.push(brandName)
       if (modelDesc) descParts.push(modelDesc)
@@ -200,7 +218,7 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
       descParts.push(' 1 Unit')
       const unitLine = descParts.join(' ').replace(/\s+/g, ' ').trim()
 
-      // ===== HEADER PERUSAHAAN (kiri) + INFO INVOICE (kanan) =====
+      // ===== COMPANY HEADER (left) + INVOICE INFO (right) =====
       // Row 1: Company name + Inv No.
       addRow([
         { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 2, style: 'borderBold' }, {}, {},
@@ -213,10 +231,10 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
         { v: 'Date :', style: 'borderBoldRight' },
         { v: dateLabel, mergeAcross: 1, style: 'border' }, {},
       ])
-      // Row 3: Address line 2 + Kepada Yth
+      // Row 3: Address line 2 + Bill-to
       addRow([
         { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 2, style: 'borderCenter' }, {}, {},
-        { v: 'Kepada Yth.', style: 'borderBoldRight' },
+        { v: 'To:', style: 'borderBoldRight' },
         { v: custName, mergeAcross: 1, style: 'borderBold' }, {},
       ])
       // Row 4: Phone + Customer address
@@ -229,26 +247,26 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
         { v: 'Email : admin@biasbst.com', mergeAcross: 2, style: 'borderCenter' }, {}, {},
         {}, {},
       ])
-      // Row 6: Website + PIC / Up
+      // Row 6: Website + PIC / Attn
       addRow([
         { v: 'www.biasbst.com', mergeAcross: 2, style: 'borderCenter' }, {}, {},
-        { v: 'Up :', style: 'borderBoldRight' },
+        { v: 'Attn :', style: 'borderBoldRight' },
         { v: picDisplay, mergeAcross: 1, style: 'borderBold' }, {},
       ])
 
-      // ===== JUDUL INVOICE + PERIODE =====
+      // ===== INVOICE TITLE + PERIOD =====
       addRow([{ v: 'INVOICE', mergeAcross: 5, style: 'titleCell' }])
-      addRow([{ v: 'Periode : ' + periodLabel, mergeAcross: 2, style: 'borderCenter' }])
+      addRow([{ v: 'Period: ' + periodLabel, mergeAcross: 2, style: 'borderCenter' }])
 
-      // ===== HEADER TABEL =====
+      // ===== TABLE HEADER =====
       addRow([
         { v: 'No', style: 'headerCell' },
         { v: 'Description', mergeAcross: 2, style: 'headerCell' }, {}, {},
-        {}, // kolom operator/rate (kosong di header)
+        {}, // operator/rate column (empty in header)
         { v: 'Amount', style: 'headerCell' },
       ])
 
-      // ===== BARIS 1: Rental Charge =====
+      // ===== ROW 1: Rental Charge =====
       addRow([
         { v: 1, style: 'borderCenter' },
         { v: unitLine, mergeAcross: 2, style: 'borderBold' }, {}, {},
@@ -348,15 +366,15 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
       const totalPay = item.total_pay ?? subtotal + tax
 
       addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: 'Rp', style: 'borderBoldRight' }, { v: fmtRp(subtotal), style: 'borderBoldRight' }])
-      addRow([{ v: 'Pembayaran Transfer ke rekening :', mergeAcross: 1, style: 'border' }, {}, { v: 'TAX', style: 'borderBoldRight' }, {}, { v: tax || '-', style: 'borderBoldRight' }])
+      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {}, { v: 'TAX', style: 'borderBoldRight' }, {}, { v: tax || '-', style: 'borderBoldRight' }])
       addRow([{ v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {}, { v: 'TOTAL PAY', style: 'borderBoldRight' }, { v: 'Rp', style: 'borderBoldRight' }, { v: fmtRp(totalPay), style: 'borderBoldRight' }])
       addRow([{ v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }])
       addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }])
-      addRow([{ v: 'Rek No. 1060885757', mergeAcross: 1, style: 'borderBold' }])
+      addRow([{ v: 'Account No. 1060885757', mergeAcross: 1, style: 'borderBold' }])
       addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }])
-      addRow([{ v: 'Rek No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }])
+      addRow([{ v: 'Account No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }])
 
-      // ===== TANDA TANGAN =====
+      // ===== SIGNATURES =====
       addRow([])
       addRow([{ v: 'Received By,', mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'plainBoldCenter' }])
       addRow([])
@@ -370,256 +388,13 @@ async function exportInvoicesToExcel(items: any[], filename: string) {
     sheets.push({ name: sheetName, columnWidths, rows })
   }
 
-  await downloadStyledExcel(sheets, filename)
+  await downloadStyledExcel([...leadingSheets, ...sheets], filename)
 }
-/*
+// Old export block (unused XLSX/PDF) removed — active export uses downloadStyledExcel.
 function exportMonthToPdf() {
   const items = filteredData.value
   if (items.length === 0) {
-    toast.warning('Tidak ada data rental invoice untuk diekspor ke PDF!')
-    return
-  }
-
-  let periodTitle = 'Seluruh Periode'
-  if (monthFilter.value) {
-    const [yearStr, monthStr] = monthFilter.value.split('-')
-    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
-    periodTitle = `${months[parseInt(monthStr) - 1]} ${yearStr}`
-  } else if (startDateFilter.value || endDateFilter.value) {
-    periodTitle = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
-  }
-
-  const totalRevenue = items.reduce((sum: number, item: any) => sum + (item.total_pay || item.subtotal || 0), 0)
-
-  let rowsHtml = items.map((item: any, idx: number) => {
-    const code = item.invoice_no || `INV-R-${item.id}`
-    const dateVal = item.monthly_date ? new Date(item.monthly_date).toLocaleDateString('id-ID') : (item.period_start ? new Date(item.period_start).toLocaleDateString('id-ID') : '-')
-    const cName = customerName(item.customer_id)
-    const cNo = contractNo(item.contract_item_id)
-    const totalStr = formatRupiah(item.total_pay || item.subtotal || 0)
-    const statusStr = (item.status || 'unpaid').toUpperCase()
-
-    return `
-      <tr>
-        <td style="text-align: center; border: 1px solid #cbd5e1; padding: 8px;">${idx + 1}</td>
-        <td style="border: 1px solid #cbd5e1; padding: 8px; font-weight: bold;">${code}</td>
-        <td style="border: 1px solid #cbd5e1; padding: 8px;">${dateVal}</td>
-        <td style="border: 1px solid #cbd5e1; padding: 8px; font-weight: bold;">${cName}</td>
-        <td style="border: 1px solid #cbd5e1; padding: 8px;">${cNo}</td>
-        <td style="text-align: right; border: 1px solid #cbd5e1; padding: 8px; font-weight: bold;">${totalStr}</td>
-        <td style="text-align: center; border: 1px solid #cbd5e1; padding: 8px;"><span class="badge">${statusStr}</span></td>
-      </tr>
-    `
-  }).join('')
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Laporan Rental Invoices - ${periodTitle}</title>
-        <style>
-          @page { size: A4 portrait; margin: 1.5cm; }
-          body { font-family: Arial, sans-serif; font-size: 11pt; color: #333; margin: 0; padding: 20px; }
-          .header { display: flex; justify-content: space-between; border-bottom: 2px solid #002b5e; padding-bottom: 12px; margin-bottom: 20px; }
-          .header-title h1 { margin: 0; font-size: 18pt; color: #002b5e; font-weight: 900; }
-          .header-title h2 { margin: 2px 0 0 0; font-size: 11pt; color: #666; font-style: italic; }
-          .header-info { text-align: right; font-size: 9pt; color: #555; }
-          .report-title { text-align: center; margin-bottom: 20px; }
-          .report-title h3 { margin: 0; font-size: 14pt; color: #111; text-transform: uppercase; letter-spacing: 0.5px; }
-          .report-title p { margin: 4px 0 0 0; font-size: 10.5pt; font-weight: bold; color: #004d99; }
-          .summary-cards { display: flex; gap: 15px; margin-bottom: 20px; }
-          .card-box { flex: 1; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px 15px; border-radius: 6px; }
-          .card-box .label { font-size: 9pt; color: #64748b; font-weight: bold; text-transform: uppercase; }
-          .card-box .val { font-size: 14pt; font-weight: bold; color: #0f172a; margin-top: 4px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 25px; }
-          th { background: #002b5e; color: white; border: 1px solid #002b5e; padding: 10px; font-size: 10pt; text-align: left; }
-          th.right { text-align: right; }
-          th.center { text-align: center; }
-          .badge { background: #e2e8f0; padding: 3px 8px; border-radius: 4px; font-size: 8.5pt; font-weight: bold; color: #334155; }
-          .footer-sig { display: flex; justify-content: space-between; margin-top: 40px; }
-          .sig-box { text-align: center; width: 200px; font-size: 10pt; }
-          .sig-space { height: 60px; }
-          .sig-name { font-weight: bold; text-decoration: underline; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="header-title">
-      const groups = new Map<string, any[]>()
-          <div class="header-info">
-        const key = String(item.customer_id || `unknown_${item.id}`)
-            Batam Centre, Kepulauan Riau<br>
-            Telepon: +62 811.704.5657
-          </div>
-        </div>
-      const usedSheetNames = new Set<string>()
-      for (const [customerId, groupItems] of groups) {
-          <h3>Laporan Rekapitulasi Rental Invoices</h3>
-          <p>Periode: ${periodTitle}</p>
-        </div>
-          return da.localeCompare(db) || String(a.invoice_no || '').localeCompare(String(b.invoice_no || ''))
-          <div class="card-box"><div class="label">Total Invoice</div><div class="val">${items.length} Dokumen</div></div>
-          <div class="card-box"><div class="label">Total Tagihan</div><div class="val" style="color: #059669;">${formatRupiah(totalRevenue)}</div></div>
-        const customer = findCustomer(customerId as any)
-        const custName = customerName(customerId)
-        const safeName = custName.replace(/[\\/?*\[\]:]/g, '').trim().slice(0, 31) || `Customer_${customerId}`
-        let sheetName = safeName
-        let suffix = 2
-        while (usedSheetNames.has(sheetName.toLowerCase())) {
-          const suffixText = `_${suffix++}`
-          sheetName = `${safeName.slice(0, 31 - suffixText.length)}${suffixText}`
-        }
-        usedSheetNames.add(sheetName.toLowerCase())
-
-        const rows: any[][] = []
-        const merges: XLSX.Range[] = []
-        const merge = (row: number, startColumn: number, endColumn: number) => {
-          merges.push({ s: { r: row, c: startColumn }, e: { r: row, c: endColumn } })
-        }
-        const addRow = (values: any[]) => {
-          rows.push(values)
-          return rows.length - 1
-        }
-        const addDescriptionRow = (values: any[]) => {
-          const row = addRow(values)
-          merge(row, 1, 2)
-          return row
-        }
-        const formatInvoiceDate = (value: any) => {
-          if (!value) return '-'
-          const date = new Date(value)
-          return Number.isNaN(date.getTime()) ? String(value).slice(0, 10) : date.toLocaleDateString('id-ID')
-        }
-        const formatNumber = (value: any) => Number(value || 0).toLocaleString('id-ID')
-
-        for (const invoice of sortedItems) {
-          const customerForInvoice = findCustomer(invoice.customer_id) || customer
-          const ci = findContractItem(invoice.contract_item_id)
-          const unit = findUnit(ci?.unit_id)
-          const invoiceDate = invoice.invoice_date || invoice.monthly_date || invoice.period_start
-          const period = invoice.period_start
-            ? new Date(invoice.period_start).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
-            : '-'
-          const pic = customerForInvoice?.pic_name || '-'
-          const picPrefix = customerForInvoice?.pic_gender === 'L' ? 'Bapak ' : customerForInvoice?.pic_gender === 'P' ? 'Ibu ' : 'Bapak/Ibu '
-          const picDisplay = pic === '-' ? 'Finance' : `${picPrefix}${pic}`
-          const baseRentalFee = Number(invoice.base_rental_fee || invoice.basis_rental_fee || 0)
-          const meterDetails: any[] = invoice.meter_details || []
-          const isCopier = ci?.is_copier === true || unit?.is_copier === true || unit?.is_copier === 1 || String(unit?.model || '').toLowerCase().includes('copier')
-          const invoiceStart = rows.length
-
-          for (const [label, value] of [
-            ['PT. BiAS SURYA TEKNOLOGI', null],
-            ['Greenland Housing Blok E6 No. 11, Batam Kota - Batam - Kepulauan Riau', null],
-            ['Telp: +62 811 7045 657 | Email: admin@biasbst.com', null],
-            ['www.biasbst.com', null],
-          ]) {
-            const row = addRow([label, '', '', '', '', ''])
-            merge(row, 0, 3)
-          }
-          for (const [label, value] of [
-            ['Inv No.', invoice.invoice_no || '-'],
-            ['Date', formatInvoiceDate(invoiceDate)],
-            ['PO No.', invoice.po_no || invoice.rental?.po_no || '-'],
-          ]) {
-            const row = addRow(['', '', '', '', label, value])
-            merge(row, 0, 3)
-          }
-          for (const [label, value] of [
-            ['Kepada Yth.', ''],
-            [customerForInvoice?.company_name || customerForInvoice?.name || custName, ''],
-            [customerForInvoice?.address || '-', ''],
-            [`Up: ${picDisplay}`, ''],
-            ['INVOICE', ''],
-            [`Periode: ${period}`, ''],
-          ]) {
-            const row = addRow([label, '', '', '', '', ''])
-            merge(row, 0, 5)
-          }
-
-          const headerRow = addRow(['No', 'Description', '', 'Qty', 'Rate (Rp)', 'Amount (Rp)'])
-          merge(headerRow, 1, 2)
-          addDescriptionRow([1, `Rental Charges ${ci?.description || unit?.model || ''} 1 Unit`.trim(), '', '1 Unit', '', baseRentalFee])
-
-          if (meterDetails.length > 0) {
-            const bwDetails = meterDetails.filter((detail: any) => /bw|mono|b\/w/i.test(detail.color_mode || ''))
-            const colorDetails = meterDetails.filter((detail: any) => /colou?r/i.test(detail.color_mode || ''))
-            let rowNumber = 2
-            for (const detail of [...bwDetails, ...colorDetails]) {
-              const total = Number(detail.total_copies ?? Math.max(0, (detail.last_meter_reading || 0) - (detail.start_meter_reading || 0)))
-              const free = Number(detail.free_quota || 0)
-              const billable = Number(detail.billable_copies ?? Math.max(0, total - free))
-              const detailLabel = detail.paper_size?.name || detail.color_mode || 'Meter'
-              addDescriptionRow(['', detailLabel, '', '', '', ''])
-              addDescriptionRow(['', `Start Meter Reading: ${formatNumber(detail.start_meter_reading)}`, '', '', '', ''])
-              addDescriptionRow(['', `Last Meter Reading: ${formatNumber(detail.last_meter_reading)}`, '', '', '', ''])
-              addDescriptionRow(['', `Total Copies: ${formatNumber(total)}`, '', '', '', ''])
-              if (free > 0) {
-                addDescriptionRow(['', `Free Copies: ${formatNumber(free)}`, '', '', '', ''])
-                addDescriptionRow(['', `Billable Copies: ${formatNumber(billable)}`, '', '', '', ''])
-              }
-              const rate = Number(detail.rate_per_page || 0)
-              addDescriptionRow([rowNumber++, `Copies Charges ${String(detail.color_mode || '').toUpperCase()} ${detail.paper_size?.name || ''}`.trim(), '', 'x', rate, Number(detail.total_amount || 0)])
-            }
-          } else if (isCopier) {
-            const start = Number(invoice.meter_start || invoice.meter_start_bw || ci?.start_meter_bw || 0)
-            const end = Number(invoice.meter_end || invoice.meter_end_bw || start)
-            const free = Number(invoice.free_copies || ci?.free_copy_quota || 2000)
-            const total = Math.max(0, end - start)
-            const billable = Math.max(0, total - free)
-            const rate = Number(invoice.rate_per_page || 150)
-            addDescriptionRow(['', 'B/W', '', '', '', ''])
-            addDescriptionRow(['', `Start Meter Reading: ${formatNumber(start)}`, '', '', '', ''])
-            addDescriptionRow(['', `Last Meter Reading: ${formatNumber(end)}`, '', '', '', ''])
-            addDescriptionRow(['', `Total Copies: ${formatNumber(total)}`, '', '', '', ''])
-            addDescriptionRow(['', `Free Copies: ${formatNumber(free)}`, '', '', '', ''])
-            addDescriptionRow(['', `Billable Copies: ${formatNumber(billable)}`, '', '', '', ''])
-            addDescriptionRow([2, 'Copies Charges B/W', '', 'x', rate, billable * rate])
-          }
-
-          const subtotal = Number(invoice.subtotal || baseRentalFee + (invoice.excess_copies_fee || invoice.excess_amount || 0))
-          const tax = Number(invoice.tax || 0)
-          const totalPay = Number(invoice.total_pay || subtotal + tax)
-          for (const [label, value] of [['TOTAL', subtotal], ['TAX', tax || '-'], ['TOTAL PAY', totalPay]]) {
-            const row = addRow(['', '', '', '', label, value])
-            merge(row, 0, 3)
-          }
-          addRow(['', '', '', '', '', ''])
-
-          const bankRow = addRow(['Pembayaran Transfer ke rekening:', '', '', 'PT. BiAS SURYA TEKNOLOGI', '', ''])
-          merge(bankRow, 0, 2)
-          merge(bankRow, 3, 5)
-          for (const [bankText, signatureText] of [
-            ['NPWP: 0941.8395.0822.5000', 'Received By,'],
-            ['BANK RIAU KEPRI SYARIAH CAB. BATAM | Rek No. 1060885757', 'PT. BiAS SURYA TEKNOLOGI'],
-            ['BANK MANDIRI CABANG BATAM | Rek No. 109-00-3388575-7', 'Grace Hutapea - Admin Finance'],
-          ]) {
-            const row = addRow([bankText, '', '', signatureText, '', ''])
-            merge(row, 0, 2)
-            merge(row, 3, 5)
-          }
-          addRow(['', '', '', '', '', ''])
-          if (rows.length - invoiceStart > 0) rows.push([])
-        }
-
-        const ws = XLSX.utils.aoa_to_sheet(rows)
-        ws['!merges'] = merges
-        ws['!cols'] = [{ wch: 7 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 17 }, { wch: 18 }]
-        ws['!pageSetup'] = { paperSize: 9, orientation: 'portrait', fitToWidth: 1, fitToHeight: 0 }
-        ws['!margins'] = { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 }
-  const ci = findContractItem(form.contract_item_id)
-  if (ci) {
-    form.customer_id = ci.customer_id
-      XLSX.writeFile(wb, `RentalInvoice_${periodLabel}.xlsx`)
-    recalculate()
-  }
-}
-
-*/
-function exportMonthToPdf() {
-  const items = filteredData.value
-  if (items.length === 0) {
-    toast.warning('Tidak ada data rental invoice untuk diekspor ke PDF!')
+    toast.warning('No rental invoice data to export to PDF!')
     return
   }
 
@@ -638,7 +413,7 @@ function exportMonthToPdf() {
   if (!printWindow) return
   printWindow.document.write(`<!doctype html><html><head><title>Rental Invoices</title><style>
     body{font:12px Arial,sans-serif;color:#222}h1,h2{text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #777;padding:6px}th{background:#e8f1ff}
-    </style></head><body><h1>PT. BIAS SURYA TEKNOLOGI</h1><h2>Rental Invoices</h2><table><thead><tr><th>No</th><th>Invoice</th><th>Tanggal</th><th>Customer</th><th>Kontrak</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`)
+    </style></head><body><h1>PT. BIAS SURYA TEKNOLOGI</h1><h2>Rental Invoices</h2><table><thead><tr><th>No</th><th>Invoice</th><th>Date</th><th>Customer</th><th>Contract</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`)
   printWindow.document.close()
 }
 
@@ -665,23 +440,55 @@ const form = reactive({
 const defaultForm = { ...form }
 
 async function exportAnnualExcel() {
-  const year = yearFilter.value
-  // Filter ketat: hanya record yang SEMUA tanggalnya berada di tahun terpilih,
-  // sehingga data tahun lain (mis. 2027) tidak ikut saat export tahun 2026.
-  const items = filterByYear(data.value, year, ['invoice_date', 'monthly_date', 'period_start', 'period_end', 'created_at'])
-  if (items.length === 0) {
-    toast.warning(`Tidak ada data rental invoice untuk tahun ${year}!`)
+  if (isExporting.value) return
+  // Strict filter: only records with ALL dates inside the selected year,
+  // so other-year data (e.g. 2027) is excluded when exporting 2026.
+  const year = normalizeExportYear(yearFilter.value)
+  if (year === null) {
+    toast.warning('Invalid year (1900–2100)!')
     return
   }
-  await exportInvoicesToExcel(items, `RentalInvoice_Tahunan_${year}`)
+  // Annual export only for invoices that are approved AND paid.
+  const items = filterApprovedPaid(filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS))
+  if (items.length === 0) {
+    toast.warning(`No approved & paid rental invoice data for year ${year}!`)
+    return
+  }
+  isExporting.value = true
+  try {
+    const sorted = [...items].sort((a: any, b: any) =>
+      String(a.period_start || a.monthly_date || '').localeCompare(String(b.period_start || b.monthly_date || '')))
+    const recapRows: RecapRow[] = sorted.map((item: any, i: number) => {
+      const c = findCustomer(item.customer_id)
+      const period = item.period_start
+        ? new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+        : String(item.monthly_date || '').slice(0, 10)
+      return {
+        no: i + 1,
+        customer: c?.company_name || c?.name || '-',
+        invoiceNo: item.invoice_no || '-',
+        period,
+        total: item.total_pay ?? item.subtotal ?? 0,
+      }
+    })
+    const recap = buildRecapSheet(`Rental Invoice Recap ${year}`, `${items.length} invoice(s) (approved & paid)`, recapRows)
+    await exportInvoicesToExcel(items, `RentalInvoice_Annual_${year}`, [recap])
+    toast.success('Annual Excel report downloaded successfully')
+  } finally {
+    isExporting.value = false
+  }
 }
 
 async function exportAnnualPdf() {
-  const year = yearFilter.value
-  // Filter ketat per tahun: data 2027 tidak ikut saat export 2026.
-  const items = filterByYear(data.value, year, ['invoice_date', 'monthly_date', 'period_start', 'period_end', 'created_at'])
+  const year = normalizeExportYear(yearFilter.value)
+  if (year === null) {
+    toast.warning('Invalid year (1900–2100)!')
+    return
+  }
+  // Annual export only for invoices that are approved AND paid.
+  const items = filterApprovedPaid(filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS))
   if (items.length === 0) {
-    toast.warning(`Tidak ada data rental invoice untuk tahun ${year}!`)
+    toast.warning(`No approved & paid rental invoice data for year ${year}!`)
     return
   }
   const body = items.map((inv: any) => {
@@ -692,7 +499,7 @@ async function exportAnnualPdf() {
   const html = `<!DOCTYPE html>
 <html>
 <head>
-  <title>Laporan Tahunan Rental Invoice ${year}</title>
+  <title>Annual Rental Invoice Report ${year}</title>
   <style>
     @media print { @page { margin: 12mm 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
     * { box-sizing: border-box; }
@@ -906,18 +713,18 @@ function invoiceHtml(item: any): string {
   const custAddress = customer?.address || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
+  let prefix = 'Mr./Mrs. '
+  if (gender === 'L') prefix = 'Mr. '
+  if (gender === 'P') prefix = 'Mrs. '
   const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
 
   const dateStr = item.invoice_date
-    ? new Date(item.invoice_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' })
-    : (item.monthly_date ? new Date(item.monthly_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' }) : '-')
+    ? new Date(item.invoice_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
+    : (item.monthly_date ? new Date(item.monthly_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '-')
 
   let periodStr = '-'
   if (item.period_start) {
-    periodStr = new Date(item.period_start).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    periodStr = new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
   }
 
   const ci = findContractItem(item.contract_item_id) || contractItems.value.find(c => String(c.contract_id) === String(item.contract_id))
@@ -1102,16 +909,16 @@ function invoiceHtml(item: any): string {
         <tr><td class="lbl">Inv No. :</td><td>${item.invoice_no || '-'}</td></tr>
         <tr><td class="lbl">Date :</td><td>${dateStr}</td></tr>
         ${item.po_no || item.rental?.po_no ? `<tr><td class="lbl">PO No. :</td><td>${item.po_no || item.rental?.po_no}</td></tr>` : ''}
-        <tr><td colspan="2" style="text-align:center; font-weight:bold;">Kepada Yth.</td></tr>
+        <tr><td colspan="2" style="text-align:center; font-weight:bold;">To:</td></tr>
         <tr><td colspan="2" class="cust-name">${custName}</td></tr>
         <tr><td colspan="2" style="font-weight:normal; min-height:36px; vertical-align:top;">${custAddress}</td></tr>
-        <tr><td class="lbl">Up</td><td>${picDisplay}</td></tr>
+        <tr><td class="lbl">Attn</td><td>${picDisplay}</td></tr>
       </table>
     </div>
   </div>
 
   <div class="inv-title-wrap"><div class="inv-title">INVOICE</div></div>
-  <div class="period">Periode : ${periodStr}</div>
+  <div class="period">Period: ${periodStr}</div>
 
   <!-- Main Table -->
   <table class="main-table">
@@ -1163,7 +970,7 @@ function invoiceHtml(item: any): string {
   <!-- Footer -->
   <div class="bottom-wrap">
     <div class="bank-box">
-      <div class="bank-header">Pembayaran Transfer ke rekening :</div>
+      <div class="bank-header">Payment by transfer to account:</div>
       <div class="bank-header">PT. BIAS SURYA TEKNOLOGI</div>
       NPWP : 0941.8395.0822.5000<br>
       <span class="bank-name">BANK RIAU KEPRI SYARIAH CAB. BATAM</span><br>
@@ -1194,7 +1001,7 @@ function invoiceHtml(item: any): string {
 
 function printInvoice(item: any) {
   if (item.status !== 'approved') {
-    toast.warning('Invoice belum disetujui, tidak dapat print receipt')
+    toast.warning('Invoice is not approved yet, cannot print receipt')
     return
   }
   const html = invoiceHtml(item).replace('</body>', '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body>')
@@ -1212,25 +1019,25 @@ function printInvoice(item: any) {
     <div class="filter-toolbar">
       <div class="filter-inputs">
         <div class="filter-item">
-          <label class="filter-label">Tanggal Awal</label>
+          <label class="filter-label">Start Date</label>
           <input v-model="startDateFilter" type="date" class="form-input filter-input">
         </div>
         <div class="filter-item">
-          <label class="filter-label">Tanggal Akhir</label>
+          <label class="filter-label">End Date</label>
           <input v-model="endDateFilter" type="date" class="form-input filter-input">
         </div>
         <div class="filter-item">
-          <label class="filter-label">Filter Bulan</label>
+          <label class="filter-label">Month Filter</label>
           <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
         </div>
         <div class="filter-item">
-          <label class="filter-label">Tahun</label>
+          <label class="filter-label">Year</label>
           <input v-model.number="yearFilter" type="number" min="1900" max="9999" class="form-input filter-input">
         </div>
         <div class="filter-item">
           <label class="filter-label">Customer</label>
           <select v-model="customerFilter" class="form-select filter-input">
-            <option value="">Semua Customer</option>
+            <option value="">All Customers</option>
             <option v-for="customer in customers" :key="customer.id" :value="String(customer.id)">{{
               customer.company_name || customer.name || '-' }}</option>
           </select>
@@ -1254,7 +1061,7 @@ function printInvoice(item: any) {
           Export PDF
         </button>
         <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel"
-          title="Export Invoices (Excel)">
+          :disabled="isExporting" title="Export Invoices (Excel)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -1265,7 +1072,7 @@ function printInvoice(item: any) {
           Export Excel
         </button>
         <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf"
-          title="Export Tahunan (PDF)">
+          title="Export Annual (PDF)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -1273,10 +1080,10 @@ function printInvoice(item: any) {
             <line x1="16" y1="13" x2="8" y2="13"></line>
             <line x1="16" y1="17" x2="8" y2="17"></line>
           </svg>
-          Tahunan PDF
+          Annual PDF
         </button>
         <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-excel" @click="exportAnnualExcel"
-          title="Export Tahunan (Excel)">
+          :disabled="isExporting" title="Export Annual (Excel)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -1284,7 +1091,7 @@ function printInvoice(item: any) {
             <line x1="8" y1="13" x2="16" y2="13"></line>
             <line x1="8" y1="17" x2="16" y2="17"></line>
           </svg>
-          Tahunan Excel
+          Annual Excel
         </button>
       </div>
     </div>
@@ -1300,15 +1107,15 @@ function printInvoice(item: any) {
       <template #cell-approval_status="{ value }">
         <span
           :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-          {{ approvalStatus(value) === 'approved' ? 'Disetujui' : approvalStatus(value) === 'rejected' ? 'Ditolak' :
+          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' :
           'Pending' }}
         </span>
       </template>
       <template #cell-payment_status="{ value }">
         <span
           :class="value === 'paid' ? 'badge badge-success' : value === 'overdue' ? 'badge badge-danger' : value === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-          {{ value === 'paid' ? 'Lunas' : value === 'overdue' ? 'Lewat Jatuh Tempo' : value === 'partially_paid' ?
-            'Sebagian' : 'Belum Bayar' }}
+          {{ value === 'paid' ? 'Paid' : value === 'overdue' ? 'Overdue' : value === 'partially_paid' ?
+            'Partial' : 'Unpaid' }}
         </span>
       </template>
       <template #actions="{ row }">
@@ -1425,7 +1232,7 @@ function printInvoice(item: any) {
       <div
         v-if="findContractItem(form.contract_item_id) && (!findContractItem(form.contract_item_id)?.specs || findContractItem(form.contract_item_id)?.specs.length < 5)"
         style="border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; margin-bottom: 15px;">
-        <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px;">Meter Reading (Fotocopy)</div>
+        <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px;">Meter Reading (Photocopy)</div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Start Meter Reading</label>
@@ -1442,13 +1249,13 @@ function printInvoice(item: any) {
             <input v-model.number="form.free_copies" type="number" class="form-input" min="0" @input="recalculate">
           </div>
           <div class="form-group">
-            <label class="form-label">Harga Satuan (Overusage)</label>
+            <label class="form-label">Unit Price (Overusage)</label>
             <input v-model.number="form.rate_per_page" type="number" class="form-input" min="0" @input="recalculate">
           </div>
         </div>
         <div style="margin-top: 10px; font-size: 12px; color: #64748b;">
-          Total Pemakaian: <b>{{ Math.max(0, form.meter_end - form.meter_start) }}</b> lembar.
-          Kekurangan: <b>{{ Math.max(0, (form.meter_end - form.meter_start) - form.free_copies) }}</b> lembar.
+          Total Usage: <b>{{ Math.max(0, form.meter_end - form.meter_start) }}</b> sheets.
+          Excess: <b>{{ Math.max(0, (form.meter_end - form.meter_start) - form.free_copies) }}</b> sheets.
         </div>
       </div>
 
@@ -1481,7 +1288,7 @@ function printInvoice(item: any) {
       :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false"
       @confirm="handleDelete" />
 
-    <FormModal :open="showDetail" :title="detailItem ? `Detail Invoice ${detailItem.invoice_no}` : 'Detail Invoice'"
+    <FormModal :open="showDetail" :title="detailItem ? `Invoice Details ${detailItem.invoice_no}` : 'Invoice Details'"
       @close="showDetail = false">
       <template v-if="detailItem">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
@@ -1494,41 +1301,41 @@ function printInvoice(item: any) {
             <div>{{ customerName(detailItem.customer_id) }}</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Kontrak</label>
+            <label class="form-label">Contract</label>
             <div>{{ contractNo(detailItem.contract_item_id) }}</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Total Tagihan</label>
+            <label class="form-label">Total Amount</label>
             <div>{{ formatRupiah(detailItem.total_pay || detailItem.subtotal || 0) }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Approval Status</label>
             <span
               :class="approvalStatus(detailItem.status) === 'approved' ? 'badge badge-info' : approvalStatus(detailItem.status) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-              {{ approvalStatus(detailItem.status) === 'approved' ? 'Disetujui' : approvalStatus(detailItem.status) ===
-                'rejected' ? 'Ditolak' : 'Pending' }}
+              {{ approvalStatus(detailItem.status) === 'approved' ? 'Approved' : approvalStatus(detailItem.status) ===
+                'rejected' ? 'Rejected' : 'Pending' }}
             </span>
           </div>
           <div class="form-group">
-            <label class="form-label">Status Pembayaran</label>
+            <label class="form-label">Payment Status</label>
             <span
               :class="detailItem.payment_status === 'paid' ? 'badge badge-success' : detailItem.payment_status === 'overdue' ? 'badge badge-danger' : detailItem.payment_status === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-              {{ detailItem.payment_status === 'paid' ? 'Lunas' : detailItem.payment_status === 'overdue' ? 'Lewat Jatuh Tempo' : detailItem.payment_status === 'partially_paid' ? 'Sebagian' : 'Belum Bayar' }}
+              {{ detailItem.payment_status === 'paid' ? 'Paid' : detailItem.payment_status === 'overdue' ? 'Overdue' : detailItem.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
             </span>
           </div>
         </div>
 
-        <div class="form-section-title" style="margin-bottom: 8px;">Riwayat Pembayaran</div>
+        <div class="form-section-title" style="margin-bottom: 8px;">Payment History</div>
         <div v-if="invoicePayments(detailItem).length > 0"
           style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;">
           <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
             <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
               <tr>
-                <th style="padding: 12px;">No. Pembayaran</th>
-                <th style="padding: 12px;">Tanggal</th>
-                <th style="padding: 12px;">Metode / Bank</th>
-                <th style="padding: 12px;">No Ref</th>
-                <th style="padding: 12px; text-align: right;">Jumlah</th>
+                <th style="padding: 12px;">Payment No.</th>
+                <th style="padding: 12px;">Date</th>
+                <th style="padding: 12px;">Method / Bank</th>
+                <th style="padding: 12px;">Ref No.</th>
+                <th style="padding: 12px; text-align: right;">Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -1546,77 +1353,77 @@ function printInvoice(item: any) {
         </div>
         <div v-else
           style="padding: 16px; text-align: center; color: var(--color-text-muted); background: var(--color-surface); border-radius: var(--radius-md);">
-          Belum ada riwayat pembayaran.
+          No payment history yet.
         </div>
       </template>
       <template #footer>
-        <button class="btn btn-outline" @click="showDetail = false">Tutup</button>
+        <button class="btn btn-outline" @click="showDetail = false">Close</button>
       </template>
     </FormModal>
 
-    <FormModal :open="showPaymentModal" title="Proses Pembayaran" @close="showPaymentModal = false"
+    <FormModal :open="showPaymentModal" title="Process Payment" @close="showPaymentModal = false"
       @submit="submitPayment">
       <div class="form-group">
-        <label class="form-label">Tanggal Pembayaran</label>
+        <label class="form-label">Payment Date</label>
         <input v-model="paymentForm.payment_date" type="date" class="form-input" required>
       </div>
       <div class="form-group">
-        <label class="form-label">Metode Pembayaran</label>
+        <label class="form-label">Payment Method</label>
         <select v-model="paymentForm.payment_method" class="form-select" required>
-          <option value="cash">Tunai (Cash)</option>
-          <option value="transfer">Transfer Bank</option>
-          <option value="credit_card">Kartu Kredit / Debit</option>
+          <option value="cash">Cash</option>
+          <option value="transfer">Bank Transfer</option>
+          <option value="credit_card">Credit / Debit Card</option>
         </select>
       </div>
 
       <template v-if="paymentForm.payment_method === 'transfer'">
         <div class="form-group">
-          <label class="form-label">Nama Bank</label>
-          <input type="text" class="form-input" v-model="paymentForm.bank_name" placeholder="Misal: BCA, Mandiri, BRI"
+          <label class="form-label">Bank Name</label>
+          <input type="text" class="form-input" v-model="paymentForm.bank_name" placeholder="E.g. BCA, Mandiri, BRI"
             required />
         </div>
         <div class="form-group">
-          <label class="form-label">Nomor Rekening</label>
+          <label class="form-label">Account Number</label>
           <input type="text" class="form-input" v-model="paymentForm.account_number"
-            placeholder="Nomor rekening pengirim" required />
+            placeholder="Sender account number" required />
         </div>
         <div class="form-group">
-          <label class="form-label">Nama Pengirim (A/N)</label>
-          <input type="text" class="form-input" v-model="paymentForm.sender_name" placeholder="Nama pemilik rekening"
+          <label class="form-label">Sender Name</label>
+          <input type="text" class="form-input" v-model="paymentForm.sender_name" placeholder="Account holder name"
             required />
         </div>
       </template>
 
       <template v-if="paymentForm.payment_method === 'credit_card'">
         <div class="form-group">
-          <label class="form-label">Provider Kartu / Bank</label>
+          <label class="form-label">Card Provider / Bank</label>
           <input type="text" class="form-input" v-model="paymentForm.bank_name"
-            placeholder="Misal: Visa, Mastercard, BCA" required />
+            placeholder="E.g. Visa, Mastercard, BCA" required />
         </div>
         <div class="form-group">
-          <label class="form-label">Nomor Kartu (4 Digit Terakhir)</label>
-          <input type="text" class="form-input" v-model="paymentForm.account_number" placeholder="Misal: 1234"
+          <label class="form-label">Card Number (Last 4 Digits)</label>
+          <input type="text" class="form-input" v-model="paymentForm.account_number" placeholder="E.g. 1234"
             maxlength="16" required />
         </div>
         <div class="form-group">
-          <label class="form-label">Nama Pemilik Kartu</label>
+          <label class="form-label">Cardholder Name</label>
           <input type="text" class="form-input" v-model="paymentForm.sender_name"
-            placeholder="Nama yang tertera pada kartu" required />
+            placeholder="Name as shown on card" required />
         </div>
       </template>
 
       <div class="form-group">
-        <label class="form-label">Jumlah Bayar (Rp)</label>
+        <label class="form-label">Payment Amount (Rp)</label>
         <input v-model.number="paymentForm.amount" type="number" class="form-input" min="0" required>
       </div>
       <div class="form-group">
-        <label class="form-label">No Referensi / Bukti (Opsional)</label>
-        <input v-model="paymentForm.reference" type="text" class="form-input" placeholder="Masukkan nomor referensi...">
+        <label class="form-label">Reference No. / Receipt (Optional)</label>
+        <input v-model="paymentForm.reference" type="text" class="form-input" placeholder="Enter reference number...">
       </div>
       <div class="form-group">
-        <label class="form-label">Catatan (Opsional)</label>
+        <label class="form-label">Notes (Optional)</label>
         <textarea v-model="paymentForm.notes" class="form-input" rows="2"
-          placeholder="Tambahkan catatan pembayaran..."></textarea>
+          placeholder="Add payment notes..."></textarea>
       </div>
     </FormModal>
   </div>
@@ -1742,6 +1549,13 @@ function printInvoice(item: any) {
 .btn-export-excel:hover {
   background: #15803d;
   transform: translateY(-1px);
+}
+
+.btn-export-excel:disabled,
+.btn-export-pdf:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .form-section-title {

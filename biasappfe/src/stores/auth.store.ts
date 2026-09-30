@@ -47,7 +47,7 @@ export function useAuthStore() {
   async function login(credentials: LoginRequest): Promise<boolean> {
     error.value = "";
     if (!credentials.username.trim() || !credentials.password.trim()) {
-      error.value = "Username dan password harus diisi";
+      error.value = "Username and password are required";
       return false;
     }
 
@@ -68,7 +68,7 @@ export function useAuthStore() {
       error.value =
         reason instanceof ApiError
           ? reason.message
-          : "Tidak dapat terhubung ke server";
+          : "Cannot connect to the server";
       return false;
     } finally {
       isLoading.value = false;

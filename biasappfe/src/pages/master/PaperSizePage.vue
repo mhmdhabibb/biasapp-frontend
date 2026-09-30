@@ -11,7 +11,7 @@ import { useToast } from '@/composables/useToast'
 const toast = useToast()
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Ukuran Kertas' },
+  { key: 'name', label: 'Paper Size' },
 ]
 
 const data = ref<PaperSize[]>([])
@@ -22,7 +22,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch paper sizes:', error)
-    toast.error('Gagal mengambil data: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -56,10 +56,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? 'Ukuran Kertas berhasil diperbarui!' : 'Ukuran Kertas berhasil disimpan!')
+    toast.success(editingItem.value ? 'Paper size updated successfully!' : 'Paper size saved successfully!')
   } catch (error) {
     console.error('Failed to save paper size:', error)
-    toast.error('Gagal menyimpan ukuran kertas: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save paper size: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -70,10 +70,10 @@ async function handleDelete() {
     try {
       await resources.paperSizes.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('Ukuran Kertas berhasil dihapus!')
+      toast.success('Paper size deleted successfully!')
     } catch (error) {
       console.error('Failed to delete paper size:', error)
-      toast.error('Gagal menghapus ukuran kertas')
+      toast.error('Failed to delete paper size')
     }
   }
   showConfirm.value = false
@@ -84,14 +84,14 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Paper Size" button-label="Add Paper Size" permission="paper_size:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari ukuran kertas..." permission="paper_size" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search paper sizes..." permission="paper_size" @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Paper Size' : 'Add Paper Size'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="ps-name" class="form-label">Nama Ukuran</label>
-        <input id="ps-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: A4, A3, Legal, Letter">
+        <label for="ps-name" class="form-label">Size Name</label>
+        <input id="ps-name" v-model="form.name" type="text" class="form-input" placeholder="Example: A4, A3, Legal, Letter">
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Ukuran Kertas" :message="`Yakin ingin menghapus ukuran '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Paper Size" :message="`Are you sure you want to delete size '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

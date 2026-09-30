@@ -11,6 +11,7 @@ const router = useRouter()
 const {
   serviceReports,
   jobOrders,
+  contractItems,
   findCustomer,
   findUnit,
   findProduct,
@@ -49,9 +50,66 @@ const technician = computed(() => findTechnician(sr.value?.technician_id || null
 
 const isCopier = computed(() => unit.value?.is_copier || unit.value?.model?.toLowerCase().includes('copier'))
 
+// Paper type/size on copier report: from linked monthly meter readings
+// (paper_size preloaded by backend), fallback to contract rates
+// (copies of rental_item_rates) looked up via unit.
+const contractByUnit = computed(() => {
+  const unitId = String(sr.value?.unit_id || unit.value?.id || '')
+  if (!unitId) return null
+  return (contractItems.value || []).find((ci: any) =>
+    String(ci.unit_id || ci.unit?.id || '') === unitId
+  ) || null
+})
+
+const paperTypes = computed(() => {
+  const labels: string[] = []
+  const seen = new Set<string>()
+  const push = (raw: any) => {
+    const label = String(raw || '').trim()
+    if (label && !seen.has(label)) {
+      seen.add(label)
+      labels.push(label)
+    }
+  }
+  const readings: any[] = sr.value?.monthly_meter_readings || sr.value?.monthlyMeterReadings || []
+  for (const r of readings) {
+    const name = r.paper_size?.name || r.paper_size_name || r.paper_size_id || ''
+    push(`${name}${r.color_mode ? ` (${r.color_mode})` : ''}`.trim())
+  }
+  const rates: any[] = sr.value?.contract_item?.rates || contractByUnit.value?.rates || []
+  for (const rate of rates) {
+    push(rate.paper_size?.name || rate.paper_size_name || rate.paper_size_id || '')
+  }
+  return labels
+})
+
+// Before/after for digital view — same fallback as form & print
+// so it doesn't show 0 when unit/contract data exists.
+const numVal = (v: any) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+const displayBefore = computed(() => {
+  const saved = numVal(sr.value?.meter_reading_before) || numVal((sr.value as any)?.reading_counter)
+  if (saved > 0) return saved
+  const readings: any[] = (sr.value as any)?.monthly_meter_readings || (sr.value as any)?.monthlyMeterReadings || []
+  let lastEnd = 0
+  for (const r of readings) lastEnd = Math.max(lastEnd, numVal(r.end_meter) || numVal(r.start_meter))
+  if (lastEnd > 0) return lastEnd
+  const fromUnit = numVal((unit.value as any)?.current_meter_bw) || numVal((unit.value as any)?.current_meter_color)
+  if (fromUnit > 0) return fromUnit
+  const fromContract = numVal((contractByUnit.value as any)?.start_mono_value) || numVal((contractByUnit.value as any)?.start_color_value)
+  return fromContract > 0 ? fromContract : (sr.value?.meter_reading_before ?? 0)
+})
+const displayAfter = computed(() => {
+  const after = numVal(sr.value?.meter_reading_after) || numVal((sr.value as any)?.reading_counter)
+  return after > 0 ? after : (sr.value?.meter_reading_after ?? 0)
+})
+const displayUsage = computed(() => Math.max(0, (displayAfter.value || 0) - (displayBefore.value || 0)))
+
 function formatDate(d: string | null | undefined) {
   if (!d) return '-'
-  return new Date(d).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })
+  return new Date(d).toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'short' })
 }
 
 function statusColor(s: string) {
@@ -63,7 +121,7 @@ function statusColor(s: string) {
 
 <template>
   <div class="report-view" v-if="sr">
-    <PageHeader title="Laporan Service" :back-button="true" @back="router.back()">
+    <PageHeader title="Service Report" :back-button="true" @back="router.back()">
       <template #actions>
         <!-- View Mode Toggle -->
         <div class="view-toggle">
@@ -96,7 +154,7 @@ function statusColor(s: string) {
     <div v-if="viewMode === 'form'" class="form-preview-wrapper">
       <div class="form-preview-label">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        Preview semua form asli (1 form / halaman) — klik <strong>Print / PDF</strong> untuk mencetak
+        Preview of all original forms (1 form / page) — click <strong>Print / PDF</strong> to print
       </div>
       <div class="form-preview-container">
         <iframe
@@ -137,7 +195,7 @@ function statusColor(s: string) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/></svg>
           </div>
           <div class="overview-content">
-            <span class="overview-label">Unit / Mesin</span>
+            <span class="overview-label">Unit / Machine</span>
             <span class="overview-value">{{ unit?.model || '-' }}</span>
             <span class="overview-sub">SN: {{ unit?.serial_no || '-' }}</span>
           </div>
@@ -147,7 +205,7 @@ function statusColor(s: string) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           </div>
           <div class="overview-content">
-            <span class="overview-label">Teknisi</span>
+            <span class="overview-label">Technician</span>
             <span class="overview-value">{{ technician?.name || technician?.full_name || '-' }}</span>
             <span class="overview-sub">{{ sr.service_type?.replace('_', ' ') }}</span>
           </div>
@@ -157,7 +215,7 @@ function statusColor(s: string) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
           <div class="overview-content">
-            <span class="overview-label">Waktu</span>
+            <span class="overview-label">Time</span>
             <span class="overview-value">{{ sr.time_in || '-' }} → {{ sr.time_out || '-' }}</span>
             <span class="overview-sub">{{ jobOrder?.job_order_no || '' }}</span>
           </div>
@@ -175,19 +233,19 @@ function statusColor(s: string) {
             </div>
             <h3 class="report-card-title">Technical Report</h3>
             <span class="report-status" :class="sr.remarks ? 'filled' : 'empty'">
-              {{ sr.remarks ? '✅ Terisi' : '⏳ Kosong' }}
+              {{ sr.remarks ? '✅ Filled' : '⏳ Empty' }}
             </span>
           </div>
           <div class="report-card-body">
             <div class="report-field">
-              <span class="field-label">Hasil Pemeriksaan / Root Cause</span>
-              <div class="field-value">{{ sr.remarks || 'Belum diisi' }}</div>
+              <span class="field-label">Inspection Result / Root Cause</span>
+              <div class="field-value">{{ sr.remarks || 'Not filled yet' }}</div>
             </div>
             <div class="report-field">
-              <span class="field-label">Testing Mesin</span>
+              <span class="field-label">Machine Testing</span>
               <div class="field-value">
-                <span v-if="sr.is_tested" class="test-badge pass">✅ Sudah Dites &amp; Berfungsi Normal</span>
-                <span v-else class="test-badge pending">⏳ Belum Dites</span>
+                <span v-if="sr.is_tested" class="test-badge pass">✅ Tested &amp; Working Normally</span>
+                <span v-else class="test-badge pending">⏳ Not Tested Yet</span>
               </div>
             </div>
           </div>
@@ -201,20 +259,20 @@ function statusColor(s: string) {
             </div>
             <h3 class="report-card-title">Service Report</h3>
             <span class="report-status" :class="sr.repair_action ? 'filled' : 'empty'">
-              {{ sr.repair_action ? '✅ Terisi' : '⏳ Kosong' }}
+              {{ sr.repair_action ? '✅ Filled' : '⏳ Empty' }}
             </span>
           </div>
           <div class="report-card-body">
             <div class="report-field">
-              <span class="field-label">Tindakan Perbaikan</span>
-              <div class="field-value">{{ sr.repair_action || 'Belum diisi' }}</div>
+              <span class="field-label">Repair Action</span>
+              <div class="field-value">{{ sr.repair_action || 'Not filled yet' }}</div>
             </div>
             <div class="report-field">
-              <span class="field-label">Sparepart yang Digunakan</span>
+              <span class="field-label">Spareparts Used</span>
               <div class="field-value" v-if="sr.service_spareparts && sr.service_spareparts.length > 0">
                 <div class="sparepart-table">
                   <div class="sparepart-row header">
-                    <span>Komponen</span>
+                    <span>Component</span>
                     <span>Qty</span>
                   </div>
                   <div v-for="sp in sr.service_spareparts" :key="sp.id" class="sparepart-row">
@@ -223,7 +281,7 @@ function statusColor(s: string) {
                   </div>
                 </div>
               </div>
-              <div class="field-value empty-text" v-else>Tidak ada penggantian sparepart</div>
+              <div class="field-value empty-text" v-else>No sparepart replacements</div>
             </div>
           </div>
         </div>
@@ -235,24 +293,31 @@ function statusColor(s: string) {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
             </div>
             <h3 class="report-card-title">Copier Service Report</h3>
-            <span class="report-status" :class="sr.meter_reading_before || sr.meter_reading_after ? 'filled' : 'empty'">
-              {{ sr.meter_reading_before || sr.meter_reading_after ? '✅ Terisi' : '⏳ Kosong' }}
+            <span class="report-status" :class="displayBefore || displayAfter ? 'filled' : 'empty'">
+              {{ displayBefore || displayAfter ? '✅ Filled' : '⏳ Empty' }}
             </span>
           </div>
           <div class="report-card-body">
             <div class="meter-grid">
               <div class="meter-item">
                 <span class="meter-label">Meter Before</span>
-                <span class="meter-value">{{ sr.meter_reading_before ?? '-' }}</span>
+                <span class="meter-value">{{ displayBefore }}</span>
               </div>
               <div class="meter-item">
                 <span class="meter-label">Meter After</span>
-                <span class="meter-value">{{ sr.meter_reading_after ?? '-' }}</span>
+                <span class="meter-value">{{ displayAfter }}</span>
               </div>
               <div class="meter-item highlight">
                 <span class="meter-label">Total Usage</span>
-                <span class="meter-value">{{ (sr.meter_reading_after || 0) - (sr.meter_reading_before || 0) }}</span>
+                <span class="meter-value">{{ displayUsage }}</span>
               </div>
+            </div>
+            <div class="report-field">
+              <span class="field-label">Paper Size</span>
+              <div class="field-value" v-if="paperTypes.length > 0">
+                <div v-for="(pt, i) in paperTypes" :key="i">{{ i + 1 }}. {{ pt }}</div>
+              </div>
+              <div class="field-value empty-text" v-else>No paper size data yet</div>
             </div>
           </div>
         </div>
@@ -261,7 +326,7 @@ function statusColor(s: string) {
 
       <!-- Problem Description -->
       <div class="card p-lg mt-lg" v-if="sr.machine_problem || jobOrder?.instructions">
-        <h3 class="card-title mb-md">Keluhan / Instruksi Awal</h3>
+        <h3 class="card-title mb-md">Complaint / Initial Instructions</h3>
         <p class="problem-text">{{ sr.machine_problem || jobOrder?.instructions || jobOrder?.service_request?.problem_description || '-' }}</p>
       </div>
     </template>
@@ -270,12 +335,12 @@ function statusColor(s: string) {
 
   <!-- Not Found -->
   <div v-else class="report-view">
-    <PageHeader title="Laporan Service" :back-button="true" @back="router.back()" />
+    <PageHeader title="Service Report" :back-button="true" @back="router.back()" />
     <div class="empty-state">
       <div class="empty-icon">📋</div>
-      <h3>Laporan Tidak Ditemukan</h3>
-      <p>Service report dengan ID ini tidak tersedia.</p>
-      <button class="btn btn-primary mt-md" @click="router.back()">Kembali</button>
+      <h3>Report Not Found</h3>
+      <p>No service report available with this ID.</p>
+      <button class="btn btn-primary mt-md" @click="router.back()">Back</button>
     </div>
   </div>
 </template>

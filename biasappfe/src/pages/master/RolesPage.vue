@@ -95,13 +95,13 @@ const permissionsByModule = computed(() => {
     }
   })
 
-  // Permission tanpa modul (module_id NULL, mis. purchase_order:view)
+  // Permissions without a module (module_id NULL, e.g. purchase_order:view)
   grouped.forEach((perms, key) => {
     if (!key.startsWith('none:')) return
     result.push({
       module: {
         id: key,
-        name: `${key.slice(5)} (Tanpa Modul)`,
+        name: `${key.slice(5)} (No Module)`,
         is_active: true,
       } as Module,
       permissions: perms
@@ -117,8 +117,8 @@ const filteredPermissionGroups = computed(() => {
 })
 
 // Watchers
-// Hanya set selectedPermissions ketika selectedRoleId berubah (saat ganti role), 
-// jangan di-watch secara live dari selectedRole untuk menghindari race condition saat user nge-klik cepat.
+// Only set selectedPermissions when selectedRoleId changes (when switching roles),
+// do not watch live from selectedRole to avoid race conditions when users click quickly.
 watch(selectedRoleId, (newId) => {
   const role = roles.value.find(r => String(r.id) === newId)
   if (role && role.permissions) {
@@ -155,16 +155,16 @@ async function handleSaveRole() {
   try {
     if (editingRole.value) {
       await resources.roles.update(String(editingRole.value.id), { name: roleForm.value.name })
-      toast.success("Role berhasil diperbarui!")
+      toast.success("Role updated successfully!")
     } else {
       await resources.roles.create({ name: roleForm.value.name })
-      toast.success("Role berhasil disimpan!")
+      toast.success("Role saved successfully!")
     }
     showModal.value = false
     await fetchData()
   } catch (error: any) {
     console.error('Failed to save role:', error)
-    toast.error('Gagal menyimpan role: ' + (error.message || 'Error'))
+    toast.error('Failed to save role: ' + (error.message || 'Error'))
   }
 }
 
@@ -177,10 +177,10 @@ async function handleDeleteRole() {
     }
     showConfirm.value = false
     await fetchData()
-    toast.success("Role berhasil dihapus!")
+    toast.success("Role deleted successfully!")
   } catch (error: any) {
     console.error('Failed to delete role:', error)
-    toast.error('Gagal menghapus role: ' + (error.message || 'Error'))
+    toast.error('Failed to delete role: ' + (error.message || 'Error'))
   }
 }
 
@@ -235,7 +235,7 @@ async function savePermissions() {
     await authStore.refreshPermissions()
   } catch (error: any) {
     console.error(error)
-    toast.error('Gagal menyimpan: ' + (error.message || 'Error'))
+    toast.error('Failed to save: ' + (error.message || 'Error'))
   } finally {
     isSaving.value = false
   }
@@ -295,7 +295,7 @@ async function savePermissions() {
         >
           <div class="role-info">
             <h4 class="role-name">{{ role.name }}</h4>
-            <span class="role-desc">Role sistem</span>
+            <span class="role-desc">System role</span>
           </div>
           <div class="role-actions">
             <button v-if="authStore.hasPermission('role:update')" class="btn-icon" @click.stop="openEditRole(role)" title="Edit">
@@ -311,7 +311,7 @@ async function savePermissions() {
 
     <!-- Right Panel: Permissions Matrix -->
     <div class="permissions-content">
-      <div v-if="isLoading" class="permission-loading-grid" role="status" aria-label="Memuat permissions">
+      <div v-if="isLoading" class="permission-loading-grid" role="status" aria-label="Loading permissions">
         <div v-for="item in 6" :key="item" class="permission-skeleton">
           <span class="permission-skeleton-title" />
           <span class="permission-skeleton-line" />
@@ -319,7 +319,7 @@ async function savePermissions() {
         </div>
       </div>
       <div v-else-if="!selectedRole" class="empty-state">
-        <p>Pilih role di panel kiri untuk mengatur permissions.</p>
+        <p>Select a role in the left panel to manage permissions.</p>
       </div>
       
       <div v-else class="permissions-wrapper">
@@ -404,12 +404,12 @@ async function savePermissions() {
     <!-- Modals -->
     <FormModal :open="showModal" :title="editingRole ? 'Edit Role' : 'Add Role'" maxWidth="400px" @close="showModal = false" @submit="handleSaveRole">
       <div class="form-group">
-        <label for="role-name" class="form-label">Nama Role</label>
-        <input id="role-name" v-model="roleForm.name" type="text" class="form-input" placeholder="Contoh: Admin">
+        <label for="role-name" class="form-label">Role Name</label>
+        <input id="role-name" v-model="roleForm.name" type="text" class="form-input" placeholder="Example: Admin">
       </div>
     </FormModal>
     
-    <ConfirmDialog :open="showConfirm" title="Hapus Role" :message="`Yakin ingin menghapus role '${deletingRole?.name}'?`" @close="showConfirm = false" @confirm="handleDeleteRole" />
+    <ConfirmDialog :open="showConfirm" title="Delete Role" :message="`Are you sure you want to delete role '${deletingRole?.name}'?`" @close="showConfirm = false" @confirm="handleDeleteRole" />
   </div>
 </template>
 

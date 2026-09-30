@@ -1,15 +1,13 @@
 <script setup lang="ts">
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
+import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
 import type { MenuGroup } from '@/types'
 import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
 import { canView, permissionKeysFor } from '@/router/permission-map'
-import { canAccessRoute, normalizeRole, routeToModule } from '@/router/role-access'
-import type { MenuGroup } from '@/types'
-import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
 
 const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
 
@@ -94,6 +92,7 @@ const menuGroups = computed(() => {
     ...group,
     title: group.title.includes('.') ? t(group.title) : group.title,
     items: group.items.filter(item => {
+      // 1. Superadmin (admin) sees everything
       if (role === 'admin') return true
 
       // 2. Role-restricted items (technician menu): role decides, no module/permission checks
@@ -111,20 +110,26 @@ const menuGroups = computed(() => {
       //    (see router/permission-map.ts). `read` alone never opens a menu.
       const routeName = String(router.resolve(item.route).name || '')
       const permKeys = permissionKeysFor(routeName)
-      if (!permKeys) return true
+
+      if (!permKeys) {
+        // No permission key mapped (dashboards, shared pages) -> visible
+        return true
+      }
+
       if (!canView(routeName, currentUser.value?.permissions || [])) return false
 
+      // Respect a deactivated module that owns this permission key.
+      // Module names are display names ("Job Order") while permission keys use
+      // snake_case ("job_order"), so normalize before comparing.
       const matches = modules.value.filter(m => permKeys.includes(moduleKey(String(m.name))))
       if (matches.length > 0 && !matches.some(m => m.is_active)) return false
 
       return true
     }).map(item => ({
       ...item,
-      label: item.label.includes('.') ? t(item.label) : item.label,
-    })),
+      label: item.label.includes('.') ? t(item.label) : item.label
+    }))
   })).filter(group => group.items.length > 0)
-
-  return finalGroups
 })
 
 const expandedGroups = ref<Set<string>>(new Set(allMenuGroups.map(g => g.title.includes('.') ? t(g.title) : g.title)))
@@ -148,7 +153,7 @@ function navigate(itemRoute: string) {
 
 function handleLogout() {
   logout()
-  toastSuccess('Logout berhasil')
+  toastSuccess('Logout successful')
   router.push('/login')
 }
 
@@ -183,14 +188,18 @@ const iconPaths: Record<string, string> = {
   'credit-card': 'M1 4h22v16H1z M1 10h22',
   'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 8v4 M12 16h.01',
   'truck': 'M1 3h15v13H1z M16 8h4l3 3v5h-7z M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z M18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
-  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01',
+  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01', 
   'bell': 'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0',
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="sidebar-backdrop" @click="emit('close')" />
+    <div
+      v-if="open"
+      class="sidebar-backdrop"
+      @click="emit('close')"
+    />
   </Teleport>
 
   <aside class="sidebar" :class="{ 'sidebar-open': open }">
@@ -201,21 +210,44 @@ const iconPaths: Record<string, string> = {
 
     <nav class="sidebar-nav" aria-label="Main navigation menu">
       <div v-for="group in menuGroups" :key="group.title" class="menu-group">
-        <button class="menu-group-toggle" :aria-expanded="expandedGroups.has(group.title)"
-          @click="toggleGroup(group.title)">
+        <button
+          class="menu-group-toggle"
+          :aria-expanded="expandedGroups.has(group.title)"
+          @click="toggleGroup(group.title)"
+        >
           <span class="menu-group-title">{{ group.title }}</span>
-          <svg class="menu-group-chevron" :class="{ 'chevron-open': expandedGroups.has(group.title) }" width="14"
-            height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="6 9 12 15 18 9" />
+          <svg
+            class="menu-group-chevron"
+            :class="{ 'chevron-open': expandedGroups.has(group.title) }"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <polyline points="6 9 12 15 18 9"/>
           </svg>
         </button>
 
         <ul v-show="expandedGroups.has(group.title)" class="menu-list">
           <li v-for="item in group.items" :key="item.route">
-            <button class="menu-item" :class="{ 'menu-item-active': isActive(item.route) }"
-              @click="navigate(item.route)">
-              <svg class="menu-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button
+              class="menu-item"
+              :class="{ 'menu-item-active': isActive(item.route) }"
+              @click="navigate(item.route)"
+            >
+              <svg
+                class="menu-icon"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path :d="iconPaths[item.icon] || iconPaths.grid" />
               </svg>
               <span>{{ item.label }}</span>
@@ -233,15 +265,13 @@ const iconPaths: Record<string, string> = {
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
           <span class="sidebar-user-role">{{
-            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c =>
-              c.toUpperCase()) : 'Superadmin'
-            }}</span>
+            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Superadmin'
+          }}</span>
         </div>
       </div>
       <button class="btn-logout" title="Logout" @click="handleLogout">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
         </svg>
       </button>
     </div>
@@ -280,7 +310,6 @@ const iconPaths: Record<string, string> = {
   .sidebar-backdrop {
     display: none;
   }
-
   .sidebar {
     transform: translateX(0);
   }

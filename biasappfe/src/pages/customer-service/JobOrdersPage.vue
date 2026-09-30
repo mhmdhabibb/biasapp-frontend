@@ -239,7 +239,7 @@ async function onDrop(techId: string | number) {
       if (res.ok) {
         draggedRequest = null;
         fetchDeliveryOrders();
-        toast.success("Delivery order berhasil di-assign ke teknisi.");
+        toast.success("Delivery order successfully assigned to technician.");
       } else {
         toast.error("Failed to assign delivery order");
       }
@@ -268,7 +268,7 @@ async function onDrop(techId: string | number) {
       if (res.ok) {
         draggedRequest = null;
         fetchJobOrders();
-        toast.success("Job order berhasil di-assign ke teknisi.");
+        toast.success("Job order successfully assigned to technician.");
       } else {
         toast.error("Failed to assign job order");
       }

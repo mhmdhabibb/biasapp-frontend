@@ -27,8 +27,8 @@ const {
 const resources = useResourcesStore()
 
 const columns: TableColumn[] = [
-  { key: 'date', label: 'Tanggal Transaksi' },
-  { key: 'sale_no', label: 'Kode' },
+  { key: 'date', label: 'Transaction Date' },
+  { key: 'sale_no', label: 'Code' },
   { key: 'customer_id', label: 'Company' },
   { key: 'pic_name', label: 'PIC Name' },
 
@@ -105,9 +105,9 @@ async function handlePayment() {
     await resources.update("sales", viewingItem.value.id as any, payload)
     await useMasterStore().refresh(true)
     showPaymentModal.value = false
-    toast.success("Pembayaran berhasil dicatat!")
+    toast.success("Payment recorded successfully!")
   } catch (err: any) {
-    toast.error("Gagal mencatat pembayaran! " + (err.response?.data?.message || err.message))
+    toast.error("Failed to record payment! " + (err.response?.data?.message || err.message))
   }
 }
 
@@ -120,22 +120,22 @@ function generateSingleInvoiceHtml(item: any) {
   const custPhone = customer?.phone || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
+  let prefix = 'Mr./Mrs. '
+  if (gender === 'L') prefix = 'Mr. '
+  if (gender === 'P') prefix = 'Mrs. '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
 
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
   const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
 
-  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
   let itemsHtml = ''
   if (item.sale_items && item.sale_items.length > 0) {
     itemsHtml = item.sale_items.map((si: any, idx: number) => {
       const p = findProduct(si.product_id)
-      let pName = p ? p.name : ('Produk ID: ' + si.product_id)
+      let pName = p ? p.name : ('Product ID: ' + si.product_id)
       if (si.description) {
         pName += `<br><span style="font-size: 10px; color: #555;">${si.description}</span>`
       }
@@ -151,7 +151,7 @@ function generateSingleInvoiceHtml(item: any) {
       `
     }).join('')
   } else {
-    itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">Data item tidak tersedia</td></tr>`
+    itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">No item data available</td></tr>`
   }
 
   const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
@@ -193,7 +193,7 @@ function generateSingleInvoiceHtml(item: any) {
               </tr>
               ` : ''}
               <tr>
-                <td colspan="2" class="bg-blue">Kepada Yth. :</td>
+                <td colspan="2" class="bg-blue">To:</td>
               </tr>
               <tr>
                 <td colspan="2" style="font-weight: bold; height: 35px; vertical-align: top;">${custName}</td>
@@ -209,7 +209,7 @@ function generateSingleInvoiceHtml(item: any) {
                 <td>${custPhone}</td>
               </tr>
               <tr>
-                <td class="label">Up.:</td>
+                <td class="label">Attn:</td>
                 <td>${picDisplay}</td>
               </tr>
             </table>
@@ -260,10 +260,10 @@ function generateSingleInvoiceHtml(item: any) {
       </table>
 
       <div class="payment-info">
-        Pembayaran Transfer ke rekening :<br>
+        Payment by transfer to account:<br>
         BANK BRKSYARIAH Cabang Batam<br>
-        Rek No. 106-08-85757<br>
-        A/N : PT. BIAS SURYA TEKNOLOGI<br>
+        Account No. 106-08-85757<br>
+        Account Name : PT. BIAS SURYA TEKNOLOGI<br>
         NPWP : 0941.8395.0822.5000
       </div>
 
@@ -273,7 +273,7 @@ function generateSingleInvoiceHtml(item: any) {
           <div class="sig-line"></div>
         </div>
         <div class="sig-box">
-          Hormat Kami,
+          Sincerely,
           <div class="sig-line">Grace</div>
         </div>
       </div>
@@ -284,15 +284,15 @@ function generateSingleInvoiceHtml(item: any) {
 function exportMonthToExcel() {
   const items = filteredData.value
   if (items.length === 0) {
-    toast.warning('Tidak ada data sales invoice untuk diekspor!')
+    toast.warning('No sales invoice data to export!')
     return
   }
 
-  let periodLabel = 'Semua_Periode'
+  let periodLabel = 'All_Periods'
   if (monthFilter.value) {
     periodLabel = monthFilter.value
   } else if (startDateFilter.value || endDateFilter.value) {
-    periodLabel = `${startDateFilter.value || 'Awal'}_sd_${endDateFilter.value || 'Akhir'}`
+    periodLabel = `${startDateFilter.value || 'Start'}_to_${endDateFilter.value || 'End'}`
   }
 
   let csvContent = '\uFEFF'
@@ -304,39 +304,39 @@ function exportMonthToExcel() {
     const custPhone = (customer?.phone || '-').replace(/;/g, ',')
     const pic = customer?.pic_name || '-'
     const gender = customer?.pic_gender
-    let prefix = 'Bapak/Ibu '
-    if (gender === 'L') prefix = 'Bapak '
-    if (gender === 'P') prefix = 'Ibu '
+    let prefix = 'Mr./Mrs. '
+    if (gender === 'L') prefix = 'Mr. '
+    if (gender === 'P') prefix = 'Mrs. '
     const picDisplay = pic !== '-' ? (prefix + pic).replace(/;/g, ',') : '-'
 
     const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
     const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
     const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
-    const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID') : '-'
+    const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB') : '-'
 
     const subtotal = item.subtotal || item.total_amount || item.total || 0
     const grandTotal = item.total_amount || item.total || 0
 
     csvContent += `INVOICE SALES #${idx + 1};;;;;;\n`
     csvContent += `PT. BIAS SURYA TEKNOLOGI;;;;;Invoice No:;"${invoiceNo}"\n`
-    csvContent += `Ruko Purimas Blok A No.47 Batam;;;;;Tanggal:;"${dateStr}"\n`
-    csvContent += `Kepada Yth:;"${custName}";;;;;Status:;"${(item.status || 'pending').toUpperCase()}"\n`
-    csvContent += `Alamat:;"${custAddress}";;;;;Phone:;"${custPhone}"\n`
-    csvContent += `UP:;"${picDisplay}";;;;;\n`
+    csvContent += `Ruko Purimas Blok A No.47 Batam;;;;;Date:;"${dateStr}"\n`
+    csvContent += `To:;"${custName}";;;;;Status:;"${(item.status || 'pending').toUpperCase()}"\n`
+    csvContent += `Address:;"${custAddress}";;;;;Phone:;"${custPhone}"\n`
+    csvContent += `Attn:;"${picDisplay}";;;;;\n`
     csvContent += `;;;;;;\n`
-    csvContent += `No;Deskripsi Produk / Item;Qty;Satuan;Harga Satuan (Rp);Total Amount (Rp)\n`
+    csvContent += `No;Product / Item Description;Qty;UOM;Unit Price (Rp);Total Amount (Rp)\n`
 
     if (item.sale_items && item.sale_items.length > 0) {
       item.sale_items.forEach((si: any, sIdx: number) => {
         const p = findProduct(si.product_id)
-        const pName = (p ? p.name : ('Produk ID: ' + si.product_id)).replace(/;/g, ',')
+        const pName = (p ? p.name : ('Product ID: ' + si.product_id)).replace(/;/g, ',')
         const qty = si.qty || 1
         const uPrice = si.unit_price || si.price || 0
         const itemTotal = uPrice * qty
         csvContent += `${sIdx + 1};"${pName}";${qty};unit;${uPrice};${itemTotal}\n`
       })
     } else {
-      csvContent += `1;"Penjualan Barang / Jasa";1;unit;${subtotal};${subtotal}\n`
+      csvContent += `1;"Goods / Services";1;unit;${subtotal};${subtotal}\n`
     }
 
     csvContent += `;;;;Sub Total:;${subtotal}\n`
@@ -360,17 +360,17 @@ function exportMonthToExcel() {
 function exportMonthToPdf() {
   const items = filteredData.value
   if (items.length === 0) {
-    toast.warning('Tidak ada data sales invoice untuk diekspor ke PDF!')
+    toast.warning('No sales invoice data to export to PDF!')
     return
   }
 
-  let periodTitle = 'Seluruh Periode'
+  let periodTitle = 'Entire Period'
   if (monthFilter.value) {
     const [yearStr, monthStr] = monthFilter.value.split('-')
-    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     periodTitle = `${months[parseInt(monthStr) - 1]} ${yearStr}`
   } else if (startDateFilter.value || endDateFilter.value) {
-    periodTitle = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
+    periodTitle = `${startDateFilter.value || 'Start'} to ${endDateFilter.value || 'End'}`
   }
 
   const invoicesHtml = items.map(item => generateSingleInvoiceHtml(item)).join('')
@@ -546,7 +546,7 @@ function openEdit(item: any) {
 async function handleSubmit() {
   if (!form.customer_id) return
   if (!form.installation_address.trim()) {
-    toast.warning('Alamat instalasi/pengiriman wajib diisi.')
+    toast.warning('Installation/delivery address is required.')
     return
   }
   const saleData = {
@@ -576,7 +576,7 @@ async function handleSubmit() {
     }
     await useMasterStore().refresh(true)
     showModal.value = false
-    toast.success(editingItem.value ? "Data penjualan berhasil diperbarui!" : "Data penjualan berhasil disimpan!")
+    toast.success(editingItem.value ? "Sale updated successfully!" : "Sale saved successfully!")
 
     // Auto-print invoice when a new sale is created
     if (!editingItem.value && res && res.id) {
@@ -590,7 +590,7 @@ async function handleSubmit() {
   } catch (error: any) {
     if (pw) pw.close();
     const errMsg = (error.response?.data?.message || error.message || "Unknown error") + " - Detail: " + JSON.stringify(error.response?.data || error.response || error);
-    toast.error("Gagal menyimpan data! " + errMsg)
+    toast.error("Failed to save data! " + errMsg)
   }
 }
 
@@ -600,9 +600,9 @@ async function handleDelete() {
     try {
       await resources.remove("sales", deletingItem.value.id as any)
       useMasterStore().refresh(true)
-      toast.success("Data penjualan berhasil dihapus!")
+      toast.success("Sale deleted successfully!")
     } catch (error) {
-      toast.error("Gagal menghapus data!")
+      toast.error("Failed to delete data!")
     }
   }
   showConfirm.value = false
@@ -693,7 +693,7 @@ function generateSingleReceiptHtml(item: any) {
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
   const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
 
-  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
   const amountStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
 
   return `
@@ -716,17 +716,17 @@ function generateSingleReceiptHtml(item: any) {
       <div style="background: #f8fafc; padding: 30px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 40px;">
         <table style="width: 100%; border-collapse: collapse; font-size: 16px;">
           <tr>
-            <td style="padding: 15px 0; width: 180px; color: #64748b; font-weight: bold;">Telah Diterima Dari</td>
+            <td style="padding: 15px 0; width: 180px; color: #64748b; font-weight: bold;">Received From</td>
             <td style="padding: 15px 0; width: 20px;">:</td>
             <td style="padding: 15px 0; font-weight: bold; font-size: 18px; border-bottom: 1px dashed #cbd5e1;">${compName} - ${custName}</td>
           </tr>
           <tr>
-            <td style="padding: 15px 0; color: #64748b; font-weight: bold;">Uang Sejumlah</td>
+            <td style="padding: 15px 0; color: #64748b; font-weight: bold;">Amount</td>
             <td style="padding: 15px 0;">:</td>
             <td style="padding: 15px 0; font-weight: bold; font-size: 22px; color: #0f172a; border-bottom: 1px dashed #cbd5e1;">Rp ${amountStr}</td>
           </tr>
           <tr>
-            <td style="padding: 15px 0; color: #64748b; font-weight: bold;">Untuk Pembayaran</td>
+            <td style="padding: 15px 0; color: #64748b; font-weight: bold;">For Payment of</td>
             <td style="padding: 15px 0;">:</td>
             <td style="padding: 15px 0; font-size: 16px; border-bottom: 1px dashed #cbd5e1;">Invoice No. ${invoiceNo}</td>
           </tr>
@@ -787,11 +787,11 @@ function printReceipt(item: any, existingWindow?: Window | null) {
   <div>
     <PageHeader title="Sales" button-label="Add Sale" permission="sale:create" @add="openAdd" />
     
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari penjualan..." @edit="openEdit"
+    <DataTable :columns="columns" :data="data" search-placeholder="Search sales..." @edit="openEdit"
       @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-pic_name="{ row }">{{ picName(row.customer_id) }}</template>
-      <template #cell-date="{ value }">{{ value ? new Date(value).toLocaleDateString('id-ID') : '-' }}</template>
+      <template #cell-date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-service_charge="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-tax="{ value }">{{ formatRupiah(value || 0) }}</template>
@@ -812,14 +812,14 @@ function printReceipt(item: any, existingWindow?: Window | null) {
               <circle cx="12" cy="12" r="3"></circle>
             </svg>
           </button>
-          <button v-if="row.status !== 'paid' && can('payment:create')" class="action-btn action-btn--edit" title="Pembayaran" @click="openPayment(row)" style="color: var(--color-success); width: 36px; height: 36px;">
+          <button v-if="row.status !== 'paid' && can('payment:create')" class="action-btn action-btn--edit" title="Payment" @click="openPayment(row)" style="color: var(--color-success); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
               <line x1="2" y1="10" x2="22" y2="10"></line>
             </svg>
           </button>
-          <button v-if="row.status === 'paid' && can('sale:read')" class="action-btn action-btn--edit" title="Print Bukti Bayar"
+          <button v-if="row.status === 'paid' && can('sale:read')" class="action-btn action-btn--edit" title="Print Receipt"
             @click="printReceipt(row)" style="color: var(--color-success); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -861,36 +861,36 @@ function printReceipt(item: any, existingWindow?: Window | null) {
     <FormModal :open="showModal" :title="editingItem ? 'Edit Sale' : 'Add Sale'" @close="showModal = false"
       @submit="handleSubmit">
       <div class="form-group">
-        <label for="sale-no" class="form-label">Sale No. (Otomatis)</label>
+        <label for="sale-no" class="form-label">Sale No. (Auto)</label>
         <input id="sale-no" v-model="form.sale_no" type="text" class="form-input" disabled
           style="background: var(--color-surface-raised); cursor: not-allowed;">
       </div>
       <div class="form-group">
         <label for="sale-customer" class="form-label">Customer</label>
         <select id="sale-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Pilih Customer --</option>
+          <option :value="null">-- Select Customer --</option>
           <option v-for="c in customers" :key="c.id" :value="c.id">{{ (c as any).company_name || (c as any).name }}{{ (c as any).pic_name ? ' - ' + (c as any).pic_name : '' }}</option>
         </select>
       </div>
       <div class="form-group">
-        <label for="sale-date" class="form-label">Tanggal</label>
+        <label for="sale-date" class="form-label">Date</label>
         <input id="sale-date" v-model="form.sale_date" type="date" class="form-input">
       </div>
       <div class="form-group">
-        <label for="sale-po-no" class="form-label">PO No (Opsional)</label>
-        <input id="sale-po-no" v-model="form.po_no" type="text" class="form-input" placeholder="Misal: PO-2024-001">
+        <label for="sale-po-no" class="form-label">PO No (Optional)</label>
+        <input id="sale-po-no" v-model="form.po_no" type="text" class="form-input" placeholder="E.g. PO-2024-001">
       </div>
       <div class="form-group">
-        <label for="sale-installation-address" class="form-label">Alamat Instalasi / Pengiriman (Delivery Order)</label>
-        <textarea id="sale-installation-address" v-model="form.installation_address" class="form-textarea" rows="3" placeholder="Masukkan alamat lengkap pengiriman..." required></textarea>
+        <label for="sale-installation-address" class="form-label">Installation / Delivery Address (Delivery Order)</label>
+        <textarea id="sale-installation-address" v-model="form.installation_address" class="form-textarea" rows="3" placeholder="Enter the full delivery address..." required></textarea>
       </div>
     
 
-      <div class="form-section-title">Item Penjualan</div>
+      <div class="form-section-title">Sale Items</div>
       <div v-for="(item, idx) in saleItems" :key="idx" class="sale-item-row">
         <div class="form-group sale-item-product">
           <select v-model="item.product_id" class="form-select" @change="onProductChange(idx)">
-            <option :value="null">-- Produk --</option>
+            <option :value="null">-- Product --</option>
             <option v-for="p in products" :key="p.id" :value="p.id">{{ (p as any).name }}</option>
           </select>
         </div>
@@ -898,31 +898,31 @@ function printReceipt(item: any, existingWindow?: Window | null) {
           <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
         </div>
         <div class="form-group sale-item-price">
-          <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Harga">
+          <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Price">
         </div>
-        <button type="button" class="btn-remove-item" title="Hapus item" @click="removeSaleItem(idx)">✕</button>
+        <button type="button" class="btn-remove-item" title="Remove item" @click="removeSaleItem(idx)">✕</button>
 
         <div v-if="item.is_computer" style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
-          <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Spesifikasi Komputer / PC</h4>
+          <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Computer / PC Specifications</h4>
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Processor (CPU)</label>
-              <input v-model="item.specs.cpu" type="text" class="form-input" placeholder="Misal: Intel Core i5">
+              <input v-model="item.specs.cpu" type="text" class="form-input" placeholder="E.g. Intel Core i5">
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">RAM</label>
-              <input v-model="item.specs.ram" type="text" class="form-input" placeholder="Misal: 16GB DDR4">
+              <input v-model="item.specs.ram" type="text" class="form-input" placeholder="E.g. 16GB DDR4">
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">VGA / GPU</label>
-              <input v-model="item.specs.vga" type="text" class="form-input" placeholder="Misal: Intel UHD Graphics">
+              <input v-model="item.specs.vga" type="text" class="form-input" placeholder="E.g. Intel UHD Graphics">
             </div>
           </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
               <select v-model="item.specs.storage_type" class="form-select">
-                <option value="">Pilih</option>
+                <option value="">Select</option>
                 <option value="SSD">SSD</option>
                 <option value="HDD">HDD</option>
                 <option value="NVMe">NVMe</option>
@@ -930,55 +930,55 @@ function printReceipt(item: any, existingWindow?: Window | null) {
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>
-              <input v-model="item.specs.storage" type="text" class="form-input" placeholder="Misal: 512GB">
+              <input v-model="item.specs.storage" type="text" class="form-input" placeholder="E.g. 512GB">
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Operating System (OS)</label>
-              <input v-model="item.specs.os" type="text" class="form-input" placeholder="Misal: Windows 11 Pro">
+              <input v-model="item.specs.os" type="text" class="form-input" placeholder="E.g. Windows 11 Pro">
             </div>
           </div>
           <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.75rem;">
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Office Package</label>
-              <input v-model="item.specs.office" type="text" class="form-input" placeholder="Misal: Microsoft Office 2021">
+              <input v-model="item.specs.office" type="text" class="form-input" placeholder="E.g. Microsoft Office 2021">
             </div>
           </div>
         </div>
 
         <div style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
           <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">Deskripsi / Keterangan (Tampil di Invoice)</label>
-            <textarea v-model="item.description" class="form-input" placeholder="Misal: Kondisi mulus, termasuk kabel power..." rows="2"></textarea>
+            <label class="form-label" style="font-size: 0.8rem;">Description / Notes (Shown on Invoice)</label>
+            <textarea v-model="item.description" class="form-input" placeholder="E.g. Good condition, including power cable..." rows="2"></textarea>
           </div>
         </div>
       </div>
       <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem" style="margin-top: 1rem;">+ Add Item</button>
 
-      <div class="form-section-title" style="margin-top: 1.5rem;">Garansi & Layanan</div>
+      <div class="form-section-title" style="margin-top: 1.5rem;">Warranty & Services</div>
       <div style="border: 1px solid var(--color-border); padding: 1rem; border-radius: var(--radius-md); background-color: var(--color-surface); margin-bottom: 1.5rem;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group">
-            <label class="form-label">Tipe Garansi</label>
+            <label class="form-label">Warranty Type</label>
             <select v-model="form.warranty.warranty_type" class="form-select">
-              <option value="machine">Mesin (Machine)</option>
-              <option value="sparepart">Suku Cadang (Sparepart)</option>
-              <option value="service">Layanan (Service)</option>
+              <option value="machine">Machine</option>
+              <option value="sparepart">Sparepart</option>
+              <option value="service">Service</option>
             </select>
           </div>
           <div style="display: flex; gap: 0.5rem;">
             <div class="form-group" style="flex: 1;">
-              <label class="form-label">Durasi (Bulan)</label>
+              <label class="form-label">Duration (Months)</label>
               <input v-model.number="form.warranty.duration_months" type="number" min="0" class="form-input">
             </div>
             <div class="form-group" style="flex: 1;">
-              <label class="form-label">Durasi (Hari)</label>
+              <label class="form-label">Duration (Days)</label>
               <input v-model.number="form.warranty.duration_days" type="number" min="0" class="form-input">
             </div>
           </div>
         </div>
         <div class="form-group" style="margin-top: 0.75rem;">
-          <label class="form-label">Syarat & Ketentuan Garansi</label>
-          <textarea v-model="form.warranty.terms_conditions" class="form-input" rows="3" placeholder="Misal: Garansi void jika segel rusak, human error, atau terkena air..."></textarea>
+          <label class="form-label">Warranty Terms & Conditions</label>
+          <textarea v-model="form.warranty.terms_conditions" class="form-input" rows="3" placeholder="E.g. Warranty is void if the seal is broken, due to human error, or water damage..."></textarea>
         </div>
       </div>
 
@@ -986,26 +986,26 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <div class="summary-row summary-total"><span>Total</span><span>{{ formatRupiah(calcTotal) }}</span></div>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Penjualan"
-      :message="`Yakin ingin menghapus penjualan ID ${deletingItem?.id}?`" @close="showConfirm = false"
+    <ConfirmDialog :open="showConfirm" title="Delete Sale"
+      :message="`Are you sure you want to delete sale ID ${deletingItem?.id}?`" @close="showConfirm = false"
       @confirm="handleDelete" />
 
-    <FormModal :open="showDetail" title="Detail Penjualan" @close="showDetail = false" @submit="showDetail = false">
+    <FormModal :open="showDetail" title="Sale Details" @close="showDetail = false" @submit="showDetail = false">
       <template #default>
         <template v-if="viewingItem">
           <div style="margin-bottom: var(--space-md);">
             <div
               style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); margin-bottom: var(--space-md);">
               <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Kode Sales</p>
+                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Sales Code</p>
                 <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{ viewingItem.sale_no || '-' }}
                 </p>
               </div>
               <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Tanggal Transaksi
+                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Transaction Date
                 </p>
                 <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{ (viewingItem.sale_date || (viewingItem as any).date) ? new
-                  Date(viewingItem.sale_date || (viewingItem as any).date).toLocaleDateString('id-ID') : '-' }}</p>
+                  Date(viewingItem.sale_date || (viewingItem as any).date).toLocaleDateString('en-GB') : '-' }}</p>
               </div>
               <div>
                 <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Customer</p>
@@ -1024,24 +1024,24 @@ function printReceipt(item: any, existingWindow?: Window | null) {
             </div>
           </div>
 
-          <div class="form-section-title">Daftar Item Terjual</div>
+          <div class="form-section-title">Items Sold</div>
           <div
             style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-md); flex-shrink: 0; min-height: 100px;">
             <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
               <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
                 <tr>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Produk</th>
+                  <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Product</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center;">Qty</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Harga Satuan</th>
+                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Unit Price</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Total</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!viewingItem.sale_items || viewingItem.sale_items.length === 0">
-                  <td colspan="4" style="padding: 16px; text-align: center; color: var(--color-text-muted);">Data item tidak tersedia</td>
+                  <td colspan="4" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
                 </tr>
                 <tr v-for="(si, idx) in viewingItem.sale_items" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
-                  <td style="padding: 12px;">{{ findProduct(si.product_id)?.name || 'Produk ID: ' + si.product_id }}</td>
+                  <td style="padding: 12px;">{{ findProduct(si.product_id)?.name || 'Product ID: ' + si.product_id }}</td>
                   <td style="padding: 12px; text-align: center;">{{ si.qty }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah(si.unit_price || (si as any).price || 0) }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah((si.unit_price || (si as any).price || 0) * (si.qty || 1)) }}</td>
@@ -1051,20 +1051,20 @@ function printReceipt(item: any, existingWindow?: Window | null) {
           </div>
 
           <div v-if="viewingItem.has_warranty || (viewingItem.warranties && viewingItem.warranties.length > 0)">
-            <div class="form-section-title">Detail Garansi</div>
+            <div class="form-section-title">Warranty Details</div>
             <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: var(--space-md); background-color: var(--color-surface-raised);">
               <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.25rem;">
                 <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Tipe Garansi</p>
+                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Warranty Type</p>
                   <p style="font-weight: var(--font-weight-medium); margin: 0; text-transform: capitalize;">
                     {{ viewingItem.warranties && viewingItem.warranties.length > 0 ? viewingItem.warranties[0].warranty_type : '-' }}
                   </p>
                 </div>
                 <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Durasi</p>
+                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Duration</p>
                   <p style="font-weight: var(--font-weight-medium); margin: 0;">
                     <template v-if="viewingItem.warranties && viewingItem.warranties.length > 0">
-                      {{ viewingItem.warranties[0].duration_months }} Bulan <span v-if="viewingItem.warranties[0].duration_days">{{ viewingItem.warranties[0].duration_days }} Hari</span>
+                      {{ viewingItem.warranties[0].duration_months }} months <span v-if="viewingItem.warranties[0].duration_days">{{ viewingItem.warranties[0].duration_days }} days</span>
                     </template>
                     <template v-else>-</template>
                   </p>
@@ -1082,29 +1082,29 @@ function printReceipt(item: any, existingWindow?: Window | null) {
                             backgroundColor: viewingItem.warranties[0].status === 'active' ? '#e6f4ea' : '#fce8e6',
                             color: viewingItem.warranties[0].status === 'active' ? '#137333' : '#c5221f'
                           }">
-                      {{ viewingItem.warranties[0].status === 'active' ? 'Aktif' : viewingItem.warranties[0].status }}
+                      {{ viewingItem.warranties[0].status === 'active' ? 'Active' : viewingItem.warranties[0].status }}
                     </span>
                     <span v-else>-</span>
                   </p>
                 </div>
                 
                 <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Berlaku Mulai</p>
+                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Valid From</p>
                   <p style="font-weight: var(--font-weight-medium); margin: 0;">
                     {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].start_date) ? String(viewingItem.warranties[0].start_date).substring(0, 10) : '-' }}
                   </p>
                 </div>
                 <div style="grid-column: span 2;">
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Berakhir Pada</p>
+                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Valid Until</p>
                   <p style="font-weight: var(--font-weight-medium); margin: 0;">
                     {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].end_date) ? String(viewingItem.warranties[0].end_date).substring(0, 10) : '-' }}
                   </p>
                 </div>
 
                 <div style="grid-column: 1 / -1; margin-top: 0.5rem; padding-top: 1rem; border-top: 1px dashed var(--color-border-light);">
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 8px 0;">Syarat & Ketentuan</p>
+                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 8px 0;">Terms & Conditions</p>
                   <div style="font-weight: var(--font-weight-medium); margin: 0; white-space: pre-line; background: var(--color-surface); padding: 12px; border-radius: 8px; border: 1px solid var(--color-border-light); font-size: 0.85rem; color: var(--color-text);">
-                    {{ viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].terms_conditions ? viewingItem.warranties[0].terms_conditions : 'Tidak ada syarat & ketentuan khusus.' }}
+                    {{ viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].terms_conditions ? viewingItem.warranties[0].terms_conditions : 'No specific terms & conditions.' }}
                   </div>
                 </div>
               </div>
@@ -1112,15 +1112,15 @@ function printReceipt(item: any, existingWindow?: Window | null) {
           </div>
 
           <div v-if="salePayments && salePayments.length > 0" style="margin-top: var(--space-lg);">
-            <div class="form-section-title">Riwayat Pembayaran</div>
+            <div class="form-section-title">Payment History</div>
             <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-md);">
               <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
                 <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
                   <tr>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Tgl Bayar</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">No Ref</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Metode</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Jumlah</th>
+                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Payment Date</th>
+                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Ref No.</th>
+                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Method</th>
+                    <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Amount</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1138,16 +1138,16 @@ function printReceipt(item: any, existingWindow?: Window | null) {
           <div class="sale-summary" style="margin-top: var(--space-md);">
             <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(viewingItem.subtotal || 0) }}</span>
             </div>
-            <div class="summary-row"><span>Biaya Jasa</span><span>{{ formatRupiah(viewingItem.service_charge || 0)
+            <div class="summary-row"><span>Service Fee</span><span>{{ formatRupiah(viewingItem.service_charge || 0)
                 }}</span></div>
-            <div class="summary-row"><span>Pajak (PPN)</span><span>{{ formatRupiah(viewingItem.tax || 0) }}</span></div>
+            <div class="summary-row"><span>Tax (VAT)</span><span>{{ formatRupiah(viewingItem.tax || 0) }}</span></div>
             <div class="summary-row summary-total"><span>Grand Total</span><span>{{ formatRupiah(viewingItem.total || 0)
                 }}</span></div>
           </div>
 
           <!-- Hide submit button for view only using CSS in modal -->
           <div style="display: flex; justify-content: flex-end; margin-top: var(--space-lg);">
-            <button type="button" class="btn btn-outline" @click="showDetail = false">Tutup</button>
+            <button type="button" class="btn btn-outline" @click="showDetail = false">Close</button>
           </div>
         </template>
       </template>
@@ -1155,66 +1155,66 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <span style="display:none;"></span>
       </template>
     </FormModal>
-    <FormModal :open="showPaymentModal" title="Proses Pembayaran" @close="showPaymentModal = false" @submit="handlePayment">
+    <FormModal :open="showPaymentModal" title="Process Payment" @close="showPaymentModal = false" @submit="handlePayment">
       <div style="display: flex; flex-direction: column; gap: var(--space-md);">
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Tanggal Pembayaran</label>
+          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Date</label>
           <input type="date" class="form-input" v-model="paymentData.payment_date" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
         </div>
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Metode Pembayaran</label>
+          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Method</label>
           <select class="form-input" v-model="paymentData.method_type" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;">
-            <option value="CASH">Tunai (Cash)</option>
-            <option value="TRANSFER">Transfer Bank</option>
-            <option value="CREDIT_CARD">Kartu Kredit / Debit</option>
+            <option value="CASH">Cash</option>
+            <option value="TRANSFER">Bank Transfer</option>
+            <option value="CREDIT_CARD">Credit / Debit Card</option>
           </select>
         </div>
         
         <template v-if="paymentData.method_type === 'TRANSFER'">
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Nama Bank</label>
-            <input type="text" class="form-input" v-model="paymentData.bank_name" placeholder="Misal: BCA, Mandiri, BRI" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Bank Name</label>
+            <input type="text" class="form-input" v-model="paymentData.bank_name" placeholder="E.g. BCA, Mandiri, BRI" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
           </div>
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Nomor Rekening</label>
-            <input type="text" class="form-input" v-model="paymentData.account_number" placeholder="Nomor rekening pengirim" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Account Number</label>
+            <input type="text" class="form-input" v-model="paymentData.account_number" placeholder="Sender account number" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
           </div>
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Nama Pengirim (A/N)</label>
-            <input type="text" class="form-input" v-model="paymentData.sender_name" placeholder="Nama pemilik rekening" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Sender Name</label>
+            <input type="text" class="form-input" v-model="paymentData.sender_name" placeholder="Account holder name" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
           </div>
         </template>
         
         <template v-if="paymentData.method_type === 'CREDIT_CARD'">
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Provider Kartu / Bank</label>
-            <input type="text" class="form-input" v-model="paymentData.bank_name" placeholder="Misal: Visa, Mastercard, BCA" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Card Provider / Bank</label>
+            <input type="text" class="form-input" v-model="paymentData.bank_name" placeholder="E.g. Visa, Mastercard, BCA" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
           </div>
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Nomor Kartu (4 Digit Terakhir)</label>
-            <input type="text" class="form-input" v-model="paymentData.account_number" placeholder="Misal: 1234" maxlength="16" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Card Number (Last 4 Digits)</label>
+            <input type="text" class="form-input" v-model="paymentData.account_number" placeholder="E.g. 1234" maxlength="16" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
           </div>
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Nama Pemilik Kartu</label>
-            <input type="text" class="form-input" v-model="paymentData.sender_name" placeholder="Nama yang tertera pada kartu" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Cardholder Name</label>
+            <input type="text" class="form-input" v-model="paymentData.sender_name" placeholder="Name as shown on card" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
           </div>
         </template>
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Jumlah Bayar</label>
+          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Amount</label>
           <input type="number" class="form-input" v-model="paymentData.amount" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
         </div>
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">No Referensi / Bukti (Opsional)</label>
-          <input type="text" class="form-input" v-model="paymentData.reference_no" placeholder="Masukkan nomor referensi..." style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" />
+          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Reference No. / Receipt (Optional)</label>
+          <input type="text" class="form-input" v-model="paymentData.reference_no" placeholder="Enter reference number..." style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" />
         </div>
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Catatan (Opsional)</label>
-          <textarea class="form-input" v-model="paymentData.notes" rows="3" placeholder="Tambahkan catatan pembayaran..." style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;"></textarea>
+          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Notes (Optional)</label>
+          <textarea class="form-input" v-model="paymentData.notes" rows="3" placeholder="Add payment notes..." style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;"></textarea>
         </div>
       </div>
       <template #footer>
-        <button class="btn btn-outline" @click="showPaymentModal = false">Batal</button>
-        <button class="btn btn-accent" @click="handlePayment">Simpan Pembayaran</button>
+        <button class="btn btn-outline" @click="showPaymentModal = false">Cancel</button>
+        <button class="btn btn-accent" @click="handlePayment">Save Payment</button>
       </template>
     </FormModal>
 

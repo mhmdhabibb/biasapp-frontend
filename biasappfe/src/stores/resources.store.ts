@@ -24,7 +24,7 @@ export function useResourcesStore() {
       errors[name] =
         reason instanceof ApiError
           ? reason.message
-          : "Gagal memuat data dari server";
+          : "Failed to load data from the server";
       return [];
     } finally {
       loading[name] = false;

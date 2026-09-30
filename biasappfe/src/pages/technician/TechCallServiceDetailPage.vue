@@ -51,18 +51,34 @@ const slaDurationStr = computed(() => {
     ? new Date(job.value.time_out).getTime()
     : new Date().getTime()
   const hours = (end - created) / (1000 * 60 * 60)
-  return `${hours.toFixed(1)} Jam`
+  return `${hours.toFixed(1)} Hours`
 })
 
 // Form states managed in separate pages now
+const numVal = (v: any) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+function resolveBeforeMeter(): number {
+  const sr: any = serviceReport.value
+  const saved = numVal(sr?.meter_reading_before) || numVal(sr?.reading_counter)
+  if (saved > 0) return saved
+  const u: any = unit.value
+  const fromUnit = numVal(u?.current_meter_bw) || numVal(u?.current_meter_color)
+  if (fromUnit > 0) return fromUnit
+  const c: any = contract.value
+  const fromContract = numVal(c?.start_mono_value) || numVal(c?.start_color_value)
+  return fromContract > 0 ? fromContract : 0
+}
 const isAllFormsCompleted = computed(() => {
-  if (!job.value) return false
-  const techOk = !!job.value.remarks && job.value.is_tested
-  const srOk = !!job.value.repair_action
-  const signaturesOk = !!serviceReport.value?.customer_signature && !!serviceReport.value?.technician_signature
+  const sr: any = serviceReport.value
+  if (!sr) return false
+  const techOk = !!(sr.remarks || job.value?.remarks) && (sr.is_tested ?? job.value?.is_tested)
+  const srOk = !!(sr.repair_action || job.value?.repair_action)
+  const signaturesOk = !!sr?.customer_signature && !!sr?.technician_signature
   let copierOk = true
   if (unit.value?.is_copier || unit.value?.model?.toLowerCase().includes('copier')) {
-    copierOk = job.value.reading_counter !== null && job.value.reading_counter !== undefined && Number(job.value.reading_counter) > 0
+    copierOk = (numVal(sr.meter_reading_after) || numVal(sr.reading_counter)) > 0
   }
   return techOk && srOk && signaturesOk && copierOk
 })
@@ -76,7 +92,7 @@ async function ensureServiceReport(now: string) {
   const unitId = job.value?.unit_id || job.value?.service_request?.unit_id || unit.value?.id
   const customerId = job.value?.customer_id || job.value?.service_request?.customer_id || customer.value?.id
   if (!unitId || !customerId) {
-    throw new Error('Unit atau customer pada pekerjaan belum lengkap. Hubungi admin untuk melengkapi data.')
+    throw new Error('Unit or customer on this job is incomplete. Contact admin to complete the data.')
   }
 
   await api.post('/service-reports', {
@@ -93,11 +109,12 @@ async function ensureServiceReport(now: string) {
     repair_action: '-',
     service_date: now,
     time_out: '-',
+    meter_reading_before: resolveBeforeMeter(),
   })
 
   await refresh(true)
   if (!serviceReport.value) {
-    throw new Error('Laporan berhasil dibuat, tetapi belum dapat dimuat. Tekan coba lagi.')
+    throw new Error('Report created successfully, but it could not be loaded yet. Please try again.')
   }
   return serviceReport.value
 }
@@ -110,15 +127,15 @@ async function acceptJob() {
   if (job.value.status === 'in_progress') {
     try {
       await ensureServiceReport(new Date().toISOString())
-      toast.success('Form pemeriksaan siap digunakan.')
+      toast.success('Inspection form is ready to use.')
     } catch (err: any) {
-      toast.error(err.message || 'Gagal menyiapkan form pemeriksaan')
+      toast.error(err.message || 'Failed to prepare inspection form')
     } finally {
       isPreparingForm.value = false
     }
     return
   }
-  if (!confirm('Yakin ingin menerima pekerjaan ini sekarang? Waktu mulai (time_in) akan dicatat.')) {
+  if (!confirm('Are you sure you want to accept this job now? Start time (time_in) will be recorded.')) {
     isPreparingForm.value = false
     return
   }
@@ -131,10 +148,10 @@ async function acceptJob() {
     })
     await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
 
-    toast.success('Pekerjaan diterima. Waktu mulai tercatat.')
+    toast.success('Job accepted. Start time recorded.')
     await refresh(true)
   } catch (err: any) {
-    toast.error(err.message || 'Gagal menerima pekerjaan')
+    toast.error(err.message || 'Failed to accept job')
   } finally {
     isPreparingForm.value = false
   }
@@ -147,10 +164,10 @@ function requestSparepart() {
 async function completeJob() {
   if (!job.value) return
   if (!isAllFormsCompleted.value) {
-    toast.warning('Selesaikan semua form terlebih dahulu!')
+    toast.warning('Please complete all forms first!')
     return
   }
-  if (confirm('Yakin ingin menyelesaikan pekerjaan ini? Waktu selesai (time_out) akan dicatat.')) {
+  if (confirm('Are you sure you want to complete this job? Finish time (time_out) will be recorded.')) {
     try {
       const now = new Date().toISOString()
 
@@ -166,11 +183,11 @@ async function completeJob() {
 
 
 
-      toast.success('Pekerjaan selesai! Data penggantian sparepart masuk antrean Procurement.')
+      toast.success('Job completed! Sparepart replacement data queued for Procurement.')
       await refresh(true)
       router.push('/technician/call-services')
     } catch (err: any) {
-      toast.error(err.message || 'Gagal menyelesaikan pekerjaan')
+      toast.error(err.message || 'Failed to complete job')
     }
   }
 }
@@ -178,12 +195,12 @@ async function completeJob() {
 
 <template>
   <div class="tech-job-detail" v-if="job">
-    <PageHeader title="Detail Call Service" :back-button="true" @back="router.back()" />
+    <PageHeader title="Call Service Detail" :back-button="true" @back="router.back()" />
 
     <div class="grid-2">
       <!-- Info Section -->
       <div class="card p-lg">
-        <h2 class="card-title mb-md">Informasi Service</h2>
+        <h2 class="card-title mb-md">Service Information</h2>
         <div class="info-list">
           <div class="info-item">
             <span class="info-label">Job Order No</span>
@@ -194,11 +211,11 @@ async function completeJob() {
             <span class="info-value">{{ customer?.company_name || '-' }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">Alamat</span>
+            <span class="info-label">Address</span>
             <span class="info-value">{{ customer?.address || '-' }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">PIC & Kontak</span>
+            <span class="info-label">PIC & Contact</span>
             <span class="info-value">{{ customer?.name || '-' }} ({{ customer?.phone || '-' }})</span>
           </div>
           <div class="info-item">
@@ -220,41 +237,41 @@ async function completeJob() {
             </span>
           </div>
           <div class="info-item">
-            <span class="info-label">Durasi / SLA</span>
-            <span class="info-value">{{ slaDurationStr }} (Batas: 2 Jam)</span>
+            <span class="info-label">Duration / SLA</span>
+            <span class="info-value">{{ slaDurationStr }} (Limit: 2 Hours)</span>
           </div>
         </div>
 
         <div class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
-          <h3 class="text-md font-bold mb-sm">Instruksi / Keluhan</h3>
+          <h3 class="text-md font-bold mb-sm">Instructions / Complaint</h3>
           <p class="text-sm p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
-            {{ job.instructions || job.service_request?.problem_description || 'Tidak ada catatan.' }}
+            {{ job.instructions || job.service_request?.problem_description || 'No notes.' }}
           </p>
         </div>
       </div>
 
       <!-- Action Section -->
       <div class="card p-lg">
-        <h2 class="card-title mb-md">Form Pemeriksaan</h2>
+        <h2 class="card-title mb-md">Inspection Form</h2>
 
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
-          <p class="mb-lg text-muted">Anda belum menerima pekerjaan ini.</p>
+          <p class="mb-lg text-muted">You have not accepted this job yet.</p>
           <button v-if="can('service_report:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptJob">
-            {{ isPreparingForm ? 'Menyiapkan form...' : 'Terima Pekerjaan' }}
+            {{ isPreparingForm ? 'Preparing form...' : 'Accept Job' }}
           </button>
         </div>
 
         <div v-else-if="job.status === 'in_progress'">
           <div v-if="!serviceReport" class="mb-lg p-md text-center text-muted" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
-            <p class="text-sm mb-sm">Form pemeriksaan belum tersedia.</p>
+            <p class="text-sm mb-sm">Inspection form is not available yet.</p>
             <button v-if="can('service_report:update')" class="btn btn-outline" :disabled="isPreparingForm" @click="acceptJob">
-              {{ isPreparingForm ? 'Menyiapkan form...' : 'Coba Siapkan Form' }}
+              {{ isPreparingForm ? 'Preparing form...' : 'Try Preparing Form' }}
             </button>
           </div>
           <div v-else>
             <div class="mb-lg p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
-              <p class="font-bold mb-xs">Lengkapi Formulir Service</p>
-              <p class="text-sm text-muted">Buka dan isi masing-masing form di bawah ini. Status akan berubah menjadi checklist (✅) bila sudah terisi.</p>
+              <p class="font-bold mb-xs">Complete Service Forms</p>
+              <p class="text-sm text-muted">Open and fill in each form below. Status will turn into a checklist (✅) once completed.</p>
             </div>
           </div>
 
@@ -268,7 +285,7 @@ async function completeJob() {
               <span>></span>
             </button>
             <button v-if="unit?.is_copier || unit?.model?.toLowerCase().includes('copier')" class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md" @click="router.push(`/technician/call-services/${serviceReport?.id}/copier-report`)">
-              <span class="font-bold"><span v-if="serviceReport?.reading_counter">✅</span><span v-else>📝</span> 3. Copier Service Report</span>
+              <span class="font-bold"><span v-if="serviceReport?.meter_reading_after || serviceReport?.reading_counter">✅</span><span v-else>📝</span> 3. Copier Service Report</span>
               <span>></span>
             </button>
           </div>
@@ -277,39 +294,39 @@ async function completeJob() {
 
           <div class="mt-xl pt-md" style="border-top: 1px solid var(--color-border-light)">
             <button v-if="can('service_report:update')" class="btn btn-primary w-full" :disabled="!isAllFormsCompleted" style="padding: var(--space-md); font-size: 16px;" @click="completeJob">
-              {{ isAllFormsCompleted ? '✅ Selesaikan Service' : '🔒 Selesaikan Form Dulu' }}
+              {{ isAllFormsCompleted ? '✅ Complete Service' : '🔒 Complete Forms First' }}
             </button>
           </div>
         </div>
 
         <div v-else-if="job.status === 'completed'">
           <div class="form-group">
-            <label class="form-label">Hasil Pemeriksaan</label>
+            <label class="form-label">Inspection Result</label>
             <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm); white-space: pre-wrap;">{{ serviceReport?.remarks || '-' }}</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Tindakan Perbaikan</label>
+            <label class="form-label">Repair Action</label>
             <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm)">{{ serviceReport?.repair_action || '-' }}</div>
           </div>
                     <div class="form-group mt-md" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
-            <label class="form-label">Penggantian Komponen Langsung</label>
+            <label class="form-label">Direct Component Replacement</label>
             <div v-if="serviceReport?.service_spareparts && serviceReport.service_spareparts.length > 0">
               <div v-for="sp in serviceReport.service_spareparts" :key="sp.id" class="text-sm p-sm" style="display: flex; justify-content: space-between; margin-bottom: 6px;">
                 <span>{{ findProduct(sp.product_id)?.name || sp.product_id }}</span>
                 <span class="font-bold">x {{ sp.qty }}</span>
               </div>
             </div>
-            <div v-else class="text-sm text-muted">Tidak ada penggantian komponen.</div>
+            <div v-else class="text-sm text-muted">No component replacement.</div>
           </div>
 
           <div class="mt-md text-success font-bold flex items-center gap-sm">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            Pekerjaan telah diselesaikan pada {{ job.completed_at ? new Date(job.completed_at).toLocaleString('id-ID') : '-' }}
+            Job was completed on {{ job.completed_at ? new Date(job.completed_at).toLocaleString('en-GB') : '-' }}
           </div>
 
           <div class="mt-lg">
             <button class="btn btn-primary w-full" style="padding: var(--space-md); font-size: 16px;" @click="router.push(`/shared/service-reports/${serviceReport?.id}`)">
-              📄 Lihat Laporan Lengkap (Digital)
+              📄 View Full Report (Digital)
             </button>
           </div>
         </div>

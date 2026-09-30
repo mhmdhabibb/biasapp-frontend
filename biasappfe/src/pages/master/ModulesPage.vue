@@ -17,14 +17,14 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch modules:', error)
-    toast.error('Gagal mengambil data module: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch module data: ' + ((error as any).message || 'Error'))
   }
 }
 
 onMounted(fetchData)
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Nama Modul' },
+  { key: 'name', label: 'Module Name' },
   { key: 'is_active', label: 'Status' },
 ]
 
@@ -56,10 +56,10 @@ async function handleSubmit() {
     }
     await fetchData()
     showModal.value = false
-    toast.success(editingItem.value ? 'Module berhasil diperbarui!' : 'Module berhasil disimpan!')
+    toast.success(editingItem.value ? 'Module updated successfully!' : 'Module saved successfully!')
   } catch (error) {
     console.error('Failed to save module:', error)
-    toast.error('Gagal menyimpan module: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save module: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -70,10 +70,10 @@ async function handleDelete() {
     try {
       await resources.modules.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success('Module berhasil dihapus!')
+      toast.success('Module deleted successfully!')
     } catch (error) {
       console.error('Failed to delete module:', error)
-      toast.error('Gagal menghapus module')
+      toast.error('Failed to delete module')
     }
   }
   showConfirm.value = false
@@ -84,26 +84,26 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Modules" button-label="Add Module" permission="module:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari module..." permission="module" @edit="openEdit" @delete="openDelete">
+    <DataTable :columns="columns" :data="data" search-placeholder="Search modules..." permission="module" @edit="openEdit" @delete="openDelete">
       <template #cell-is_active="{ value }">
         <span :class="value ? 'badge badge-success' : 'badge badge-neutral'">
-          {{ value ? 'Aktif' : 'Nonaktif' }}
+          {{ value ? 'Active' : 'Inactive' }}
         </span>
       </template>
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Module' : 'Add Module'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="mod-name" class="form-label">Nama Modul</label>
-        <input id="mod-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Dashboard, Laporan">
+        <label for="mod-name" class="form-label">Module Name</label>
+        <input id="mod-name" v-model="form.name" type="text" class="form-input" placeholder="Example: Dashboard, Reports">
       </div>
       <div class="form-group">
         <label class="form-label">
           <input type="checkbox" v-model="form.is_active" style="margin-right: 8px;">
-          Modul aktif
+          Active module
         </label>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Module" :message="`Yakin ingin menghapus module '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Module" :message="`Are you sure you want to delete module '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>
 

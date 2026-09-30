@@ -50,10 +50,10 @@ async function handleCreatePO(request: SparepartRequest) {
       status: 'draft'
     })
     await store.refresh(true)
-    toast.success(`Purchase order dibuat untuk ${request.request_no}`)
+    toast.success(`Purchase order created for ${request.request_no}`)
     router.push('/accounting/purchase-orders')
   } catch (err) {
-    toast.error(toast.fromError(err, 'Gagal membuat purchase order'))
+    toast.error(toast.fromError(err, 'Failed to create purchase order'))
   } finally {
     creatingId.value = null
   }

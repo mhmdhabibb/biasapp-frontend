@@ -91,9 +91,9 @@ async function saveDeliveryOrder() {
     })
     await store.refresh(true)
     showEdit.value = false
-    toast.success(`DO ${editingItem.value.do_number} berhasil diperbarui.`)
+    toast.success(`DO ${editingItem.value.do_number} updated successfully.`)
   } catch (err) {
-    toast.error(toast.fromError(err, 'Gagal memperbarui delivery order'))
+    toast.error(toast.fromError(err, 'Failed to update delivery order'))
   } finally {
     busyId.value = null
   }
@@ -110,9 +110,9 @@ async function deleteDeliveryOrder() {
   try {
     await resources.remove('deliveryOrders', String(deletingItem.value.id))
     await store.refresh(true)
-    toast.success(`DO ${deletingItem.value.do_number} berhasil dihapus.`)
+    toast.success(`DO ${deletingItem.value.do_number} deleted successfully.`)
   } catch (err) {
-    toast.error(toast.fromError(err, 'Gagal menghapus delivery order'))
+    toast.error(toast.fromError(err, 'Failed to delete delivery order'))
   } finally {
     busyId.value = null
     showDelete.value = false
@@ -127,12 +127,12 @@ async function updateStatus(doItem: ProcurementDeliveryOrder, newStatus: string)
     await resources.update('deliveryOrders', String(doItem.id), { status: newStatus })
     await store.refresh(true)
     if (newStatus === 'received') {
-      toast.success(`DO ${doItem.do_number} diterima. Stok inventori telah diperbarui.`)
+      toast.success(`DO ${doItem.do_number} received. Inventory stock has been updated.`)
     } else if (newStatus === 'delivered' || newStatus === 'completed') {
-      toast.success(`DO ${doItem.do_number} berhasil diselesaikan.`)
+      toast.success(`DO ${doItem.do_number} completed successfully.`)
     }
   } catch (err) {
-    toast.error(toast.fromError(err, 'Gagal memperbarui delivery order'))
+    toast.error(toast.fromError(err, 'Failed to update delivery order'))
   } finally {
     busyId.value = null
   }

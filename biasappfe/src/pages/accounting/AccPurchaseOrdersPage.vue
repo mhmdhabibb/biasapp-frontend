@@ -66,7 +66,7 @@ async function run(id: string | number, action: () => Promise<unknown>) {
     await action()
     await store.refresh(true)
   } catch (err) {
-    toast.error(toast.fromError(err, 'Gagal memperbarui purchase order'))
+    toast.error(toast.fromError(err, 'Failed to update purchase order'))
   } finally {
     busyId.value = null
   }
@@ -83,7 +83,7 @@ async function handleGenerateDO(po: PurchaseOrder) {
       purchase_order_id: po.id,
       delivery_date: new Date().toISOString(),
       status: 'draft',
-      notes: `Inbound sparepart dari ${po.po_no}`,
+      notes: `Inbound spareparts from ${po.po_no}`,
       delivery_order_items: (po.purchase_order_items || []).map((item: any) => ({
         product_id: item.product_id,
         qty: item.qty,
@@ -91,7 +91,7 @@ async function handleGenerateDO(po: PurchaseOrder) {
       }))
     })
     await resources.update('purchaseOrders', String(po.id), { status: 'do_created' })
-    toast.success(`Delivery order dibuat untuk ${po.po_no}`)
+    toast.success(`Delivery order created for ${po.po_no}`)
     router.push('/accounting/delivery-orders')
   })
 }
@@ -120,13 +120,13 @@ function printInvoice(po: any) {
   const custPhone = customer?.phone || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
+  let prefix = 'Mr./Ms. '
+  if (gender === 'L') prefix = 'Mr. '
+  if (gender === 'P') prefix = 'Ms. '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
 
   const invoiceDate = po.order_date || po.created_at
-  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
   const items = lineItems(po)
   const subTotal = items.reduce((sum: number, item: any) => sum + item.total, 0)
@@ -144,7 +144,7 @@ function printInvoice(po: any) {
           <td class="rp-col">Rp</td><td class="val-col">${(item.total || 0).toLocaleString('id-ID')}</td>
         </tr>
       `).join('')
-    : `<tr><td colspan="8" style="text-align: center; color: #666;">Data item tidak tersedia</td></tr>`
+    : `<tr><td colspan="8" style="text-align: center; color: #666;">Item data unavailable</td></tr>`
 
   const subTotalStr = subTotal.toLocaleString('id-ID')
   const taxStr = tax.toLocaleString('id-ID')
@@ -237,7 +237,7 @@ function printInvoice(po: any) {
                     <td>${getRequestNo(po.sparepart_request_id)}</td>
                   </tr>
                   <tr>
-                    <td colspan="2" class="bg-blue">Kepada Yth. :</td>
+                    <td colspan="2" class="bg-blue">To :</td>
                   </tr>
                   <tr>
                     <td colspan="2" style="font-weight: bold; height: 35px; vertical-align: top;">${custName}</td>
@@ -253,7 +253,7 @@ function printInvoice(po: any) {
                     <td>${custPhone}</td>
                   </tr>
                   <tr>
-                    <td class="label">Up.:</td>
+                    <td class="label">Attn.:</td>
                     <td>${picDisplay}</td>
                   </tr>
                 </table>
@@ -304,10 +304,10 @@ function printInvoice(po: any) {
           </table>
 
           <div class="payment-info">
-            Pembayaran Transfer ke rekening :<br>
+            Payment via bank transfer to:<br>
             BANK BRKSYARIAH Cabang Batam<br>
-            Rek No. 106-08-85757<br>
-            A/N : PT. BIAS SURYA TEKNOLOGI<br>
+            Account No. 106-08-85757<br>
+            Account Name : PT. BIAS SURYA TEKNOLOGI<br>
             NPWP : 0941.8395.0822.5000
           </div>
 
@@ -317,7 +317,7 @@ function printInvoice(po: any) {
               <div class="sig-line"></div>
             </div>
             <div class="sig-box">
-              Hormat Kami,
+              Sincerely,
               <div class="sig-line">Grace</div>
             </div>
           </div>
@@ -512,7 +512,7 @@ function printInvoice(po: any) {
                 <td class="detail-td-num">{{ rp(item.total) }}</td>
               </tr>
               <tr v-if="lineItems(detailPO).length === 0">
-                <td colspan="5" class="detail-empty">Tidak ada detail item</td>
+                <td colspan="5" class="detail-empty">No item details</td>
               </tr>
             </tbody>
           </table>

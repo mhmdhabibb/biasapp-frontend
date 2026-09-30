@@ -46,7 +46,7 @@ function info(message: string, duration?: number) {
 }
 
 /** Normalizes fetch/api/network errors into a readable message. */
-function fromError(err: unknown, fallback = "Terjadi kesalahan") {
+function fromError(err: unknown, fallback = "An error occurred") {
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === "string" && err) return err;
   return fallback;

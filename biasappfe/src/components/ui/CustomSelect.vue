@@ -13,7 +13,7 @@ const props = withDefaults(defineProps<{
   searchable?: boolean
   id?: string
 }>(), {
-  placeholder: 'Pilih opsi',
+  placeholder: 'Select option',
   searchable: true,
   id: '',
 })
@@ -154,7 +154,7 @@ watch(() => searchQuery.value, () => {
             v-model="searchQuery"
             type="text"
             class="custom-select__search"
-            placeholder="Cari..."
+            placeholder="Search..."
             @keydown="handleKeydown"
           >
         </div>
@@ -178,7 +178,7 @@ watch(() => searchQuery.value, () => {
             </svg>
           </li>
           <li v-if="filteredOptions.length === 0" class="custom-select__empty">
-            Tidak ditemukan
+            Not found
           </li>
         </ul>
       </div>
