@@ -29,6 +29,7 @@ export interface Permission {
 export interface Module {
   id: string | number;
   name: string;
+  slug?: string;
   is_active: boolean;
   created_at: string;
   deleted_at: string | null;
@@ -262,6 +263,8 @@ export interface ServiceReport {
   visit_date?: string;
   is_chargeable?: boolean;
   reading_counter?: number;
+  meter_reading_before?: number;
+  meter_reading_after?: number;
   is_complete?: boolean;
   inspection_result?: string;
   notes?: string;

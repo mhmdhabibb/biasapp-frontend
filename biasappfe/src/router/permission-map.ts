@@ -31,7 +31,7 @@ products: ['product'],
   notifications: ['notification'],
 
   // Customer service / transactions
-  contractItems: ['contract_item'],
+  contractItems: ['contract', 'contract_item'],
   serviceRequests: ['service_request'],
   jobOrders: ['job_order'],
   serviceReports: ['service_report'],

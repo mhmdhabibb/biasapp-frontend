@@ -10,6 +10,7 @@ import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import type { Sale, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
+import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 
 const toast = useToast()
 const { can, canApprove } = usePermission()
@@ -162,11 +163,7 @@ function generateSingleInvoiceHtml(item: any) {
         <tr>
           <td class="logo-col">
             <div class="logo-container">
-              <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-                <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-                <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-              </svg>
+              <img src="${BIAS_LOGO_DATA_URL}" class="logo"  alt="BiAS Logo" />
               <div class="company-details">
                 <h1>PT. BIAS SURYA</h1>
                 <h1>TEKNOLOGI</h1>
@@ -703,11 +700,7 @@ function generateSingleReceiptHtml(item: any) {
     <div class="page-break" style="padding: 40px; box-sizing: border-box; max-width: 800px; margin: 0 auto; font-family: 'Segoe UI', sans-serif;">
       <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 2px solid #003366; padding-bottom: 20px;">
         <div class="logo-container" style="display: flex; align-items: center;">
-          <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 70px; height: 70px; margin-right: 15px;">
-            <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-            <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-            <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-          </svg>
+          <img src="${BIAS_LOGO_DATA_URL}" class="logo" style="width: 70px; height: 70px; margin-right: 15px;" alt="BiAS Logo" />
           <div class="company-details" style="color: #003366;">
             <h1 style="margin: 0; font-size: 20px;">PT. BIAS SURYA TEKNOLOGI</h1>
             <p style="margin: 5px 0 0 0; font-size: 11px;">Ruko Purimas Blok A No.47 Kota Batam</p>

@@ -6,6 +6,7 @@ export const allowedRouteNamesByRole: Record<string, string[]> = {
     "csDashboard",
     "customers",
     "contractItems",
+    "contracts",
     "units",
     "csCallService",
     "csMonitoringService",

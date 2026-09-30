@@ -10,6 +10,7 @@ import { usePermission } from '@/composables/usePermission'
 import { resources } from '@/services/resource.service'
 import { onMounted } from 'vue'
 import type { TableColumn, ContractItem } from '@/types'
+import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 
 const { can } = usePermission()
 
@@ -276,7 +277,7 @@ function printContract(item: any) {
           /* Header */
           .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
           .header-left { display: flex; align-items: center; gap: 15px; }
-          .header-logo { width: 48px; height: 48px; background: #004d99; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-style: italic; font-size: 15px; border: 3px solid #ffcc00; box-shadow: -2px 2px 0px #0088cc;}
+          .header-logo { width: 48px; height: 48px; object-fit: contain; }
           .header-title-company { font-family: Arial, sans-serif; }
           .header-title-company h1 { margin: 0; font-size: 15pt; color: #002b5e; font-weight: 900; letter-spacing: 0.5px; }
           .header-title-company h2 { margin: 0; font-size: 10.5pt; color: #333; font-weight: bold; font-style: italic; }
@@ -314,7 +315,7 @@ function printContract(item: any) {
           <!-- Header -->
           <div class="header">
             <div class="header-left">
-              <div class="header-logo">BiAS</div>
+              <img class="header-logo" src="${BIAS_LOGO_DATA_URL}" alt="BiAS Logo" />
               <div class="header-title-company">
                 <h1>PT. BIAS SURYA TEKNOLOGI</h1>
                 <h2>Your Office Solution</h2>
