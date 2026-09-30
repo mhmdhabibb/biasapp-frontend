@@ -151,10 +151,25 @@ function technicianName(id: any): string {
   return t ? t.user?.name || t.name || '-' : '-'
 }
 
-import { printServiceReport } from '@/utils/printReport'
+import { printServiceReport, printMultipleServiceReports, type ReportType } from '@/utils/printReport'
 
-function printReport(item: any) {
-  printServiceReport(item)
+const printModalOpen = ref(false)
+const printType = ref<ReportType>('technical')
+const printTarget = ref<any | null>(null)
+
+function openPrintModal(item: any = null) {
+  printTarget.value = item
+  printType.value = 'technical'
+  printModalOpen.value = true
+}
+
+function handleConfirmPrint() {
+  if (printTarget.value) {
+    printServiceReport(printTarget.value, printType.value)
+  } else {
+    printMultipleServiceReports(data.value, printType.value)
+  }
+  printModalOpen.value = false
 }
 
 function exportToExcel() {
@@ -181,7 +196,7 @@ function exportToExcel() {
 }
 
 function printTable() {
-  window.print()
+  openPrintModal(null)
 }
 </script>
 
@@ -193,7 +208,7 @@ function printTable() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           Export Excel
         </button>
-        <button class="btn btn-outline" @click="printTable">
+        <button class="btn btn-outline" @click="openPrintModal(null)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
           Print / PDF
         </button>
@@ -216,7 +231,7 @@ function printTable() {
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
         </button>
-        <button v-if="can('service_report:read')" class="action-btn" title="Print Laporan" @click="printReport(row)" style="color: var(--color-primary); border-color: transparent;">
+        <button v-if="can('service_report:read')" class="action-btn" title="Print Laporan" @click="openPrintModal(row)" style="color: var(--color-primary); border-color: transparent;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
@@ -388,6 +403,22 @@ function printTable() {
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Hapus Laporan Servis" :message="`Yakin ingin menghapus laporan '${deletingItem?.report_no || (deletingItem as any)?.service_report_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+
+    <!-- Print Modal -->
+    <FormModal :open="printModalOpen" title="Pilih Jenis Laporan" @close="printModalOpen = false" @submit="handleConfirmPrint">
+      <div class="form-group">
+        <label class="form-label">Jenis Laporan (PDF)</label>
+        <select v-model="printType" class="form-select">
+          <option value="technical">Technical Report Form</option>
+          <option value="history">Service History Form</option>
+          <option value="copier">Copier Service Report</option>
+        </select>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="printModalOpen = false">Batal</button>
+        <button type="button" class="btn btn-primary" @click="handleConfirmPrint">Print / Download</button>
+      </template>
+    </FormModal>
   </div>
 </template>
 

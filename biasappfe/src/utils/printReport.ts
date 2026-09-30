@@ -56,15 +56,13 @@ function buildCtx(item: any): ReportCtx {
   };
 }
 
+import biasLogoUrl from '@/assets/bias-logo.png';
+
 const companyHeaderHtml = `
   <table class="header-table">
     <tr>
       <td class="logo-col">
-        <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-          <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-          <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-        </svg>
+        <img src="${biasLogoUrl}" class="logo" alt="BiAS Logo" style="width: 75px; height: 75px; object-fit: contain;" />
       </td>
       <td class="info-col">
         <div class="company-name">PT. BIAS SURYA TEKNOLOGI</div>
@@ -366,12 +364,17 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
   `;
 }
 
+export type ReportType = 'technical' | 'history' | 'copier';
+
 /**
- * Semua form yang berlaku untuk laporan ini, berurutan:
- * Technical Report → Service Report → Copier Service Report (jika unit copier)
+ * Semua form yang berlaku untuk laporan ini, berurutan atau berdasarkan tipe.
  */
-function getReportPages(item: any): string[] {
+function getReportPages(item: any, type?: ReportType): string[] {
   const ctx = buildCtx(item);
+  if (type === 'technical') return [technicalReportBody(item, ctx)];
+  if (type === 'history') return [serviceReportBody(item, ctx)];
+  if (type === 'copier') return ctx.isCopier ? [copierServiceReportBody(item, ctx)] : [];
+
   const pages = [technicalReportBody(item, ctx), serviceReportBody(item, ctx)];
   if (ctx.isCopier) {
     pages.push(copierServiceReportBody(item, ctx));
@@ -441,8 +444,27 @@ function wrapDocument(pages: string[], autoPrint: boolean): string {
 }
 
 /** Print/PDF — semua form dalam satu jendela, tiap form satu halaman. */
-export function printServiceReport(item: any) {
-  const html = wrapDocument(getReportPages(item), true);
+export function printServiceReport(item: any, type?: ReportType) {
+  const pages = getReportPages(item, type);
+  if (pages.length === 0) {
+    alert("This item does not have this type of report (e.g. not a copier).");
+    return;
+  }
+  const html = wrapDocument(pages, true);
+  const printWindow = window.open("", "_blank");
+  if (printWindow) {
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+}
+
+export function printMultipleServiceReports(items: any[], type?: ReportType) {
+  const allPages = items.flatMap((item) => getReportPages(item, type));
+  if (allPages.length === 0) {
+    alert("No valid reports found for the selected type.");
+    return;
+  }
+  const html = wrapDocument(allPages, true);
   const printWindow = window.open("", "_blank");
   if (printWindow) {
     printWindow.document.write(html);
@@ -454,6 +476,6 @@ export function printServiceReport(item: any) {
  * Returns the form HTML string without auto-print, suitable for iframe preview.
  * Berisi semua form berurutan (Technical, Service, + Copier jika unit copier).
  */
-export function getServiceReportFormHtml(item: any): string {
-  return wrapDocument(getReportPages(item), false);
+export function getServiceReportFormHtml(item: any, type?: ReportType): string {
+  return wrapDocument(getReportPages(item, type), false);
 }

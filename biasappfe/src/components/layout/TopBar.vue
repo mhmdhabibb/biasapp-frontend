@@ -71,10 +71,16 @@ const showNotif = ref(false)
 }
 
 .topbar.mobile-topbar {
+  position: relative;
   justify-content: center;
   border-bottom: none;
   background: transparent;
   padding-top: 16px;
+}
+
+.topbar.mobile-topbar .topbar-right {
+  position: absolute;
+  right: var(--space-lg);
 }
 
 .topbar-left {
@@ -146,8 +152,9 @@ const showNotif = ref(false)
 .notif-dropdown {
   position: absolute;
   top: calc(100% + 12px);
-  right: 0;
+  right: -8px;
   width: 320px;
+  max-width: calc(100vw - 32px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);

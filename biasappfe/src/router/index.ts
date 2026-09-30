@@ -1,12 +1,7 @@
-import { useAuth } from "@/composables/useAuth";
-import { canView, routeNamesByMenuOrder } from "@/router/permission-map";
-import {
-  canAccessRoute,
-  getHomeRoute,
-  homeRouteNameByRole,
-  normalizeRole,
-} from "@/router/role-access";
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuth } from '@/composables/useAuth'
+import { allowedRouteNamesByRole, homeRouteNameByRole, normalizeRole } from '@/router/role-access'
+import { canView, routeNamesByMenuOrder } from '@/router/permission-map'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -209,11 +204,7 @@ const router = createRouter({
       component: () =>
         import("@/pages/customer-service/DeliveryMonitoringPage.vue"),
     },
-    {
-      path: "/customer-service/reports",
-      name: "csReports",
-      component: () => import("@/pages/customer-service/CSReportsPage.vue"),
-    },
+
     // Accounting Routes
     {
       path: "/accounting/dashboard",
@@ -302,13 +293,13 @@ const router = createRouter({
 });
 
 router.beforeEach((to) => {
-  const { isAuthenticated, currentUser } = useAuth();
-  const role = normalizeRole(currentUser.value?.role);
-  const permissions: string[] = currentUser.value?.permissions || [];
+  const { isAuthenticated, currentUser } = useAuth()
+  const role = normalizeRole(currentUser.value?.role)
 
   if (to.meta.requiresAuth === false) {
     if (isAuthenticated.value) {
-      return { name: getHomeRoute(role, permissions) };
+      const home = homeRouteNameByRole[role]
+      return { name: home || 'users' }
     }
     return true;
   }
@@ -317,9 +308,10 @@ router.beforeEach((to) => {
     return { name: "login" };
   }
 
-  // Dynamic permission-based route access check
-  if (to.name && !canAccessRoute(String(to.name), role, permissions)) {
-    return { name: getHomeRoute(role, permissions) };
+  // Role route allowlists (see role-access.ts). Admin/custom roles are unrestricted here.
+  const allowed = allowedRouteNamesByRole[role]
+  if (allowed && to.name && !allowed.includes(to.name as string)) {
+    return { name: homeRouteNameByRole[role] }
   }
 
   // `view` gate: a page is only reachable when the role holds `<key>:view`
@@ -343,4 +335,4 @@ router.beforeEach((to) => {
   return true;
 });
 
-export default router;
+export default router

@@ -2,8 +2,8 @@
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
 import { useToast } from '@/composables/useToast'
-import type AccDeliveryOrdersPage from '@/pages/accounting/AccDeliveryOrdersPage.vue'
-import type AccPurchaseOrdersPage from '@/pages/accounting/AccPurchaseOrdersPage.vue'
+import type { MenuGroup } from '@/types'
+import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
 import { canView, permissionKeysFor } from '@/router/permission-map'
 import { canAccessRoute, normalizeRole, routeToModule } from '@/router/role-access'
 import type { MenuGroup } from '@/types'
@@ -32,8 +32,8 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.permissions', icon: 'key', route: '/master/permissions' },
       { label: 'sidebar.modules', icon: 'grid', route: '/master/modules' },
       { label: 'sidebar.customers', icon: 'building', route: '/master/customers' },
-      { label: 'sidebar.technicians', icon: 'wrench', route: '/master/technicians' },
-      { label: 'sidebar.suppliers', icon: 'truck', route: '/master/suppliers' },
+      // { label: 'sidebar.technicians', icon: 'wrench', route: '/master/technicians' },
+      // { label: 'sidebar.suppliers', icon: 'truck', route: '/master/suppliers' },
       { label: 'sidebar.unit_types', icon: 'layers', route: '/master/unit-types' },
       { label: 'sidebar.brands', icon: 'tag', route: '/master/brands' },
       { label: 'sidebar.paper_size', icon: 'file', route: '/master/paper-size' },
@@ -71,6 +71,7 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.tech_dashboard', icon: 'grid', route: '/technician/dashboard' },
       { label: 'sidebar.acc_dashboard', icon: 'grid', route: '/accounting/dashboard' },
       { label: 'sidebar.monitoring_service', icon: 'activity', route: '/customer-service/monitoring-service' },
+      { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
     ],
   },
   {
@@ -78,8 +79,6 @@ const allMenuGroups: MenuGroup[] = [
     items: [
       { label: 'sidebar.my_jobs', icon: 'tool', route: '/technician/call-services', roles: ['technician'] },
       { label: 'sidebar.maintenance', icon: 'wrench', route: '/technician/maintenance', roles: ['technician'] },
-      { label: 'sidebar.sparepart_requests', icon: 'box', route: '/technician/sparepart-request', roles: ['technician'] },
-      { label: 'sidebar.meter_readings', icon: 'activity', route: '/technician/meter-readings', roles: ['technician'] },
       { label: 'sidebar.service_history', icon: 'file-text', route: '/technician/service-history', roles: ['technician'] },
     ],
   }
@@ -87,177 +86,30 @@ const allMenuGroups: MenuGroup[] = [
 
 const menuGroups = computed(() => {
   const role = normalizeRole(currentUser.value?.role)
-  const permissions: string[] = currentUser.value?.permissions || []
 
-  // --- DERIVE MENU ITEMS FROM REGISTERED ROUTES (dynamic) ---
-  const routeNames = new Set(
-    router.getRoutes().map(r => r.name).filter((name): name is string => name != null)
-  )
+  const groups: MenuGroup[] = JSON.parse(JSON.stringify(allMenuGroups))
 
-  // Map route name -> human readable group title using i18n sidebar keys
-  // Fallback: infer group from route path prefix
-  const routeToGroup: Record<string, string> = {
-    // Master Data
-    users: 'sidebar.master_data',
-    roles: 'sidebar.master_data',
-    permissions: 'sidebar.master_data',
-    modules: 'sidebar.master_data',
-    customers: 'sidebar.master_data',
-    technicians: 'sidebar.master_data',
-    suppliers: 'sidebar.master_data',
-    unitTypes: 'sidebar.master_data',
-    brands: 'sidebar.master_data',
-    paperSize: 'sidebar.master_data',
-    paperType: 'sidebar.master_data',
-    productCategories: 'sidebar.master_data',
-    uoms: 'sidebar.master_data',
-    products: 'sidebar.master_data',
-    units: 'sidebar.master_data',
-    warranties: 'sidebar.master_data',
-    contracts: 'sidebar.master_data',
-    systemSettings: 'sidebar.master_data',
-    notifications: 'sidebar.master_data',
-
-    // Customer Service / Transactions
-    contractItems: 'sidebar.transaction',
-    serviceRequests: 'sidebar.transaction',
-    jobOrders: 'sidebar.transaction',
-    serviceReports: 'sidebar.transaction',
-    monthlyMeterReadings: 'sidebar.transaction',
-    rentals: 'sidebar.transaction',
-    sales: 'sidebar.transaction',
-    csSparepartRequest: 'sidebar.transaction',
-    accPurchaseOrders: 'sidebar.transaction',
-    accDeliveryOrders: 'sidebar.transaction',
-    payments: 'sidebar.transaction',
-    warrantyClaims: 'sidebar.transaction',
-    csMonitoringService: 'sidebar.monitoring',
-    csDelivery: 'sidebar.monitoring',
-    csReports: 'sidebar.monitoring',
-    rentalInvoices: 'sidebar.transaction',
-    salesInvoices: 'sidebar.transaction',
-
-    // Monitoring
-    csDashboard: 'sidebar.monitoring',
-    techDashboard: 'sidebar.monitoring',
-    accDashboard: 'sidebar.monitoring',
-
-    // Technician
-    myJobs: 'sidebar.technician_menu',
-    callService: 'sidebar.technician_menu',
-    maintenance: 'sidebar.technician_menu',
-    sparepartRequests: 'sidebar.technician_menu',
-    meterReadings: 'sidebar.technician_menu',
-    serviceHistory: 'sidebar.technician_menu',
-
-    // Accounting
-    accSparepartRequests: 'sidebar.accounting',
-    AccPurchaseOrdersPage: 'sidebar.accounting',
-    AccDeliveryOrdersPage: 'sidebar.accounting',
-  }
-
-  // Build candidate items from registered routes that have permission keys
-  const candidates: { route: string; label: string; icon: string; group: string }[] = []
-  for (const routeName of routeNames) {
-    // Skip always-allowed routes (dashboards etc.) for now; they have their own logic
-    if (routeName === 'login') continue
-
-    const permKeys = permissionKeysFor(routeName)
-    if (!permKeys) {
-      // No permission key mapped -> visible to all authenticated roles
-      // Use route name as label, icon from viewbox
-      const route = router.getRoutes().find(r => r.name === routeName)
-      if (!route) continue
-      candidates.push({
-        route: routeName,
-        label: routeName,
-        icon: 'grid',
-        group: 'sidebar.monitoring', // default, will be overridden if i18n has it
-      })
-      continue
-    }
-
-    // Check if user can view this route (requires `<key>:view`)
-    if (!canView(routeName, permissions)) continue
-
-    // Respect module is_active
-    const permKey = permKeys[0] // take first key, e.g. "contract"
-    const moduleName = routeToModule[routeName] // e.g. "contract"
-    if (!moduleName) continue
-
-    const mod = modules.value.find(m => m.name === moduleName || m.slug === moduleName)
-    if (!mod || !mod.is_active) continue
-
-    // Get display label + icon from route definition if available, else use routeName
-    const routeDef = router.getRoutes().find(r => r.name === routeName)
-    const label = routeDef?.props?.label as string | undefined
-    const icon = routeDef?.props?.icon as string | undefined
-
-    candidates.push({
-      route: routeName,
-      label: label || routeName,
-      icon: icon || 'file',
-      group: routeToGroup[routeName] || 'sidebar.monitoring',
-    })
-  }
-
-  // Group candidates by their group title
-  const groupsMap = new Map<string, { titleKey: string; items: any[] }>()
-  for (const c of candidates) {
-    const existing = groupsMap.get(c.group)
-    if (!existing) {
-      // Use i18n key as title; will be translated later
-      groupsMap.set(c.group, { titleKey: c.group, items: [] })
-    }
-    // Push to existing group's items array (safe - we're pushing to array, not reassigning the const)
-    groupsMap.get(c.group)!.items.push(c)
-  }
-
-  // Convert to MenuGroup format, translate titles, filter empty groups
-  const groups: MenuGroup[] = []
-  for (const [, groupData] of groupsMap) {
-    const titleKey = groupData.titleKey
-    const items = groupData.items
-    const translatedTitle = t(titleKey)
-    if (!translatedTitle || translatedTitle === titleKey) {
-      // fallback: human-readable from snake_case
-      const fallback = titleKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-      groups.push({
-        title: fallback,
-        items: items.map(item => ({
-          label: item.label,
-          icon: item.icon,
-          route: item.route,
-          // persist role restriction from route definition if any
-          roles: undefined,
-        })),
-      })
-    } else {
-      groups.push({
-        title: translatedTitle,
-        items: items.map(item => ({
-          label: item.label,
-          icon: item.icon,
-          route: item.route,
-          roles: undefined,
-        })),
-      })
-    }
-  }
-
-  // --- NOW APPLY PER-PERMISSION FILTERS ---
-  const finalGroups: MenuGroup[] = allMenuGroups.map(group => ({
+  // Filter dynamically based on role route access, permissions and active database modules
+  return groups.map(group => ({
     ...group,
     title: group.title.includes('.') ? t(group.title) : group.title,
     items: group.items.filter(item => {
       if (role === 'admin') return true
+
+      // 2. Role-restricted items (technician menu): role decides, no module/permission checks
       if (item.roles) return item.roles.includes(role)
 
-      const resolved = router.resolve(item.route)
-      const routeName = resolved.name ? String(resolved.name) : ''
-      if (!routeName) return false
+      // 3. Mirror the router guard: only show routes this role may actually open
+      //    (fixes wrong dashboards / bouncing menus for built-in roles)
+      const allowedNames = allowedRouteNamesByRole[role]
+      if (allowedNames) {
+        const itemName = router.resolve(item.route).name
+        if (!itemName || !allowedNames.includes(String(itemName))) return false
+      }
 
-      if (!canAccessRoute(routeName, role, permissions)) return false
+      // 4. Visibility is driven by the `<key>:view` permission of the route
+      //    (see router/permission-map.ts). `read` alone never opens a menu.
+      const routeName = String(router.resolve(item.route).name || '')
       const permKeys = permissionKeysFor(routeName)
       if (!permKeys) return true
       if (!canView(routeName, currentUser.value?.permissions || [])) return false
