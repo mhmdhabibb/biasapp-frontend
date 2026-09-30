@@ -71,6 +71,7 @@ const deletingItem = ref<RentalInvoice | null>(null)
 const startDateFilter = ref('')
 const endDateFilter = ref('')
 const monthFilter = ref('')
+const customerFilter = ref('')
 
 function onMonthFilterChange() {
   if (!monthFilter.value) return
@@ -90,10 +91,14 @@ function resetFilters() {
   startDateFilter.value = ''
   endDateFilter.value = ''
   monthFilter.value = ''
+  customerFilter.value = ''
 }
 
 const filteredData = computed(() => {
   let items = data.value
+  if (customerFilter.value) {
+    items = items.filter((d: any) => String(d.customer_id) === customerFilter.value)
+  }
   if (startDateFilter.value) {
     items = items.filter((d: any) => {
       const itemDate = d.monthly_date || d.period_start || d.created_at
@@ -539,7 +544,7 @@ function exportMonthToPdf() {
     return
   }
 
-  const tableRows = items.map((item: any, index: number) => `
+  const rows = items.map((item: any, index: number) => `
     <tr>
       <td>${index + 1}</td>
       <td>${item.invoice_no || `INV-R-${item.id}`}</td>
@@ -552,10 +557,9 @@ function exportMonthToPdf() {
   `).join('')
   const printWindow = window.open('', '_blank')
   if (!printWindow) return
-
   printWindow.document.write(`<!doctype html><html><head><title>Rental Invoices</title><style>
     body{font:12px Arial,sans-serif;color:#222}h1,h2{text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #777;padding:6px}th{background:#e8f1ff}
-    </style></head><body><h1>PT. BIAS SURYA TEKNOLOGI</h1><h2>Rental Invoices</h2><table><thead><tr><th>No</th><th>Invoice</th><th>Tanggal</th><th>Customer</th><th>Kontrak</th><th>Total</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`)
+    </style></head><body><h1>PT. BIAS SURYA TEKNOLOGI</h1><h2>Rental Invoices</h2><table><thead><tr><th>No</th><th>Invoice</th><th>Tanggal</th><th>Customer</th><th>Kontrak</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`)
   printWindow.document.close()
 }
 
@@ -1048,7 +1052,14 @@ function printInvoice(item: any) {
           <label class="filter-label">Filter Bulan</label>
           <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
         </div>
-        <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
+        <div class="filter-item">
+          <label class="filter-label">Customer</label>
+          <select v-model="customerFilter" class="form-select filter-input">
+            <option value="">Semua Customer</option>
+            <option v-for="customer in customers" :key="customer.id" :value="String(customer.id)">{{ customer.company_name || customer.name || '-' }}</option>
+          </select>
+        </div>
+        <button v-if="startDateFilter || endDateFilter || monthFilter || customerFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
           Reset Filter
         </button>
       </div>

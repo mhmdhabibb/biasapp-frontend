@@ -32,7 +32,6 @@ onMounted(async () => {
   try {
     const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
     reportRecord.value = response.data
-    await refresh(true)
     if (!job.value) throw new Error('Service report tidak ditemukan')
     form.value = {
       repair_action: job.value.repair_action || '',
