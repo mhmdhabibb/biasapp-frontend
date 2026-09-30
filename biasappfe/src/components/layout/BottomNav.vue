@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useToast } from '@/composables/useToast'
 
 const route = useRoute()
 const router = useRouter()
 const { logout } = useAuth()
+const { success: toastSuccess } = useToast()
 
 function navigate(path: string) {
   router.push(path)
@@ -12,6 +14,7 @@ function navigate(path: string) {
 
 function handleLogout() {
   logout()
+  toastSuccess('Logout berhasil')
   router.push('/login')
 }
 </script>

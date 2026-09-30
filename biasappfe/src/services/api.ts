@@ -1,6 +1,10 @@
+import { ref } from "vue";
+
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || "http://localhost:4008/api"
 ).replace(/\/$/, "");
+
+export const activeApiRequests = ref(0);
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -28,27 +32,33 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
-  const token = sessionStorage.getItem("bias_token");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const tracksLoading = !options.method || options.method === "GET";
+  if (tracksLoading) activeApiRequests.value++;
+  try {
+    const headers = new Headers(options.headers);
+    headers.set("Content-Type", "application/json");
+    const token = sessionStorage.getItem("bias_token");
+    if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
-  const body = (await response.json().catch(() => null)) as {
-    message?: string;
-    error?: string;
-  } | null;
-  if (!response.ok) {
-    if (response.status === 401) sessionStorage.removeItem("bias_token");
-    throw new ApiError(
-      body?.message || body?.error || "Terjadi kesalahan pada server",
-      response.status,
-    );
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+    });
+    const body = (await response.json().catch(() => null)) as {
+      message?: string;
+      error?: string;
+    } | null;
+    if (!response.ok) {
+      if (response.status === 401) sessionStorage.removeItem("bias_token");
+      throw new ApiError(
+        body?.message || body?.error || "Terjadi kesalahan pada server",
+        response.status,
+      );
+    }
+    return body as T;
+  } finally {
+    if (tracksLoading) activeApiRequests.value--;
   }
-  return body as T;
 }
 
 export const api = {

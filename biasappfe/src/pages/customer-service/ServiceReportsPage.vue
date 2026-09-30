@@ -23,12 +23,11 @@ const {
 } = useMasterStore()
 
 const columns: TableColumn[] = [
-  { key: 'service_report_no', label: 'No. Laporan' },
+  { key: 'report_no', label: 'No. Laporan' },
   { key: 'customer_id', label: 'Customer' },
-  { key: 'contract_item_id', label: 'Kontrak' },
   { key: 'service_type', label: 'Tipe Servis' },
   { key: 'technician_id', label: 'Teknisi' },
-  { key: 'visit_date', label: 'Tanggal Kunjungan' },
+  { key: 'service_date', label: 'Tanggal Kunjungan' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -148,407 +147,75 @@ function contractNo(id: any): string {
 }
 
 function technicianName(id: any): string {
-  const t = findTechnician(id)
-  return t ? t.name : '-'
+  const t: any = findTechnician(id)
+  return t ? t.user?.name || t.name || '-' : '-'
 }
 
+import { printServiceReport } from '@/utils/printReport'
+
 function printReport(item: any) {
-  const customer = findCustomer(item.customer_id) || {}
-  const u = useMasterStore().units.find((u: any) => u.id === item.unit_id) || {}
-  const brand = useMasterStore().brands.find((b: any) => b.id === u.brand_id)
-  const tech = findTechnician(item.technician_id) || {}
-  
-  const custName = customer.company_name || customer.name || '-'
-  const custPhone = customer.phone || '-'
-  const picName = customer.pic_name || '-'
-  const custAddress = customer.address || '-'
-  
-  const dateStr = item.service_date ? new Date(item.service_date).toLocaleDateString('id-ID') : '-'
-  
-  // Find Contract if any
-  const contract = findContractItem(item.contract_item_id)
-  const isContract = contract ? contract.contract_no.includes('KNT') : false // Simplified check or based on category
-  
-  // Copier Layout vs Computer Layout
-  const isCopier = !u.is_computer
-  
-  let html = ''
-  
-  if (isCopier) {
-    html = `
-    <html>
-      <head>
-        <title>Copier Service Report - \${item.report_no || item.service_report_no || ''}</title>
-        <style>
-          @media print {
-            @page { margin: 10mm; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-          body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 10px; color: #000; }
-          .container { max-width: 800px; margin: 0 auto; border: 2px solid #000; box-sizing: border-box; }
-          
-          .header-table { width: 100%; border-collapse: collapse; }
-          .header-table td { padding: 10px; }
-          .logo-col { width: 100px; vertical-align: middle; border-bottom: 2px solid #000; }
-          .info-col { text-align: right; vertical-align: middle; border-bottom: 2px solid #000; }
-          
-          .logo { width: 70px; height: 70px; }
-          .company-name { font-size: 20px; font-weight: bold; color: #3399ff; margin: 0; }
-          .tagline { font-size: 14px; font-style: italic; font-weight: bold; margin: 0; }
-          .address { font-size: 9px; font-weight: bold; margin-top: 5px; }
-          
-          .title-bar { background-color: #000; color: #fff; text-align: center; font-size: 18px; font-weight: bold; padding: 5px; }
-          
-          .grid-table { width: 100%; border-collapse: collapse; font-weight: bold; text-transform: uppercase; font-size: 10px; }
-          .grid-table td { border: 1px solid #000; padding: 3px 6px; }
-          
-          .bg-black { background-color: #000; color: #fff; text-align: center; }
-          .text-center { text-align: center; }
-          
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <table class="header-table">
-            <tr>
-              <td class="logo-col">
-                <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-                  <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-                  <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-                </svg>
-              </td>
-              <td class="info-col">
-                <div class="company-name">PT. BIAS SURYA TEKNOLOGI</div>
-                <div class="tagline">The shape of smart</div>
-                <div class="address">
-                  Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia<br>
-                  Phone: +62811 704 5657  Email: admin@biasbst.com<br>
-                  Website: www.biassuryateknologi.com
-                </div>
-              </td>
-            </tr>
-          </table>
-          
-          <div class="title-bar">COPIER SERVICE REPORT</div>
-          
-          <table class="grid-table">
-            <tr>
-              <td colspan="2" class="text-center" style="width: 60%;">SERVICE REPORT</td>
-              <td colspan="2">DATE : \${dateStr}</td>
-            </tr>
-            <tr>
-              <td style="width: 25%;" class="bg-black">COMPANY NAME :</td>
-              <td style="width: 35%;">\${custName}</td>
-              <td colspan="2" class="text-center">COSTUMER TYPE</td>
-            </tr>
-            <tr>
-              <td rowspan="2" class="bg-black">ADDRESS :</td>
-              <td rowspan="2">\${custAddress}</td>
-              <td style="width: 20%; text-align: right;">CONTRACT</td>
-              <td style="width: 20%; text-align: center;">\${contract ? '✓' : ''}</td>
-            </tr>
-            <tr>
-              <td style="text-align: right;">RENTAL</td>
-              <td style="text-align: center;">\${!contract ? '✓' : ''}</td>
-            </tr>
-            <tr>
-              <td class="bg-black">TELP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:</td>
-              <td>\${custPhone}</td>
-              <td style="text-align: right;">SALES</td>
-              <td style="text-align: center;"></td>
-            </tr>
-            <tr>
-              <td class="bg-black">PRODUCT/TYPE</td>
-              <td class="bg-black">SERIAL NUMBER</td>
-              <td colspan="2" rowspan="11" style="vertical-align: top;">
-                <div class="text-center" style="border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 3px;">REMARKS</div>
-                <div style="font-weight: normal;">\${item.remarks || ''}</div>
-              </td>
-            </tr>
-            <tr>
-              <td class="text-center">\${u.model || '-'}</td>
-              <td class="text-center">\${u.serial_number || '-'}</td>
-            </tr>
-            <tr>
-              <td colspan="2" class="bg-black">METER READING</td>
-            </tr>
-            <tr>
-              <td class="text-center">BEFORE</td>
-              <td class="text-center">AFTER</td>
-            </tr>
-            <tr>
-              <td class="text-center">\${item.meter_reading_before || ''}</td>
-              <td class="text-center">\${item.meter_reading_after || ''}</td>
-            </tr>
-            <tr>
-              <td colspan="2" class="bg-black">CHANGE SPAREPART</td>
-            </tr>
-            <tr>
-              <td colspan="2" style="height: 60px; vertical-align: top; font-weight: normal;">
-                \${
-                    (item.spareparts || []).map((sp, i) => {
-                      const p = useMasterStore().products.find(x => x.id === sp.product_id)
-                      return '<div>' + (i+1) + '. ' + (p ? p.name : '') + ' (' + sp.qty + ')</div>'
-                    }).join('')
-                }
-              </td>
-            </tr>
-            <tr>
-              <td colspan="2" class="bg-black">MACHINE PROBLEM</td>
-            </tr>
-            <tr>
-              <td colspan="2" style="height: 60px; vertical-align: top; font-weight: normal;">\${item.machine_problem || ''}</td>
-            </tr>
-            <tr>
-              <td colspan="2" style="height: 40px; vertical-align: top; font-weight: normal;">\${item.repair_action || ''}</td>
-            </tr>
-            <tr>
-              <td colspan="2" style="padding: 0;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="width: 40%; border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 2px;">Tested</td>
-                    <td style="border-bottom: 1px solid #000; padding: 2px;">: \${item.is_tested ? 'YES' : 'NO'}</td>
-                  </tr>
-                  <tr>
-                    <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 2px;">Complete</td>
-                    <td style="border-bottom: 1px solid #000; padding: 2px;">: \${item.is_completed ? 'YES' : 'NO'}</td>
-                  </tr>
-                  <tr>
-                    <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 2px;">Time in</td>
-                    <td style="border-bottom: 1px solid #000; padding: 2px;">: \${item.time_in || ''}</td>
-                  </tr>
-                  <tr>
-                    <td style="border-right: 1px solid #000; padding: 2px;">Time Out</td>
-                    <td style="padding: 2px;">: \${item.time_out || ''}</td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-          
-          <table class="grid-table" style="border-top: none;">
-            <tr>
-              <td style="width: 50%; text-align: center; border-top: none;">
-                TESTED YES / NO<br><br><br>
-                \${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : '<br><br>'}
-              </td>
-              <td style="width: 50%; text-align: center; border-top: none;">
-                COMPLETE YES / NO<br><br><br>
-                \${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : '<br><br>'}
-              </td>
-            </tr>
-            <tr>
-              <td style="text-align: center;">TECHNISI<br>\${tech.name || ''}</td>
-              <td style="padding: 0; vertical-align: bottom;">
-                <div style="text-align: center; margin-bottom: 2px;">COSTUMER</div>
-                <div class="bg-black" style="font-size: 9px; padding: 2px;">Signature & Company Stamp</div>
-              </td>
-            </tr>
-          </table>
-          
-        </div>
-        \x3Cscript>
-          window.onload = function() {
-            setTimeout(function() { window.print(); }, 500);
-          }
-        \x3C/script>
-      </body>
-    </html>
-    `
-  } else {
-    html = `
-    <html>
-      <head>
-        <title>Technical Report - \${item.report_no || item.service_report_no || ''}</title>
-        <style>
-          @media print {
-            @page { margin: 10mm; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-          body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 10px; color: #000; }
-          .container { max-width: 800px; margin: 0 auto; border: 2px solid #000; box-sizing: border-box; }
-          
-          .header-table { width: 100%; border-collapse: collapse; }
-          .header-table td { padding: 10px; }
-          .logo-col { width: 100px; vertical-align: middle; border-bottom: 2px solid #000; }
-          .info-col { text-align: right; vertical-align: middle; border-bottom: 2px solid #000; }
-          
-          .logo { width: 70px; height: 70px; }
-          .company-name { font-size: 20px; font-weight: bold; color: #3399ff; margin: 0; }
-          .tagline { font-size: 14px; font-style: italic; font-weight: bold; margin: 0; }
-          .address { font-size: 9px; font-weight: bold; margin-top: 5px; }
-          
-          .title-bar { background-color: #000; color: #fff; text-align: center; font-size: 22px; font-weight: bold; padding: 5px; }
-          
-          .meta-table { width: 100%; border-collapse: collapse; font-weight: bold; }
-          .meta-table td { border-bottom: 2px solid #000; padding: 5px; width: 50%; }
-          .meta-table .right-col { border-left: 2px solid #000; }
-          
-          .section-title { background-color: #2b579a; color: #fff; text-align: center; font-size: 14px; font-weight: bold; padding: 4px; border-bottom: 2px solid #000; }
-          
-          .data-table { width: 100%; border-collapse: collapse; font-weight: bold; font-size: 11px; }
-          .data-table td { border-bottom: 1px solid #000; padding: 5px 8px; vertical-align: top; }
-          .data-table tr:last-child td { border-bottom: 2px solid #000; }
-          .data-table .label-col { width: 30%; border-right: 1px solid #000; }
-          .data-table .val-col { width: 70%; }
-          
-          .components-grid { display: grid; grid-template-columns: 1fr 1fr; }
-          .comp-item { padding: 2px 0; border-bottom: 1px dotted #999; margin-right: 10px; }
-          
-          .bottom-table { width: 100%; border-collapse: collapse; font-weight: bold; font-size: 11px; }
-          .bottom-table td { padding: 4px 8px; border-bottom: 1px solid #000; }
-          
-          .signatures { display: flex; justify-content: space-between; padding: 10px 20px; font-weight: bold; text-align: center; margin-top: 20px; }
-          .sig-box { width: 200px; display: flex; flex-direction: column; justify-content: space-between; align-items: center; }
-          .sig-line { width: 100%; border-bottom: 1px solid #000; margin-top: 60px; padding-bottom: 5px; }
-          .sig-box.right { background-color: #000; color: #fff; padding: 2px 5px; margin-top: 60px; width: auto; font-size: 10px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <table class="header-table">
-            <tr>
-              <td class="logo-col">
-                <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-                  <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-                  <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-                </svg>
-              </td>
-              <td class="info-col">
-                <div class="company-name">PT. BIAS SURYA TEKNOLOGI</div>
-                <div class="tagline">The shape of smart</div>
-                <div class="address">
-                  Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia<br>
-                  Phone: +62811 704 5657  Email: admin@biasbst.com<br>
-                  Website: www.biassuryateknologi.com
-                </div>
-              </td>
-            </tr>
-          </table>
-          
-          <div class="title-bar">Technical Report Form</div>
-          
-          <table class="meta-table">
-            <tr>
-              <td>PRODUCT TYPES : \${u.is_computer ? 'Komputer/Desktop' : 'Fotocopy'}</td>
-              <td class="right-col">DATE : \${dateStr}</td>
-            </tr>
-          </table>
-          
-          <div class="section-title">CUSTOMER DETAIL</div>
-          <table class="data-table">
-            <tr><td class="label-col">Company Name</td><td class="val-col">: \${custName}</td></tr>
-            <tr><td class="label-col">Customer Type</td><td class="val-col">: \${customer.category || '-'}</td></tr>
-            <tr><td class="label-col">Project Name</td><td class="val-col">: \${item.project_name || '-'}</td></tr>
-            <tr><td class="label-col">Address</td><td class="val-col">: \${customer.address || '-'}</td></tr>
-            <tr><td class="label-col">Telepon / Handphone</td><td class="val-col">: \${custPhone}</td></tr>
-            <tr><td class="label-col">Personnel Incharges</td><td class="val-col">: \${picName}</td></tr>
-          </table>
-          
-          <div class="section-title">PRODUCT DETAIL</div>
-          <table class="data-table">
-            <tr><td class="label-col">Brand</td><td class="val-col">: \${brand?.name || '-'}</td></tr>
-            <tr><td class="label-col">Model/Type</td><td class="val-col">: \${u.model || '-'}</td></tr>
-            <tr><td class="label-col">Serial Number</td><td class="val-col">: \${u.serial_number || '-'}</td></tr>
-            <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col">: \${item.machine_problem || '-'}</td></tr>
-            <tr><td class="label-col" style="height: 50px;">Repair Action</td><td class="val-col">: \${item.repair_action || '-'}</td></tr>
-            <tr>
-              <td class="label-col">Component Replacement</td>
-              <td class="val-col">
-                <div class="components-grid">
-                  \${
-                    Array.from({length: 8}).map((_, i) => {
-                      const sp = (item.spareparts || [])[i]
-                      if (sp) {
-                        const p = useMasterStore().products.find(x => x.id === sp.product_id)
-                        return '<div class="comp-item">' + (i+1) + '. ' + (p ? p.name : '') + ' (' + sp.qty + ')</div>'
-                      }
-                      return '<div class="comp-item">' + (i+1) + '. </div>'
-                    }).join('')
-                  }
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td class="label-col">Service Result</td>
-              <td class="val-col">: \${item.status === 'in_progress' ? 'Continue' : item.status === 'completed' ? 'Done (Test OK)' : item.status}
-                \${item.status === 'in_progress' && item.next_sparepart ? '<br>&nbsp;&nbsp;Next Sparepart: ' + item.next_sparepart : ''}
-              </td>
-            </tr>
-            <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col">: \${item.remarks || '-'}</td></tr>
-          </table>
-          
-          <table class="bottom-table">
-            <tr>
-              <td style="width: 50%; border-right: 2px solid #000;">
-                <div style="margin-bottom: 20px;">TESTED YES / NO</div>
-              </td>
-              <td>
-                <div style="display: flex;">
-                  <div style="width: 80px;">Tested</div><div>: \${item.is_tested ? 'YES' : 'NO'}</div>
-                </div>
-                <div style="display: flex;">
-                  <div style="width: 80px;">Complete</div><div>: \${item.is_completed ? 'YES' : 'NO'}</div>
-                </div>
-                <div style="display: flex;">
-                  <div style="width: 80px;">Time in</div><div>: \${item.time_in || '-'}</div>
-                </div>
-                <div style="display: flex;">
-                  <div style="width: 80px;">Time Out</div><div>: \${item.time_out || '-'}</div>
-                </div>
-              </td>
-            </tr>
-          </table>
-          
-          <div style="display: flex; justify-content: space-between; padding: 5px 20px 20px; font-weight: bold; border-top: 2px solid #000;">
-            <div style="width: 45%; text-align: center;">
-              <div>TECHNISI</div>
-              <div style="margin-top: 20px; min-height: 50px; border-bottom: 1px solid #000;">
-                \${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : '<br><br><br>'}
-              </div>
-              <div style="margin-top: 5px;">\${tech.name || ''}</div>
-            </div>
-            <div style="width: 45%; text-align: center; display: flex; flex-direction: column; justify-content: flex-end;">
-              <div style="border-bottom: 1px solid #000; padding-bottom: 5px; min-height: 50px;">
-                COSTUMER<br>
-                \${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : ''}
-              </div>
-              <div style="background-color: #000; color: #fff; padding: 4px; font-size: 10px;">Signature & Company Stamp</div>
-            </div>
-          </div>
-        </div>
-        \x3Cscript>
-          window.onload = function() {
-            setTimeout(function() { window.print(); }, 500);
-          }
-        \x3C/script>
-      </body>
-    </html>
-    `
+  printServiceReport(item)
+}
+
+function exportToExcel() {
+  const rows = [['No. Laporan', 'Customer', 'Kontrak', 'Tipe Servis', 'Teknisi', 'Tanggal Kunjungan', 'Status']]
+  for (const item of data.value) {
+    rows.push([
+      item.report_no || item.service_report_no || '-',
+      customerName(item.customer_id),
+      contractNo(item.contract_item_id),
+      item.service_type || '-',
+      technicianName(item.technician_id),
+      item.service_date ? new Date(item.service_date).toLocaleDateString('id-ID') : '-',
+      item.status || '-'
+    ])
   }
-  const printWindow = window.open('', '_blank')
-  if (printWindow) {
-    printWindow.document.write(html)
-    printWindow.document.close()
-  }
+  const csvContent = 'data:text/csv;charset=utf-8,' + rows.map(e => e.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
+  const encodedUri = encodeURI(csvContent)
+  const link = document.createElement('a')
+  link.setAttribute('href', encodedUri)
+  link.setAttribute('download', 'Data_Laporan_Servis.csv')
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function printTable() {
+  window.print()
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Service Reports" button-label="Add Service Report" permission="service_report:create" @add="openAdd" />
+    <PageHeader title="Service Reports" button-label="Add Service Report" permission="service_report:create" @add="openAdd">
+      <template #actions>
+        <button class="btn btn-outline" @click="exportToExcel">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Export Excel
+        </button>
+        <button class="btn btn-outline" @click="printTable">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+          Print / PDF
+        </button>
+      </template>
+    </PageHeader>
     <DataTable :columns="columns" :data="data" search-placeholder="Cari laporan servis..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
+      <template #cell-service_date="{ value }">{{ value ? new Date(value).toLocaleDateString('id-ID') : '-' }}</template>
       <template #cell-status="{ value }">
         <span :class="value === 'open' ? 'badge badge-warning' : value === 'in_progress' ? 'badge badge-info' : value === 'completed' ? 'badge badge-success' : 'badge badge-neutral'">
           {{ value === 'open' ? 'Open' : value === 'in_progress' ? 'Proses' : value === 'completed' ? 'Selesai' : value || '-' }}
         </span>
       </template>
       <template #actions="{ row }">
+        <button v-if="can('service_report:read')" class="action-btn" title="Quick Look Form" @click="$router.push(`/shared/service-reports/${row.id}`)" style="color: var(--color-primary); border-color: transparent;">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
         <button v-if="can('service_report:read')" class="action-btn" title="Print Laporan" @click="printReport(row)" style="color: var(--color-primary); border-color: transparent;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>

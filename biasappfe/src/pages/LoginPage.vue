@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth'
+import { useToast } from '@/composables/useToast'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const { login, loginError } = useAuth()
+const { success: toastSuccess } = useToast()
 
 const username = ref('')
 const password = ref('')
@@ -13,6 +15,7 @@ const showPassword = ref(false)
 async function handleSubmit() {
   const success = await login({ username: username.value, password: password.value })
   if (success) {
+    toastSuccess('Login berhasil')
     router.push('/')
   }
 }

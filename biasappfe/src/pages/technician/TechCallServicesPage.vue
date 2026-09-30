@@ -9,7 +9,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 const router = useRouter()
 const { currentUser } = useAuth()
 const {
-  getServiceReportsByTechnician,
+  jobOrders,
   getTechnicianIdByUser,
   findCustomer,
   findUnit
@@ -22,8 +22,7 @@ const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || n
 // emergency, meter_reading. Call service = anything that is not a scheduled
 // maintenance or meter-reading job.
 const myJobs = computed(() => {
-  return getServiceReportsByTechnician(myTechId.value)
-    .filter(j => j.service_type !== 'maintenance' && j.service_type !== 'meter_reading')
+  return jobOrders.value.filter(j => String(j.technician_id) === String(myTechId.value) && j.job_type !== 'maintenance' && j.job_type !== 'meter_reading')
 })
 
 const filterStatus = ref('')
@@ -36,10 +35,11 @@ const filteredJobs = computed(() => {
     if (filterStatus.value && job.status !== filterStatus.value) return false
     if (filterDate.value && !job.created_at.startsWith(filterDate.value)) return false
     if (filterCustomer.value) {
-      const cust = findCustomer(job.customer_id)
+      const custId = job.customer_id || job.service_request?.customer_id
+      const cust = findCustomer(custId)
       if (!cust || !cust.company_name.toLowerCase().includes(filterCustomer.value.toLowerCase())) return false
     }
-    if (filterServiceNo.value && !(job.report_no || '').toLowerCase().includes(filterServiceNo.value.toLowerCase())) return false
+    if (filterServiceNo.value && !(job.job_order_no || '').toLowerCase().includes(filterServiceNo.value.toLowerCase())) return false
     return true
   }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 })
@@ -105,9 +105,9 @@ function goToDetail(id: number) {
           </thead>
           <tbody>
             <tr v-for="job in filteredJobs" :key="job.id">
-              <td>{{ job.report_no }}</td>
-              <td>{{ getCustomerName(job.customer_id) }}</td>
-              <td>{{ getUnitName(job.unit_id) }}</td>
+              <td>{{ job.job_order_no }}</td>
+              <td>{{ getCustomerName(job.customer_id || job.service_request?.customer_id) }}</td>
+              <td>{{ getUnitName(job.unit_id || job.service_request?.unit_id) }}</td>
               <td>{{ new Date(job.created_at).toLocaleString('id-ID') }}</td>
               <td>
                 <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'pending' || job.status === 'assigned' ? 'warning' : job.status === 'completed' ? 'success' : 'secondary')">

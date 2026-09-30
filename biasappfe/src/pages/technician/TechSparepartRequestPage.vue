@@ -17,6 +17,7 @@ const router = useRouter()
 const { currentUser } = useAuth()
 const {
   products,
+  serviceReports,
   getTechnicianIdByUser,
   refresh
 } = useMasterStore()
