@@ -70,7 +70,6 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.acc_dashboard', icon: 'grid', route: '/accounting/dashboard' },
       { label: 'sidebar.monitoring_service', icon: 'activity', route: '/customer-service/monitoring-service' },
       { label: 'sidebar.delivery_monitoring', icon: 'truck', route: '/customer-service/delivery' },
-      { label: 'sidebar.cs_reports', icon: 'file-text', route: '/customer-service/reports' },
     ],
   },
   {

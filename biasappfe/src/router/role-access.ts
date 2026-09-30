@@ -5,7 +5,7 @@ export const allowedRouteNamesByRole: Record<string, string[]> = {
   customer_service: [
     'csDashboard', 'customers', 'contractItems', 'units', 'csCallService',
     'csMonitoringService', 'csSparepartRequest', 'csIndent', 'csDelivery',
-    'warrantyClaims', 'rentalInvoices', 'csReports', 'rentals',
+    'warrantyClaims', 'rentalInvoices', 'rentals',
     'serviceRequests', 'jobOrders', 'sharedServiceReportView',
   ],
   technician: [

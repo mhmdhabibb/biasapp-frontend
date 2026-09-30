@@ -196,11 +196,7 @@ const router = createRouter({
       name: 'csDelivery',
       component: () => import('@/pages/customer-service/DeliveryMonitoringPage.vue'),
     },
-    {
-      path: '/customer-service/reports',
-      name: 'csReports',
-      component: () => import('@/pages/customer-service/CSReportsPage.vue'),
-    },
+
     // Accounting Routes
     {
       path: '/accounting/dashboard',
