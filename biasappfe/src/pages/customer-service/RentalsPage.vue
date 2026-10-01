@@ -94,8 +94,6 @@ const form = reactive({
   start_date: new Date().toISOString().slice(0, 10),
   duration_months: 12,
   duration_days: 0,
-  tax: 0,
-  deposit: 0,
   notes: "",
   po_no: "",
   installation_address: "",
@@ -109,7 +107,7 @@ const calcSubtotal = computed(() => {
   return sub;
 });
 
-const calcTotal = computed(() => calcSubtotal.value + form.tax + form.deposit);
+const calcTotal = computed(() => calcSubtotal.value);
 
 // Unit bersifat unik: yang sedang rented/sold/maintenance/broken tidak bisa
 // dipilih lagi. Unit rented tetap ditampilkan (disabled) agar CS tahu statusnya.
@@ -214,8 +212,6 @@ async function openAdd() {
     start_date: new Date().toISOString().slice(0, 10),
     duration_months: 12,
     duration_days: 0,
-    tax: 0,
-    deposit: 0,
     po_no: "",
     notes: "",
     installation_address: "",
@@ -298,8 +294,8 @@ async function handleSubmit() {
     start_date: new Date(form.start_date).toISOString(),
     duration_months: form.duration_months,
     duration_days: form.duration_days,
-    tax: form.tax,
-    deposit: form.deposit,
+    tax: 0,
+    deposit: 0,
     po_no: form.po_no,
     notes: form.notes,
     installation_address: form.installation_address,
@@ -1006,42 +1002,14 @@ onMounted(async () => {
         + Add Another Machine
       </button>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label for="rent-tax" class="form-label">Tax (Rp)</label>
-          <input
-            id="rent-tax"
-            v-model.number="form.tax"
-            type="number"
-            class="form-input"
-            min="0"
-          />
-        </div>
-        <div class="form-group">
-          <label for="rent-deposit" class="form-label"
-            >Down Payment / Deposit (Rp)</label
-          >
-          <input
-            id="rent-deposit"
-            v-model.number="form.deposit"
-            type="number"
-            class="form-input"
-            min="0"
-          />
-        </div>
-      </div>
+
 
       <div class="sale-summary mt-4">
         <div class="summary-row">
           <span>Total Rental Fee ({{ form.duration_months }} months)</span
           ><span>{{ formatRupiah(calcSubtotal) }}</span>
         </div>
-        <div class="summary-row">
-          <span>Tax</span><span>{{ formatRupiah(form.tax) }}</span>
-        </div>
-        <div class="summary-row">
-          <span>Deposit</span><span>{{ formatRupiah(form.deposit) }}</span>
-        </div>
+
         <div class="summary-row summary-total">
           <span>Total Contract Amount</span
           ><span>{{ formatRupiah(calcTotal) }}</span>

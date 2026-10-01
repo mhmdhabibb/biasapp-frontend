@@ -39,14 +39,7 @@ function handleLogout() {
       <span class="nav-label">Service</span>
     </button>
 
-    <button 
-      class="nav-item" 
-      :class="{ active: route.path.startsWith('/technician/meter-readings') }"
-      @click="navigate('/technician/meter-readings')"
-    >
-      <svg class="nav-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-      <span class="nav-label">Meters</span>
-    </button>
+
 
     <button 
       class="nav-item" 
@@ -86,7 +79,7 @@ function handleLogout() {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  width: 20%;
+  width: 25%;
   height: 100%;
   border: none;
   background: none;

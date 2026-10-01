@@ -39,7 +39,7 @@ export const allowedRouteNamesByRole: Record<string, string[]> = {
     "accSparepartRequests",
     "accPurchaseOrders",
     "accDeliveryOrders",
-    "salesInvoices",
+    "salesInvoices"
   ],
 };
 

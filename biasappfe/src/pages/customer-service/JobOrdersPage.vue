@@ -409,16 +409,37 @@ async function onDrop(techId: string | number) {
                     </svg>
                     <span>{{ req.delivery_address }}</span>
                   </div>
-                  <div class="card-recipient" v-if="req.recipient_name">
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                      <circle cx="12" cy="7" r="4" />
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                      <line x1="12" y1="17" x2="12" y2="21" />
                     </svg>
-                    <span>{{ req.recipient_name }}</span>
+                    <span style="font-weight: 500; color: var(--color-primary);">Rental / Delivery</span>
                   </div>
                 </template>
                 <template v-else>
-                  <div class="problem-text">{{ req.problem_description || 'No description' }}</div>
+                  <div class="card-customer" v-if="req.customer">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span>{{ req.customer.company_name || req.customer.name }}</span>
+                  </div>
+                  <div class="card-address" v-if="req.customer?.address">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>{{ req.customer.address }}</span>
+                  </div>
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
+                    </svg>
+                    <span style="font-weight: 500; color: var(--color-primary);">Service Request</span>
+                  </div>
+                  <div class="problem-text" style="margin-top: 6px;">{{ req.problem_description || 'No description' }}</div>
                 </template>
               </div>
             </div>
@@ -550,6 +571,14 @@ async function onDrop(techId: string | number) {
                     <polyline points="9 22 9 12 15 12 15 22" />
                   </svg>
                   <span class="ac-company">{{ job.customer_name || job.customer?.company_name || job.customer?.name || "-" }}</span>
+                </div>
+                <div class="ac-row muted" style="margin-top: 4px;">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path v-if="job.taskType === 'do'" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path v-if="job.taskType === 'do'" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    <path v-if="job.taskType === 'sr'" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
+                  </svg>
+                  <span>{{ job.taskType === 'do' ? 'Rental / Delivery' : 'Service Request' }}</span>
                 </div>
               </div>
             </div>
