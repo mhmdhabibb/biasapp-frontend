@@ -45,8 +45,10 @@ async function fetchServiceRequests() {
 
 async function fetchDeliveryOrders() {
   try {
-    const data = await api.get<{ data: any[] }>("/delivery-orders?do_type=rental");
-    deliveryOrders.value = data.data.filter((d: any) => d.do_type === 'rental' || d.do_type === 'Rental');
+    const data = await api.get<{ data: any[] }>("/delivery-orders");
+    deliveryOrders.value = data.data.filter((d: any) =>
+      ['rental', 'sale'].includes(String(d.do_type || '').toLowerCase()),
+    );
   } catch (error) {
     console.error("Failed to fetch data DO", error);
   }

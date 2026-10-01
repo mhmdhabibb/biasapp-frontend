@@ -6,6 +6,7 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
+import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { computed, onMounted, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -63,6 +64,12 @@ function resolveBeforeMeter(): number {
   const sr: any = serviceReport.value
   const saved = numVal(sr?.meter_reading_before) || numVal(sr?.reading_counter)
   if (saved > 0) return saved
+  const previousVisit = findPreviousServiceReportMeter(sr || {
+    unit_id: job.value?.unit_id || job.value?.service_request?.unit_id,
+    customer_id: job.value?.customer_id || job.value?.service_request?.customer_id,
+    service_date: new Date().toISOString(),
+  }, serviceReports.value, contractItems.value)
+  if (previousVisit !== null) return previousVisit
   const u: any = unit.value
   const fromUnit = numVal(u?.current_meter_bw) || numVal(u?.current_meter_color)
   if (fromUnit > 0) return fromUnit

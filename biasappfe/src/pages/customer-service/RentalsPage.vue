@@ -111,6 +111,26 @@ const calcSubtotal = computed(() => {
 
 const calcTotal = computed(() => calcSubtotal.value + form.tax + form.deposit);
 
+// Unit bersifat unik: yang sedang rented/sold/maintenance/broken tidak bisa
+// dipilih lagi. Unit rented tetap ditampilkan (disabled) agar CS tahu statusnya.
+function unitStatusOf(u: any): string {
+  return String(u?.status || "available").toLowerCase();
+}
+
+const availableUnits = computed(() =>
+  (units.value as any[]).filter((u: any) => {
+    const s = unitStatusOf(u);
+    return s === "available" || s === "";
+  }),
+);
+
+const unavailableUnits = computed(() =>
+  (units.value as any[]).filter((u: any) => {
+    const s = unitStatusOf(u);
+    return s !== "available" && s !== "";
+  }),
+);
+
 function addRentalItem() {
   rentalItems.value.push({
     selected_item: "",
@@ -324,7 +344,7 @@ async function handleSubmit() {
       fetchRentals(); // refresh
     } else {
       const err = await res.json();
-      toast.error(t("rentals.failed", { error: JSON.stringify(err) }));
+      toast.error(t("rentals.failed", { error: err.message || JSON.stringify(err) }));
     }
   } catch (error) {
     console.error(error);
@@ -696,8 +716,16 @@ onMounted(async () => {
           >
             <option value="">-- Select Machine or Product --</option>
             <optgroup label="Machines (Units)">
-              <option v-for="u in units" :key="u.id" :value="'unit_' + u.id">
+              <option v-for="u in availableUnits" :key="u.id" :value="'unit_' + u.id">
                 {{ u.model }} ({{ (u as any).brand?.name }})
+              </option>
+              <option
+                v-for="u in unavailableUnits"
+                :key="u.id"
+                :value="'unit_' + u.id"
+                disabled
+              >
+                {{ u.model }} ({{ (u as any).brand?.name }}) — {{ unitStatusOf(u) }}
               </option>
             </optgroup>
             <optgroup label="Products / Others">

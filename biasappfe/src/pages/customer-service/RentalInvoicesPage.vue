@@ -33,7 +33,7 @@ const columns: TableColumn[] = [
   { key: 'period_end', label: 'Period End' },
   { key: 'due_date', label: 'Due Date' },
   { key: 'total_pay', label: 'Total' },
-  { key: 'approval_status', label: 'Approval Status' },
+  { key: 'status', label: 'Approval Status' },
   { key: 'payment_status', label: 'Status' },
 ]
 
@@ -1104,7 +1104,7 @@ function printInvoice(item: any) {
       <template #cell-period_end="{ value }">{{ formatDate(value) }}</template>
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-total_pay="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-approval_status="{ value }">
+      <template #cell-status="{ value }">
         <span
           :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
           {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' :
@@ -1120,7 +1120,7 @@ function printInvoice(item: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft') && can('rental_invoice:update')"
+          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
             class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')"
             style="color: var(--color-success); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1128,7 +1128,7 @@ function printInvoice(item: any) {
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
           </button>
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft') && can('rental_invoice:update')"
+          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
             class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')"
             style="width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"

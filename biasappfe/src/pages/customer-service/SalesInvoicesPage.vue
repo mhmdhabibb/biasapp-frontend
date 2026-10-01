@@ -36,7 +36,7 @@ const columns: TableColumn[] = [
   { key: 'due_date', label: 'Due Date' },
   { key: 'subtotal', label: 'Subtotal' },
   { key: 'total', label: 'Total' },
-  { key: 'approval_status', label: 'Approval Status' },
+  { key: 'status', label: 'Approval Status' },
   { key: 'payment_status', label: 'Status' },
 ]
 
@@ -748,7 +748,7 @@ function printInvoice(item: any) {
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-approval_status="{ value }">
+      <template #cell-status="{ value }">
         <span :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
           {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' : 'Pending' }}
         </span>
@@ -760,10 +760,10 @@ function printInvoice(item: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft') && can('sales_invoice:update')" class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')" style="color: var(--color-success); width: 36px; height: 36px;">
+          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('sales_invoice:update')" class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')" style="color: var(--color-success); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
           </button>
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft') && can('sales_invoice:update')" class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')" style="color: var(--color-danger); width: 36px; height: 36px;">
+          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('sales_invoice:update')" class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')" style="color: var(--color-danger); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
           <button v-if="row.status === 'approved' && can('sales_invoice:read')" class="action-btn action-btn--edit" title="Print Receipt" @click="printInvoice(row)" style="color: var(--color-primary); width: 36px; height: 36px;">

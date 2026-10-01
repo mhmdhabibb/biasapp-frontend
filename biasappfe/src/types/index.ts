@@ -138,6 +138,7 @@ export interface Unit {
   uom?: UOM | null;
   model: string;
   serial_no: string;
+  status?: string;
   is_copier?: boolean;
   current_meter_bw?: number;
   current_meter_color?: number;
@@ -390,12 +391,14 @@ export interface Payment {
   id: string | number;
   payment_no: string;
   rental_invoice_id: string | number | null;
+  sales_invoice_id?: string | number | null;
   customer_id: string | number | null;
   payment_date: string;
   amount: number;
   tax_deduction: number;
   balance: number;
   reference_no: string;
+  status: string;
   created_at: string;
   updated_at: string;
 }

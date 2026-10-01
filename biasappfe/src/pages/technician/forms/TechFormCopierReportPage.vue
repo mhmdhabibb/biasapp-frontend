@@ -4,6 +4,7 @@ import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
+import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -40,6 +41,12 @@ const beforeMeter = computed(() => {
     lastEnd = Math.max(lastEnd, num(r.end_meter) || num(r.start_meter))
   }
   if (lastEnd > 0) return lastEnd
+  const previousVisit = findPreviousServiceReportMeter(
+    job.value,
+    serviceReports.value,
+    contractItems.value,
+  )
+  if (previousVisit !== null) return previousVisit
   // 2b. Latest reading of this unit from the store (previous period).
   const unitIdForHistory = String(job.value?.unit_id || unit.value?.id || '')
   if (unitIdForHistory) {

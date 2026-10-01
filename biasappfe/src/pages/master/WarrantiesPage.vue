@@ -6,6 +6,7 @@ import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Warranty } from '@/types'
 import { formatDateDDMMYYYY } from '@/utils/format'
@@ -18,6 +19,7 @@ const columns: TableColumn[] = [
   { key: 'customer_id', label: 'Customer' },
   { key: 'warranty_type', label: 'Warranty Type' },
   { key: 'unit_id', label: 'Unit / Product' },
+  { key: 'source', label: 'Source' },
   { key: 'start_date', label: 'Start' },
   { key: 'end_date', label: 'End' },
   { key: 'status', label: 'Status' },
@@ -36,6 +38,7 @@ const coverageOptions = [
 ]
 
 const data = ref<Warranty[]>([])
+const rentals = ref<any[]>([])
 
 async function fetchData() {
   try {
@@ -47,7 +50,18 @@ async function fetchData() {
   }
 }
 
-onMounted(fetchData)
+async function fetchRentals() {
+  try {
+    const res = await api.get<{ data: any[] }>('/rents')
+    rentals.value = res.data || []
+  } catch (error) {
+    console.error('Failed to fetch rentals for warranty source:', error)
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([fetchData(), fetchRentals()])
+})
 
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -94,7 +108,11 @@ const customerOptions = computed(() =>
   customers.value.map((c: any) => ({ value: String(c.id), label: c.company_name || c.name }))
 )
 const unitOptions = computed(() =>
-  units.value.map((u: any) => ({ value: String(u.id), label: `${u.name || u.model} (SN: ${u.serial_no || '-'})` }))
+  units.value.map((u: any) => {
+    const st = String(u.status || '').toLowerCase()
+    const suffix = st && st !== 'available' ? ` — ${st}` : ''
+    return { value: String(u.id), label: `${u.name || u.model} (SN: ${u.serial_no || '-'})${suffix}` }
+  })
 )
 const productOptions = computed(() =>
   products.value.map((p: any) => ({ value: String(p.id), label: p.name }))
@@ -108,16 +126,56 @@ function getCustomerName(id: any) {
   return (c as any)?.company_name || (c as any)?.name || '-'
 }
 
-function getUnitOrProductName(item: Warranty) {
-  if (item.unit_id) {
+function getUnitOrProductName(item: any) {
+  const embeddedUnit = item.unit
+  if (item.unit_id || embeddedUnit) {
+    const brand = embeddedUnit?.brand?.name
+    const model = embeddedUnit?.model || embeddedUnit?.name
+    if (model) return `${brand ? brand + ' ' : ''}${model} (SN: ${embeddedUnit?.serial_no || '-'})`
     const u = units.value.find((u: any) => String(u.id) === String(item.unit_id))
-    return u ? `${(u as any).name || (u as any).model}` : `Unit #${item.unit_id}`
+    if (u) {
+      const b = (u as any).brand?.name
+      return `${b ? b + ' ' : ''}${(u as any).name || (u as any).model} (SN: ${(u as any).serial_no || '-'})`
+    }
+    return item.unit_id ? `Unit #${String(item.unit_id).slice(0, 8)}` : '-'
   }
-  if (item.product_id) {
+  const embeddedProduct = item.product
+  if (item.product_id || embeddedProduct) {
+    if (embeddedProduct?.name) return embeddedProduct.name
     const p = products.value.find((p: any) => String(p.id) === String(item.product_id))
-    return p ? (p as any).name : `Product #${item.product_id}`
+    return p ? (p as any).name : (item.product_id ? `Product #${String(item.product_id).slice(0, 8)}` : '-')
   }
   return '-'
+}
+
+// Asal barang: transaksi penjualan (dijual) atau rental (di-rental).
+function getSource(item: any): string {
+  if (item.sale_id) {
+    const s = (sales.value as any[]).find((s: any) => String(s.id) === String(item.sale_id))
+    const no = s?.sale_no || item.sale?.sale_no
+    return no ? `Dijual — ${no}` : 'Dijual'
+  }
+  if (item.unit_id) {
+    for (const r of rentals.value) {
+      const items = r.rental_items || []
+      if (items.some((it: any) => String(it.unit_id) === String(item.unit_id))) {
+        return r.rental_no ? `Rental — ${r.rental_no}` : 'Rental'
+      }
+    }
+    const u = (units.value as any[]).find((u: any) => String(u.id) === String(item.unit_id))
+    const st = String(u?.status || item.unit?.status || '').toLowerCase()
+    if (st === 'rented') return 'Rental'
+    if (st === 'sold') return 'Dijual'
+  }
+  if (item.product_id) {
+    for (const s of sales.value as any[]) {
+      const items = s.sale_items || []
+      if (items.some((it: any) => String(it.product_id) === String(item.product_id))) {
+        return s.sale_no ? `Dijual — ${s.sale_no}` : 'Dijual'
+      }
+    }
+  }
+  return 'Manual'
 }
 
 function openAdd() {
@@ -219,6 +277,9 @@ async function handleDelete() {
       </template>
       <template #cell-unit_id="{ row }">
         {{ getUnitOrProductName(row) }}
+      </template>
+      <template #cell-source="{ row }">
+        {{ getSource(row) }}
       </template>
       <template #cell-start_date="{ value }">
         {{ formatDateDDMMYYYY(value) }}

@@ -164,6 +164,7 @@ async function submitReading() {
   }
 
   // Single mode (contract without rates): legacy single-size form.
+  // Reuse `ci` from the top of submitReading().
   if (!form.value.paper_size_id) return toast.warning('Select paper size!')
 
   const startMeter = previousReading.value || 0
@@ -171,8 +172,6 @@ async function submitReading() {
   if (endMeter < startMeter) {
     return toast.warning('Current Meter must not be smaller than the previous value!')
   }
-
-  const ci = selectedContract.value
   try {
     await api.post('/monthly-meter-readings/', {
       user_id: currentUser.value?.id,

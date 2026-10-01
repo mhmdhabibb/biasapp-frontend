@@ -168,6 +168,10 @@ const spellNumber = (n: number): string => {
 };
 
 function printReceipt(item: Payment) {
+  if ((item as any).status !== 'approved') {
+    toast.warning('Kwitansi hanya bisa dicetak setelah ACC menyetujui pembayaran (approved).');
+    return;
+  }
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
 
@@ -269,7 +273,7 @@ function printReceipt(item: Payment) {
       </template>
       
       <template #actions="{ row }">
-        <button v-if="can('payment:read')" class="action-btn" title="Print Receipt" @click="printReceipt(row)">
+        <button v-if="can('payment:read') && row.status === 'approved'" class="action-btn" title="Print Receipt (Approved)" @click="printReceipt(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
