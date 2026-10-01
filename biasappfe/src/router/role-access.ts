@@ -18,6 +18,7 @@ export const allowedRouteNamesByRole: Record<string, string[]> = {
   ],
   accounting: [
     'accDashboard', 'accSparepartRequests', 'accPurchaseOrders', 'accDeliveryOrders',
+    'salesInvoices'
   ],
 }
 

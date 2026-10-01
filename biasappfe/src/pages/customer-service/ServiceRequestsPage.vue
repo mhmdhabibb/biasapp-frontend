@@ -379,18 +379,6 @@ onMounted(() => {
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
         </button>
-        <button
-          v-if="
-            can('job_order:create') &&
-            row.status !== 'assigned' &&
-            row.status !== 'completed'
-          "
-          class="btn btn-sm btn-primary"
-          @click="openAssign(row)"
-          style="margin-left: 8px"
-        >
-          Assign Technician
-        </button>
       </template>
     </DataTable>
 

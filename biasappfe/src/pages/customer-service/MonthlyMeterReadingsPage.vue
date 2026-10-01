@@ -141,7 +141,7 @@ function formatRupiah(val: number): string {
 
 <template>
   <div>
-    <PageHeader title="Monthly Meter Readings" button-label="Add Meter Reading" permission="monthly_meter_reading:create" @add="openAdd" />
+    <PageHeader title="Monthly Meter Readings" />
     <DataTable :columns="columns" :data="data" permission="monthly_meter_reading" search-placeholder="Search meter readings..." @edit="openEdit" @delete="openDelete">
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-service_report_id="{ value }">{{ srNo(value as any) }}</template>

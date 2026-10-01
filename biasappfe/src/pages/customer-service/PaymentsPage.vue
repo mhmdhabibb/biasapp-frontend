@@ -254,7 +254,7 @@ function printReceipt(item: Payment) {
 
 <template>
   <div>
-    <PageHeader title="Payments" button-label="Add Payment" permission="payment:create" @add="openAdd" />
+    <PageHeader title="Payments" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search payments..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-invoice_type="{ row }">{{ row.sales_invoice_id ? 'Sales' : 'Rental' }}</template>

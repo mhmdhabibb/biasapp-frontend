@@ -132,6 +132,17 @@ const menuGroups = computed(() => {
   })).filter(group => group.items.length > 0)
 })
 
+const panelName = computed(() => {
+  const role = normalizeRole(currentUser.value?.role)
+  switch (role) {
+    case 'admin': return 'Admin Panel'
+    case 'customer_service': return 'CS Panel'
+    case 'accounting': return 'Accounting Panel'
+    case 'technician': return 'Technician Panel'
+    default: return 'BIAS Panel'
+  }
+})
+
 const expandedGroups = ref<Set<string>>(new Set(allMenuGroups.map(g => g.title.includes('.') ? t(g.title) : g.title)))
 
 function toggleGroup(title: string) {
@@ -205,7 +216,7 @@ const iconPaths: Record<string, string> = {
   <aside class="sidebar" :class="{ 'sidebar-open': open }">
     <div class="sidebar-header">
       <img class="sidebar-logo" src="@/assets/bias-logo.png" alt="BIAS" />
-      <span class="sidebar-app-name">Admin Panel</span>
+      <span class="sidebar-app-name">{{ panelName }}</span>
     </div>
 
     <nav class="sidebar-nav" aria-label="Main navigation menu">

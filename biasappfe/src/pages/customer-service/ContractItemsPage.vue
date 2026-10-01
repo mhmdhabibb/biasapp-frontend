@@ -270,6 +270,7 @@ function printContract(item: any) {
     <html>
       <head>
         <title>Agreement - ${contractNo}</title>
+        <link rel="icon" type="image/png" href="/bias-favicon.png">
         <style>
           @page { size: A4; margin: 1.8cm 2cm 1.8cm 2cm; }
           body { font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.45; color: #000; margin: 0; padding: 0; text-align: justify; }
