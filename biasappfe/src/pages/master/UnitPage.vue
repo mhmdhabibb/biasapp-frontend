@@ -76,7 +76,8 @@ const form = reactive({
   current_meter_bw: 0,
   current_meter_color: 0,
   free_quota_color: 0,
-  rates: [] as { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[],
+  free_quota_bw: 0,
+  rates: [] as { paper_size_id: string; paper_type_id: string | null; rate_per_page_bw: number; rate_per_page_color: number; free_quota_bw: number; free_quota_color: number; quota_applies_to: string }[],
   specsData: {
     cpu: '',
     ram: '',
@@ -89,7 +90,7 @@ const form = reactive({
 })
 
 function addRate() {
-  form.rates.push({ paper_size_id: '', rate_per_page_bw: 0, rate_per_page_color: 0 })
+  form.rates.push({ paper_size_id: '', paper_type_id: null, rate_per_page_bw: 0, rate_per_page_color: 0, free_quota_bw: 0, free_quota_color: 0, quota_applies_to: 'color' })
 }
 
 function removeRate(index: number) {
@@ -106,7 +107,7 @@ watch([() => form.brand_id, () => form.model], ([newBrand, newModel]) => {
 })
 
 function openAdd() {
-  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
+  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, free_quota_bw: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
   showModal.value = true
 }
 
@@ -124,10 +125,15 @@ function openEdit(item: any) {
     current_meter_bw: item.current_meter_bw || 0,
     current_meter_color: item.current_meter_color || 0,
     free_quota_color: item.free_quota_color || 0,
+    free_quota_bw: (item as any).free_quota_bw || 0,
     rates: Array.isArray(item.rates) ? item.rates.map((r: any) => ({
       paper_size_id: r.paper_size_id,
+      paper_type_id: r.paper_type_id ?? null,
       rate_per_page_bw: r.rate_per_page_bw,
-      rate_per_page_color: r.rate_per_page_color
+      rate_per_page_color: r.rate_per_page_color,
+      free_quota_bw: r.free_quota_bw ?? 0,
+      free_quota_color: r.free_quota_color ?? 0,
+      quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : 'color'
     })) : [],
     specsData: item.specs ? (typeof item.specs === 'string' ? JSON.parse(item.specs || '{}') : item.specs) : { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
   })

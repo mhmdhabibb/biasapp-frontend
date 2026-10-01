@@ -47,17 +47,13 @@ const paymentForm = reactive({
 });
 
 const visibleRentalInvoices = computed(() => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const hasCopier = selectedRental.value?.rental_items?.some((item: any) => item.unit?.is_copier);
-  return (selectedRental.value?.rental_invoices || []).filter((invoice: any) => {
-    const periodStart = new Date(invoice.period_start);
-    if (Number.isNaN(periodStart.getTime()) || periodStart > today) return false;
-    return !hasCopier || (invoice.meter_details?.length || 0) > 0;
-  });
+  return [...(selectedRental.value?.rental_invoices || [])].sort(
+    (a: any, b: any) => new Date(a.period_start).getTime() - new Date(b.period_start).getTime(),
+  );
 });
 
 const paperSizes = ref<{ id: string; name: string }[]>([]);
+const paperTypes = ref<{ id: string; name: string }[]>([]);
 
 const rentalItems = ref<
   {
@@ -69,6 +65,8 @@ const rentalItems = ref<
     start_meter_bw: number;
     start_meter_color: number;
     free_quota_color: number;
+    free_quota_bw: number;
+    placement_location: string;
     is_copier: boolean;
     is_computer: boolean;
     specs: {
@@ -83,8 +81,12 @@ const rentalItems = ref<
     description: string;
     rates: {
       paper_size_id: string;
+      paper_type_id: string | null;
       rate_per_page_bw: number;
       rate_per_page_color: number;
+      free_quota_bw: number;
+      free_quota_color: number;
+      quota_applies_to: string;
     }[];
   }[]
 >([]);
@@ -139,6 +141,8 @@ function addRentalItem() {
     start_meter_bw: 0,
     start_meter_color: 0,
     free_quota_color: 0,
+    free_quota_bw: 0,
+    placement_location: '',
     is_copier: false,
     is_computer: false,
     specs: {
@@ -163,13 +167,49 @@ function addItemRate(item: any) {
   if (!item.rates) item.rates = [];
   item.rates.push({
     paper_size_id: "",
+    paper_type_id: null,
     rate_per_page_bw: 0,
     rate_per_page_color: 0,
+    free_quota_bw: 0,
+    free_quota_color: 0,
+    quota_applies_to: "color",
   });
 }
 
 function removeItemRate(item: any, index: number) {
   if (item.rates) item.rates.splice(index, 1);
+}
+
+function paperSizeName(id: any): string {
+  if (!id) return '';
+  const found = (paperSizes.value as any[]).find((x: any) => String(x.id) === String(id));
+  return found ? found.name : String(id).slice(0, 8);
+}
+
+function paperTypeName(id: any): string {
+  if (!id) return '';
+  const found = (paperTypes.value as any[]).find((x: any) => String(x.id) === String(id));
+  return found ? found.name : String(id).slice(0, 8);
+}
+
+function rateTitle(rate: any): string {
+  const size = rate.paper_size_id ? paperSizeName(rate.paper_size_id) : 'Semua ukuran';
+  const kind = rate.paper_type_id ? ' / ' + paperTypeName(rate.paper_type_id) : '';
+  return size + kind;
+}
+
+function fmtRp(n: any): string {
+  return 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
+}
+
+function rateSummary(rate: any): string {
+  const isBW = rate.quota_applies_to === 'bw';
+  const free = Number(isBW ? rate.free_quota_bw : rate.free_quota_color) || 0;
+  const mode = isBW ? 'BW' : 'Warna';
+  const bw = fmtRp(rate.rate_per_page_bw);
+  const color = fmtRp(rate.rate_per_page_color);
+  if (!free) return `Tanpa free — semua ditagih penuh (BW ${bw}/lbr, Warna ${color}/lbr).`;
+  return `Free ${free} lbr ${mode} per bulan, selebihnya BW ${bw}/lbr, Warna ${color}/lbr.`;
 }
 
 function onItemSelectChange(item: any) {
@@ -185,11 +225,17 @@ function onItemSelectChange(item: any) {
       // Admin must enter it manually on the first rental to keep reports accurate.
       if (u.free_quota_color !== undefined)
         item.free_quota_color = u.free_quota_color;
+      if ((u as any).free_quota_bw !== undefined)
+        item.free_quota_bw = (u as any).free_quota_bw;
       if (Array.isArray(u.rates) && u.rates.length > 0) {
         item.rates = u.rates.map((r: any) => ({
           paper_size_id: r.paper_size_id,
+          paper_type_id: r.paper_type_id ?? null,
           rate_per_page_bw: r.rate_per_page_bw,
           rate_per_page_color: r.rate_per_page_color,
+          free_quota_bw: r.free_quota_bw ?? 0,
+          free_quota_color: r.free_quota_color ?? 0,
+          quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
         }));
       }
     }
@@ -226,6 +272,8 @@ async function openAdd() {
       start_meter_bw: 0,
       start_meter_color: 0,
       free_quota_color: 0,
+      free_quota_bw: 0,
+      placement_location: '',
       is_copier: false,
       is_computer: false,
       specs: {
@@ -267,7 +315,7 @@ async function fetchRentals() {
 async function handleSubmit() {
   if (!form.customer_id) return;
 
-  // Validation: copier requires an initial meter + at least 1 paper type (size + rates)
+  // Validation: copier requires an initial meter (paper size/kind rates are optional)
   for (let idx = 0; idx < rentalItems.value.length; idx++) {
     const item = rentalItems.value[idx]!;
     if (!item!.selected_item) {
@@ -279,9 +327,24 @@ async function handleSubmit() {
         toast.error(`Item #${idx + 1}: initial BW / Colour meter cannot be negative.`);
         return;
       }
-      const validRates = (item.rates || []).filter((r: any) => r.paper_size_id);
-      if (validRates.length === 0) {
-        toast.error(`Item #${idx + 1}: at least 1 Paper Type (Size) + rate is required on the first rental.`);
+    }
+  }
+
+  try {
+    const latestPaperSizes = await resources.paperSizes.list();
+    paperSizes.value = latestPaperSizes.data as any;
+  } catch {
+    toast.error("Failed to validate paper sizes. Please try again.");
+    return;
+  }
+
+  const validPaperSizeIDs = new Set(paperSizes.value.map((paperSize) => String(paperSize.id)));
+  for (let itemIndex = 0; itemIndex < rentalItems.value.length; itemIndex++) {
+    const rates = rentalItems.value[itemIndex]?.rates || [];
+    for (let rateIndex = 0; rateIndex < rates.length; rateIndex++) {
+      const paperSizeID = rates[rateIndex]?.paper_size_id;
+      if (paperSizeID && !validPaperSizeIDs.has(String(paperSizeID))) {
+        toast.error(`Item #${itemIndex + 1}, price #${rateIndex + 1}: selected paper size no longer exists. Please select it again.`);
         return;
       }
     }
@@ -310,14 +373,20 @@ async function handleSubmit() {
         start_meter_bw: item.start_meter_bw,
         start_meter_color: item.start_meter_color,
         free_quota_color: item.free_quota_color,
+        free_quota_bw: (item as any).free_quota_bw ?? 0,
+        placement_location: (item as any).placement_location || '',
         specs: item.specs || {},
         description: item.description,
         rates: (item.rates || [])
-          .filter((r: any) => r.paper_size_id)
+          .filter((r: any) => r.paper_size_id || Number(r.rate_per_page_bw) || Number(r.rate_per_page_color) || Number(r.free_quota_bw) || Number(r.free_quota_color))
           .map((r: any) => ({
-            paper_size_id: r.paper_size_id,
+            paper_size_id: r.paper_size_id || null,
+            paper_type_id: r.paper_type_id || null,
             rate_per_page_bw: Number(r.rate_per_page_bw) || 0,
             rate_per_page_color: Number(r.rate_per_page_color) || 0,
+            free_quota_bw: Number(r.free_quota_bw) || 0,
+            free_quota_color: Number(r.free_quota_color) || 0,
+            quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
           })),
       };
     }),
@@ -359,10 +428,11 @@ async function openRentalInvoices(rental: any) {
   showInvoiceModal.value = true;
   isLoadingRentalInvoices.value = true;
   try {
+    await api.post(`/rents/${rental.id}/generate-invoices`, {});
     const response = await api.get<{ data: any }>(`/rents/${rental.id}`);
     selectedRental.value = response.data;
   } catch (error: any) {
-    toast.error(toast.fromError(error, "Failed to load rental invoices"));
+    toast.error(toast.fromError(error, "Failed to prepare rental invoices"));
   } finally {
     isLoadingRentalInvoices.value = false;
   }
@@ -421,6 +491,12 @@ onMounted(async () => {
   try {
     const res = await resources.paperSizes.list();
     paperSizes.value = res.data as any;
+    try {
+      const pt = await (resources as any).paperTypes.list();
+      paperTypes.value = pt.data as any;
+    } catch {
+      paperTypes.value = [];
+    }
   } catch (e) {
     console.error("Failed to fetch paper sizes:", e);
   }
@@ -663,6 +739,10 @@ onMounted(async () => {
         ></textarea>
       </div>
 
+      <div class="form-group" style="margin-bottom: var(--space-md)">
+        <label class="form-label" style="font-size: 0.8rem">Note: each machine below may use its own delivery address (one DO is auto-generated per distinct address). Leave empty to follow the address above.</label>
+      </div>
+
       <div class="form-section-title">Rented Machines & Initial Meter Input</div>
 
       <div
@@ -713,7 +793,7 @@ onMounted(async () => {
             <option value="">-- Select Machine or Product --</option>
             <optgroup label="Machines (Units)">
               <option v-for="u in availableUnits" :key="u.id" :value="'unit_' + u.id">
-                {{ u.model }} ({{ (u as any).brand?.name }})
+                {{ u.model }} ({{ (u as any).brand?.name }}) — S/N: {{ u.serial_no || 'N/A' }}
               </option>
               <option
                 v-for="u in unavailableUnits"
@@ -721,7 +801,7 @@ onMounted(async () => {
                 :value="'unit_' + u.id"
                 disabled
               >
-                {{ u.model }} ({{ (u as any).brand?.name }}) — {{ unitStatusOf(u) }}
+                {{ u.model }} ({{ (u as any).brand?.name }}) — S/N: {{ u.serial_no || 'N/A' }} — {{ unitStatusOf(u) }}
               </option>
             </optgroup>
             <optgroup label="Products / Others">
@@ -730,6 +810,16 @@ onMounted(async () => {
               </option>
             </optgroup>
           </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: var(--space-md)">
+          <label class="form-label" style="font-size: 0.8rem">Delivery Address for this machine (optional — empty follows the address above; distinct addresses get separate DOs)</label>
+          <textarea
+            v-model="item.placement_location"
+            class="form-input"
+            rows="2"
+            placeholder="Leave empty to use the installation address above"
+          ></textarea>
         </div>
 
         <div class="form-row">
@@ -777,7 +867,7 @@ onMounted(async () => {
           <div
             style="
               display: grid;
-              grid-template-columns: 1fr 1fr 1fr;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
               gap: 0.75rem;
             "
           >
@@ -807,18 +897,6 @@ onMounted(async () => {
                 :required="item.is_copier"
               />
             </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem"
-                >Free Quota Color</label
-              >
-              <input
-                v-model.number="item.free_quota_color"
-                type="number"
-                class="form-input"
-                min="0"
-                placeholder="0"
-              />
-            </div>
           </div>
 
           <div style="margin-top: 1rem">
@@ -833,7 +911,7 @@ onMounted(async () => {
               <label
                 class="form-label"
                 style="margin: 0; font-weight: 600; font-size: 0.85rem"
-                >Paper Type / Size (Rates) *</label
+                >Harga per Lembar — BW & Warna (opsional)</label
               >
               <button
                 type="button"
@@ -841,86 +919,118 @@ onMounted(async () => {
                 class="btn btn-secondary btn-sm"
                 style="padding: 0.2rem 0.5rem; font-size: 0.75rem"
               >
-                + Add Price
+                + Tambah Harga
               </button>
             </div>
+            <p class="text-muted" style="font-size: 0.75rem; margin: 0 0 0.5rem 0">
+              Satu kartu = satu aturan harga. Kosongkan ukuran &amp; jenis bila tarifnya
+              berlaku umum; isi bila beda ukuran/jenis beda harga.
+            </p>
 
             <div
               v-for="(rate, rIdx) in item.rates"
               :key="rIdx"
               style="
-                display: grid;
-                grid-template-columns: 2fr 1fr 1fr auto;
-                gap: 0.5rem;
-                margin-bottom: 0.5rem;
-                align-items: center;
+                margin-bottom: 0.75rem;
                 background: var(--color-surface, #f8fafc);
-                padding: 0.5rem;
-                border-radius: 6px;
+                padding: 0.75rem;
+                border-radius: 8px;
                 border: 1px solid var(--color-border-light, #e2e8f0);
               "
             >
-              <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <strong style="font-size: 0.85rem;">Harga #{{ rIdx + 1 }} &mdash; {{ rateTitle(rate) }}</strong>
+                <button type="button" @click="removeItemRate(item, rIdx)" class="btn btn-sm" style="color: #ef4444; font-size: 0.75rem;">
+                  Hapus
+                </button>
+              </div>
+              <div class="rental-rate-fields">
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">Ukuran Kertas <span class="text-muted">(opsional)</span></label>
                 <select
                   v-model="rate.paper_size_id"
                   class="form-select"
                   style="font-size: 0.8rem"
-                  required
                 >
-                  <option value="">-- Select Paper Type / Size * --</option>
+                  <option value="">&#8212; Semua ukuran &#8212;</option>
                   <option v-for="p in paperSizes" :key="p.id" :value="p.id">
                     {{ p.name }}
                   </option>
                 </select>
               </div>
-              <div>
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">Jenis Kertas <span class="text-muted">(opsional)</span></label>
+                <select
+                  v-model="rate.paper_type_id"
+                  class="form-select"
+                  style="font-size: 0.8rem"
+                >
+                  <option :value="null">&#8212; Semua jenis &#8212;</option>
+                  <option v-for="p in paperTypes" :key="p.id" :value="p.id">
+                    {{ p.name }}
+                  </option>
+                </select>
+              </div>
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">Tarif BW per lembar (Rp)</label>
                 <input
                   v-model.number="rate.rate_per_page_bw"
                   type="number"
                   class="form-input"
                   min="0"
-                  placeholder="BW Rate"
+                  placeholder="Masukkan tarif BW"
                   style="font-size: 0.8rem"
                 />
               </div>
-              <div>
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">Tarif warna per lembar (Rp)</label>
                 <input
                   v-model.number="rate.rate_per_page_color"
                   type="number"
                   class="form-input"
                   min="0"
-                  placeholder="Colour Rate"
+                  placeholder="Masukkan tarif warna"
                   style="font-size: 0.8rem"
                 />
               </div>
-              <button
-                type="button"
-                @click="removeItemRate(item, rIdx)"
-                style="
-                  background: none;
-                  border: none;
-                  color: #ef4444;
-                  cursor: pointer;
-                  padding: 0.4rem;
-                "
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">Kuota gratis BW (lembar/bulan)</label>
+                <input
+                  v-model.number="rate.free_quota_bw"
+                  type="number"
+                  class="form-input"
+                  min="0"
+                  placeholder="Contoh: 200 lembar"
+                  style="font-size: 0.8rem"
+                />
+              </div>
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">Kuota gratis warna (lembar/bulan)</label>
+                <input
+                  v-model.number="rate.free_quota_color"
+                  type="number"
+                  class="form-input"
+                  min="0"
+                  placeholder="Contoh: 200 lembar"
+                  style="font-size: 0.8rem"
+                />
+              </div>
+              <div class="form-group" style="margin: 0;">
+                <label class="form-label">Kuota gratis berlaku untuk</label>
+                <select
+                  v-model="rate.quota_applies_to"
+                  class="form-select"
+                  style="font-size: 0.8rem"
+                  title="Free quota applies to"
                 >
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path
-                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                  ></path>
-                </svg>
-              </button>
+                  <option value="color">Warna (BW ditagih penuh)</option>
+                  <option value="bw">BW (Warna ditagih penuh)</option>
+                </select>
+              </div>
+              </div>
+              <div class="text-muted" style="font-size: 0.75rem; margin-top: 0.5rem; background: var(--color-surface-sunken, #f1f5f9); padding: 0.4rem 0.6rem; border-radius: 6px;">
+                {{ rateSummary(rate) }}
+              </div>
             </div>
             <div
               v-if="!item.rates || item.rates.length === 0"
@@ -933,7 +1043,7 @@ onMounted(async () => {
                 border-radius: 6px;
               "
             >
-              No paper types added yet. At least 1 is required on first rental.
+              Belum ada harga per lembar. Klik + Tambah Harga bila ada tarif cetak, atau kosongkan bila hanya sewa bulanan.
             </div>
           </div>
         </div>
@@ -1029,6 +1139,24 @@ onMounted(async () => {
   grid-template-columns: 1fr 1fr;
   gap: var(--space-base);
   margin-bottom: var(--space-sm);
+}
+.rental-rate-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm) var(--space-md);
+}
+.rental-rate-fields .form-group {
+  min-width: 0;
+}
+.rental-rate-fields .form-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 4px;
+}
+@media (max-width: 480px) {
+  .rental-rate-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .form-section-title {
   font-size: var(--font-size-sm);

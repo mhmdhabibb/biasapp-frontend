@@ -1,16 +1,15 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive } from 'vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { resources } from '@/services/resource.service'
-import { onMounted } from 'vue'
-import type { TableColumn, ContractItem } from '@/types'
+import type { ContractItem, TableColumn } from '@/types'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
+import { onMounted, reactive, ref } from 'vue'
 
 const { can } = usePermission()
 
@@ -72,19 +71,24 @@ function formatRomanMonth(monthIndex: number): string {
   return romans[monthIndex] || 'I';
 }
 
-function generateContractNumber(seq: number = 480, isCopier: boolean = true, date: Date = new Date()): string {
+function generateContractNumber(date: Date = new Date()): string {
   const romanMonth = formatRomanMonth(date.getMonth());
   const year = date.getFullYear();
-  const typeCode = isCopier ? 'PSMMF' : 'PSMP';
-  return `${seq}/BiAS-${typeCode}/${romanMonth}-${year}`;
+  const suffix = `/BiAS-PSMMF/${romanMonth}-${year}`;
+  const maxSequence = (data.value || []).reduce((max: number, item: any) => {
+    const number = item.contract?.contract_no || item.contract_no || '';
+    if (!number.endsWith(suffix)) return max;
+    const sequence = Number(number.slice(0, -suffix.length));
+    return Number.isInteger(sequence) ? Math.max(max, sequence) : max;
+  }, 0);
+  return `${String(maxSequence + 1).padStart(3, '0')}${suffix}`;
 }
 
 const defaultForm = { ...form }
 
 function openAdd() {
   editingItem.value = null
-  const nextSeq = 480 + (data.value ? data.value.length : 0)
-  const autoNo = generateContractNumber(nextSeq, true, new Date())
+  const autoNo = generateContractNumber(new Date())
   Object.assign(form, { ...defaultForm, contract_no: autoNo, rates: [] })
   showModal.value = true
 }
@@ -836,7 +840,7 @@ function unitSerialNo(id: any, rowUnit?: any): string {
     <FormModal :open="showModal" :title="editingItem ? 'Edit Contract' : 'Add Contract'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="ci-no" class="form-label">Contract No.</label>
-        <input id="ci-no" v-model="form.contract_no" type="text" class="form-input" placeholder="480/BiAS-PSMMF/I-2024">
+        <input id="ci-no" v-model="form.contract_no" type="text" class="form-input" placeholder="001/BiAS-PSMMF/I-2026">
       </div>
       <div class="form-group">
         <label for="ci-customer" class="form-label">Company</label>

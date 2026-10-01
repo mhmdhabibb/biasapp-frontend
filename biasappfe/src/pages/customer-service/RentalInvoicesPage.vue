@@ -309,12 +309,14 @@ async function exportInvoicesToExcel(
       }
 
       if (meterDetails.length > 0) {
-        // Group meter details by paper_size
+        // Group meter details by paper size + kind
         const byPaperSize = new Map<string, any[]>()
         for (const detail of meterDetails) {
-          const psName = detail.paper_size?.name || 'A4'
-          if (!byPaperSize.has(psName)) byPaperSize.set(psName, [])
-          byPaperSize.get(psName)!.push(detail)
+          const psName = detail.paper_size?.name || 'Tanpa ukuran'
+          const ptName = detail.paper_type?.name || ''
+          const key = ptName ? `${psName}/${ptName}` : psName
+          if (!byPaperSize.has(key)) byPaperSize.set(key, [])
+          byPaperSize.get(key)!.push(detail)
         }
 
         for (const [paperSize, details] of byPaperSize) {

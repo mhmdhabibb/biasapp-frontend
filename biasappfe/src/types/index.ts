@@ -439,6 +439,8 @@ export interface SparepartRequest {
   id: string | number;
   request_no: string;
   service_report_id: string | number | null;
+  technician_id?: string | number | null;
+  technician?: Technician | null;
   product_id: string | number | null;
   qty: number;
   status: string;

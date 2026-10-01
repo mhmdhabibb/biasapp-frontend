@@ -12,6 +12,7 @@ const jobOrders = ref<any[]>([]);
 const serviceRequests = ref<any[]>([]);
 const deliveryOrders = ref<any[]>([]);
 const activeTab = ref("sr");
+const draggedTask = ref<any | null>(null);
 
 const searchUnassigned = ref("");
 const searchTech = ref("");
@@ -47,7 +48,7 @@ async function fetchDeliveryOrders() {
   try {
     const data = await api.get<{ data: any[] }>("/delivery-orders");
     deliveryOrders.value = data.data.filter((d: any) =>
-      ['rental', 'sale'].includes(String(d.do_type || '').toLowerCase()),
+      ['rental', 'sale', 'inbound'].includes(String(d.do_type || '').toLowerCase()),
     );
   } catch (error) {
     console.error("Failed to fetch data DO", error);
@@ -173,6 +174,7 @@ let lastDragEnd = 0;
 
 function markDragEnd() {
   lastDragEnd = Date.now();
+  draggedTask.value = null;
 }
 
 function openJobDetail(job: any) {
@@ -208,6 +210,46 @@ let draggedRequest: any = null;
 
 function onDragStart(req: any) {
   draggedRequest = req;
+  draggedTask.value = req;
+}
+
+function dateKey(value: string | Date | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function isTerminalStatus(status: string | undefined) {
+  return ["completed", "complete", "done", "cancelled", "canceled", "received", "delivered"]
+    .includes(String(status || "").toLowerCase());
+}
+
+function isTechnicianBusy(technicianId: string | number) {
+  const targetDate = dateKey(
+    draggedTask.value?.delivery_date || draggedTask.value?.scheduled_date || new Date(),
+  );
+  if (!targetDate) return false;
+
+  const hasSameDayJob = jobOrders.value.some((job) =>
+    String(job.technician_id) === String(technicianId) &&
+    dateKey(job.scheduled_date) === targetDate &&
+    !isTerminalStatus(job.status),
+  );
+  const hasSameDayDelivery = deliveryOrders.value.some((delivery) =>
+    String(delivery.technician_id) === String(technicianId) &&
+    dateKey(delivery.delivery_date) === targetDate &&
+    !isTerminalStatus(delivery.status),
+  );
+  return hasSameDayJob || hasSameDayDelivery;
+}
+
+function deliveryTypeLabel(type: string | undefined) {
+  switch (String(type || "").toLowerCase()) {
+    case "inbound": return "Sparepart Delivery";
+    case "sale": return "Sales Delivery";
+    default: return "Rental Delivery";
+  }
 }
 
 function onDragOver(techId: string | number) {
@@ -415,7 +457,7 @@ async function onDrop(techId: string | number) {
                       <line x1="8" y1="21" x2="16" y2="21" />
                       <line x1="12" y1="17" x2="12" y2="21" />
                     </svg>
-                    <span style="font-weight: 500; color: var(--color-primary);">Rental / Delivery</span>
+                    <span style="font-weight: 500; color: var(--color-primary);">{{ deliveryTypeLabel(req.do_type) }}</span>
                   </div>
                 </template>
                 <template v-else>
@@ -485,12 +527,13 @@ async function onDrop(techId: string | number) {
               <span
                 class="tech-status"
                 :class="{
-                  online:
+                  online: !isTechnicianBusy(t.id) &&
                     String((t as any).status || 'AVAILABLE').toLowerCase() ===
                     'available',
+                  busy: isTechnicianBusy(t.id),
                 }"
               >
-                {{ (t as any).status || "AVAILABLE" }}
+                {{ isTechnicianBusy(t.id) ? "BUSY" : (t as any).status || "AVAILABLE" }}
               </span>
               <span class="tech-count"
                 >{{ getJobsForTech(t.id).length }}
@@ -578,7 +621,7 @@ async function onDrop(techId: string | number) {
                     <path v-if="job.taskType === 'do'" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
                     <path v-if="job.taskType === 'sr'" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
                   </svg>
-                  <span>{{ job.taskType === 'do' ? 'Rental / Delivery' : 'Service Request' }}</span>
+                  <span>{{ job.taskType === 'do' ? deliveryTypeLabel(job.do_type) : 'Service Request' }}</span>
                 </div>
               </div>
             </div>
@@ -1063,6 +1106,11 @@ async function onDrop(techId: string | number) {
 .tech-status.online {
   color: var(--color-success);
   background: var(--color-success-surface);
+}
+
+.tech-status.busy {
+  color: var(--color-danger);
+  background: var(--color-danger-surface, #fee2e2);
 }
 
 .tech-count {

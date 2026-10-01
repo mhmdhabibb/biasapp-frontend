@@ -24,11 +24,17 @@ const {
 const data = computed(() => monthlyMeterReadings.value)
 
 const paperSizes = ref<any[]>([])
+const paperTypes = ref<any[]>([])
 onMounted(async () => {
   try {
     paperSizes.value = (await resources.paperSizes.list()).data
   } catch (err) {
     console.warn('Failed to load paper sizes:', err)
+  }
+  try {
+    paperTypes.value = (await (resources as any).paperTypes.list()).data
+  } catch (err) {
+    console.warn('Failed to load paper types:', err)
   }
 })
 
@@ -36,7 +42,8 @@ const showAddModal = ref(false)
 const form = ref({
   contract_item_id: null as any,
   paper_size_id: null as any,
-  color_mode: 'BW/Color',
+  paper_type_id: null as any,
+  color_mode: 'bw',
   end_meter: 0
 })
 
@@ -46,40 +53,70 @@ const selectedContract = computed(() => contractItems.value.find(c => c.id === f
 // Input form split per size: each size has its own Previous + Current.
 const contractSizes = computed(() => {
   const rates: any[] = (selectedContract.value as any)?.rates || []
-  return rates
-    .filter(r => r.paper_size_id)
-    .map(r => ({
+  const sized = rates.filter(r => r.paper_size_id)
+  const general = rates.filter(r => !r.paper_size_id)
+  const combos = sized.map(r => ({
       paper_size_id: r.paper_size_id,
+      paper_type_id: r.paper_type_id ?? null,
+      quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : 'color',
       name: r.paper_size?.name
         || paperSizes.value.find(p => String(p.id) === String(r.paper_size_id))?.name
         || String(r.paper_size_id).slice(0, 8),
+      type_name: r.paper_type?.name
+        || (r.paper_type_id ? (paperTypes.value.find(p => String(p.id) === String(r.paper_type_id))?.name || '') : ''),
     }))
+  if (general.length > 0) {
+    const g = general[0] as any
+    combos.push({
+      paper_size_id: '',
+      paper_type_id: g?.paper_type_id ?? null,
+      quota_applies_to: g?.quota_applies_to === 'bw' ? 'bw' : 'color',
+      name: 'Tanpa ukuran (umum)',
+      type_name: '',
+    })
+  }
+  return combos
 })
 
-// Input per size: { [paper_size_id]: { end_meter, color_mode } }
-const sizeInputs = ref<Record<string, { end_meter: number | null, color_mode: string }>>({})
+// Input per size x kind x mode: { [size|type|mode]: { end_meter } }
+const sizeInputs = ref<Record<string, { end_meter: number | null }>>({})
 watch(() => form.value.contract_item_id, () => {
   sizeInputs.value = {}
   form.value.paper_size_id = null
+  form.value.paper_type_id = null
   form.value.end_meter = 0
 })
 
-function prevForSize(paperSizeId: any): number {
+function comboKey(paperSizeId: any, paperTypeId: any, mode: string): string {
+  return String(paperSizeId) + '|' + String(paperTypeId ?? '') + '|' + mode
+}
+
+function sameType(a: any, b: any): boolean {
+  return String(a ?? '') === String(b ?? '')
+}
+
+function prevFor(paperSizeId: any, paperTypeId: any, mode: string): number {
   if (!selectedContract.value) return 0
+  const m = String(mode).toLowerCase()
   const sized = data.value.filter(r =>
     r.contract_item_id === selectedContract.value?.id &&
-    String(r.paper_size_id) === String(paperSizeId)
+    String(r.paper_size_id) === String(paperSizeId) &&
+    sameType(r.paper_type_id, paperTypeId) &&
+    String(r.color_mode || '').toLowerCase() === m
   )
-  if (sized.length === 0) return selectedContract.value.start_meter_bw || 0
+  if (sized.length === 0) {
+    if (m === 'color') return selectedContract.value.start_meter_color || 0
+    return selectedContract.value.start_meter_bw || 0
+  }
   const latest = sized.reduce((prev, curr) =>
     new Date(prev.created_at).getTime() > new Date(curr.created_at).getTime() ? prev : curr
   )
   return latest.end_meter || 0
 }
 
-function rowInput(paperSizeId: any) {
-  const key = String(paperSizeId)
-  if (!sizeInputs.value[key]) sizeInputs.value[key] = { end_meter: null, color_mode: 'BW' }
+function rowInput(paperSizeId: any, paperTypeId: any, mode: string) {
+  const key = comboKey(paperSizeId, paperTypeId, mode)
+  if (!sizeInputs.value[key]) sizeInputs.value[key] = { end_meter: null }
   return sizeInputs.value[key]!
 }
 // Previous meter is calculated PER paper size, because one contract/unit
@@ -125,27 +162,30 @@ async function submitReading() {
   if (!form.value.contract_item_id) return toast.warning('Select a contract/unit!')
   const ci = selectedContract.value
 
-  // Multi-size mode: one reading row per filled size.
+  // Multi-size mode: BW + Color rows per filled size x kind.
   if (contractSizes.value.length > 0) {
     const payloads: any[] = []
     for (const s of contractSizes.value) {
-      const row = rowInput(s.paper_size_id)
-      if (row.end_meter === null || row.end_meter === undefined || String(row.end_meter) === '') continue
-      const startMeter = prevForSize(s.paper_size_id)
-      const endMeter = Number(row.end_meter)
-      if (endMeter < startMeter) {
-        return toast.warning(`Size ${s.name}: Current Meter (${endMeter}) must not be smaller than Previous (${startMeter})!`)
+      for (const mode of ['bw', 'color']) {
+        const row = rowInput(s.paper_size_id, s.paper_type_id, mode)
+        if (row.end_meter === null || row.end_meter === undefined || String(row.end_meter) === '') continue
+        const startMeter = prevFor(s.paper_size_id, s.paper_type_id, mode)
+        const endMeter = Number(row.end_meter)
+        if (endMeter < startMeter) {
+          return toast.warning(`Size ${s.name} (${mode.toUpperCase()}): Current Meter (${endMeter}) must not be smaller than Previous (${startMeter})!`)
+        }
+        payloads.push({
+          user_id: currentUser.value?.id,
+          contract_item_id: ci.id,
+          unit_id: ci.unit_id,
+          paper_size_id: s.paper_size_id,
+          paper_type_id: s.paper_type_id,
+          color_mode: mode,
+          start_meter: startMeter,
+          end_meter: endMeter,
+          total_usage: Math.max(0, endMeter - startMeter),
+        })
       }
-      payloads.push({
-        user_id: currentUser.value?.id,
-        contract_item_id: ci.id,
-        unit_id: ci.unit_id,
-        paper_size_id: s.paper_size_id,
-        color_mode: row.color_mode,
-        start_meter: startMeter,
-        end_meter: endMeter,
-        total_usage: Math.max(0, endMeter - startMeter),
-      })
     }
     if (payloads.length === 0) return toast.warning('Fill in Current Meter for at least one paper size!')
     try {
@@ -165,7 +205,7 @@ async function submitReading() {
 
   // Single mode (contract without rates): legacy single-size form.
   // Reuse `ci` from the top of submitReading().
-  if (!form.value.paper_size_id) return toast.warning('Select paper size!')
+  // paper size optional: empty = flat reading without size breakdown
 
   const startMeter = previousReading.value || 0
   const endMeter = form.value.end_meter
@@ -177,8 +217,9 @@ async function submitReading() {
       user_id: currentUser.value?.id,
       contract_item_id: ci.id,
       unit_id: ci.unit_id,
-      paper_size_id: form.value.paper_size_id,
-      color_mode: form.value.color_mode,
+      paper_size_id: form.value.paper_size_id || '',
+      paper_type_id: form.value.paper_type_id,
+      color_mode: String(form.value.color_mode).toLowerCase() === 'color' ? 'color' : 'bw',
       start_meter: startMeter,
       end_meter: endMeter,
       total_usage: Math.max(0, endMeter - startMeter)
@@ -254,25 +295,17 @@ async function submitReading() {
 
 
           <div v-if="selectedContract && contractSizes.length > 0" class="meter-inputs">
-            <p class="text-sm text-muted mb-md">This contract has {{ contractSizes.length }} paper sizes — fill in meter per size:</p>
-            <div v-for="s in contractSizes" :key="s.paper_size_id" class="size-block">
-              <div class="size-title">Size: <b>{{ s.name }}</b></div>
-              <div class="form-group">
-                <label class="form-label">Color Mode</label>
-                <select v-model="rowInput(s.paper_size_id).color_mode" class="form-select">
-                  <option value="BW">BW</option>
-                  <option value="Color">Color</option>
-                  <option value="BW/Color">BW/Color</option>
-                </select>
-              </div>
-              <div class="flex gap-md">
+            <p class="text-sm text-muted mb-md">This contract has {{ contractSizes.length }} paper size/kind combos — fill BW + Color meter per combo:</p>
+            <div v-for="s in contractSizes" :key="s.paper_size_id + '|' + String(s.paper_type_id ?? '')" class="size-block">
+              <div class="size-title">Size: <b>{{ s.name }}</b><span v-if="s.type_name"> / {{ s.type_name }}</span> <span class="text-muted">(free: {{ s.quota_applies_to === 'bw' ? 'BW' : 'Color' }})</span></div>
+              <div v-for="mode in ['bw', 'color']" :key="mode" class="flex gap-md" style="margin-bottom: 0.5rem">
                 <div class="form-group flex-1 mb-0">
-                  <label class="form-label text-muted">Previous Meter</label>
-                  <input type="number" :value="prevForSize(s.paper_size_id)" class="form-input" disabled>
+                  <label class="form-label text-muted">Prev {{ mode.toUpperCase() }}</label>
+                  <input type="number" :value="prevFor(s.paper_size_id, s.paper_type_id, mode)" class="form-input" disabled>
                 </div>
                 <div class="form-group flex-1 mb-0">
-                  <label class="form-label">Current Meter</label>
-                  <input type="number" v-model.number="rowInput(s.paper_size_id).end_meter" class="form-input" :min="prevForSize(s.paper_size_id)" placeholder="Leave empty if not read">
+                  <label class="form-label">Curr {{ mode.toUpperCase() }}</label>
+                  <input type="number" v-model.number="rowInput(s.paper_size_id, s.paper_type_id, mode).end_meter" class="form-input" :min="prevFor(s.paper_size_id, s.paper_type_id, mode)" placeholder="Empty = skip">
                 </div>
               </div>
             </div>
@@ -281,16 +314,22 @@ async function submitReading() {
             <div class="form-group">
               <label class="form-label">Paper Size <span class="text-danger">*</span></label>
               <select v-model="form.paper_size_id" class="form-select">
-                <option :value="null">-- Select Paper Size --</option>
+                <option :value="null">-- No specific size (optional) --</option>
                 <option v-for="p in paperSizes" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Paper Kind (optional)</label>
+              <select v-model="form.paper_type_id" class="form-select">
+                <option :value="null">-- Select Paper Kind --</option>
+                <option v-for="p in paperTypes" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
             </div>
             <div class="form-group">
               <label class="form-label">Color Mode <span class="text-danger">*</span></label>
               <select v-model="form.color_mode" class="form-select">
-                <option value="BW">BW</option>
-                <option value="Color">Color</option>
-                <option value="BW/Color">BW/Color</option>
+                <option value="bw">BW</option>
+                <option value="color">Color</option>
               </select>
             </div>
             <div class="flex gap-md">

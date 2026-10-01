@@ -13,6 +13,7 @@ const toast = useToast()
 const columns: TableColumn[] = [
   { key: 'contract_no', label: 'Contract No' },
   { key: 'status', label: 'Status' },
+  { key: 'terms_notes', label: 'Free Quota Terms' },
 ]
 
 const { contracts: data, fetchAll, create, update, remove, error } = useContracts()
@@ -59,9 +60,13 @@ async function handleDelete() {
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
     <DataTable :columns="columns" :data="data" search-placeholder="Search..." permission="contract" @edit="openEdit" @delete="openDelete" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Contract' : 'Add Contract'" @close="showModal = false" @submit="handleSubmit">
-      <div class="form-group" v-for="col in columns" :key="col.key">
+      <div class="form-group" v-for="col in columns.filter((c) => c.key !== 'terms_notes')" :key="col.key">
         <label class="form-label">{{ col.label }}</label>
         <input v-model="form[col.key]" type="text" class="form-input">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Free Quota Terms (e.g. Free 200 lembar, selebihnya kena charge)</label>
+        <textarea v-model="form.terms_notes" class="form-input" rows="3" placeholder="Free 200 lembar/bulan khusus cetak Warna; selebihnya dikenakan charge sesuai rate."></textarea>
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Contract" message="Are you sure you want to delete this item?" @close="showConfirm = false" @confirm="handleDelete" />
