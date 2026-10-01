@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import { ref, reactive } from 'vue'
+import html2pdf from 'html2pdf.js'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -151,10 +152,7 @@ function getContractUnits(item: any): any[] {
   return matches
 }
 
-function printContract(item: any) {
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) return;
-
+function generateContractHTML(item: any): string {
   const unitsInContract = getContractUnits(item);
   const totalUnitsCount = unitsInContract.length;
 
@@ -168,18 +166,15 @@ function printContract(item: any) {
     return !isCopier;
   });
 
-  let machineTypeName = 'PHOTOCOPY MACHINE';
-  let machineWord = 'photocopy machine';
-  let machineWordCd = 'photocopy machine';
+  let machineTypeName = 'MESIN FOTOCOPY';
+  let machineWord = 'mesin fotocopy';
 
   if (hasCopier && hasPrinter) {
-    machineTypeName = 'PHOTOCOPY MACHINE AND PRINTER';
-    machineWord = 'photocopy machine and printer';
-    machineWordCd = 'photocopy machine and printer';
+    machineTypeName = 'MESIN FOTOCOPY DAN PRINTER';
+    machineWord = 'mesin fotocopy dan printer';
   } else if (hasPrinter && !hasCopier) {
     machineTypeName = 'PRINTER';
     machineWord = 'printer';
-    machineWordCd = 'printer';
   }
 
   const customerId = item.contract?.customer_id || item.customer_id;
@@ -195,38 +190,37 @@ function printContract(item: any) {
   const startDate = item.contract?.start_date ? item.contract.start_date.slice(0,10) : (item.start_date ? item.start_date.slice(0,10) : '');
   const endDate = item.contract?.end_date ? item.contract.end_date.slice(0,10) : (item.end_date ? item.end_date.slice(0,10) : '');
   
-  // Calculate total monthly rent across all units in contract if multiple
   const sumUnitsFee = unitsInContract.reduce((sum: number, u: any) => sum + (u.monthly_rent_fee || u.total_value || 0), 0);
   const totalMonthlyFee = sumUnitsFee > 0 ? sumUnitsFee : (item.contract?.total_value || item.monthly_rent_fee || 0);
   const freeQuota = item.free_quota_color || item.free_copy_quota || 0;
   const bwRate = item.rates?.[0]?.rate_per_page_bw || item.rate_per_page_bw || 150;
   const colorRate = item.rates?.[0]?.rate_per_page_color || item.rate_per_page_color || 1300;
 
-  // Parse date for English format (e.g. 03 January 2024)
   const d = new Date(startDate || new Date());
-  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const dayName = days[d.getDay()];
+  const bulanNama = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const hariNama = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const dayName = hariNama[d.getDay()];
   const dateNum = d.getDate();
-  const monthName = months[d.getMonth()];
+  const monthName = bulanNama[d.getMonth()];
   const yearNum = d.getFullYear();
 
-  const spellNumber = (n: number): string => {
-    const words = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-    if (n < 20) return words[n];
+  const ejaAngka = (n: number): string => {
+    const kata = ['Nol', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'];
+    if (n <= 11) return kata[n];
+    if (n < 20) return ejaAngka(n - 10) + ' Belas';
     if (n < 100) {
-      const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-      return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + words[n % 10] : '');
+      const puluhan = Math.floor(n / 10);
+      const sisa = n % 10;
+      return ejaAngka(puluhan) + ' Puluh' + (sisa > 0 ? ' ' + ejaAngka(sisa) : '');
     }
-    if (n < 1000) return words[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + spellNumber(n % 100) : '');
-    if (n < 1000000) return spellNumber(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + spellNumber(n % 1000) : '');
+    if (n < 200) return 'Seratus' + (n % 100 > 0 ? ' ' + ejaAngka(n % 100) : '');
+    if (n < 1000) return ejaAngka(Math.floor(n / 100)) + ' Ratus' + (n % 100 > 0 ? ' ' + ejaAngka(n % 100) : '');
+    if (n < 2000) return 'Seribu' + (n % 1000 > 0 ? ' ' + ejaAngka(n % 1000) : '');
+    if (n < 1000000) return ejaAngka(Math.floor(n / 1000)) + ' Ribu' + (n % 1000 > 0 ? ' ' + ejaAngka(n % 1000) : '');
     return n.toString();
   };
-  const spellYear = (y: number) => {
-    return spellNumber(y);
-  };
 
-  let durationText = '2 (two) years';
+  let durationText = '2 (dua) tahun';
   if (startDate && endDate) {
     const s = new Date(startDate);
     const e = new Date(endDate);
@@ -242,7 +236,6 @@ function printContract(item: any) {
         months += 12;
       }
       
-      // If days > 25 (e.g., month end adjustment), treat it as an extra month
       if (days >= 28) {
         months++;
         if (months === 12) {
@@ -253,14 +246,14 @@ function printContract(item: any) {
       
       const parts = [];
       if (years > 0) {
-        parts.push(`${years} (${spellNumber(years).toLowerCase()}) years`);
+        parts.push(`${years} (${ejaAngka(years).toLowerCase()}) tahun`);
       }
       if (months > 0) {
-        parts.push(`${months} (${spellNumber(months).toLowerCase()}) months`);
+        parts.push(`${months} (${ejaAngka(months).toLowerCase()}) bulan`);
       }
       
       if (parts.length > 0) {
-        durationText = parts.join(' and ');
+        durationText = parts.join(' dan ');
       }
     }
   }
@@ -269,7 +262,7 @@ function printContract(item: any) {
     <!DOCTYPE html>
     <html>
       <head>
-        <title>Agreement - ${contractNo}</title>
+        <title>Perjanjian - ${contractNo}</title>
         <link rel="icon" type="image/png" href="/bias-favicon.png">
         <style>
           @page { size: A4; margin: 1.8cm 2cm 1.8cm 2cm; }
@@ -331,69 +324,69 @@ function printContract(item: any) {
             </div>
           </div>
 
-          <!-- Document Title -->
+          <!-- Judul Dokumen -->
           <div class="doc-title">
-            <h3>RENTAL AGREEMENT FOR ${machineTypeName}</h3>
-            <p>Number : ${contractNo}</p>
+            <h3>PERJANJIAN SEWA MENYEWA ${machineTypeName}</h3>
+            <p>Nomor : ${contractNo}</p>
           </div>
 
-          <!-- Preamble -->
+          <!-- Pembukaan -->
           <div class="content-block">
-            <b>RENTAL AGREEMENT FOR ${machineTypeName}</b> (hereinafter referred to as "Agreement") made and signed on ${dayName}, the ${spellNumber(dateNum)} of ${monthName} ${spellYear(yearNum)} (${String(dateNum).padStart(2,'0')} ${monthName} ${yearNum}), by and between:
+            <b>PERJANJIAN SEWA MENYEWA ${machineTypeName}</b> (selanjutnya disebut sebagai "Perjanjian") dibuat dan ditandatangani pada hari ${dayName}, tanggal ${ejaAngka(dateNum)} bulan ${monthName} tahun ${ejaAngka(yearNum)} (${String(dateNum).padStart(2,'0')} ${monthName} ${yearNum}), oleh dan antara:
           </div>
 
-          <!-- First Party -->
+          <!-- Pihak Pertama -->
           <div class="content-block indent">
             <div class="party-info">
-              <div>1.</div><div>Name</div><div>:</div><div><b>Rosmalinda Hutagalung</b></div>
-              <div></div><div>Company Name</div><div>:</div><div><b>PT. BIAS SURYA TEKNOLOGI</b></div>
-              <div></div><div>Address</div><div>:</div><div>Ruko Puri Mas Blok A No.40, Batam Centre, Batam</div>
-              <div></div><div>Phone</div><div>:</div><div>+62 811.704.5657</div>
+              <div>1.</div><div>Nama</div><div>:</div><div><b>Rosmalinda Hutagalung</b></div>
+              <div></div><div>Nama Perusahaan</div><div>:</div><div><b>PT. BIAS SURYA TEKNOLOGI</b></div>
+              <div></div><div>Alamat</div><div>:</div><div>Ruko Puri Mas Blok A No.40, Batam Centre, Batam</div>
+              <div></div><div>Telepon</div><div>:</div><div>+62 811.704.5657</div>
               <div></div><div>Email</div><div>:</div><div>bias.bst@gmail.com</div>
-              <div></div><div>Position</div><div>:</div><div><b>Director</b></div>
+              <div></div><div>Jabatan</div><div>:</div><div><b>Direktur</b></div>
             </div>
-            <br>Hereinafter referred to as <b>FIRST PARTY</b>
+            <br>Selanjutnya disebut sebagai <b>PIHAK PERTAMA</b>
           </div>
 
-          <!-- Second Party -->
+          <!-- Pihak Kedua -->
           <div class="content-block indent">
             <div class="party-info">
-              <div>2.</div><div>Name</div><div>:</div><div><b>${custPicName}</b></div>
-              <div></div><div>Office Name</div><div>:</div><div><b>${custName}</b></div>
-              <div></div><div>Address</div><div>:</div><div>${custAddress}</div>
-              <div></div><div>Phone</div><div>:</div><div>${custPhone}</div>
+              <div>2.</div><div>Nama</div><div>:</div><div><b>${custPicName}</b></div>
+              <div></div><div>Nama Kantor</div><div>:</div><div><b>${custName}</b></div>
+              <div></div><div>Alamat</div><div>:</div><div>${custAddress}</div>
+              <div></div><div>Telepon</div><div>:</div><div>${custPhone}</div>
               <div></div><div>Fax</div><div>:</div><div>${custFax}</div>
-              <div></div><div>Position</div><div>:</div><div><b>${custPicPosition}</b></div>
+              <div></div><div>Jabatan</div><div>:</div><div><b>${custPicPosition}</b></div>
             </div>
-            <br>Hereinafter referred to as <b>SECOND PARTY</b>
+            <br>Selanjutnya disebut sebagai <b>PIHAK KEDUA</b>
           </div>
 
           <div class="content-block">
-            The First Party and the Second Party are hereinafter collectively referred to as "The Parties" in this Agreement.
+            Pihak Pertama dan Pihak Kedua selanjutnya secara bersama-sama disebut sebagai "Para Pihak" dalam Perjanjian ini.
           </div>
           
           <div class="content-block">
-            The Parties hereby declare the following:
+            Para Pihak dengan ini menyatakan hal-hal sebagai berikut:
           </div>
           
           <div class="list-item">
             <div class="bullet">a.</div>
-            <div class="text">That the First Party is a company experienced in ${machineWord} rental <i>(service)</i>;</div>
+            <div class="text">Bahwa Pihak Pertama adalah perusahaan yang berpengalaman dalam bidang penyewaan ${machineWord} <i>(service)</i>;</div>
           </div>
           <div class="list-item">
             <div class="bullet">b.</div>
-            <div class="text">That the Second Party is an office located in Batam which in its operations requires ${machineWord} rental services;</div>
+            <div class="text">Bahwa Pihak Kedua adalah kantor yang berlokasi di Batam yang dalam operasionalnya membutuhkan jasa penyewaan ${machineWord};</div>
           </div>
           <div class="list-item">
             <div class="bullet">c.</div>
-            <div class="text">That the Second Party agrees to appoint the First Party to provide <i>(service)</i> for the procurement of ${machineWord}, including technical <i>(service)</i>;</div>
+            <div class="text">Bahwa Pihak Kedua setuju untuk menunjuk Pihak Pertama guna menyediakan <i>(service)</i> untuk pengadaan ${machineWord}, termasuk layanan teknis <i>(service)</i>;</div>
           </div>
           <div class="list-item">
             <div class="bullet">d.</div>
-            <div class="text">That the Parties agree to use ${totalUnitsCount} (${spellNumber(totalUnitsCount).toLowerCase()}) unit(s) of ${machineWordCd} owned by the First Party, placed at the locations and with details as follows:</div>
+            <div class="text">Bahwa Para Pihak setuju untuk menggunakan ${totalUnitsCount} (${ejaAngka(totalUnitsCount).toLowerCase()}) unit ${machineWord} milik Pihak Pertama, yang ditempatkan di lokasi dan dengan rincian sebagai berikut:</div>
           </div>
 
-          <!-- Unit Details -->
+          <!-- Detail Unit -->
           <div style="margin-top: 10px; margin-bottom: 15px; page-break-inside: avoid;">
             ${unitsInContract.map((uItem: any, index: number) => {
               const targetUnit = findUnit(uItem.unit_id) || uItem.unit;
@@ -408,19 +401,19 @@ function printContract(item: any) {
               const showMeter = isCopier || uStartBw > 0 || uStartColor > 0;
 
               const meterHtml = showMeter ? `
-                    <div>Start Meter Reading</div><div>:</div><div>${uStartBw} (B/W)</div>
-                    <div>Start Meter Reading</div><div>:</div><div>${uStartColor} (Colour)</div>
+                    <div>Meter Awal</div><div>:</div><div>${uStartBw} (B/W)</div>
+                    <div>Meter Awal</div><div>:</div><div>${uStartColor} (Color)</div>
               ` : '';
 
               return `
                 <div style="margin-bottom: 12px;">
                   <div><b>${index + 1}. ${uLoc}</b></div>
                   <div class="unit-info-grid">
-                    <div>Brand</div><div>:</div><div><b>${uBrand}</b></div>
-                    <div>Type</div><div>:</div><div>${uName}</div>
-                    <div>Serial Number</div><div>:</div><div>${uSerial}</div>
+                    <div>Merek</div><div>:</div><div><b>${uBrand}</b></div>
+                    <div>Tipe</div><div>:</div><div>${uName}</div>
+                    <div>Nomor Seri</div><div>:</div><div>${uSerial}</div>
                     ${meterHtml}
-                    <div>Quantity</div><div>:</div><div>1 (one) Unit</div>
+                    <div>Jumlah</div><div>:</div><div>1 (satu) Unit</div>
                   </div>
                 </div>
               `;
@@ -428,46 +421,46 @@ function printContract(item: any) {
           </div>
           
           <div class="content-block">
-            to be used as operational facilities of the Second Party under the following terms and conditions:
+            untuk digunakan sebagai fasilitas operasional Pihak Kedua dengan syarat dan ketentuan sebagai berikut:
           </div>
 
-          <!-- Article 1 -->
+          <!-- Pasal 1 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 1<br>
-              AGREEMENT TERM
+              Pasal 1<br>
+              JANGKA WAKTU PERJANJIAN
             </div>
             <div class="content-block">
-              The Parties agree that the term of this Agreement is ${durationText}, effective from <b>${item.contract?.start_date ? item.contract.start_date.slice(0,10) : '-'} to ${item.contract?.end_date ? item.contract.end_date.slice(0,10) : '-'}</b> and the rental period may be extended by mutual agreement with prior notice from the Second Party no later than 2 (two) weeks before the rental period ends. <i>And if there is no notice, this contract is automatically extended</i>.
+              Para Pihak sepakat bahwa jangka waktu Perjanjian ini adalah ${durationText}, berlaku efektif sejak <b>${item.contract?.start_date ? item.contract.start_date.slice(0,10) : '-'} sampai dengan ${item.contract?.end_date ? item.contract.end_date.slice(0,10) : '-'}</b> dan masa sewa dapat diperpanjang atas kesepakatan bersama dengan pemberitahuan terlebih dahulu dari Pihak Kedua selambat-lambatnya 2 (dua) minggu sebelum masa sewa berakhir. <i>Dan apabila tidak ada pemberitahuan, maka kontrak ini secara otomatis diperpanjang</i>.
             </div>
           </div>
 
-          <!-- Article 2 -->
+          <!-- Pasal 2 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 2<br>
-              RENTAL PRICE AND PAYMENT TERMS
+              Pasal 2<br>
+              HARGA SEWA DAN KETENTUAN PEMBAYARAN
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">The Rental Price agreed by the Parties is as follows :
+              <div class="text">Harga Sewa yang disepakati oleh Para Pihak adalah sebagai berikut :
                 <table style="width: 100%; margin-top: 5px; border: none; font-size: 11pt;">
                   <tr>
                     <td style="width: 20px; vertical-align: top;">-</td>
-                    <td>Machine rental per month per unit ${hasCopier && freeQuota > 0 ? `including ${freeQuota} pages per month for color output` : ''}</td>
+                    <td>Sewa mesin per bulan per unit ${hasCopier && freeQuota > 0 ? `termasuk ${freeQuota} lembar per bulan untuk cetak warna` : ''}</td>
                     <td style="width: 30px;">Rp</td>
                     <td style="text-align: right; width: 120px;">${formatRupiah(totalMonthlyFee).replace('Rp ', '')}</td>
                   </tr>
                   ${hasCopier ? `
                   <tr>
                     <td style="vertical-align: top;">-</td>
-                    <td>Per-page fee after ${freeQuota} color pages :</td>
+                    <td>Biaya per lembar setelah ${freeQuota} lembar warna :</td>
                     <td>Rp</td>
                     <td style="text-align: right;">${colorRate},-</td>
                   </tr>
                   <tr>
                     <td style="vertical-align: top;">-</td>
-                    <td>Per-page fee for black & white usage :</td>
+                    <td>Biaya per lembar untuk cetak hitam putih :</td>
                     <td>Rp</td>
                     <td style="text-align: right;">${bwRate},-</td>
                   </tr>
@@ -477,227 +470,227 @@ function printContract(item: any) {
             </div>
             <div class="list-item">
               <div class="bullet">(2)</div>
-              <div class="text">The Rental Price above includes technical <i>(service)</i>, delivery fees, <i>maintenance</i>, <i>toner</i>, and <i>spareparts</i>.</div>
+              <div class="text">Harga Sewa di atas sudah termasuk layanan teknis <i>(service)</i>, biaya pengiriman, <i>maintenance</i>, <i>toner</i>, dan <i>sparepart</i>.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(3)</div>
-              <div class="text">Payment is made each month, 30 (thirty) days after the invoice is received by the Second Party, in accordance with the mutually agreed payment schedule.</div>
+              <div class="text">Pembayaran dilakukan setiap bulan, 30 (tiga puluh) hari setelah tagihan diterima oleh Pihak Kedua, sesuai dengan jadwal pembayaran yang telah disepakati bersama.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(4)</div>
-              <div class="text">Changes to the terms and rental price of each machine may be made under conditions referring to the mutual agreement of the Parties, by written notice no later than 25 (twenty five) working days before the change takes effect. If such change is not mutually agreed, this Agreement may be cancelled with 5 (five) working days written notice.</div>
+              <div class="text">Perubahan ketentuan dan harga sewa setiap mesin dapat dilakukan dengan ketentuan yang mengacu pada kesepakatan bersama Para Pihak, dengan pemberitahuan tertulis selambat-lambatnya 25 (dua puluh lima) hari kerja sebelum perubahan berlaku. Apabila perubahan tersebut tidak disepakati bersama, Perjanjian ini dapat dibatalkan dengan pemberitahuan tertulis 5 (lima) hari kerja sebelumnya.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(5)</div>
-              <div class="text">The First Party must submit an invoice validated with the signature of the First Party's authorized representative, and the Second Party may reject the invoice if it does not match such validation.</div>
+              <div class="text">Pihak Pertama wajib menyerahkan tagihan yang telah divalidasi dengan tanda tangan perwakilan yang berwenang dari Pihak Pertama, dan Pihak Kedua berhak menolak tagihan yang tidak sesuai dengan validasi tersebut.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(6)</div>
-              <div class="text">Invoice payment may be made directly or transferred to the First Party's account, with details as follows:<br>
+              <div class="text">Pembayaran tagihan dapat dilakukan secara langsung atau ditransfer ke rekening Pihak Pertama, dengan rincian sebagai berikut:<br>
                 <table style="width: 100%; margin-top: 5px; border: none; font-size: 11pt;">
-                  <tr><td style="width: 150px; padding: 0;">Account Name</td><td style="width: 10px; padding: 0;">:</td><td style="padding: 0;"><b>PT. BIAS SURYA TEKNOLOGI</b></td></tr>
-                  <tr><td style="padding: 0;">Account Number</td><td style="padding: 0;">:</td><td style="padding: 0;">1060885757</td></tr>
-                  <tr><td style="padding: 0;">Bank Name</td><td style="padding: 0;">:</td><td style="padding: 0;">Bank Riau Kepri</td></tr>
-                  <tr><td style="padding: 0;">Branch Name</td><td style="padding: 0;">:</td><td style="padding: 0;">Batam</td></tr>
+                  <tr><td style="width: 150px; padding: 0;">Nama Rekening</td><td style="width: 10px; padding: 0;">:</td><td style="padding: 0;"><b>PT. BIAS SURYA TEKNOLOGI</b></td></tr>
+                  <tr><td style="padding: 0;">Nomor Rekening</td><td style="padding: 0;">:</td><td style="padding: 0;">1060885757</td></tr>
+                  <tr><td style="padding: 0;">Nama Bank</td><td style="padding: 0;">:</td><td style="padding: 0;">Bank Riau Kepri</td></tr>
+                  <tr><td style="padding: 0;">Cabang</td><td style="padding: 0;">:</td><td style="padding: 0;">Batam</td></tr>
                 </table>
               </div>
             </div>
           </div>
 
-          <!-- Article 3 -->
+          <!-- Pasal 3 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 3<br>
-              TAX
+              Pasal 3<br>
+              PAJAK
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">Taxes arising from this rental Agreement are borne by the first party (paid by the second party and deducted directly from the rental fee upon payment). The second party is obliged to provide tax payment receipts as referred to in this article.</div>
+              <div class="text">Pajak yang timbul dari Perjanjian sewa ini ditanggung oleh Pihak Pertama (dibayarkan oleh Pihak Kedua dan dipotong langsung dari biaya sewa pada saat pembayaran). Pihak Kedua wajib memberikan bukti pembayaran pajak sebagaimana dimaksud dalam pasal ini.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(2)</div>
-              <div class="text">Changes to Indonesian Tax Regulations. The Parties agree to adjust this Agreement to all applicable changes in Indonesian Tax Regulations.</div>
+              <div class="text">Perubahan Peraturan Perpajakan Indonesia. Para Pihak sepakat untuk menyesuaikan Perjanjian ini terhadap seluruh perubahan Peraturan Perpajakan yang berlaku di Indonesia.</div>
             </div>
           </div>
 
-          <!-- Article 4 -->
+          <!-- Pasal 4 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 4<br>
-              TECHNICAL SERVICE TERMS
+              Pasal 4<br>
+              KETENTUAN LAYANAN TEKNIS
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">The Parties agree that technical <i>(service)</i> including <i>maintenance</i>, toner replacement, and spareparts is included in the Rental Price and the First Party must provide such technical <i>(service)</i> to the Second Party during regular working hours as set out in Article 4 paragraph (2).</div>
+              <div class="text">Para Pihak sepakat bahwa layanan teknis <i>(service)</i> termasuk <i>maintenance</i>, penggantian toner, dan sparepart sudah termasuk dalam Harga Sewa dan Pihak Pertama wajib memberikan layanan teknis <i>(service)</i> tersebut kepada Pihak Kedua selama jam kerja sebagaimana diatur dalam Pasal 4 ayat (2).</div>
             </div>
             <div class="list-item">
               <div class="bullet">(2)</div>
-              <div class="text">The First Party's regular working hours are Monday through Friday, from 09.00 to 17.00 WIB. Service calls made after 15.30 will be served the next day.</div>
+              <div class="text">Jam kerja Pihak Pertama adalah Senin sampai Jumat, mulai pukul 09.00 sampai 17.00 WIB. Panggilan servis yang dilakukan setelah pukul 15.30 akan dilayani pada hari berikutnya.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(3)</div>
-              <div class="text">The First Party's technician will record each machine's meter reading once a month on the agreed date, the 30th (thirtieth), and the record will be signed by both parties appointed by each of the Parties.</div>
+              <div class="text">Teknisi Pihak Pertama akan mencatat pembacaan meter setiap mesin sebulan sekali pada tanggal yang telah disepakati, yaitu tanggal 30 (tiga puluh), dan catatan tersebut akan ditandatangani oleh kedua belah pihak yang ditunjuk oleh masing-masing Pihak.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(4)</div>
-              <div class="text">The Second Party may request additional machines if needed by placing an order with the First Party and signing the confirmation form and price list for the said machine.</div>
+              <div class="text">Pihak Kedua dapat meminta penambahan mesin apabila diperlukan dengan melakukan pemesanan kepada Pihak Pertama dan menandatangani formulir konfirmasi serta daftar harga untuk mesin tersebut.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(5)</div>
-              <div class="text">The second party may request a replacement if the machine does not work properly without any delivery fee (fees borne by the First Party).</div>
+              <div class="text">Pihak Kedua dapat meminta penggantian apabila mesin tidak berfungsi dengan baik tanpa dikenakan biaya pengiriman (biaya ditanggung oleh Pihak Pertama).</div>
             </div>
             <div class="list-item">
               <div class="bullet">(6)</div>
-              <div class="text">If machine damage occurs due to the Second Party's negligence, which must first be proven through an objective chronological inspection and investigation in accordance with applicable legal procedures, the First Party is entitled to charge additional fees according to the extent of the damage, and such additional fees must be known to the Second Party in advance.</div>
+              <div class="text">Apabila kerusakan mesin terjadi akibat kelalaian Pihak Kedua, yang terlebih dahulu harus dibuktikan melalui pemeriksaan dan penyelidikan kronologis yang objektif sesuai dengan prosedur hukum yang berlaku, maka Pihak Pertama berhak mengenakan biaya tambahan sesuai dengan tingkat kerusakan, dan biaya tambahan tersebut harus diketahui oleh Pihak Kedua terlebih dahulu.</div>
             </div>
           </div>
 
-          <!-- Article 5 -->
+          <!-- Pasal 5 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 5<br>
-              TERMINATION
+              Pasal 5<br>
+              PEMUTUSAN PERJANJIAN
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">If the ${machineWord} and <i>(service)</i> provided by the First Party are unsatisfactory and after 3 (three) consecutive written warnings show no improvement, the Second Party is entitled to terminate this Agreement unilaterally at any time.</div>
+              <div class="text">Apabila ${machineWord} dan <i>(service)</i> yang disediakan oleh Pihak Pertama tidak memuaskan dan setelah 3 (tiga) kali peringatan tertulis berturut-turut tidak menunjukkan perbaikan, maka Pihak Kedua berhak memutuskan Perjanjian ini secara sepihak kapan saja.</div>
             </div>
           </div>
 
-          <!-- Article 6 -->
+          <!-- Pasal 6 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 6<br>
-              FORCE MAJEURE
+              Pasal 6<br>
+              KEADAAN KAHAR (FORCE MAJEURE)
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">Force Majeure means events that directly or indirectly affect the execution of work, occurring beyond human power/capability and unforeseeable.</div>
+              <div class="text">Keadaan Kahar adalah peristiwa yang secara langsung maupun tidak langsung mempengaruhi pelaksanaan pekerjaan, terjadi di luar kemampuan manusia dan tidak dapat diperkirakan sebelumnya.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(2)</div>
-              <div class="text">Events classified as Force Majeure include, but are not limited to:<br>
-                &nbsp;&nbsp;a. Natural disasters (earthquakes, floods, disease outbreaks);<br>
-                &nbsp;&nbsp;b. Acts of sabotage, war, national unrest;<br>
-                &nbsp;&nbsp;c. Government actions in the economic and financial sectors <i>(government event)</i>;<br>
-                &nbsp;&nbsp;d. Continuous rainfall that hinders work execution;<br>
-                &nbsp;&nbsp;e. Implementation of applicable laws and regulations.<br>
-                &nbsp;&nbsp;f. Fire
+              <div class="text">Peristiwa yang termasuk dalam Keadaan Kahar antara lain, namun tidak terbatas pada:<br>
+                &nbsp;&nbsp;a. Bencana alam (gempa bumi, banjir, wabah penyakit);<br>
+                &nbsp;&nbsp;b. Tindakan sabotase, perang, kerusuhan nasional;<br>
+                &nbsp;&nbsp;c. Tindakan pemerintah di bidang ekonomi dan keuangan <i>(government event)</i>;<br>
+                &nbsp;&nbsp;d. Hujan terus-menerus yang menghambat pelaksanaan pekerjaan;<br>
+                &nbsp;&nbsp;e. Pemberlakuan peraturan perundang-undangan yang berlaku.<br>
+                &nbsp;&nbsp;f. Kebakaran
               </div>
             </div>
             <div class="list-item">
               <div class="bullet">(3)</div>
-              <div class="text">Force Majeure must be notified in writing by the affected Party to the other Party within 7 (seven) calendar days of such event, with valid evidence from the authorized agency and its impact on the work. If within 7 (seven) days of receiving the notice the receiving Party does not respond to the affected Party, such Party is deemed to agree/acknowledge the Force Majeure as submitted by the affected Party.</div>
+              <div class="text">Keadaan Kahar harus diberitahukan secara tertulis oleh Pihak yang terkena dampak kepada Pihak lainnya dalam waktu 7 (tujuh) hari kalender sejak terjadinya peristiwa tersebut, dengan disertai bukti yang sah dari instansi yang berwenang dan dampaknya terhadap pekerjaan. Apabila dalam 7 (tujuh) hari sejak diterimanya pemberitahuan tersebut Pihak penerima tidak memberikan tanggapan, maka Pihak tersebut dianggap menyetujui/mengakui Keadaan Kahar sebagaimana disampaikan oleh Pihak yang terkena dampak.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(4)</div>
-              <div class="text">Failure to notify Force Majeure voids such Force Majeure claim.</div>
+              <div class="text">Kelalaian dalam memberitahukan Keadaan Kahar mengakibatkan batalnya klaim Keadaan Kahar tersebut.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(5)</div>
-              <div class="text">If Force Majeure occurs, such Party is released from delayed obligations during the period caused by the event, but not from its obligations prior to the Force Majeure. Both parties agree that if Force Majeure occurs for 1 (one) consecutive month, a renegotiation will be held regarding actions to be taken in connection with the Force Majeure.</div>
+              <div class="text">Apabila terjadi Keadaan Kahar, Pihak tersebut dibebaskan dari kewajiban yang tertunda selama periode yang disebabkan oleh peristiwa tersebut, namun tidak dari kewajibannya sebelum terjadinya Keadaan Kahar. Kedua belah pihak sepakat bahwa apabila Keadaan Kahar terjadi selama 1 (satu) bulan berturut-turut, maka akan diadakan negosiasi ulang mengenai tindakan yang akan diambil sehubungan dengan Keadaan Kahar tersebut.</div>
             </div>
           </div>
 
-          <!-- Article 7 -->
+          <!-- Pasal 7 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 7<br>
-              TRANSFER
+              Pasal 7<br>
+              PENGALIHAN
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">The Second Party agrees not to transfer this agreement in whole or in part without the written consent of the First Party.</div>
+              <div class="text">Pihak Kedua setuju untuk tidak mengalihkan Perjanjian ini baik seluruhnya maupun sebagian tanpa persetujuan tertulis dari Pihak Pertama.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(2)</div>
-              <div class="text">The Second Party promises to use the rented ${machineWordCd} properly and it cannot be transferred to other parties.</div>
+              <div class="text">Pihak Kedua berjanji untuk menggunakan ${machineWord} sewaan dengan baik dan tidak dapat dipindahtangankan kepada pihak lain.</div>
             </div>
           </div>
 
-          <!-- Article 8 -->
+          <!-- Pasal 8 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 8<br>
-              CONFIDENTIALITY
+              Pasal 8<br>
+              KERAHASIAAN
             </div>
             <div class="content-block">
-              The Parties to this Agreement must keep this Agreement, its terms and anything related to this Agreement confidential (and/or confidential information) and must not disclose the information in this Agreement, during and after this Agreement ends.
+              Para Pihak dalam Perjanjian ini wajib menjaga kerahasiaan Perjanjian ini, ketentuan-ketentuannya dan segala hal yang berkaitan dengan Perjanjian ini (dan/atau informasi rahasia) serta tidak boleh mengungkapkan informasi dalam Perjanjian ini, selama dan setelah Perjanjian ini berakhir.
             </div>
           </div>
 
-          <!-- Article 9 -->
+          <!-- Pasal 9 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 9<br>
-              APPLICABLE LAW AND DISPUTE RESOLUTION
+              Pasal 9<br>
+              HUKUM YANG BERLAKU DAN PENYELESAIAN SENGKETA
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">This Agreement and anything arising from it are subject to the laws and regulations in force in the Republic of Indonesia.</div>
+              <div class="text">Perjanjian ini dan segala sesuatu yang timbul darinya tunduk pada hukum dan peraturan yang berlaku di Republik Indonesia.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(2)</div>
-              <div class="text">In the event of a dispute in connection with the execution of this Agreement, the Parties agree to resolve it amicably.</div>
+              <div class="text">Dalam hal terjadi perselisihan sehubungan dengan pelaksanaan Perjanjian ini, Para Pihak sepakat untuk menyelesaikannya secara musyawarah untuk mufakat.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(3)</div>
-              <div class="text">If within 40 (forty) days after the dispute arises no amicable settlement is reached, the Parties agree to resolve it at the Batam District Court.</div>
+              <div class="text">Apabila dalam 40 (empat puluh) hari setelah perselisihan timbul tidak tercapai penyelesaian secara musyawarah, Para Pihak sepakat untuk menyelesaikannya di Pengadilan Negeri Batam.</div>
             </div>
           </div>
 
-          <!-- Article 10 -->
+          <!-- Pasal 10 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 10<br>
-              CORRESPONDENCE
+              Pasal 10<br>
+              KORESPONDENSI
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">Any notice required under this Agreement shall be given or sent by mail, courier, e-mail or facsimile to the respective addresses or facsimile numbers of each party/representative as listed below or to such address or facsimile number provided by each party in writing for each party's purposes.<br><br>
+              <div class="text">Setiap pemberitahuan yang diperlukan berdasarkan Perjanjian ini harus diberikan atau dikirim melalui surat, kurir, e-mail atau faksimili ke alamat atau nomor faksimili masing-masing pihak/perwakilan sebagaimana tercantum di bawah ini atau ke alamat atau nomor faksimili yang diberikan oleh masing-masing pihak secara tertulis untuk keperluan masing-masing pihak.<br><br>
                 <b>PT. BIAS SURYA TEKNOLOGI</b><br>
                 Ruko Puri Mas Blok A No.40<br>
                 Batam Centre, Batam<br>
-                Phone : +62 811.704.5657<br>
+                Telepon : +62 811.704.5657<br>
                 Fax : -<br>
-                For Recipient : Linda Hoega<br>
+                Untuk Penerima : Linda Hoega<br>
                 E-mail : bias.bst@gmail.com<br><br>
                 
                 <b>${custName.toUpperCase()}</b><br>
                 ${custAddress}<br>
-                Phone : ${custPhone}<br>
+                Telepon : ${custPhone}<br>
                 Fax : ${custFax}<br>
-                For Recipient : ${custPicName}<br>
+                Untuk Penerima : ${custPicName}<br>
                 E-mail : ${custEmail}<br>
               </div>
             </div>
             <div class="list-item">
               <div class="bullet">(2)</div>
-              <div class="text">The Parties are entitled to change their respective addresses with the obligation to notify each other no later than 7 (seven) working days from the date of change.</div>
+              <div class="text">Para Pihak berhak mengubah alamat masing-masing dengan kewajiban saling memberitahukan selambat-lambatnya 7 (tujuh) hari kerja sejak tanggal perubahan.</div>
             </div>
           </div>
 
-          <!-- Article 11 -->
+          <!-- Pasal 11 -->
           <div class="pasal-block">
             <div class="pasal-title">
-              Article 11<br>
-              OTHER PROVISIONS
+              Pasal 11<br>
+              KETENTUAN LAIN-LAIN
             </div>
             <div class="list-item">
               <div class="bullet">(1)</div>
-              <div class="text">The Parties agree that matters not sufficiently covered in this Agreement, including but not limited to amendments and additions, shall be governed by the Parties in a separate Addendum which is an inseparable part of this Agreement.</div>
+              <div class="text">Para Pihak sepakat bahwa hal-hal yang belum cukup diatur dalam Perjanjian ini, termasuk namun tidak terbatas pada perubahan dan penambahan, akan diatur oleh Para Pihak dalam Addendum tersendiri yang merupakan bagian tidak terpisahkan dari Perjanjian ini.</div>
             </div>
             <div class="list-item">
               <div class="bullet">(2)</div>
-              <div class="text">The Parties agree to carry out this Agreement in good faith and with full responsibility.</div>
+              <div class="text">Para Pihak sepakat untuk melaksanakan Perjanjian ini dengan itikad baik dan penuh tanggung jawab.</div>
             </div>
           </div>
           
           <div class="content-block" style="margin-top: 25px; page-break-inside: avoid;">
-            This Agreement is thus made and signed on the day and date stated above, in 2 (two) copies, each stamped Rp.10.000,- and having equal legal force for the Parties.
+            Demikianlah Perjanjian ini dibuat dan ditandatangani pada hari dan tanggal tersebut di atas, dalam rangkap 2 (dua), masing-masing bermeterai Rp.10.000,- dan mempunyai kekuatan hukum yang sama bagi Para Pihak.
           </div>
 
-          <!-- Signature -->
+          <!-- Tanda Tangan -->
           <div class="signature-section">
             <div class="signature-box">
               <div class="signature-box-top">
@@ -705,16 +698,16 @@ function printContract(item: any) {
               </div>
               <div class="signature-box-bottom">
                 <div class="signature-name">Rosmalinda Hutagalung</div>
-                <div class="signature-title">Director</div>
+                <div class="signature-title">Direktur</div>
               </div>
             </div>
             <div class="signature-box">
               <div class="signature-box-top">
-                ${custPicPosition ? `<div>${custPicPosition.toUpperCase()}</div>` : ''}
                 <div>${custName.toUpperCase()}</div>
               </div>
               <div class="signature-box-bottom">
                 <div class="signature-name">${custPicName}</div>
+                ${custPicPosition ? `<div class="signature-title">${custPicPosition}</div>` : ''}
                 <div class="signature-nip">${customer?.nip || customer?.pic_nip ? 'NIP. ' + (customer?.nip || customer?.pic_nip) : ''}</div>
               </div>
             </div>
@@ -723,7 +716,13 @@ function printContract(item: any) {
       </body>
     </html>
   `;
-  
+  return html;
+}
+
+function printContract(item: any) {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+  const html = generateContractHTML(item);
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
@@ -731,6 +730,13 @@ function printContract(item: any) {
   setTimeout(() => {
     printWindow.print();
   }, 500);
+}
+
+function downloadContractPDF(item: any) {
+  // To get the exact same layout as native print (vector text, perfect page breaks), 
+  // we trigger the native print functionality. Browser security prevents silent PDF 
+  // downloads of native print, so the user must use 'Save as PDF'.
+  printContract(item);
 }
 
 function formatRupiah(val: number): string {
@@ -804,6 +810,13 @@ function unitSerialNo(id: any, rowUnit?: any): string {
         </span>
       </template>
       <template #actions="{ row }">
+        <button v-if="can('contract_item:read')" class="action-btn" title="Download PDF" @click="downloadContractPDF(row)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </button>
         <button v-if="can('contract_item:read')" class="action-btn" title="Print to PDF" @click="printContract(row)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
@@ -994,7 +1007,8 @@ function unitSerialNo(id: any, rowUnit?: any): string {
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="showDetailModal = false">Close</button>
-        <button type="button" class="btn btn-primary" @click="printContract(detailItem)">Print to PDF</button>
+        <button type="button" class="btn btn-outline" @click="downloadContractPDF(detailItem)">Download PDF</button>
+        <button type="button" class="btn btn-primary" @click="printContract(detailItem)">Print Preview</button>
       </template>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Contract" :message="`Are you sure you want to delete contract '${deletingItem?.contract?.contract_no || deletingItem?.contract_no || '-'}'?`" @close="showConfirm = false" @confirm="handleDelete" />

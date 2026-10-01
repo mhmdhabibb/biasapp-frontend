@@ -172,7 +172,6 @@ async function submitReading() {
     return toast.warning('Current Meter must not be smaller than the previous value!')
   }
 
-  const ci = selectedContract.value
   try {
     await api.post('/monthly-meter-readings/', {
       user_id: currentUser.value?.id,
