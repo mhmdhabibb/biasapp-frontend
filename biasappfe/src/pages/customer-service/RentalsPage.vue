@@ -7,7 +7,10 @@ import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
 import { resources } from "@/services/resource.service";
-import { printPaymentReceipt } from "@/utils/paymentReceipt";
+import {
+  printPaymentReceipt,
+  printPaymentSlip,
+} from "@/utils/paymentReceipt";
 import type { TableColumn } from "@/types";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
@@ -492,13 +495,15 @@ async function submitInvoicePayment() {
 
   isSavingPayment.value = true;
   const invoiceId = String(selectedInvoice.value.id);
+  const invNo = selectedInvoice.value.invoice_no || "-";
+  const payNo = `PAY-${Date.now()}`;
   try {
     const bankName =
       paymentForm.payment_method === "cash"
         ? "CASH"
         : `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`;
     await api.post("/payments", {
-      payment_no: `PAY-${Date.now()}`,
+      payment_no: payNo,
       rental_invoice_id: invoiceId,
       payment_date: `${paymentForm.payment_date}T00:00:00Z`,
       amount: paymentForm.amount,
@@ -506,6 +511,22 @@ async function submitInvoicePayment() {
       reference_no: paymentForm.reference_no.trim() || "-",
     });
     toast.success("Payment recorded and pending approval.");
+    const customer =
+      customers.value.find(
+        (item: any) => String(item.id) === String(selectedRental.value.customer_id),
+      ) || selectedRental.value?.customer;
+    const opened = printPaymentSlip({
+      payment_no: payNo,
+      invoice_no: invNo,
+      customer_name: customer?.company_name || customer?.name || "-",
+      payment_date: paymentForm.payment_date,
+      amount: Number(paymentForm.amount || 0),
+      reference_no: paymentForm.reference_no.trim() || "-",
+      status: "pending",
+      method: paymentForm.payment_method === "cash" ? "Tunai" : "Transfer",
+    });
+    if (!opened)
+      toast.warning("Izinkan pop-up browser untuk mencetak tanda terima.");
     selectedInvoice.value = null;
     const rentalResponse = await api.get<{ data: any }>(
       `/rents/${selectedRental.value.id}`,
@@ -543,6 +564,7 @@ function printRentalPaymentReceipt(invoice: any, payment: any) {
     customers.value.find(
       (item: any) => String(item.id) === String(invoice.customer_id),
     ) || selectedRental.value?.customer;
+  const ps = String(invoice.payment_status || "").toLowerCase();
   const opened = printPaymentReceipt({
     payment_no: payment.payment_no,
     invoice_no: invoice.invoice_no,
@@ -551,6 +573,8 @@ function printRentalPaymentReceipt(invoice: any, payment: any) {
     amount: Number(payment.amount || 0),
     reference_no: payment.reference_no,
     status: payment.status,
+    lunas: ps === "paid",
+    partial: ps === "partially_paid" || ps === "partial",
   });
   if (!opened)
     toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -8,12 +8,14 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
+import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import type { TableColumn, ServiceReport } from '@/types'
 
 const { can } = usePermission()
 
 const {
   serviceReports: data,
+  deliveryOrders,
   contractItems,
   customers,
   technicians,
@@ -21,6 +23,37 @@ const {
   findCustomer,
   findTechnician,
 } = useMasterStore()
+
+// Tab: laporan service (dari service request) vs service history delivery (dari DO).
+const activeTab = ref<'service' | 'delivery'>('service')
+
+const doColumns: TableColumn[] = [
+  { key: 'do_number', label: 'DO No.' },
+  { key: 'customer_id', label: 'Customer' },
+  { key: 'do_type', label: 'Type' },
+  { key: 'technician_id', label: 'Technician' },
+  { key: 'delivery_date', label: 'Delivery Date' },
+  { key: 'status', label: 'Status' },
+]
+
+const deliveryHistories = computed(() =>
+  (deliveryOrders.value as any[]).filter((d: any) => hasDeliveryHistory(d)),
+)
+
+function doTypeLabel(type: string | undefined): string {
+  switch (String(type || '').toLowerCase()) {
+    case 'inbound': return 'Sparepart'
+    case 'sale': return 'Sales'
+    case 'service': return 'Service'
+    case 'replacement': return 'Replacement'
+    case 'return': return 'Return'
+    default: return 'Rental'
+  }
+}
+
+function printDO(item: any) {
+  printDeliveryServiceHistory(item)
+}
 
 const columns: TableColumn[] = [
   { key: 'report_no', label: 'Report No.' },
@@ -204,17 +237,25 @@ function printTable() {
   <div>
     <PageHeader title="Service Reports" button-label="Add Service Report" permission="service_report:create" @add="openAdd">
       <template #actions>
-        <button class="btn btn-outline" @click="exportToExcel">
+        <button v-if="activeTab === 'service'" class="btn btn-outline" @click="exportToExcel">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           Export Excel
         </button>
-        <button class="btn btn-outline" @click="openPrintModal(null)">
+        <button v-if="activeTab === 'service'" class="btn btn-outline" @click="openPrintModal(null)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
           Print / PDF
         </button>
       </template>
     </PageHeader>
-    <DataTable :columns="columns" :data="data" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <button class="btn btn-sm" :class="activeTab === 'service' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'service'">
+        Service Reports ({{ (data as any[]).length }})
+      </button>
+      <button class="btn btn-sm" :class="activeTab === 'delivery' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'delivery'">
+        Delivery History ({{ deliveryHistories.length }})
+      </button>
+    </div>
+    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="data" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
@@ -250,6 +291,26 @@ function printTable() {
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
             <line x1="10" y1="11" x2="10" y2="17"></line>
             <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+        </button>
+      </template>
+    </DataTable>
+    <DataTable v-if="activeTab === 'delivery'" :columns="doColumns" :data="deliveryHistories" search-placeholder="Search delivery history...">
+      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
+      <template #cell-do_type="{ value }">{{ doTypeLabel(value) }}</template>
+      <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
+      <template #cell-delivery_date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
+      <template #cell-status="{ value }">
+        <span :class="value === 'delivered' ? 'badge badge-success' : value === 'in_transit' ? 'badge badge-info' : 'badge badge-neutral'">
+          {{ String(value || '-').replace('_', ' ') }}
+        </span>
+      </template>
+      <template #actions="{ row }">
+        <button v-if="can('delivery_order:read')" class="action-btn" title="Print Service History" @click="printDO(row)" style="color: var(--color-primary); border-color: transparent;">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
       </template>

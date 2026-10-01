@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
+import FormModal from '@/components/ui/FormModal.vue'
 import type { MenuGroup } from '@/types'
 import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
 import { canView, permissionKeysFor } from '@/router/permission-map'
@@ -19,7 +21,46 @@ const router = useRouter()
 const { currentUser, logout } = useAuth()
 const { modules } = useModules()
 const { t } = useI18n()
-const { success: toastSuccess } = useToast()
+const { success: toastSuccess, error: toastError } = useToast()
+
+const showPwdModal = ref(false)
+const pwdForm = reactive({ old_password: '', new_password: '', confirm_password: '' })
+const isSavingPwd = ref(false)
+
+function openPwdModal() {
+  pwdForm.old_password = ''
+  pwdForm.new_password = ''
+  pwdForm.confirm_password = ''
+  showPwdModal.value = true
+}
+
+async function submitPwdChange() {
+  if (!pwdForm.old_password || !pwdForm.new_password) {
+    toastError('Lengkapi password lama dan baru.')
+    return
+  }
+  if (pwdForm.new_password.length < 6) {
+    toastError('Password baru minimal 6 karakter.')
+    return
+  }
+  if (pwdForm.new_password !== pwdForm.confirm_password) {
+    toastError('Konfirmasi password tidak cocok.')
+    return
+  }
+  isSavingPwd.value = true
+  try {
+    await api.post('/auth/change-password', {
+      old_password: pwdForm.old_password,
+      new_password: pwdForm.new_password,
+    })
+    showPwdModal.value = false
+    toastSuccess('Password berhasil diubah.')
+  } catch (err: any) {
+    toastError(err?.message || 'Gagal mengubah password.')
+  } finally {
+    isSavingPwd.value = false
+  }
+}
 
 const allMenuGroups: MenuGroup[] = [
   {
@@ -280,6 +321,12 @@ const iconPaths: Record<string, string> = {
           }}</span>
         </div>
       </div>
+      <button class="btn-logout" title="Ubah Password" @click="openPwdModal">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0110 0v4"></path>
+        </svg>
+      </button>
       <button class="btn-logout" title="Logout" @click="handleLogout">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
@@ -287,6 +334,21 @@ const iconPaths: Record<string, string> = {
       </button>
     </div>
   </aside>
+
+  <FormModal :open="showPwdModal" title="Ubah Password" max-width="420px" @close="showPwdModal = false" @submit="submitPwdChange">
+    <div class="form-group">
+      <label class="form-label">Password Lama</label>
+      <input v-model="pwdForm.old_password" type="password" class="form-input" placeholder="Password saat ini" autocomplete="current-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password Baru (min. 6 karakter)</label>
+      <input v-model="pwdForm.new_password" type="password" class="form-input" placeholder="Password baru" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Konfirmasi Password Baru</label>
+      <input v-model="pwdForm.confirm_password" type="password" class="form-input" placeholder="Ulangi password baru" autocomplete="new-password">
+    </div>
+  </FormModal>
 </template>
 
 <style scoped>

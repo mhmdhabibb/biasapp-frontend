@@ -9,7 +9,11 @@ import { usePermission } from "@/composables/usePermission";
 import { useResourcesStore } from "@/stores/resources.store";
 import { useToast } from "@/composables/useToast";
 import { useAuth } from "@/composables/useAuth";
-import { printPaymentReceipt } from "@/utils/paymentReceipt";
+import {
+  paymentMethodOf,
+  printPaymentReceipt,
+  printPaymentSlip,
+} from "@/utils/paymentReceipt";
 import type { TableColumn, Payment } from "@/types";
 
 const toast = useToast();
@@ -114,6 +118,7 @@ function openEdit(item: any) {
 async function handleSubmit() {
   if (!form.payment_no.trim()) return;
   form.balance = form.amount - form.tax_deduction;
+  const isNew = !editingItem.value;
   try {
     if (editingItem.value) {
       await resources.update("payments", editingItem.value.id as any, form);
@@ -127,6 +132,24 @@ async function handleSubmit() {
         ? "Payment successfully updated!"
         : "Payment successfully saved!",
     );
+    // Bukti langsung untuk customer: tanda terima sementara (pending verifikasi).
+    if (isNew) {
+      const invNo =
+        form.invoice_type === "sales"
+          ? findSalesInvoice(form.sales_invoice_id)?.invoice_no || "-"
+          : findRentalInvoice(form.rental_invoice_id)?.invoice_no || "-";
+      const opened = printPaymentSlip({
+        payment_no: form.payment_no,
+        invoice_no: invNo,
+        customer_name: customerName(form.customer_id),
+        payment_date: form.payment_date,
+        amount: form.amount,
+        reference_no: form.reference_no,
+        status: "pending",
+      });
+      if (!opened)
+        toast.warning("Izinkan pop-up browser untuk mencetak tanda terima.");
+    }
   } catch (error) {
     toast.error("Failed to save payment!");
   }
@@ -156,6 +179,14 @@ async function updateApprovalStatus(
   if (
     status === "rejected" &&
     !window.confirm(`Reject payment ${item.payment_no}?`)
+  ) {
+    return;
+  }
+  if (
+    status === "approved" &&
+    !window.confirm(
+      `Setujui pembayaran ${item.payment_no}?\n\nTunai: pastikan uang SUDAH DITERIMA dari CS.\nTransfer: cek mutasi bank / bukti transfer.\n\nApprove = kwitansi LUNAS terbit. Jika dana belum masuk, pilih Reject.`,
+    )
   ) {
     return;
   }
@@ -218,6 +249,17 @@ function formatRupiah(val: number): string {
   return "Rp " + val.toLocaleString("id-ID");
 }
 
+function invoicePaidState(item: Payment): { lunas: boolean; partial: boolean } {
+  const inv: any = item.sales_invoice_id
+    ? findSalesInvoice(item.sales_invoice_id)
+    : findRentalInvoice(item.rental_invoice_id as any);
+  const nested = (item as any).sales_invoice || (item as any).rental_invoice;
+  const ps = String(
+    inv?.payment_status || nested?.payment_status || "",
+  ).toLowerCase();
+  return { lunas: ps === "paid", partial: ps === "partially_paid" || ps === "partial" };
+}
+
 function printReceipt(item: Payment) {
   if (item.status !== "approved") {
     toast.warning(
@@ -225,6 +267,7 @@ function printReceipt(item: Payment) {
     );
     return;
   }
+  const { lunas, partial } = invoicePaidState(item);
   const opened = printPaymentReceipt({
     payment_no: item.payment_no,
     invoice_no: invoiceNo(item),
@@ -233,9 +276,36 @@ function printReceipt(item: Payment) {
     amount: item.amount,
     reference_no: item.reference_no,
     status: item.status,
+    lunas,
+    partial,
+    method: paymentMethodOf((item as any).bank_name),
   });
   if (!opened)
     toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
+}
+
+/** Tanda terima sementara untuk payment yang belum diverifikasi (pending). */
+function printSlip(item: any) {
+  if (item.status === "rejected") {
+    toast.warning("Pembayaran ditolak — tanda terima tidak dapat dicetak.");
+    return;
+  }
+  if (item.status === "approved") {
+    printReceipt(item as Payment);
+    return;
+  }
+  const opened = printPaymentSlip({
+    payment_no: item.payment_no,
+    invoice_no: invoiceNo(item),
+    customer_name: paymentCustomerName(item as Payment),
+    payment_date: item.payment_date,
+    amount: item.amount,
+    reference_no: item.reference_no,
+    status: item.status,
+    method: paymentMethodOf((item as any).bank_name),
+  });
+  if (!opened)
+    toast.warning("Izinkan pop-up browser untuk mencetak tanda terima.");
 }
 </script>
 
@@ -340,6 +410,29 @@ function printReceipt(item: Payment) {
           >
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <button
+          v-if="can('payment:read') && row.status === 'pending'"
+          class="action-btn"
+          title="Print Tanda Terima (Menunggu Verifikasi)"
+          aria-label="Print payment slip"
+          @click="printSlip(row)"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="9" y1="13" x2="15" y2="13"></line>
+            <line x1="9" y1="17" x2="13" y2="17"></line>
           </svg>
         </button>
         <button

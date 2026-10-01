@@ -51,6 +51,7 @@ const store = reactive({
 });
 
 let syncPromise: Promise<void> | null = null;
+let syncing = false;
 
 export function useMasterStore() {
   const resources = useResourcesStore();
@@ -76,6 +77,10 @@ export function useMasterStore() {
 
   function syncFromApi(force = false, tracksLoading = true) {
     if (syncPromise && !force) return syncPromise;
+    // Hindari request bertumpuk (mis. interval polling + navigasi cepat):
+    // lewati bila sync masih berjalan.
+    if (syncing && syncPromise) return syncPromise;
+    syncing = true;
 
     const safeFetch = (
       fetchPromise: Promise<any>,
@@ -91,7 +96,9 @@ export function useMasterStore() {
     };
 
     const fetchAll = (name: keyof typeof resources) =>
-      resources.fetchAll(name, undefined, tracksLoading);
+      tracksLoading
+        ? resources.fetchAll(name, undefined, true)
+        : resources.fetchAllSilent(name, undefined);
 
     const tasks: Promise<void>[] = [
       safeFetch(fetchAll("customers"), (items) => (store.customers = items)),
@@ -151,7 +158,11 @@ export function useMasterStore() {
       }),
     ];
 
-    syncPromise = Promise.all(tasks).then(() => undefined);
+    syncPromise = Promise.all(tasks)
+      .then(() => undefined)
+      .finally(() => {
+        syncing = false;
+      });
     return syncPromise;
   }
 

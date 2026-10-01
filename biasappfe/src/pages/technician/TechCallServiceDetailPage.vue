@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import PageHeader from '@/components/ui/PageHeader.vue'
+import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
@@ -45,6 +46,128 @@ const customer = computed(() => findCustomer(job.value?.customer_id || job.value
 const contract = computed(() => contractItems.value.find(ci => String(ci.unit_id) === String(job.value?.unit_id || job.value?.service_request?.unit_id)) || null)
 const unit = computed(() => findUnit(job.value?.unit_id || job.value?.service_request?.unit_id || null))
 
+// ── Delivery jobs (JO dari delivery order) ──
+const isDeliveryJob = computed(() => {
+  const j: any = job.value
+  return !!j && (j.job_type === 'delivery' || !!j.delivery_order_id || !!j.delivery_order)
+})
+const deliveryOrder = computed(() => (job.value as any)?.delivery_order || null)
+const doCustomer = computed(() => deliveryOrder.value?.customer || findCustomer(deliveryOrder.value?.customer_id || null) || null)
+const doItems = computed(() => deliveryOrder.value?.delivery_order_items || [])
+function doItemLabel(item: any): string {
+  if (item?.unit_id) {
+    const u: any = findUnit(item.unit_id)
+    const name = item.unit?.model || u?.model || 'Unit'
+    const sn = item.unit?.serial_no || u?.serial_no || ''
+    return `${name}${sn ? ` (${sn})` : ''} x${item.qty || 1}`
+  }
+  if (item?.product_id) {
+    const p: any = findProduct(item.product_id)
+    return `${item.product?.name || p?.name || 'Product'} x${item.qty || 1}`
+  }
+  return `Item x${item?.qty || 1}`
+}
+
+const doForm = ref({
+  problem: '',
+  action: '',
+  time_in: '',
+  time_out: '',
+  is_tested: false,
+  is_completed: false,
+  customer_signature: '',
+  technician_signature: '',
+})
+const isDoFormInit = ref(false)
+const isSavingDoForm = ref(false)
+
+function initDoForm() {
+  const d: any = deliveryOrder.value
+  if (!d || isDoFormInit.value) return
+  doForm.value = {
+    problem: d.problem || '',
+    action: d.action || '',
+    time_in: d.time_in || '',
+    time_out: d.time_out || '',
+    is_tested: !!d.is_tested,
+    is_completed: !!d.is_completed,
+    customer_signature: d.customer_signature || '',
+    technician_signature: d.technician_signature || '',
+  }
+  isDoFormInit.value = true
+}
+
+const lastInitJobId = ref<string | null>(null)
+watchEffect(() => {
+  const jid = String((job.value as any)?.id || '')
+  if (jid && lastInitJobId.value !== jid) {
+    lastInitJobId.value = jid
+    isDoFormInit.value = false
+  }
+  if (isDeliveryJob.value && deliveryOrder.value && !isDoFormInit.value) initDoForm()
+})
+
+const isDeliveryFormCompleted = computed(() => {
+  const f = doForm.value
+  return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature
+})
+
+async function acceptDeliveryJob() {
+  if (!job.value || !deliveryOrder.value) return
+  if (!confirm('Are you sure you want to accept this delivery job now?')) return
+  isSavingDoForm.value = true
+  try {
+    await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
+    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'in_transit' })
+    toast.success('Delivery job accepted.')
+    await refresh(true)
+    initDoForm()
+  } catch (err: any) {
+    toast.error(err.message || 'Failed to accept delivery job')
+  } finally {
+    isSavingDoForm.value = false
+  }
+}
+
+async function saveDeliveryForm(silent = false) {
+  if (!deliveryOrder.value) return false
+  isSavingDoForm.value = true
+  try {
+    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { ...doForm.value })
+    await refresh(true)
+    if (!silent) toast.success('Service history saved.')
+    return true
+  } catch (err: any) {
+    toast.error(err.message || 'Failed to save service history')
+    return false
+  } finally {
+    isSavingDoForm.value = false
+  }
+}
+
+async function completeDeliveryJob() {
+  if (!job.value || !deliveryOrder.value) return
+  if (!isDeliveryFormCompleted.value) {
+    toast.warning('Please complete the service history form first (action, tested, completed + signatures).')
+    return
+  }
+  if (!confirm('Are you sure you want to complete this delivery?')) return
+  isSavingDoForm.value = true
+  try {
+    const ok = await saveDeliveryForm(true)
+    if (!ok) return
+    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'delivered' })
+    await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
+    toast.success('Delivery completed.')
+    await refresh(true)
+    router.push('/technician/call-services')
+  } catch (err: any) {
+    toast.error(err.message || 'Failed to complete delivery')
+  } finally {
+    isSavingDoForm.value = false
+  }
+}
+
 const slaDurationStr = computed(() => {
   if (!job.value) return '-'
   const created = new Date(job.value.created_at).getTime()
@@ -77,17 +200,24 @@ function resolveBeforeMeter(): number {
   const fromContract = numVal(c?.start_mono_value) || numVal(c?.start_color_value)
   return fromContract > 0 ? fromContract : 0
 }
+// JO service (dari service request) TIDAK memakai form Service Report:
+// cukup Technical Report (+ Copier bila copier).
 const isAllFormsCompleted = computed(() => {
   const sr: any = serviceReport.value
   if (!sr) return false
   const techOk = !!(sr.remarks || job.value?.remarks) && (sr.is_tested ?? job.value?.is_tested)
-  const srOk = !!(sr.repair_action || job.value?.repair_action)
-  const signaturesOk = !!sr?.customer_signature && !!sr?.technician_signature
+
+  const techSigOk = !!sr?.customer_signature_technical && !!sr?.technician_signature_technical
+
   let copierOk = true
+  let copierSigOk = true
   if (unit.value?.is_copier || unit.value?.model?.toLowerCase().includes('copier')) {
     copierOk = (numVal(sr.meter_reading_after) || numVal(sr.reading_counter)) > 0
+    copierSigOk = !!sr?.customer_signature_copier && !!sr?.technician_signature_copier
   }
-  return techOk && srOk && signaturesOk && copierOk
+
+  const signaturesOk = techSigOk && copierSigOk
+  return techOk && signaturesOk && copierOk
 })
 
 onMounted(() => refresh(true))
@@ -202,9 +332,149 @@ async function completeJob() {
 
 <template>
   <div class="tech-job-detail" v-if="job">
-    <PageHeader title="Call Service Detail" :back-button="true" @back="router.back()" />
+    <PageHeader :title="isDeliveryJob ? 'Delivery Job Detail' : 'Call Service Detail'" :back-button="true" @back="router.back()" />
 
-    <div class="grid-2">
+    <div v-if="isDeliveryJob" class="grid-2">
+      <!-- Info Section (Delivery Order data) -->
+      <div class="card p-lg">
+        <h2 class="card-title mb-md">Delivery Information</h2>
+        <div class="info-list">
+          <div class="info-item">
+            <span class="info-label">Job Order No</span>
+            <span class="info-value font-bold">{{ job.job_order_no }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">DO Number</span>
+            <span class="info-value font-bold">{{ deliveryOrder?.do_number || '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Customer</span>
+            <span class="info-value">{{ doCustomer?.company_name || '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Delivery Address</span>
+            <span class="info-value">{{ deliveryOrder?.delivery_address || '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Recipient & Contact</span>
+            <span class="info-value">{{ deliveryOrder?.recipient_name || '-' }} ({{ deliveryOrder?.recipient_phone || '-' }})</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Delivery Date</span>
+            <span class="info-value">{{ deliveryOrder?.delivery_date ? new Date(deliveryOrder.delivery_date).toLocaleString('en-GB') : '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">DO Status</span>
+            <span class="badge" :class="'badge-' + (deliveryOrder?.status === 'delivered' ? 'success' : deliveryOrder?.status === 'in_transit' ? 'info' : 'warning')">
+              {{ String(deliveryOrder?.status || '-').toUpperCase().replace('_', ' ') }}
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Job Status</span>
+            <span class="badge" :class="'badge-' + (job.status === 'completed' ? 'success' : job.status === 'in_progress' ? 'info' : 'warning')">
+              {{ job.status.toUpperCase().replace('_', ' ') }}
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Duration / SLA</span>
+            <span class="info-value">{{ slaDurationStr }} (Limit: 2 Hours)</span>
+          </div>
+        </div>
+
+        <div class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
+          <h3 class="text-md font-bold mb-sm">Items ({{ doItems.length }})</h3>
+          <div v-if="doItems.length > 0">
+            <div v-for="(it, idx) in doItems" :key="idx" class="text-sm p-md mb-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
+              {{ idx + 1 }}. {{ doItemLabel(it) }}
+            </div>
+          </div>
+          <p v-else class="text-sm text-muted">No items.</p>
+        </div>
+
+        <div class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
+          <h3 class="text-md font-bold mb-sm">Instructions</h3>
+          <p class="text-sm p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
+            {{ job.instructions || deliveryOrder?.notes || 'No notes.' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Action Section (Service History form) -->
+      <div class="card p-lg">
+        <h2 class="card-title mb-md">Service History Form</h2>
+
+        <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
+          <p class="mb-lg text-muted">You have not accepted this delivery yet.</p>
+          <button v-if="can('delivery_order:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="acceptDeliveryJob">
+            {{ isSavingDoForm ? 'Accepting...' : 'Accept Delivery Job' }}
+          </button>
+        </div>
+
+        <div v-else-if="job.status === 'in_progress'">
+          <div class="form-group">
+            <label class="form-label">Problem</label>
+            <textarea v-model="doForm.problem" class="form-textarea" rows="3" placeholder="Describe the problem..."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Action / Repair <span class="text-danger">*</span></label>
+            <textarea v-model="doForm.action" class="form-textarea" rows="3" placeholder="Action taken..."></textarea>
+          </div>
+          <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label">Time In</label>
+              <input v-model="doForm.time_in" type="time" class="form-input">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label">Time Out</label>
+              <input v-model="doForm.time_out" type="time" class="form-input">
+            </div>
+          </div>
+          <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem;">
+              <input type="checkbox" v-model="doForm.is_tested"> Is Tested?
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem;">
+              <input type="checkbox" v-model="doForm.is_completed"> Is Completed?
+            </label>
+          </div>
+          <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label">Technician Signature <span class="text-danger">*</span></label>
+              <SignaturePad v-model="doForm.technician_signature" height="150px" />
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label class="form-label">Customer Signature <span class="text-danger">*</span></label>
+              <SignaturePad v-model="doForm.customer_signature" height="150px" />
+            </div>
+          </div>
+          <div class="mt-lg" style="display: flex; gap: 0.75rem;">
+            <button v-if="can('delivery_order:update')" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
+              {{ isSavingDoForm ? 'Saving...' : 'Save Draft' }}
+            </button>
+            <button v-if="can('delivery_order:update')" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="completeDeliveryJob">
+              {{ isSavingDoForm ? 'Saving...' : (isDeliveryFormCompleted ? '✅ Complete Delivery' : '🔒 Complete Form First') }}
+            </button>
+          </div>
+        </div>
+
+        <div v-else-if="job.status === 'completed'">
+          <div class="form-group">
+            <label class="form-label">Problem</label>
+            <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm); white-space: pre-wrap;">{{ deliveryOrder?.problem || '-' }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Action / Repair</label>
+            <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm); white-space: pre-wrap;">{{ deliveryOrder?.action || '-' }}</div>
+          </div>
+          <div class="mt-md text-success font-bold flex items-center gap-sm">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Delivery completed{{ deliveryOrder?.time_out ? ' at ' + deliveryOrder.time_out : '' }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2" v-if="!isDeliveryJob">
       <!-- Info Section -->
       <div class="card p-lg">
         <h2 class="card-title mb-md">Service Information</h2>
@@ -287,12 +557,8 @@ async function completeJob() {
               <span class="font-bold"><span v-if="serviceReport?.remarks && serviceReport?.is_tested">✅</span><span v-else>📝</span> 1. Technical Report</span>
               <span>></span>
             </button>
-            <button class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md" @click="router.push(`/technician/call-services/${serviceReport?.id}/service-report`)">
-              <span class="font-bold"><span v-if="serviceReport?.repair_action">✅</span><span v-else>📝</span> 2. Service Report Form</span>
-              <span>></span>
-            </button>
             <button v-if="unit?.is_copier || unit?.model?.toLowerCase().includes('copier')" class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md" @click="router.push(`/technician/call-services/${serviceReport?.id}/copier-report`)">
-              <span class="font-bold"><span v-if="serviceReport?.meter_reading_after || serviceReport?.reading_counter">✅</span><span v-else>📝</span> 3. Copier Service Report</span>
+              <span class="font-bold"><span v-if="serviceReport?.meter_reading_after || serviceReport?.reading_counter">✅</span><span v-else>📝</span> 2. Copier Service Report</span>
               <span>></span>
             </button>
           </div>
@@ -311,9 +577,9 @@ async function completeJob() {
             <label class="form-label">Inspection Result</label>
             <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm); white-space: pre-wrap;">{{ serviceReport?.remarks || '-' }}</div>
           </div>
-          <div class="form-group">
+          <div class="form-group" v-if="serviceReport?.repair_action && serviceReport.repair_action !== '-'">
             <label class="form-label">Repair Action</label>
-            <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm)">{{ serviceReport?.repair_action || '-' }}</div>
+            <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm)">{{ serviceReport?.repair_action }}</div>
           </div>
                     <div class="form-group mt-md" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
             <label class="form-label">Direct Component Replacement</label>

@@ -10,6 +10,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { RentalInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
+import { printPaymentSlip } from '@/utils/paymentReceipt'
 import { computed, reactive, ref } from 'vue'
 
 const toast = useToast()
@@ -549,6 +550,9 @@ async function exportAnnualPdf() {
     .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
     .sig-name { font-weight: 700; font-size: 11px; }
     .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
+    .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin-top: 10px; }
+    .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
+    .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
   </style>
 </head>
 <body>
@@ -660,7 +664,9 @@ async function submitPayment() {
       finalBankName = `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`
     }
 
+    const payNo = `PAY-${Date.now()}`
     await api.post(`/payments`, {
+      payment_no: payNo,
       rental_invoice_id: paymentInvoiceId.value,
       payment_date: paymentForm.payment_date + "T00:00:00Z",
       amount: paymentForm.amount,
@@ -670,6 +676,18 @@ async function submitPayment() {
       notes: paymentForm.notes
     })
     toast.success('Payment recorded successfully')
+    const inv = data.value.find((d: any) => String(d.id) === String(paymentInvoiceId.value))
+    const opened = printPaymentSlip({
+      payment_no: payNo,
+      invoice_no: inv?.invoice_no || '-',
+      customer_name: customerName(inv?.customer_id),
+      payment_date: paymentForm.payment_date,
+      amount: Number(paymentForm.amount || 0),
+      reference_no: paymentForm.reference || '-',
+      status: 'pending',
+      method: paymentForm.payment_method === 'cash' ? 'Tunai' : 'Transfer',
+    })
+    if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak tanda terima.')
     showPaymentModal.value = false
     refresh()
   } catch (error: any) {
@@ -829,6 +847,15 @@ function invoiceHtml(item: any): string {
   const tax = (item.tax || 0).toLocaleString('id-ID')
   const totalPay = (item.total_pay || 0).toLocaleString('id-ID')
 
+  // Stempel pelunasan: hanya bila invoice sudah di-approve accounting.
+  const payStatus = String(item.payment_status || '').toLowerCase()
+  const isApprovedInv = String(item.status || '').toLowerCase() === 'approved'
+  const stampHtml = !isApprovedInv ? '' : payStatus === 'paid'
+    ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp">LUNAS</span></div>`
+    : (payStatus === 'partially_paid' || payStatus === 'partial')
+    ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
+    : `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -891,6 +918,9 @@ function invoiceHtml(item: any): string {
     .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
     .sig-name { font-weight: 700; font-size: 11px; }
     .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
+    .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin-top: 10px; }
+    .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
+    .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
   </style>
 </head>
 <body>
@@ -969,6 +999,7 @@ function invoiceHtml(item: any): string {
     </tbody>
   </table>
 
+  ${stampHtml}
   <!-- Footer -->
   <div class="bottom-wrap">
     <div class="bank-box">

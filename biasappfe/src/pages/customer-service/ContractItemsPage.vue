@@ -67,11 +67,38 @@ const editingItem = ref<ContractItem | null>(null);
 const deletingItem = ref<ContractItem | null>(null);
 const detailItem = ref<any>(null);
 const paperSizes = ref<{ id: string; name: string }[]>([]);
+const paperTypes = ref<{ id: string; name: string }[]>([]);
+
+function paperSizeName(id: any): string {
+  if (!id) return "Semua ukuran";
+  const found = (paperSizes.value as any[]).find(
+    (x: any) => String(x.id) === String(id),
+  );
+  return found ? found.name : String(id).slice(0, 8);
+}
+
+function paperTypeName(id: any): string {
+  if (!id) return "";
+  const found = (paperTypes.value as any[]).find(
+    (x: any) => String(x.id) === String(id),
+  );
+  return found ? found.name : String(id).slice(0, 8);
+}
+
+function rateLabel(r: any): string {
+  const size = r?.paper_size?.name || paperSizeName(r?.paper_size_id);
+  const type = r?.paper_type?.name || paperTypeName(r?.paper_type_id);
+  return type ? `${size} / ${type}` : size;
+}
 
 onMounted(async () => {
   try {
     const res = await resources.paperSizes.list();
     paperSizes.value = res.data as any;
+  } catch (e) {}
+  try {
+    const resT = await resources.paperTypes.list();
+    paperTypes.value = resT.data as any;
   } catch (e) {}
 });
 const form = reactive({
@@ -286,11 +313,55 @@ function generateContractHTML(item: any): string {
     sumUnitsFee > 0
       ? sumUnitsFee
       : item.contract?.total_value || item.monthly_rent_fee || 0;
+  // Kumpulkan SEMUA rates dari SEMUA unit dalam kontrak ini,
+  // supaya item > 1 dengan ukuran/tipe/rate berbeda semuanya tampil.
+  const allRates: any[] = [];
+  for (const uItem of unitsInContract) {
+    const uRates = Array.isArray(uItem.rates) ? uItem.rates : [];
+    const uLoc =
+      uItem.contract?.location ||
+      uItem.placement_location ||
+      uItem.location ||
+      "";
+    for (const r of uRates) {
+      allRates.push({ ...r, _unitLoc: uLoc, _unitId: uItem.unit_id });
+    }
+  }
+  // Fallback ke item tunggal bila grouping gagal
+  if (allRates.length === 0 && Array.isArray(item.rates)) {
+    for (const r of item.rates) allRates.push(r);
+  }
+  const fmtRpPrint = (n: any) =>
+    "Rp " + (Number(n) || 0).toLocaleString("id-ID") + ",-";
+  const rateRowsHtml =
+    allRates.length > 0
+      ? allRates
+          .map((r: any) => {
+            const label = rateLabel(r);
+            const isBW = r.quota_applies_to === "bw";
+            const free = Number(
+              isBW ? r.free_quota_bw : r.free_quota_color,
+            ) || 0;
+            const freeTxt =
+              free > 0
+                ? ` (termasuk ${free} lbr/bln cetak ${isBW ? "BW" : "warna"})`
+                : "";
+            const locTxt = r._unitLoc ? ` — ${r._unitLoc}` : "";
+            return `<tr>
+              <td style="vertical-align: top;">-</td>
+              <td>${label}${locTxt}${freeTxt}: BW ${fmtRpPrint(r.rate_per_page_bw)}/lbr, Warna ${fmtRpPrint(r.rate_per_page_color)}/lbr</td>
+            </tr>`;
+          })
+          .join("")
+      : `<tr>
+          <td style="vertical-align: top;">-</td>
+          <td>Biaya per lembar untuk cetak hitam putih : ${fmtRpPrint(150)}/lbr</td>
+        </tr>
+        <tr>
+          <td style="vertical-align: top;">-</td>
+          <td>Biaya per lembar setelah free quota warna : ${fmtRpPrint(1300)}/lbr</td>
+        </tr>`;
   const freeQuota = item.free_quota_color || item.free_copy_quota || 0;
-  const bwRate =
-    item.rates?.[0]?.rate_per_page_bw || item.rate_per_page_bw || 150;
-  const colorRate =
-    item.rates?.[0]?.rate_per_page_color || item.rate_per_page_color || 1300;
 
   const d = new Date(startDate || new Date());
   const bulanNama = [
@@ -563,6 +634,19 @@ function generateContractHTML(item: any): string {
               `
                   : "";
 
+                const uRates = Array.isArray(uItem.rates) ? uItem.rates : [];
+                const uRatesHtml =
+                  uRates.length > 0
+                    ? `<div>Rate/Ukuran</div><div>:</div><div>${uRates
+                        .map((r: any) => {
+                          const lbl = rateLabel(r);
+                          const bw = (Number(r.rate_per_page_bw) || 0).toLocaleString("id-ID");
+                          const cl = (Number(r.rate_per_page_color) || 0).toLocaleString("id-ID");
+                          return `${lbl} — BW Rp ${bw}, Warna Rp ${cl}`;
+                        })
+                        .join("<br>")}</div>`
+                    : "";
+
                 return `
                 <div style="margin-bottom: 12px;">
                   <div><b>${index + 1}. ${uLoc}</b></div>
@@ -571,6 +655,7 @@ function generateContractHTML(item: any): string {
                     <div>Tipe</div><div>:</div><div>${uName}</div>
                     <div>Nomor Seri</div><div>:</div><div>${uSerial}</div>
                     ${meterHtml}
+                    ${uRatesHtml}
                     <div>Jumlah</div><div>:</div><div>1 (satu) Unit</div>
                   </div>
                 </div>
@@ -610,24 +695,7 @@ function generateContractHTML(item: any): string {
                     <td style="width: 30px;">Rp</td>
                     <td style="text-align: right; width: 120px;">${formatRupiah(totalMonthlyFee).replace("Rp ", "")}</td>
                   </tr>
-                  ${
-                    hasCopier
-                      ? `
-                  <tr>
-                    <td style="vertical-align: top;">-</td>
-                    <td>Biaya per lembar setelah ${freeQuota} lembar warna :</td>
-                    <td>Rp</td>
-                    <td style="text-align: right;">${colorRate},-</td>
-                  </tr>
-                  <tr>
-                    <td style="vertical-align: top;">-</td>
-                    <td>Biaya per lembar untuk cetak hitam putih :</td>
-                    <td>Rp</td>
-                    <td style="text-align: right;">${bwRate},-</td>
-                  </tr>
-                  `
-                      : ""
-                  }
+                  ${hasCopier ? rateRowsHtml : ""}
                 </table>
               </div>
             </div>
@@ -1398,6 +1466,33 @@ function unitSerialNo(id: any, rowUnit?: any): string {
                 }}</span>
               </div>
             </div>
+            <div v-if="u.rates && u.rates.length" style="margin-top: 8px">
+              <div
+                v-for="(r, rIdx) in u.rates"
+                :key="rIdx"
+                class="detail-box"
+                style="margin-top: 6px"
+              >
+                <span class="box-label">{{
+                  (r.paper_size?.name || paperSizeName(r.paper_size_id)) +
+                  (r.paper_type?.name || paperTypeName(r.paper_type_id)
+                    ? " / " +
+                      (r.paper_type?.name || paperTypeName(r.paper_type_id))
+                    : "")
+                }}</span>
+                <span class="box-value"
+                  >BW {{ formatRupiah(r.rate_per_page_bw || 0) }}/lbr •
+                  Warna {{ formatRupiah(r.rate_per_page_color || 0) }}/lbr
+                  <span v-if="r.quota_applies_to === 'bw' && r.free_quota_bw"
+                    >• Free {{ r.free_quota_bw }} lbr BW/bln</span
+                  >
+                  <span
+                    v-if="r.quota_applies_to !== 'bw' && r.free_quota_color"
+                    >• Free {{ r.free_quota_color }} lbr Warna/bln</span
+                  ></span
+                >
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1445,41 +1540,49 @@ function unitSerialNo(id: any, rowUnit?: any): string {
               }}</span>
             </div>
           </div>
-          <div class="detail-grid-3" style="margin-top: 10px">
-            <div class="detail-box">
-              <span class="box-label">Free Quota (Color)</span>
-              <span class="box-value"
-                >{{
-                  detailItem.free_quota_color || detailItem.free_copy_quota || 0
-                }}
-                pages</span
-              >
+          <div
+            v-for="(u, idx) in getContractUnits(detailItem)"
+            :key="'rates-' + idx"
+            style="margin-top: 10px"
+          >
+            <div
+              class="box-label font-semibold"
+              v-if="getContractUnits(detailItem).length > 1"
+              style="margin-bottom: 6px"
+            >
+              Unit #{{ idx + 1 }} — {{ unitOnlyName(u.unit_id, u.unit) }} ({{
+                u.rates?.length || 0
+              }}
+              rate)
             </div>
             <div
-              class="detail-box"
-              v-if="detailItem.rate_per_page_bw || detailItem.rates?.length"
+              v-for="(r, rIdx) in u.rates || []"
+              :key="rIdx"
+              class="detail-grid-3"
+              style="margin-top: 6px"
             >
-              <span class="box-label">BW Rate / page</span>
-              <span class="box-value">{{
-                formatRupiah(
-                  detailItem.rate_per_page_bw ||
-                    detailItem.rates?.[0]?.rate_per_page_bw ||
-                    0,
-                )
-              }}</span>
-            </div>
-            <div
-              class="detail-box"
-              v-if="detailItem.rate_per_page_color || detailItem.rates?.length"
-            >
-              <span class="box-label">Color Rate / page</span>
-              <span class="box-value">{{
-                formatRupiah(
-                  detailItem.rate_per_page_color ||
-                    detailItem.rates?.[0]?.rate_per_page_color ||
-                    0,
-                )
-              }}</span>
+              <div class="detail-box">
+                <span class="box-label">Ukuran / Tipe Kertas</span>
+                <span class="box-value">{{
+                  (r.paper_size?.name || paperSizeName(r.paper_size_id)) +
+                  (r.paper_type?.name || paperTypeName(r.paper_type_id)
+                    ? " / " +
+                      (r.paper_type?.name || paperTypeName(r.paper_type_id))
+                    : "")
+                }}</span>
+              </div>
+              <div class="detail-box">
+                <span class="box-label">BW Rate / page</span>
+                <span class="box-value">{{
+                  formatRupiah(r.rate_per_page_bw || 0)
+                }}</span>
+              </div>
+              <div class="detail-box">
+                <span class="box-label">Color Rate / page</span>
+                <span class="box-value">{{
+                  formatRupiah(r.rate_per_page_color || 0)
+                }}</span>
+              </div>
             </div>
           </div>
         </div>

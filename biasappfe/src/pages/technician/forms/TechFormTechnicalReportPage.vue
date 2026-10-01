@@ -35,8 +35,8 @@ onMounted(async () => {
       remarks: job.value.remarks || '',
       notes: job.value.notes || '',
       is_tested: job.value.is_tested || false,
-      customer_signature: job.value.customer_signature || '',
-      technician_signature: job.value.technician_signature || '',
+      customer_signature: job.value.customer_signature_technical || '',
+      technician_signature: job.value.technician_signature_technical || '',
     }
   } catch (err: any) {
     toast.error(err.message || 'Failed to load service report')
@@ -57,8 +57,8 @@ async function saveForm() {
       remarks: form.value.remarks,
       notes: form.value.notes,
       is_tested: form.value.is_tested,
-      customer_signature: form.value.customer_signature,
-      technician_signature: form.value.technician_signature,
+      customer_signature_technical: form.value.customer_signature,
+      technician_signature_technical: form.value.technician_signature,
     })
     toast.success('Technical Report saved successfully')
     await refresh(true)

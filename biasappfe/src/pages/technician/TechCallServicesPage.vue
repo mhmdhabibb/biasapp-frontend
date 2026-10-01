@@ -42,18 +42,40 @@ const filterDate = ref('')
 const filterCustomer = ref('')
 const filterServiceNo = ref('')
 
+function isDeliveryJob(job: any): boolean {
+  return !!job && (job.job_type === 'delivery' || !!job.delivery_order_id || !!job.delivery_order)
+}
+
+function jobCustomerId(job: any) {
+  return job.customer_id || job.service_request?.customer_id || job.delivery_order?.customer_id || job.delivery_order?.customer?.id || null
+}
+
+function jobUnitId(job: any) {
+  return job.unit_id || job.service_request?.unit_id || null
+}
+
+function jobRefNo(job: any): string {
+  return job.service_request?.request_no || job.delivery_order?.do_number || job.job_order_no || '-'
+}
+
+function jobDate(job: any): string {
+  return job.scheduled_date || job.delivery_order?.delivery_date || job.created_at || ''
+}
+
 const filteredJobs = computed(() => {
   return myJobs.value.filter(job => {
     if (filterStatus.value && job.status !== filterStatus.value) return false
-    if (filterDate.value && !job.created_at.startsWith(filterDate.value)) return false
+    if (filterDate.value && !(jobDate(job) || '').startsWith(filterDate.value)) return false
     if (filterCustomer.value) {
-      const custId = job.customer_id || job.service_request?.customer_id
-      const cust = findCustomer(custId)
-      if (!cust || !cust.company_name.toLowerCase().includes(filterCustomer.value.toLowerCase())) return false
+      const cust = findCustomer(jobCustomerId(job))
+      if (!cust || !(cust.company_name || '').toLowerCase().includes(filterCustomer.value.toLowerCase())) return false
     }
-    if (filterServiceNo.value && !(job.job_order_no || '').toLowerCase().includes(filterServiceNo.value.toLowerCase())) return false
+    if (filterServiceNo.value) {
+      const hay = `${job.job_order_no || ''} ${jobRefNo(job)}`.toLowerCase()
+      if (!hay.includes(filterServiceNo.value.toLowerCase())) return false
+    }
     return true
-  }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }).sort((a, b) => new Date(jobDate(b)).getTime() - new Date(jobDate(a)).getTime())
 })
 
 function getCustomerName(id: number | null) {
@@ -108,19 +130,25 @@ function goToDetail(id: number) {
           <thead>
             <tr>
               <th>Service No</th>
+              <th>Type</th>
               <th>Customer</th>
               <th>Unit</th>
-              <th>Date</th>
+              <th>Scheduled / Delivery</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="job in filteredJobs" :key="job.id">
-              <td>{{ job.job_order_no }}</td>
-              <td>{{ getCustomerName(job.customer_id || job.service_request?.customer_id) }}</td>
-              <td>{{ getUnitName(job.unit_id || job.service_request?.unit_id) }}</td>
-              <td>{{ new Date(job.created_at).toLocaleString() }}</td>
+              <td>{{ jobRefNo(job) }}</td>
+              <td>
+                <span class="badge" :class="isDeliveryJob(job) ? 'badge-info' : 'badge-primary'">
+                  {{ isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE' }}
+                </span>
+              </td>
+              <td>{{ getCustomerName(jobCustomerId(job)) }}</td>
+              <td>{{ isDeliveryJob(job) ? '-' : getUnitName(jobUnitId(job)) }}</td>
+              <td>{{ jobDate(job) ? new Date(jobDate(job)).toLocaleString('en-GB') : '-' }}</td>
               <td>
                 <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'pending' || job.status === 'assigned' ? 'warning' : job.status === 'completed' ? 'success' : 'secondary')">
                   {{ job.status.toUpperCase().replace('_', ' ') }}
@@ -131,7 +159,7 @@ function goToDetail(id: number) {
               </td>
             </tr>
             <tr v-if="filteredJobs.length === 0">
-              <td colspan="6" class="text-center py-lg text-muted">No call service found.</td>
+              <td colspan="7" class="text-center py-lg text-muted">No call service found.</td>
             </tr>
           </tbody>
         </table>

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAuth } from "@/composables/useAuth";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import CreateJobModal from "./CreateJobModal.vue";
 import { useRouter } from "vue-router";
 import { computed, ref } from "vue";
+
+useAutoRefresh();
 
 const router = useRouter();
 const { currentUser } = useAuth();
@@ -322,7 +325,12 @@ function goToDetail(id: number) {
                 <polyline points="9 22 9 12 15 12 15 22"></polyline>
               </svg>
               <span>{{
-                getCustomerName(job.service_request?.customer_id || null)
+                getCustomerName(
+                  job.service_request?.customer_id ||
+                    job.delivery_order?.customer_id ||
+                    job.delivery_order?.customer?.id ||
+                    null,
+                )
               }}</span>
             </div>
             <div class="detail-row">
@@ -347,7 +355,13 @@ function goToDetail(id: number) {
                 <line x1="1" y1="9" x2="4" y2="9"></line>
                 <line x1="1" y1="14" x2="4" y2="14"></line>
               </svg>
-              <span>{{
+              <span v-if="job.delivery_order || job.job_type === 'delivery'">{{
+                (job.delivery_order?.do_number || job.job_order_no || "Delivery") +
+                ((job.delivery_order?.delivery_order_items || []).length > 0
+                  ? ` • ${(job.delivery_order?.delivery_order_items || []).length} item${(job.delivery_order?.delivery_order_items || []).length > 1 ? "s" : ""}`
+                  : "")
+              }}</span>
+              <span v-else>{{
                 findUnit(job.service_request?.unit_id || null)?.model || "-"
               }}</span>
             </div>

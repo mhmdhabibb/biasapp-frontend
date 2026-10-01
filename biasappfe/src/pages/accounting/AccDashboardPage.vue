@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
+
+useAutoRefresh();
 
 const {
   sparepartRequests,

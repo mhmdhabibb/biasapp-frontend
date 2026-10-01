@@ -19,20 +19,29 @@ export function useResourcesStore() {
     query?: ResourceQuery,
     tracksLoading = true,
   ) {
-    loading[name] = true;
-    errors[name] = "";
+    // tracksLoading=false (silent/background refresh) tidak boleh menyentuh
+    // flag loading agar tidak memicu spinner/skeleton di UI.
+    if (tracksLoading) loading[name] = true;
+    if (tracksLoading) errors[name] = "";
     try {
       data[name] = (await resources[name].list(query, tracksLoading)).data;
       return data[name];
     } catch (reason) {
-      errors[name] =
-        reason instanceof ApiError
-          ? reason.message
-          : "Failed to load data from the server";
+      if (tracksLoading) {
+        errors[name] =
+          reason instanceof ApiError
+            ? reason.message
+            : "Failed to load data from the server";
+      }
       return [];
     } finally {
-      loading[name] = false;
+      if (tracksLoading) loading[name] = false;
     }
+  }
+
+  /** Silent refresh: update data tanpa efek loading/skeleton/error. */
+  async function fetchAllSilent(name: ResourceName, query?: ResourceQuery) {
+    return fetchAll(name, query, false);
   }
 
   async function create(name: ResourceName, payload: Partial<ResourceRecord>) {
@@ -74,6 +83,7 @@ export function useResourcesStore() {
     initialized,
     records,
     fetchAll,
+    fetchAllSilent,
     fetchAllDomains,
     create,
     update,

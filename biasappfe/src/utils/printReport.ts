@@ -217,11 +217,11 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
       <tr>
         <td style="width: 50%; text-align: center; border-top: none;">
           TESTED YES / NO<br><br><br>
-          ${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : "<br><br>"}
+          ${item.technician_signature_copier ? '<img src="' + item.technician_signature_copier + '" style="max-height: 50px;" />' : "<br><br>"}
         </td>
         <td style="width: 50%; text-align: center; border-top: none;">
           COMPLETE YES / NO<br><br><br>
-          ${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : "<br><br>"}
+          ${item.customer_signature_copier ? '<img src="' + item.customer_signature_copier + '" style="max-height: 50px;" />' : "<br><br>"}
         </td>
       </tr>
       <tr>
@@ -235,17 +235,19 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
   `;
 }
 
-function signatureBlockHtml(item: any, ctx: ReportCtx): string {
+function signatureBlockHtml(item: any, ctx: ReportCtx, type: 'technical' | 'history' = 'history'): string {
+  const techSig = type === 'technical' ? item.technician_signature_technical : item.technician_signature;
+  const custSig = type === 'technical' ? item.customer_signature_technical : item.customer_signature;
   return `
     <div class="signature-block">
       <div class="sig-side">
         <div>TECHNICIAN</div>
-        <div class="sig-line">${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
+        <div class="sig-line">${techSig ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
         <div class="sig-name">${ctx.tech.name || ctx.tech.full_name || ""}</div>
       </div>
       <div class="sig-side sig-customer">
         <div class="sig-cust">CUSTOMER<br>
-          ${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : ""}
+          ${custSig ? '<img src="' + custSig + '" style="max-height: 50px;" />' : ""}
         </div>
         <div class="sig-stamp">Signature & Company Stamp</div>
       </div>
@@ -309,7 +311,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
           </td>
         </tr>
       </table>
-      ${signatureBlockHtml(item, ctx)}
+      ${signatureBlockHtml(item, ctx, 'technical')}
     </div>
   `;
 }
@@ -364,7 +366,7 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
           </td>
         </tr>
       </table>
-      ${signatureBlockHtml(item, ctx)}
+      ${signatureBlockHtml(item, ctx, 'history')}
   `;
 }
 

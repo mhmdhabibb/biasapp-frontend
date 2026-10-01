@@ -118,8 +118,8 @@ onMounted(async () => {
     if (!job.value) throw new Error('Service report not found')
     const after = Number(job.value.meter_reading_after ?? job.value.reading_counter ?? 0)
     form.value.meter_after = after > 0 ? after : beforeMeter.value
-    form.value.customer_signature = job.value.customer_signature || ''
-    form.value.technician_signature = job.value.technician_signature || ''
+    form.value.customer_signature = job.value.customer_signature_copier || ''
+    form.value.technician_signature = job.value.technician_signature_copier || ''
   } catch (err: any) {
     toast.error(err.message || 'Failed to load service report')
   } finally {
@@ -142,8 +142,8 @@ async function saveForm() {
     await api.patch(`/service-reports/${serviceId}`, {
       meter_reading_before: beforeMeter.value,
       meter_reading_after: Number(form.value.meter_after),
-      customer_signature: form.value.customer_signature,
-      technician_signature: form.value.technician_signature,
+      customer_signature_copier: form.value.customer_signature,
+      technician_signature_copier: form.value.technician_signature,
     })
     toast.success('Copier Report saved successfully')
     await refresh(true)

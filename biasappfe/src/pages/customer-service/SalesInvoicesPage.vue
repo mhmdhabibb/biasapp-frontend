@@ -348,7 +348,11 @@ async function exportAnnualPdf() {
   .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
   .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
   .sig-box { width: 250px; }
-  .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }`
+  .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
+  .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin: 10px 0; }
+  .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
+  .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
+  .stamp-wrap { text-align: center; clear: both; padding-top: 10px; }`
 
   const body = items.map((inv: any) => {
     const html = invoiceHtml(inv)
@@ -504,6 +508,15 @@ function invoiceHtml(item: any): string {
   const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
   const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
 
+  // Stempel pelunasan: hanya bila invoice sudah di-approve accounting.
+  const payStatus = String(item.payment_status || '').toLowerCase()
+  const isApprovedInv = String(item.status || '').toLowerCase() === 'approved'
+  const stampHtml = !isApprovedInv ? '' : payStatus === 'paid'
+    ? `<div class="stamp-wrap"><span class="paid-stamp">LUNAS</span></div>`
+    : (payStatus === 'partially_paid' || payStatus === 'partial')
+    ? `<div class="stamp-wrap"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
+    : `<div class="stamp-wrap"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
+
   const html = `
     <html>
       <head>
@@ -551,6 +564,10 @@ function invoiceHtml(item: any): string {
           .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
           .sig-box { width: 250px; }
           .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
+          .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin: 10px 0; }
+          .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
+          .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
+          .stamp-wrap { text-align: center; clear: both; padding-top: 10px; }
         </style>
       </head>
       <body>
@@ -663,6 +680,7 @@ function invoiceHtml(item: any): string {
             NPWP : 0941.8395.0822.5000
           </div>
 
+          ${stampHtml}
           <div class="signatures">
             <div class="sig-box">
               Received By,

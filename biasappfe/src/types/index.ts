@@ -228,6 +228,9 @@ export interface JobOrder {
   job_order_no: string;
   job_type: string;
   service_request_id?: string | null;
+  delivery_order_id?: string | null;
+  delivery_order?: any;
+  service_request?: any;
   customer_id?: string | null;
   unit_id?: string | null;
   technician_id: string;
