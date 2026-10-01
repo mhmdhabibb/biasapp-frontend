@@ -397,6 +397,7 @@ export interface Payment {
   amount: number;
   tax_deduction: number;
   balance: number;
+  bank_name: string;
   reference_no: string;
   status: string;
   created_at: string;
@@ -553,6 +554,10 @@ export interface SystemSetting {
 
 export interface Notification {
   id: string | number;
+  title: string;
+  message: string;
+  type?: string;
+  is_read: boolean;
   created_at: string;
   updated_at: string;
 }

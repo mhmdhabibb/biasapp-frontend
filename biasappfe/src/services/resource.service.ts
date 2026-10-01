@@ -27,8 +27,11 @@ export function createResourceService<T extends ResourceRecord>(
 ) {
   const path = `/${resource}`;
   return {
-    list(query?: ResourceQuery) {
-      return api.get<PaginatedResponse<T>>(`${path}/?${toQueryString(query)}`);
+    list(query?: ResourceQuery, tracksLoading = true) {
+      return api.get<PaginatedResponse<T>>(
+        `${path}/?${toQueryString(query)}`,
+        tracksLoading,
+      );
     },
     get(id: string) {
       return api.get<ApiResponse<T>>(`${path}/${id}`);

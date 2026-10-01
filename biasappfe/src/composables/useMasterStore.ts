@@ -57,45 +57,92 @@ export function useMasterStore() {
   const authStore = useAuthStore();
 
   function hasPerm(resourceName: string) {
-    if (authStore.currentUser?.role === 'admin' || authStore.currentUser?.role === 'superadmin') return true;
+    if (
+      authStore.currentUser?.role === "admin" ||
+      authStore.currentUser?.role === "superadmin"
+    )
+      return true;
     const perms = authStore.currentUser?.permissions || [];
-    const resBase = resourceName.toLowerCase().replace(/[^a-z]/g, '').replace(/s/g, '');
-    return perms.some(p => {
-      const pMod = p.split(':')[0].toLowerCase();
-      const pBase = pMod.replace(/[^a-z]/g, '').replace(/s/g, '');
+    const resBase = resourceName
+      .toLowerCase()
+      .replace(/[^a-z]/g, "")
+      .replace(/s/g, "");
+    return perms.some((p) => {
+      const pMod = p.split(":")[0].toLowerCase();
+      const pBase = pMod.replace(/[^a-z]/g, "").replace(/s/g, "");
       return pBase === resBase;
     });
   }
 
-  function syncFromApi(force = false) {
+  function syncFromApi(force = false, tracksLoading = true) {
     if (syncPromise && !force) return syncPromise;
-    
-    const safeFetch = (fetchPromise: Promise<any>, assignCallback: (items: any) => void) => {
+
+    const safeFetch = (
+      fetchPromise: Promise<any>,
+      assignCallback: (items: any) => void,
+    ) => {
       return fetchPromise
-        .then(items => { if (items) assignCallback(items); })
-        .catch(err => { console.warn("Failed to fetch data:", err); });
+        .then((items) => {
+          if (items) assignCallback(items);
+        })
+        .catch((err) => {
+          console.warn("Failed to fetch data:", err);
+        });
     };
 
+    const fetchAll = (name: keyof typeof resources) =>
+      resources.fetchAll(name, undefined, tracksLoading);
+
     const tasks: Promise<void>[] = [
-      safeFetch(resources.fetchAll("customers"), items => store.customers = items),
-      safeFetch(resources.fetchAll("technicians"), items => store.technicians = items),
-      safeFetch(resources.fetchAll("brands"), items => store.brands = items),
-      safeFetch(resources.fetchAll("units"), items => store.units = items),
-      safeFetch(resources.fetchAll("products"), items => store.products = items),
-      safeFetch(resources.fetchAll("warranties"), items => store.warranties = items),
-      safeFetch(resources.fetchAll("contractItems"), items => store.contractItems = items),
-      safeFetch(resources.fetchAll("serviceReports"), items => store.serviceReports = items),
-      safeFetch(resources.fetchAll("serviceRequests"), items => store.serviceRequests = items),
-      safeFetch(resources.fetchAll("jobOrders"), items => store.jobOrders = items),
-      safeFetch(resources.fetchAll("monthlyMeterReadings"), items => store.monthlyMeterReadings = items),
-      safeFetch(resources.fetchAll("sales"), items => store.sales = items),
-      safeFetch(resources.fetchAll("rentalInvoices"), items => store.rentalInvoices = items),
-      safeFetch(resources.fetchAll("salesInvoices"), items => store.salesInvoices = items),
-      safeFetch(resources.fetchAll("payments"), items => store.payments = items),
-      safeFetch(resources.fetchAll("warrantyClaims"), items => store.warrantyClaims = items),
-      safeFetch(resources.fetchAll("serviceSpareparts"), items => store.sparepartRequests = items),
-      safeFetch(resources.fetchAll("purchaseOrders"), items => store.purchaseOrders = items),
-      safeFetch(resources.fetchAll("deliveryOrders"), items => {
+      safeFetch(fetchAll("customers"), (items) => (store.customers = items)),
+      safeFetch(
+        fetchAll("technicians"),
+        (items) => (store.technicians = items),
+      ),
+      safeFetch(fetchAll("brands"), (items) => (store.brands = items)),
+      safeFetch(fetchAll("units"), (items) => (store.units = items)),
+      safeFetch(fetchAll("products"), (items) => (store.products = items)),
+      safeFetch(fetchAll("warranties"), (items) => (store.warranties = items)),
+      safeFetch(
+        fetchAll("contractItems"),
+        (items) => (store.contractItems = items),
+      ),
+      safeFetch(
+        fetchAll("serviceReports"),
+        (items) => (store.serviceReports = items),
+      ),
+      safeFetch(
+        fetchAll("serviceRequests"),
+        (items) => (store.serviceRequests = items),
+      ),
+      safeFetch(fetchAll("jobOrders"), (items) => (store.jobOrders = items)),
+      safeFetch(
+        fetchAll("monthlyMeterReadings"),
+        (items) => (store.monthlyMeterReadings = items),
+      ),
+      safeFetch(fetchAll("sales"), (items) => (store.sales = items)),
+      safeFetch(
+        fetchAll("rentalInvoices"),
+        (items) => (store.rentalInvoices = items),
+      ),
+      safeFetch(
+        fetchAll("salesInvoices"),
+        (items) => (store.salesInvoices = items),
+      ),
+      safeFetch(fetchAll("payments"), (items) => (store.payments = items)),
+      safeFetch(
+        fetchAll("warrantyClaims"),
+        (items) => (store.warrantyClaims = items),
+      ),
+      safeFetch(
+        fetchAll("serviceSpareparts"),
+        (items) => (store.sparepartRequests = items),
+      ),
+      safeFetch(
+        fetchAll("purchaseOrders"),
+        (items) => (store.purchaseOrders = items),
+      ),
+      safeFetch(fetchAll("deliveryOrders"), (items) => {
         store.deliveryOrders = items;
         // Inbound (procurement) shipments are the ones linked to a purchase order.
         store.procurementDeliveryOrders = items.filter(
@@ -122,7 +169,9 @@ export function useMasterStore() {
     return store.units.find((u) => (u.id as any) == id);
   }
 
-  function findBrand(id: number | string | null | undefined): Brand | undefined {
+  function findBrand(
+    id: number | string | null | undefined,
+  ): Brand | undefined {
     if (id == null) return undefined;
     return store.brands.find((b) => (b.id as any) == id);
   }
@@ -135,7 +184,9 @@ export function useMasterStore() {
     return store.warranties.find((w) => (w.id as any) == id);
   }
 
-  function findContractItem(id: number | string | null): ContractItem | undefined {
+  function findContractItem(
+    id: number | string | null,
+  ): ContractItem | undefined {
     if (id == null) return undefined;
     return store.contractItems.find((ci) => (ci.id as any) == id);
   }
@@ -169,9 +220,13 @@ export function useMasterStore() {
     return store.units.filter((u) => unitIds.includes(u.id));
   }
 
-  function getContractsByCustomer(customerId: number | string | null): ContractItem[] {
+  function getContractsByCustomer(
+    customerId: number | string | null,
+  ): ContractItem[] {
     if (!customerId) return [];
-    return store.contractItems.filter((c) => (c.customer_id as any) == customerId);
+    return store.contractItems.filter(
+      (c) => (c.customer_id as any) == customerId,
+    );
   }
 
   // service_report.technician_id references technicians.id (not users.id),
@@ -196,6 +251,7 @@ export function useMasterStore() {
   return {
     ...toRefs(store),
     refresh: syncFromApi,
+    refreshInBackground: () => syncFromApi(true, false),
     findCustomer,
     findTechnician,
     findUnit,

@@ -14,11 +14,15 @@ const errors = reactive<Partial<Record<ResourceName, string>>>({});
 const initialized = ref(false);
 
 export function useResourcesStore() {
-  async function fetchAll(name: ResourceName, query?: ResourceQuery) {
+  async function fetchAll(
+    name: ResourceName,
+    query?: ResourceQuery,
+    tracksLoading = true,
+  ) {
     loading[name] = true;
     errors[name] = "";
     try {
-      data[name] = (await resources[name].list(query)).data;
+      data[name] = (await resources[name].list(query, tracksLoading)).data;
       return data[name];
     } catch (reason) {
       errors[name] =

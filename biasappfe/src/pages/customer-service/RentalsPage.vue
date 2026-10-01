@@ -7,13 +7,14 @@ import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
 import { resources } from "@/services/resource.service";
+import { printPaymentReceipt } from "@/utils/paymentReceipt";
 import type { TableColumn } from "@/types";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 const toast = useToast();
 const { can } = usePermission();
-const { customers, units, products, refresh } = useMasterStore();
+const { customers, units, products, payments, refresh } = useMasterStore();
 const { t } = useI18n();
 
 const columns = computed<TableColumn[]>(() => [
@@ -48,7 +49,8 @@ const paymentForm = reactive({
 
 const visibleRentalInvoices = computed(() => {
   return [...(selectedRental.value?.rental_invoices || [])].sort(
-    (a: any, b: any) => new Date(a.period_start).getTime() - new Date(b.period_start).getTime(),
+    (a: any, b: any) =>
+      new Date(a.period_start).getTime() - new Date(b.period_start).getTime(),
   );
 });
 
@@ -142,7 +144,7 @@ function addRentalItem() {
     start_meter_color: 0,
     free_quota_color: 0,
     free_quota_bw: 0,
-    placement_location: '',
+    placement_location: "",
     is_copier: false,
     is_computer: false,
     specs: {
@@ -181,34 +183,43 @@ function removeItemRate(item: any, index: number) {
 }
 
 function paperSizeName(id: any): string {
-  if (!id) return '';
-  const found = (paperSizes.value as any[]).find((x: any) => String(x.id) === String(id));
+  if (!id) return "";
+  const found = (paperSizes.value as any[]).find(
+    (x: any) => String(x.id) === String(id),
+  );
   return found ? found.name : String(id).slice(0, 8);
 }
 
 function paperTypeName(id: any): string {
-  if (!id) return '';
-  const found = (paperTypes.value as any[]).find((x: any) => String(x.id) === String(id));
+  if (!id) return "";
+  const found = (paperTypes.value as any[]).find(
+    (x: any) => String(x.id) === String(id),
+  );
   return found ? found.name : String(id).slice(0, 8);
 }
 
 function rateTitle(rate: any): string {
-  const size = rate.paper_size_id ? paperSizeName(rate.paper_size_id) : 'Semua ukuran';
-  const kind = rate.paper_type_id ? ' / ' + paperTypeName(rate.paper_type_id) : '';
+  const size = rate.paper_size_id
+    ? paperSizeName(rate.paper_size_id)
+    : "Semua ukuran";
+  const kind = rate.paper_type_id
+    ? " / " + paperTypeName(rate.paper_type_id)
+    : "";
   return size + kind;
 }
 
 function fmtRp(n: any): string {
-  return 'Rp ' + (Number(n) || 0).toLocaleString('id-ID');
+  return "Rp " + (Number(n) || 0).toLocaleString("id-ID");
 }
 
 function rateSummary(rate: any): string {
-  const isBW = rate.quota_applies_to === 'bw';
+  const isBW = rate.quota_applies_to === "bw";
   const free = Number(isBW ? rate.free_quota_bw : rate.free_quota_color) || 0;
-  const mode = isBW ? 'BW' : 'Warna';
+  const mode = isBW ? "BW" : "Warna";
   const bw = fmtRp(rate.rate_per_page_bw);
   const color = fmtRp(rate.rate_per_page_color);
-  if (!free) return `Tanpa free — semua ditagih penuh (BW ${bw}/lbr, Warna ${color}/lbr).`;
+  if (!free)
+    return `Tanpa free — semua ditagih penuh (BW ${bw}/lbr, Warna ${color}/lbr).`;
   return `Free ${free} lbr ${mode} per bulan, selebihnya BW ${bw}/lbr, Warna ${color}/lbr.`;
 }
 
@@ -273,7 +284,7 @@ async function openAdd() {
       start_meter_color: 0,
       free_quota_color: 0,
       free_quota_bw: 0,
-      placement_location: '',
+      placement_location: "",
       is_copier: false,
       is_computer: false,
       specs: {
@@ -324,7 +335,9 @@ async function handleSubmit() {
     }
     if (item.is_copier) {
       if ((item.start_meter_bw ?? 0) < 0 || (item.start_meter_color ?? 0) < 0) {
-        toast.error(`Item #${idx + 1}: initial BW / Colour meter cannot be negative.`);
+        toast.error(
+          `Item #${idx + 1}: initial BW / Colour meter cannot be negative.`,
+        );
         return;
       }
     }
@@ -338,13 +351,17 @@ async function handleSubmit() {
     return;
   }
 
-  const validPaperSizeIDs = new Set(paperSizes.value.map((paperSize) => String(paperSize.id)));
+  const validPaperSizeIDs = new Set(
+    paperSizes.value.map((paperSize) => String(paperSize.id)),
+  );
   for (let itemIndex = 0; itemIndex < rentalItems.value.length; itemIndex++) {
     const rates = rentalItems.value[itemIndex]?.rates || [];
     for (let rateIndex = 0; rateIndex < rates.length; rateIndex++) {
       const paperSizeID = rates[rateIndex]?.paper_size_id;
       if (paperSizeID && !validPaperSizeIDs.has(String(paperSizeID))) {
-        toast.error(`Item #${itemIndex + 1}, price #${rateIndex + 1}: selected paper size no longer exists. Please select it again.`);
+        toast.error(
+          `Item #${itemIndex + 1}, price #${rateIndex + 1}: selected paper size no longer exists. Please select it again.`,
+        );
         return;
       }
     }
@@ -374,11 +391,18 @@ async function handleSubmit() {
         start_meter_color: item.start_meter_color,
         free_quota_color: item.free_quota_color,
         free_quota_bw: (item as any).free_quota_bw ?? 0,
-        placement_location: (item as any).placement_location || '',
+        placement_location: (item as any).placement_location || "",
         specs: item.specs || {},
         description: item.description,
         rates: (item.rates || [])
-          .filter((r: any) => r.paper_size_id || Number(r.rate_per_page_bw) || Number(r.rate_per_page_color) || Number(r.free_quota_bw) || Number(r.free_quota_color))
+          .filter(
+            (r: any) =>
+              r.paper_size_id ||
+              Number(r.rate_per_page_bw) ||
+              Number(r.rate_per_page_color) ||
+              Number(r.free_quota_bw) ||
+              Number(r.free_quota_color),
+          )
           .map((r: any) => ({
             paper_size_id: r.paper_size_id || null,
             paper_type_id: r.paper_type_id || null,
@@ -409,7 +433,9 @@ async function handleSubmit() {
       fetchRentals(); // refresh
     } else {
       const err = await res.json();
-      toast.error(t("rentals.failed", { error: err.message || JSON.stringify(err) }));
+      toast.error(
+        t("rentals.failed", { error: err.message || JSON.stringify(err) }),
+      );
     }
   } catch (error) {
     console.error(error);
@@ -454,7 +480,12 @@ async function submitInvoicePayment() {
     toast.warning("Payment amount must be greater than 0.");
     return;
   }
-  if (paymentForm.payment_method === "transfer" && (!paymentForm.bank_name.trim() || !paymentForm.account_number.trim() || !paymentForm.sender_name.trim())) {
+  if (
+    paymentForm.payment_method === "transfer" &&
+    (!paymentForm.bank_name.trim() ||
+      !paymentForm.account_number.trim() ||
+      !paymentForm.sender_name.trim())
+  ) {
     toast.warning("Please complete the bank, account number, and sender name.");
     return;
   }
@@ -462,9 +493,10 @@ async function submitInvoicePayment() {
   isSavingPayment.value = true;
   const invoiceId = String(selectedInvoice.value.id);
   try {
-    const bankName = paymentForm.payment_method === "cash"
-      ? "CASH"
-      : `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`;
+    const bankName =
+      paymentForm.payment_method === "cash"
+        ? "CASH"
+        : `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`;
     await api.post("/payments", {
       payment_no: `PAY-${Date.now()}`,
       rental_invoice_id: invoiceId,
@@ -475,14 +507,53 @@ async function submitInvoicePayment() {
     });
     toast.success("Payment recorded and pending approval.");
     selectedInvoice.value = null;
-    const rentalResponse = await api.get<{ data: any }>(`/rents/${selectedRental.value.id}`);
+    const rentalResponse = await api.get<{ data: any }>(
+      `/rents/${selectedRental.value.id}`,
+    );
     selectedRental.value = rentalResponse.data;
-    selectedInvoice.value = selectedRental.value?.rental_invoices?.find((invoice: any) => String(invoice.id) === invoiceId) || null;
   } catch (error: any) {
     toast.error(toast.fromError(error, "Failed to record payment"));
   } finally {
     isSavingPayment.value = false;
   }
+}
+
+function approvedPayments(invoice: any): any[] {
+  if (!can("payment:read")) return [];
+  return invoicePayments(invoice).filter(
+    (payment: any) => payment.status === "approved",
+  );
+}
+
+function hasPendingPaymentApproval(invoice: any): boolean {
+  return invoicePayments(invoice).some(
+    (payment: any) => payment.status === "pending",
+  );
+}
+
+function invoicePayments(invoice: any): any[] {
+  const currentPayments = payments.value.filter(
+    (payment: any) => String(payment.rental_invoice_id) === String(invoice.id),
+  );
+  return currentPayments.length ? currentPayments : invoice.payments || [];
+}
+
+function printRentalPaymentReceipt(invoice: any, payment: any) {
+  const customer =
+    customers.value.find(
+      (item: any) => String(item.id) === String(invoice.customer_id),
+    ) || selectedRental.value?.customer;
+  const opened = printPaymentReceipt({
+    payment_no: payment.payment_no,
+    invoice_no: invoice.invoice_no,
+    customer_name: customer?.company_name || customer?.name || "-",
+    payment_date: payment.payment_date,
+    amount: Number(payment.amount || 0),
+    reference_no: payment.reference_no,
+    status: payment.status,
+  });
+  if (!opened)
+    toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
 }
 
 onMounted(async () => {
@@ -562,52 +633,148 @@ onMounted(async () => {
 
     <FormModal
       :open="showInvoiceModal"
-      :title="selectedRental ? `Rental Invoices ${selectedRental.rental_no}` : 'Rental Invoices'"
+      :title="
+        selectedRental
+          ? `Rental Invoices ${selectedRental.rental_no}`
+          : 'Rental Invoices'
+      "
       max-width="900px"
-      @close="showInvoiceModal = false; selectedInvoice = null"
+      @close="
+        showInvoiceModal = false;
+        selectedInvoice = null;
+      "
     >
-      <div v-if="isLoadingRentalInvoices" class="text-muted text-center py-lg">Loading rental invoices...</div>
+      <div v-if="isLoadingRentalInvoices" class="text-muted text-center py-lg">
+        Loading rental invoices...
+      </div>
       <div v-else-if="selectedRental" class="rental-invoice-list">
-        <article v-for="invoice in visibleRentalInvoices" :key="invoice.id" class="rental-invoice-row">
+        <article
+          v-for="invoice in visibleRentalInvoices"
+          :key="invoice.id"
+          class="rental-invoice-row"
+        >
           <div class="rental-invoice-info">
             <strong>{{ invoice.invoice_no }}</strong>
-            <span>{{ invoice.period_start ? new Date(invoice.period_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }} – {{ invoice.period_end ? new Date(invoice.period_end).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }}</span>
+            <span
+              >{{
+                invoice.period_start
+                  ? new Date(invoice.period_start).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })
+                  : "-"
+              }}
+              –
+              {{
+                invoice.period_end
+                  ? new Date(invoice.period_end).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })
+                  : "-"
+              }}</span
+            >
           </div>
           <div class="rental-invoice-total">
-            <strong>{{ formatRupiah(invoice.total_pay || invoice.subtotal || 0) }}</strong>
-            <span class="badge" :class="invoice.payment_status === 'paid' ? 'badge-success' : invoice.payment_status === 'partially_paid' ? 'badge-info' : 'badge-warning'">
-              {{ invoice.payment_status === 'paid' ? 'Paid' : invoice.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
+            <strong>{{
+              formatRupiah(invoice.total_pay || invoice.subtotal || 0)
+            }}</strong>
+            <span
+              class="badge"
+              :class="
+                invoice.payment_status === 'paid'
+                  ? 'badge-success'
+                  : invoice.payment_status === 'partially_paid'
+                    ? 'badge-info'
+                    : 'badge-warning'
+              "
+            >
+              {{
+                invoice.payment_status === "paid"
+                  ? "Paid"
+                  : invoice.payment_status === "partially_paid"
+                    ? "Partial"
+                    : "Unpaid"
+              }}
             </span>
           </div>
-          <button
-            v-if="invoice.payment_status !== 'paid' && can('payment:create')"
-            type="button"
-            class="btn btn-sm btn-primary"
-            :disabled="isSavingPayment"
-            @click="openInvoicePayment(invoice)"
-          >
-            Payment
-          </button>
+          <div class="rental-invoice-actions">
+            <span
+              v-if="hasPendingPaymentApproval(invoice)"
+              class="badge badge-warning"
+            >
+              Menunggu approval accounting
+            </span>
+            <button
+              v-for="payment in approvedPayments(invoice)"
+              :key="payment.id"
+              type="button"
+              class="btn btn-sm btn-outline"
+              @click="printRentalPaymentReceipt(invoice, payment)"
+            >
+              Kwitansi / Bukti Bayar
+            </button>
+            <button
+              v-if="invoice.payment_status !== 'paid' && can('payment:create')"
+              type="button"
+              class="btn btn-sm btn-primary"
+              :disabled="isSavingPayment"
+              @click="openInvoicePayment(invoice)"
+            >
+              Payment
+            </button>
+          </div>
         </article>
         <div v-if="!visibleRentalInvoices.length" class="rental-invoice-empty">
-          <strong>{{ selectedRental.rental_items?.some((item: any) => item.unit?.is_copier) ? 'No invoices for this period yet.' : 'No invoices with a started period yet.' }}</strong>
-          <span v-if="selectedRental.rental_items?.some((item: any) => item.unit?.is_copier)">Enter the copier meter reading first to generate invoices.</span>
+          <strong>{{
+            selectedRental.rental_items?.some(
+              (item: any) => item.unit?.is_copier,
+            )
+              ? "No invoices for this period yet."
+              : "No invoices with a started period yet."
+          }}</strong>
+          <span
+            v-if="
+              selectedRental.rental_items?.some(
+                (item: any) => item.unit?.is_copier,
+              )
+            "
+            >Enter the copier meter reading first to generate invoices.</span
+          >
         </div>
       </div>
       <template #footer>
-        <button type="button" class="btn btn-outline" @click="showInvoiceModal = false; selectedInvoice = null">Close</button>
+        <button
+          type="button"
+          class="btn btn-outline"
+          @click="
+            showInvoiceModal = false;
+            selectedInvoice = null;
+          "
+        >
+          Close
+        </button>
       </template>
     </FormModal>
 
     <FormModal
       :open="!!selectedInvoice"
-      :title="selectedInvoice ? `Payment ${selectedInvoice.invoice_no}` : 'Payment'"
+      :title="
+        selectedInvoice ? `Payment ${selectedInvoice.invoice_no}` : 'Payment'
+      "
       @close="selectedInvoice = null"
       @submit="submitInvoicePayment"
     >
       <div class="form-group">
         <label class="form-label">Payment Date</label>
-        <input v-model="paymentForm.payment_date" type="date" class="form-input" required>
+        <input
+          v-model="paymentForm.payment_date"
+          type="date"
+          class="form-input"
+          required
+        />
       </div>
       <div class="form-group">
         <label class="form-label">Payment Method</label>
@@ -619,29 +786,68 @@ onMounted(async () => {
       <template v-if="paymentForm.payment_method === 'transfer'">
         <div class="form-group">
           <label class="form-label">Bank Name</label>
-          <input v-model="paymentForm.bank_name" type="text" class="form-input" placeholder="BCA, Mandiri, BRI" required>
+          <input
+            v-model="paymentForm.bank_name"
+            type="text"
+            class="form-input"
+            placeholder="BCA, Mandiri, BRI"
+            required
+          />
         </div>
         <div class="form-group">
           <label class="form-label">Account Number</label>
-          <input v-model="paymentForm.account_number" type="text" class="form-input" required>
+          <input
+            v-model="paymentForm.account_number"
+            type="text"
+            class="form-input"
+            required
+          />
         </div>
         <div class="form-group">
           <label class="form-label">Sender Name</label>
-          <input v-model="paymentForm.sender_name" type="text" class="form-input" required>
+          <input
+            v-model="paymentForm.sender_name"
+            type="text"
+            class="form-input"
+            required
+          />
         </div>
       </template>
       <div class="form-group">
         <label class="form-label">Payment Amount</label>
-        <input v-model.number="paymentForm.amount" type="number" class="form-input" min="1" required>
+        <input
+          v-model.number="paymentForm.amount"
+          type="number"
+          class="form-input"
+          min="1"
+          required
+        />
       </div>
       <div class="form-group">
         <label class="form-label">Reference No.</label>
-        <input v-model="paymentForm.reference_no" type="text" class="form-input" placeholder="Optional">
+        <input
+          v-model="paymentForm.reference_no"
+          type="text"
+          class="form-input"
+          placeholder="Optional"
+        />
       </div>
       <template #footer>
-        <button type="button" class="btn btn-outline" :disabled="isSavingPayment" @click="selectedInvoice = null">Cancel</button>
-        <button type="button" class="btn btn-primary" :disabled="isSavingPayment" @click="submitInvoicePayment">
-          {{ isSavingPayment ? 'Saving...' : 'Record Payment' }}
+        <button
+          type="button"
+          class="btn btn-outline"
+          :disabled="isSavingPayment"
+          @click="selectedInvoice = null"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="isSavingPayment"
+          @click="submitInvoicePayment"
+        >
+          {{ isSavingPayment ? "Saving..." : "Record Payment" }}
         </button>
       </template>
     </FormModal>
@@ -721,7 +927,13 @@ onMounted(async () => {
         </div>
         <div class="form-group">
           <label for="notes" class="form-label">Notes</label>
-          <textarea id="notes" v-model="form.notes" class="form-input" placeholder="Optional" rows="2"></textarea>
+          <textarea
+            id="notes"
+            v-model="form.notes"
+            class="form-input"
+            placeholder="Optional"
+            rows="2"
+          ></textarea>
         </div>
       </div>
 
@@ -740,10 +952,16 @@ onMounted(async () => {
       </div>
 
       <div class="form-group" style="margin-bottom: var(--space-md)">
-        <label class="form-label" style="font-size: 0.8rem">Note: each machine below may use its own delivery address (one DO is auto-generated per distinct address). Leave empty to follow the address above.</label>
+        <label class="form-label" style="font-size: 0.8rem"
+          >Note: each machine below may use its own delivery address (one DO is
+          auto-generated per distinct address). Leave empty to follow the
+          address above.</label
+        >
       </div>
 
-      <div class="form-section-title">Rented Machines & Initial Meter Input</div>
+      <div class="form-section-title">
+        Rented Machines & Initial Meter Input
+      </div>
 
       <div
         v-for="(item, idx) in rentalItems"
@@ -778,42 +996,45 @@ onMounted(async () => {
               font-weight: var(--font-weight-bold);
             "
           >
-            Check if this item is a Copier Machine (Requires Initial Meter Input)
+            Check if this item is a Copier Machine (Requires Initial Meter
+            Input)
           </label>
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
-          <label class="form-label">Select Unit / Product</label>
+          <label class="form-label">Select Unit</label>
           <select
             v-model="item.selected_item"
             class="form-select"
             required
             @change="onItemSelectChange(item)"
           >
-            <option value="">-- Select Machine or Product --</option>
-            <optgroup label="Machines (Units)">
-              <option v-for="u in availableUnits" :key="u.id" :value="'unit_' + u.id">
-                {{ u.model }} ({{ (u as any).brand?.name }}) — S/N: {{ u.serial_no || 'N/A' }}
-              </option>
-              <option
-                v-for="u in unavailableUnits"
-                :key="u.id"
-                :value="'unit_' + u.id"
-                disabled
-              >
-                {{ u.model }} ({{ (u as any).brand?.name }}) — S/N: {{ u.serial_no || 'N/A' }} — {{ unitStatusOf(u) }}
-              </option>
-            </optgroup>
-            <optgroup label="Products / Others">
-              <option v-for="p in products" :key="p.id" :value="'prod_' + p.id">
-                {{ p.name }} ({{ (p as any).category?.name || "-" }})
-              </option>
-            </optgroup>
+            <option value="">-- Select Unit --</option>
+            <option
+              v-for="u in availableUnits"
+              :key="u.id"
+              :value="'unit_' + u.id"
+            >
+              {{ u.model }} ({{ (u as any).brand?.name }}) — S/N:
+              {{ u.serial_no || "N/A" }}
+            </option>
+            <option
+              v-for="u in unavailableUnits"
+              :key="u.id"
+              :value="'unit_' + u.id"
+              disabled
+            >
+              {{ u.model }} ({{ (u as any).brand?.name }}) — S/N:
+              {{ u.serial_no || "N/A" }} — {{ unitStatusOf(u) }}
+            </option>
           </select>
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
-          <label class="form-label" style="font-size: 0.8rem">Delivery Address for this machine (optional — empty follows the address above; distinct addresses get separate DOs)</label>
+          <label class="form-label" style="font-size: 0.8rem"
+            >Delivery Address for this machine (optional — empty follows the
+            address above; distinct addresses get separate DOs)</label
+          >
           <textarea
             v-model="item.placement_location"
             class="form-input"
@@ -922,9 +1143,12 @@ onMounted(async () => {
                 + Tambah Harga
               </button>
             </div>
-            <p class="text-muted" style="font-size: 0.75rem; margin: 0 0 0.5rem 0">
-              Satu kartu = satu aturan harga. Kosongkan ukuran &amp; jenis bila tarifnya
-              berlaku umum; isi bila beda ukuran/jenis beda harga.
+            <p
+              class="text-muted"
+              style="font-size: 0.75rem; margin: 0 0 0.5rem 0"
+            >
+              Satu kartu = satu aturan harga. Kosongkan ukuran &amp; jenis bila
+              tarifnya berlaku umum; isi bila beda ukuran/jenis beda harga.
             </p>
 
             <div
@@ -938,97 +1162,130 @@ onMounted(async () => {
                 border: 1px solid var(--color-border-light, #e2e8f0);
               "
             >
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <strong style="font-size: 0.85rem;">Harga #{{ rIdx + 1 }} &mdash; {{ rateTitle(rate) }}</strong>
-                <button type="button" @click="removeItemRate(item, rIdx)" class="btn btn-sm" style="color: #ef4444; font-size: 0.75rem;">
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 0.5rem;
+                "
+              >
+                <strong style="font-size: 0.85rem"
+                  >Harga #{{ rIdx + 1 }} &mdash; {{ rateTitle(rate) }}</strong
+                >
+                <button
+                  type="button"
+                  @click="removeItemRate(item, rIdx)"
+                  class="btn btn-sm"
+                  style="color: #ef4444; font-size: 0.75rem"
+                >
                   Hapus
                 </button>
               </div>
               <div class="rental-rate-fields">
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label">Ukuran Kertas <span class="text-muted">(opsional)</span></label>
-                <select
-                  v-model="rate.paper_size_id"
-                  class="form-select"
-                  style="font-size: 0.8rem"
-                >
-                  <option value="">&#8212; Semua ukuran &#8212;</option>
-                  <option v-for="p in paperSizes" :key="p.id" :value="p.id">
-                    {{ p.name }}
-                  </option>
-                </select>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label"
+                    >Ukuran Kertas
+                    <span class="text-muted">(opsional)</span></label
+                  >
+                  <select
+                    v-model="rate.paper_size_id"
+                    class="form-select"
+                    style="font-size: 0.8rem"
+                  >
+                    <option value="">&#8212; Semua ukuran &#8212;</option>
+                    <option v-for="p in paperSizes" :key="p.id" :value="p.id">
+                      {{ p.name }}
+                    </option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label"
+                    >Jenis Kertas
+                    <span class="text-muted">(opsional)</span></label
+                  >
+                  <select
+                    v-model="rate.paper_type_id"
+                    class="form-select"
+                    style="font-size: 0.8rem"
+                  >
+                    <option :value="null">&#8212; Semua jenis &#8212;</option>
+                    <option v-for="p in paperTypes" :key="p.id" :value="p.id">
+                      {{ p.name }}
+                    </option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Tarif BW per lembar (Rp)</label>
+                  <input
+                    v-model.number="rate.rate_per_page_bw"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="Masukkan tarif BW"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Tarif warna per lembar (Rp)</label>
+                  <input
+                    v-model.number="rate.rate_per_page_color"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="Masukkan tarif warna"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label"
+                    >Kuota gratis BW (lembar/bulan)</label
+                  >
+                  <input
+                    v-model.number="rate.free_quota_bw"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="Contoh: 200 lembar"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label"
+                    >Kuota gratis warna (lembar/bulan)</label
+                  >
+                  <input
+                    v-model.number="rate.free_quota_color"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="Contoh: 200 lembar"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Kuota gratis berlaku untuk</label>
+                  <select
+                    v-model="rate.quota_applies_to"
+                    class="form-select"
+                    style="font-size: 0.8rem"
+                    title="Free quota applies to"
+                  >
+                    <option value="color">Warna (BW ditagih penuh)</option>
+                    <option value="bw">BW (Warna ditagih penuh)</option>
+                  </select>
+                </div>
               </div>
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label">Jenis Kertas <span class="text-muted">(opsional)</span></label>
-                <select
-                  v-model="rate.paper_type_id"
-                  class="form-select"
-                  style="font-size: 0.8rem"
-                >
-                  <option :value="null">&#8212; Semua jenis &#8212;</option>
-                  <option v-for="p in paperTypes" :key="p.id" :value="p.id">
-                    {{ p.name }}
-                  </option>
-                </select>
-              </div>
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label">Tarif BW per lembar (Rp)</label>
-                <input
-                  v-model.number="rate.rate_per_page_bw"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="Masukkan tarif BW"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label">Tarif warna per lembar (Rp)</label>
-                <input
-                  v-model.number="rate.rate_per_page_color"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="Masukkan tarif warna"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label">Kuota gratis BW (lembar/bulan)</label>
-                <input
-                  v-model.number="rate.free_quota_bw"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="Contoh: 200 lembar"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label">Kuota gratis warna (lembar/bulan)</label>
-                <input
-                  v-model.number="rate.free_quota_color"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="Contoh: 200 lembar"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div class="form-group" style="margin: 0;">
-                <label class="form-label">Kuota gratis berlaku untuk</label>
-                <select
-                  v-model="rate.quota_applies_to"
-                  class="form-select"
-                  style="font-size: 0.8rem"
-                  title="Free quota applies to"
-                >
-                  <option value="color">Warna (BW ditagih penuh)</option>
-                  <option value="bw">BW (Warna ditagih penuh)</option>
-                </select>
-              </div>
-              </div>
-              <div class="text-muted" style="font-size: 0.75rem; margin-top: 0.5rem; background: var(--color-surface-sunken, #f1f5f9); padding: 0.4rem 0.6rem; border-radius: 6px;">
+              <div
+                class="text-muted"
+                style="
+                  font-size: 0.75rem;
+                  margin-top: 0.5rem;
+                  background: var(--color-surface-sunken, #f1f5f9);
+                  padding: 0.4rem 0.6rem;
+                  border-radius: 6px;
+                "
+              >
                 {{ rateSummary(rate) }}
               </div>
             </div>
@@ -1043,7 +1300,8 @@ onMounted(async () => {
                 border-radius: 6px;
               "
             >
-              Belum ada harga per lembar. Klik + Tambah Harga bila ada tarif cetak, atau kosongkan bila hanya sewa bulanan.
+              Belum ada harga per lembar. Klik + Tambah Harga bila ada tarif
+              cetak, atau kosongkan bila hanya sewa bulanan.
             </div>
           </div>
         </div>
@@ -1111,8 +1369,6 @@ onMounted(async () => {
       >
         + Add Another Machine
       </button>
-
-
 
       <div class="sale-summary mt-4">
         <div class="summary-row">
@@ -1283,6 +1539,14 @@ onMounted(async () => {
   background: var(--color-surface);
 }
 
+.rental-invoice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
 .rental-invoice-info,
 .rental-invoice-total {
   display: grid;
@@ -1335,6 +1599,16 @@ onMounted(async () => {
   .rental-invoice-row > button {
     grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .rental-invoice-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .rental-invoice-actions > * {
+    flex: 1 1 100%;
+    text-align: center;
   }
 }
 

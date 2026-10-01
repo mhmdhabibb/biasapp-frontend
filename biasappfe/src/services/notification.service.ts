@@ -3,10 +3,15 @@ import { api, type ApiResponse, type PaginatedResponse } from "./api";
 
 export const notificationService = {
   list() {
-    return api.get<PaginatedResponse<Notification>>("/notifications/?page=1&limit=100");
+    return api.get<PaginatedResponse<Notification>>(
+      "/notifications/?page=1&limit=100",
+    );
   },
   create(data: Partial<Notification>) {
     return api.post<ApiResponse<null>>("/notifications/", data);
+  },
+  markRead(id: string) {
+    return api.patch<ApiResponse<null>>(`/notifications/${id}/read`, {});
   },
   update(id: string, data: Partial<Notification>) {
     return api.put<ApiResponse<null>>(`/notifications/${id}`, data);

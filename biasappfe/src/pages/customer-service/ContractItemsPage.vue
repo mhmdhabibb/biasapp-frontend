@@ -1,17 +1,15 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive } from "vue";
 import html2pdf from "html2pdf.js";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import FormModal from "@/components/ui/FormModal.vue";
-import PageHeader from "@/components/ui/PageHeader.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { resources } from "@/services/resource.service";
 import type { ContractItem, TableColumn } from "@/types";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 
 const { can } = usePermission();
 
@@ -26,12 +24,41 @@ const {
 const columns: TableColumn[] = [
   { key: "contract_no", label: "Contract No." },
   { key: "customer_id", label: "Company" },
+  { key: "item_count", label: "Units" },
   { key: "pic_name", label: "PIC Name" },
   { key: "start_date", label: "Start Date" },
   { key: "end_date", label: "End Date" },
   { key: "monthly_rent_fee", label: "Total" },
   { key: "status", label: "Status" },
 ];
+
+const groupedContracts = computed(() => {
+  const groups = new Map<string, any>();
+  for (const item of data.value as any[]) {
+    const contractId = item.contract_id || item.contract?.id;
+    const contractNo = item.contract?.contract_no || item.contract_no;
+    const key = contractId
+      ? `id:${contractId}`
+      : contractNo
+        ? `no:${contractNo}`
+        : `item:${item.id}`;
+    const group = groups.get(key);
+    if (group) {
+      group.items.push(item);
+      group.monthly_rent_total += Number(item.monthly_rent_fee || 0);
+    } else {
+      groups.set(key, {
+        ...item,
+        items: [item],
+        monthly_rent_total: Number(item.monthly_rent_fee || 0),
+      });
+    }
+  }
+  return Array.from(groups.values()).map((group) => ({
+    ...group,
+    item_count: group.items.length,
+  }));
+});
 
 const showModal = ref(false);
 const showDetailModal = ref(false);
@@ -208,7 +235,7 @@ function generateContractHTML(item: any): string {
       uItem.is_copier === true
     );
   });
-  const hasPrinter = unitsInContract.some((uItem: any) => {
+  const hasOtherEquipment = unitsInContract.some((uItem: any) => {
     const targetUnit = findUnit(uItem.unit_id) || uItem.unit;
     const isCopier =
       targetUnit?.is_copier === true ||
@@ -221,12 +248,12 @@ function generateContractHTML(item: any): string {
   let machineTypeName = "MESIN FOTOCOPY";
   let machineWord = "mesin fotocopy";
 
-  if (hasCopier && hasPrinter) {
-    machineTypeName = "MESIN FOTOCOPY DAN PRINTER";
-    machineWord = "mesin fotocopy dan printer";
-  } else if (hasPrinter && !hasCopier) {
-    machineTypeName = "PRINTER";
-    machineWord = "printer";
+  if (hasCopier && hasOtherEquipment) {
+    machineTypeName = "MESIN FOTOCOPY DAN PERALATAN";
+    machineWord = "mesin fotocopy dan peralatan";
+  } else if (hasOtherEquipment && !hasCopier) {
+    machineTypeName = "PERALATAN";
+    machineWord = "peralatan";
   }
 
   const customerId = item.contract?.customer_id || item.customer_id;
@@ -444,7 +471,7 @@ function generateContractHTML(item: any): string {
           <!-- Judul Dokumen -->
           <div class="doc-title">
             <h3>PERJANJIAN SEWA MENYEWA ${machineTypeName}</h3>
-            <p>Nomor : ${contractNo}</p>
+            <p>Nomor : ${contractNo} - ${custName}</p>
           </div>
 
           <!-- Pembukaan -->
@@ -941,7 +968,7 @@ function unitSerialNo(id: any, rowUnit?: any): string {
     />
     <DataTable
       :columns="columns"
-      :data="data"
+      :data="groupedContracts"
       search-placeholder="Search contracts..."
       @edit="openEdit"
       @delete="openDelete"
@@ -956,6 +983,9 @@ function unitSerialNo(id: any, rowUnit?: any): string {
           customerName(row.contract?.customer_id || row.customer_id)
         }}</span>
       </template>
+      <template #cell-item_count="{ row }">
+        {{ row.item_count }} {{ row.item_count === 1 ? "unit" : "units" }}
+      </template>
       <template #cell-pic_name="{ row }">
         {{ customerPicName(row.contract?.customer_id || row.customer_id) }}
       </template>
@@ -967,7 +997,12 @@ function unitSerialNo(id: any, rowUnit?: any): string {
       </template>
       <template #cell-monthly_rent_fee="{ row }">
         <span class="font-semibold">{{
-          formatRupiah(row.contract?.total_value || row.monthly_rent_fee || 0)
+          formatRupiah(
+            row.contract?.total_value ||
+              row.monthly_rent_total ||
+              row.monthly_rent_fee ||
+              0,
+          )
         }}</span>
       </template>
       <template #cell-status="{ row }">
