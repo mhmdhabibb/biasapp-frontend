@@ -539,7 +539,11 @@ function exportMonthToPdf() {
     return
   }
 
+<<<<<<< HEAD
   const tableRows = items.map((item: any, index: number) => `
+=======
+  const rows = items.map((item: any, index: number) => `
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
     <tr>
       <td>${index + 1}</td>
       <td>${item.invoice_no || `INV-R-${item.id}`}</td>
@@ -552,10 +556,16 @@ function exportMonthToPdf() {
   `).join('')
   const printWindow = window.open('', '_blank')
   if (!printWindow) return
+<<<<<<< HEAD
 
   printWindow.document.write(`<!doctype html><html><head><title>Rental Invoices</title><style>
     body{font:12px Arial,sans-serif;color:#222}h1,h2{text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #777;padding:6px}th{background:#e8f1ff}
     </style></head><body><h1>PT. BIAS SURYA TEKNOLOGI</h1><h2>Rental Invoices</h2><table><thead><tr><th>No</th><th>Invoice</th><th>Tanggal</th><th>Customer</th><th>Kontrak</th><th>Total</th><th>Status</th></tr></thead><tbody>${tableRows}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`)
+=======
+  printWindow.document.write(`<!doctype html><html><head><title>Rental Invoices</title><style>
+    body{font:12px Arial,sans-serif;color:#222}h1,h2{text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #777;padding:6px}th{background:#e8f1ff}
+    </style></head><body><h1>PT. BIAS SURYA TEKNOLOGI</h1><h2>Rental Invoices</h2><table><thead><tr><th>No</th><th>Invoice</th><th>Tanggal</th><th>Customer</th><th>Kontrak</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`)
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
   printWindow.document.close()
 }
 

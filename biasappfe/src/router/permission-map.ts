@@ -45,7 +45,6 @@ products: ['product'],
   csSparepartRequest: ['service_sparepart'],
   csMonitoringService: ['service_report'],
   csDelivery: ['delivery_order'],
-  csReports: ['service_report'],
 
   // Accounting
   accSparepartRequests: ['service_sparepart'],
@@ -61,7 +60,7 @@ export const routeNamesByMenuOrder: string[] = [
   'contractItems', 'serviceRequests', 'jobOrders', 'serviceReports', 'monthlyMeterReadings',
   'rentals', 'sales', 'csSparepartRequest', 'accPurchaseOrders', 'accDeliveryOrders',
   'rentalInvoices', 'salesInvoices', 'payments', 'warrantyClaims',
-  'csMonitoringService', 'csDelivery', 'csReports',
+  'csMonitoringService', 'csDelivery',
 ]
 
 export function permissionKeysFor(routeName: string | null | undefined): string[] | null {

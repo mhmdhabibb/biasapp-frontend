@@ -3,6 +3,7 @@
 // Keep in sync when adding routes.
 export const allowedRouteNamesByRole: Record<string, string[]> = {
   customer_service: [
+<<<<<<< HEAD
     "csDashboard",
     "customers",
     "contractItems",
@@ -32,10 +33,23 @@ export const allowedRouteNamesByRole: Record<string, string[]> = {
     "techFormTechnicalReport",
     "techFormCopierReport",
     "sharedServiceReportView",
+=======
+    'csDashboard', 'customers', 'contractItems', 'units', 'csCallService',
+    'csMonitoringService', 'csSparepartRequest', 'csIndent', 'csDelivery',
+    'warrantyClaims', 'rentalInvoices', 'rentals',
+    'serviceRequests', 'jobOrders', 'sharedServiceReportView',
+  ],
+  technician: [
+    'techDashboard', 'techCallServices', 'techCallServiceDetail', 'techMaintenance',
+    'techSparepartRequest', 'techMeterReadings', 'techServiceHistory',
+    'techFormServiceReport', 'techFormTechnicalReport', 'techFormCopierReport',
+    'sharedServiceReportView',
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
     // No master-data routes: technicians only consume master APIs (dropdowns/lookups)
     // through useMasterStore — they must never open /master/* pages.
   ],
   accounting: [
+<<<<<<< HEAD
     "accDashboard",
     "accSparepartRequests",
     "accPurchaseOrders",
@@ -208,6 +222,17 @@ export function getHomeRoute(role: string, permissions: string[]): string {
 
   // Absolute fallback
   return "users";
+=======
+    'accDashboard', 'accSparepartRequests', 'accPurchaseOrders', 'accDeliveryOrders',
+  ],
+}
+
+// Role home routes used when a role hits a page it cannot access (or the login page while authed).
+export const homeRouteNameByRole: Record<string, string> = {
+  customer_service: 'csDashboard',
+  technician: 'techDashboard',
+  accounting: 'accDashboard',
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
 }
 
 // Backend accepts both 'technician' and 'teknisi' (auth/service.go, user/service.go);
