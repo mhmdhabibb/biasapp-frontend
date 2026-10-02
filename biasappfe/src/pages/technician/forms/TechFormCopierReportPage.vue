@@ -66,7 +66,7 @@ const beforeMeter = computed(() => {
   const ci = (contractItems.value || []).find((c: any) =>
     unitId && String(c.unit_id || c.unit?.id || '') === unitId
   )
-  const fromContract = num((ci as any)?.start_mono_value) || num((ci as any)?.start_color_value)
+  const fromContract = num((ci as any)?.start_mono_value) || num((ci as any)?.start_color_value) || num((ci as any)?.start_meter_bw) || num((ci as any)?.start_meter_color)
   return fromContract > 0 ? fromContract : 0
 })
 
@@ -80,6 +80,11 @@ const isLoading = ref(true)
 const isSaving = ref(false)
 
 const usage = computed(() => Math.max(0, Number(form.value.meter_after || 0) - beforeMeter.value))
+
+const sparepartRequests = computed(() => {
+  const list = job.value?.service_spareparts || []
+  return Array.isArray(list) ? list : []
+})
 
 // Paper size: from monthly meter readings linked to this report
 // (paper_size preloaded by backend). Fallback: contract rates (copy of
@@ -194,6 +199,19 @@ async function saveForm() {
         </select>
       </div>
 
+      <div class="form-group">
+        <label class="form-label">Sparepart Request (Read Only)</label>
+        <div v-if="sparepartRequests.length > 0" class="sparepart-box">
+          <div v-for="(sp, i) in sparepartRequests" :key="sp.id || i">
+            {{ i + 1 }}. {{ sp.product?.name || sp.product_name || sp.product_id }} - Qty {{ sp.qty }}
+          </div>
+        </div>
+        <div v-else class="sparepart-box sparepart-empty">
+          No sparepart request from Technical Report.
+        </div>
+        <p class="form-hint">Managed in Technical Report form.</p>
+      </div>
+
       <div class="signature-grid">
         <div class="form-group">
           <label class="form-label">Customer Signature <span class="text-danger">*</span></label>
@@ -246,6 +264,23 @@ async function saveForm() {
 }
 
 .paper-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+  border-style: dashed;
+}
+
+.sparepart-box {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border-light);
+  font-size: var(--font-size-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sparepart-empty {
   color: var(--color-text-muted);
   font-style: italic;
   border-style: dashed;

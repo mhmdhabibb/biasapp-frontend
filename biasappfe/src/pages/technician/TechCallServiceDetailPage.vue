@@ -112,14 +112,21 @@ const isDeliveryFormCompleted = computed(() => {
   return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature
 })
 
+function nowHM(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 async function acceptDeliveryJob() {
   if (!job.value || !deliveryOrder.value) return
-  if (!confirm('Are you sure you want to accept this delivery job now?')) return
+  if (!confirm('Are you sure you want to accept this delivery job now? Start time (time_in) will be recorded.')) return
   isSavingDoForm.value = true
   try {
+    const timeIn = nowHM()
     await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
-    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'in_transit' })
-    toast.success('Delivery job accepted.')
+    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'in_transit', time_in: timeIn })
+    doForm.value.time_in = timeIn
+    toast.success('Delivery job accepted. Start time recorded.')
     await refresh(true)
     initDoForm()
   } catch (err: any) {
@@ -151,14 +158,16 @@ async function completeDeliveryJob() {
     toast.warning('Please complete the service history form first (action, tested, completed + signatures).')
     return
   }
-  if (!confirm('Are you sure you want to complete this delivery?')) return
+  if (!confirm('Are you sure you want to complete this delivery? End time (time_out) will be recorded.')) return
   isSavingDoForm.value = true
   try {
+    const timeOut = nowHM()
+    doForm.value.time_out = timeOut
     const ok = await saveDeliveryForm(true)
     if (!ok) return
-    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'delivered' })
+    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'delivered', time_out: timeOut })
     await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
-    toast.success('Delivery completed.')
+    toast.success('Delivery completed. End time recorded.')
     await refresh(true)
     router.push('/technician/call-services')
   } catch (err: any) {
@@ -421,12 +430,12 @@ async function completeJob() {
           </div>
           <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
             <div class="form-group" style="flex: 1;">
-              <label class="form-label">Time In</label>
-              <input v-model="doForm.time_in" type="time" class="form-input">
+              <label class="form-label">Time In (Auto)</label>
+              <input v-model="doForm.time_in" type="time" class="form-input" readonly disabled>
             </div>
             <div class="form-group" style="flex: 1;">
-              <label class="form-label">Time Out</label>
-              <input v-model="doForm.time_out" type="time" class="form-input">
+              <label class="form-label">Time Out (Auto)</label>
+              <input v-model="doForm.time_out" type="time" class="form-input" readonly disabled placeholder="Auto at completion">
             </div>
           </div>
           <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
@@ -466,9 +475,19 @@ async function completeJob() {
             <label class="form-label">Action / Repair</label>
             <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm); white-space: pre-wrap;">{{ deliveryOrder?.action || '-' }}</div>
           </div>
+          <div class="form-group mt-md" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
+            <div class="text-sm font-bold mb-xs">Timestamps</div>
+            <div class="text-sm text-muted">Start (Time In): <strong>{{ deliveryOrder?.time_in || '-' }}</strong></div>
+            <div class="text-sm text-muted">End (Time Out): <strong>{{ deliveryOrder?.time_out || '-' }}</strong></div>
+          </div>
+          <div class="form-group mt-md" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
+            <div class="text-sm font-bold mb-xs">Signatures</div>
+            <div class="text-sm text-muted">Technician: <strong>{{ deliveryOrder?.technician_signature ? 'Signed' : '-' }}</strong></div>
+            <div class="text-sm text-muted">Customer: <strong>{{ deliveryOrder?.customer_signature ? 'Signed' : '-' }}</strong></div>
+          </div>
           <div class="mt-md text-success font-bold flex items-center gap-sm">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            Delivery completed{{ deliveryOrder?.time_out ? ' at ' + deliveryOrder.time_out : '' }}
+            Delivery completed on {{ job.completed_at ? new Date(job.completed_at).toLocaleString('en-GB') : '-' }}
           </div>
         </div>
       </div>

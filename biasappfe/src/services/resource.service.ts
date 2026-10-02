@@ -45,6 +45,14 @@ export function createResourceService<T extends ResourceRecord>(
     remove(id: string) {
       return api.delete<ApiResponse<null>>(`${path}/${id}`);
     },
+    /**
+     * Permanent (hard) delete. Backend only honors this when
+     * `?permanent=true` is sent by a superadmin; other roles get 403
+     * and the row stays soft-deleted at most.
+     */
+    hardRemove(id: string) {
+      return api.delete<ApiResponse<null>>(`${path}/${id}?permanent=true`);
+    },
   };
 }
 

@@ -35,5 +35,15 @@ export function useContractsStore() {
     await fetchAll();
   }
 
-  return { contracts, isLoading, error, fetchAll, create, update, remove };
+  async function hardRemove(id: string) {
+    await contractService.hardRemove(id);
+    await fetchAll();
+  }
+
+  async function renew(id: string, data: { end_date: string }) {
+    await contractService.renew(id, data);
+    await fetchAll();
+  }
+
+  return { contracts, isLoading, error, fetchAll, create, update, remove, hardRemove, renew };
 }

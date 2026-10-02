@@ -4,9 +4,11 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useModules } from '@/composables/useModules'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Permission } from '@/types'
 
@@ -171,6 +173,8 @@ async function handleSubmit() {
   }
 }
 
+const hardDelete = useHardDelete((id: string) => resources.permissions.hardRemove(id), fetchData)
+
 function openDelete(item: Permission) { deletingItem.value = item; showConfirm.value = true }
 
 async function handleDelete() {
@@ -192,7 +196,7 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Permissions" button-label="Add Permission" permission="permission:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search permissions..." permission="permission" @edit="openEdit" @delete="openDelete">
+    <DataTable :columns="columns" :data="data" search-placeholder="Search permissions..." permission="permission" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #cell-module_id="{ value }">
         {{ getModuleName(value) }}
       </template>
@@ -290,6 +294,9 @@ async function handleDelete() {
       </template>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Permission" :message="`Are you sure you want to delete permission '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Permission" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
 

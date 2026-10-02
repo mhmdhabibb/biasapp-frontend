@@ -35,5 +35,10 @@ export function useSuppliersStore() {
     await fetchAll();
   }
 
-  return { suppliers, isLoading, error, fetchAll, create, update, remove };
+  async function hardRemove(id: string) {
+    await supplierService.hardRemove(id);
+    await fetchAll();
+  }
+
+  return { suppliers, isLoading, error, fetchAll, create, update, remove, hardRemove };
 }

@@ -44,6 +44,11 @@ export function useNotificationsStore() {
     await fetchAll();
   }
 
+  async function hardRemove(id: string) {
+    await notificationService.hardRemove(id);
+    await fetchAll();
+  }
+
   return {
     notifications,
     isLoading,
@@ -52,6 +57,7 @@ export function useNotificationsStore() {
     create,
     update,
     remove,
+    hardRemove,
     markRead,
   };
 }

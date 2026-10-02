@@ -4,6 +4,7 @@ import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import CustomSelect from "@/components/ui/CustomSelect.vue";
 import { resources } from "@/services/resource.service";
 import {
@@ -13,6 +14,7 @@ import {
   type UOM,
 } from "@/types";
 import { useToast } from "@/composables/useToast";
+import { useHardDelete } from '@/composables/useHardDelete'
 
 const toast = useToast();
 
@@ -215,6 +217,8 @@ async function handleSubmit() {
   }
 }
 
+const hardDelete = useHardDelete((id: string) => resources.products.hardRemove(id), fetchData)
+
 function openDelete(item: Product) {
   deletingItem.value = item;
   showConfirm.value = true;
@@ -253,7 +257,7 @@ function formatRupiah(val: number): string {
       search-placeholder="Search products..."
       permission="product"
       @edit="openEdit"
-      @delete="openDelete"
+      @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open"
     >
       <template #cell-price="{ value }">{{
         formatRupiah(value || 0)
@@ -471,5 +475,8 @@ function formatRupiah(val: number): string {
       @close="showConfirm = false"
       @confirm="handleDelete"
     />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Product" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>

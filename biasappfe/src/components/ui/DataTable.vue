@@ -9,11 +9,14 @@ const props = defineProps<{
   searchPlaceholder?: string;
   /** Backend module key (e.g. "customer") used to gate default edit/delete buttons */
   permission?: string;
+  /** Show the permanent-delete button (parent must gate this to superadmin) */
+  showHardDelete?: boolean;
 }>();
 
 defineEmits<{
   (e: "edit", item: any): void;
   (e: "delete", item: any): void;
+  (e: "hard-delete", item: any): void;
 }>();
 
 const slots = useSlots();
@@ -219,6 +222,30 @@ const visiblePages = computed(() => {
                     <line x1="14" y1="11" x2="14" y2="17"></line>
                   </svg>
                 </button>
+                <button
+                  v-if="showHardDelete"
+                  class="action-btn action-btn--hard"
+                  title="Hapus permanen dari database (superadmin)"
+                  @click="$emit('hard-delete', row)"
+                >
+                  <svg
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path
+                      d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                    ></path>
+                    <line x1="12" y1="11" x2="12" y2="17"></line>
+                  </svg>
+                </button>
               </slot>
             </td>
           </tr>
@@ -414,6 +441,9 @@ const visiblePages = computed(() => {
   color: #fff;
   box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
 }
+
+/* .action-btn--hard lives in assets/main.css (global) so custom
+   #actions slots can reuse the same style. */
 
 .pagination {
   display: flex;

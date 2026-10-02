@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { resources } from '@/services/resource.service'
 import type { Customer, TableColumn } from '@/types'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -81,6 +83,8 @@ function openEdit(item: Customer) {
   showModal.value = true
 }
 
+const hardDelete = useHardDelete((id: string) => resources.customers.hardRemove(id), fetchData)
+
 function openDelete(item: Customer) { deletingItem.value = item; showConfirm.value = true }
 
 const masterStore = useMasterStore()
@@ -132,7 +136,7 @@ async function handleDelete() {
     <PageHeader title="Customers" :button-label="isTechnician ? undefined : 'Add Customer'" permission="customer:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search customers..."
                permission="customer"
-               @edit="openEdit" @delete="openDelete" />
+               @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Customer' : 'Add Customer'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="cust-company" class="form-label">Customer Name</label>
@@ -187,6 +191,9 @@ async function handleDelete() {
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Customer" :message="`Are you sure you want to delete customer '${deletingItem?.company_name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Customer" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
 

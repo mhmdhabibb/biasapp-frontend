@@ -3,8 +3,10 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Unit, UOM } from '@/types'
@@ -167,6 +169,8 @@ async function handleSubmit() {
 
 function openDelete(item: Unit) { deletingItem.value = item; showConfirm.value = true }
 
+const hardDelete = useHardDelete((id: string) => resources.units.hardRemove(id), fetchData)
+
 async function handleDelete() {
   if (deletingItem.value) {
     try {
@@ -185,6 +189,31 @@ function getBrandName(id: string | null): string {
   if (!id) return '-'
   const b = brands.value.find(b => b.id === id)
   return b ? b.name : '-'
+}
+
+function statusBadgeClass(status: string | null | undefined): string {
+  switch ((status || '').toLowerCase()) {
+    case 'available':
+      return 'badge-success'
+    case 'rented':
+      return 'badge-info'
+    case 'maintenance':
+      return 'badge-warning'
+    case 'broken':
+      return 'badge-danger'
+    case 'sold':
+      return 'badge-neutral'
+    default:
+      return 'badge-neutral'
+  }
+}
+
+function formatStatus(status: string | null | undefined): string {
+  if (!status) return '-'
+  return status
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
 }
 
 const badgeTrue = {
@@ -216,9 +245,14 @@ const badgeFalse = {
     <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" permission="unit:create"
       @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search units..." permission="unit" @edit="openEdit"
-      @delete="openDelete">
+      @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
+      </template>
+      <template #cell-status="{ value }">
+        <span class="badge" :class="statusBadgeClass(value)">
+          {{ formatStatus(value) }}
+        </span>
       </template>
       <template #cell-is_computer="{ value }">
         <span :style="value ? badgeTrue : badgeFalse">
@@ -314,5 +348,8 @@ const badgeFalse = {
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Unit" :message="`Are you sure you want to delete this unit?`"
       @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Unit" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>

@@ -5,8 +5,10 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
+import { useHardDelete } from '@/composables/useHardDelete'
 import type { TableColumn, User } from '@/types'
 import { resources } from '@/services/resource.service'
 
@@ -32,6 +34,23 @@ function rowRoleName(row: any): string {
     roles.value.find((r: any) => String(r.id) === String(row?.role_id))?.name ||
     '',
   ).toLowerCase()
+}
+
+function roleBadgeClass(role: string | null | undefined): string {
+  const r = String(role || '').toLowerCase()
+  if (r.includes('superadmin')) return 'badge-danger'
+  if (r === 'admin' || r.includes('admin')) return 'badge-warning'
+  if (r.includes('technician') || r.includes('teknisi')) return 'badge-info'
+  if (r.includes('accounting') || r.includes('finance') || r.includes('keuangan')) return 'badge-success'
+  return 'badge-neutral'
+}
+
+function formatRole(role: string | null | undefined): string {
+  if (!role) return '-'
+  return String(role)
+    .split(/[_-\s]+/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
 }
 
 // CS boleh reset password karyawan lain, kecuali yang ber-role superadmin.
@@ -130,6 +149,8 @@ function openDelete(item: User) {
   showConfirm.value = true
 }
 
+const hardDelete = useHardDelete((id: string) => resources.users.hardRemove(id), fetchData)
+
 const showResetModal = ref(false)
 const resetTarget = ref<(User & { role_name?: string }) | null>(null)
 const showResetPwd = ref(false)
@@ -192,6 +213,11 @@ async function handleDelete() {
       @edit="openEdit"
       @delete="openDelete"
     >
+      <template #cell-role_name="{ value }">
+        <span class="badge" :class="roleBadgeClass(value)">
+          {{ formatRole(value) }}
+        </span>
+      </template>
       <template #actions="{ row }">
         <button
           v-if="canReset(row)"
@@ -205,8 +231,25 @@ async function handleDelete() {
             <path d="M7 11V7a5 5 0 0110 0v4"></path>
           </svg>
         </button>
+        <button
+          v-if="hardDelete.isSuperadmin"
+          class="action-btn action-btn--hard"
+          title="Hapus permanen dari database (superadmin)"
+          aria-label="Hapus permanen"
+          @click.stop="hardDelete.open(row)"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+            <line x1="12" y1="11" x2="12" y2="17"></line>
+          </svg>
+        </button>
       </template>
     </DataTable>
+
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen User" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
 
     <FormModal
       :open="showModal"

@@ -86,9 +86,26 @@ function paperTypeName(id: any): string {
 }
 
 function rateLabel(r: any): string {
-  const size = r?.paper_size?.name || paperSizeName(r?.paper_size_id);
-  const type = r?.paper_type?.name || paperTypeName(r?.paper_type_id);
-  return type ? `${size} / ${type}` : size;
+  let size = r?.paper_size?.name || "";
+  if (!size) {
+    if (!r?.paper_size_id) {
+      size = "Semua ukuran";
+    } else {
+      const found = (paperSizes.value as any[]).find(
+        (x: any) => String(x.id) === String(r.paper_size_id),
+      );
+      size = found ? found.name : "";
+    }
+  }
+  let type = r?.paper_type?.name || "";
+  if (!type && r?.paper_type_id) {
+    const found = (paperTypes.value as any[]).find(
+      (x: any) => String(x.id) === String(r.paper_type_id),
+    );
+    type = found ? found.name : "";
+  }
+  if (size && type) return `${size} / ${type}`;
+  return size || type || "-";
 }
 
 onMounted(async () => {
@@ -348,18 +365,21 @@ function generateContractHTML(item: any): string {
                 : "";
             const locTxt = r._unitLoc ? ` — ${r._unitLoc}` : "";
             return `<tr>
-              <td style="vertical-align: top;">-</td>
+              <td class="col-dash">-</td>
               <td>${label}${locTxt}${freeTxt}: BW ${fmtRpPrint(r.rate_per_page_bw)}/lbr, Warna ${fmtRpPrint(r.rate_per_page_color)}/lbr</td>
+              <td class="col-amount"></td>
             </tr>`;
           })
           .join("")
       : `<tr>
-          <td style="vertical-align: top;">-</td>
+          <td class="col-dash">-</td>
           <td>Biaya per lembar untuk cetak hitam putih : ${fmtRpPrint(150)}/lbr</td>
+          <td class="col-amount"></td>
         </tr>
         <tr>
-          <td style="vertical-align: top;">-</td>
+          <td class="col-dash">-</td>
           <td>Biaya per lembar setelah free quota warna : ${fmtRpPrint(1300)}/lbr</td>
+          <td class="col-amount"></td>
         </tr>`;
   const freeQuota = item.free_quota_color || item.free_copy_quota || 0;
 
@@ -391,6 +411,18 @@ function generateContractHTML(item: any): string {
   const dateNum = d.getDate();
   const monthName = bulanNama[d.getMonth()];
   const yearNum = d.getFullYear();
+
+  // Format "2026-10-02" -> "2 Oktober 2026" untuk teks kontrak
+  const formatTanggalID = (s: any): string => {
+    if (!s) return "-";
+    const m = String(s).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return String(s).slice(0, 10);
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const dd = Number(m[3]);
+    if (!mo || mo < 1 || mo > 12 || !dd) return String(s).slice(0, 10);
+    return `${dd} ${bulanNama[mo - 1]} ${y}`;
+  };
 
   const ejaAngka = (n: number): string => {
     const kata = [
@@ -480,8 +512,17 @@ function generateContractHTML(item: any): string {
         <title>Perjanjian - ${contractNo}</title>
         <link rel="icon" type="image/png" href="/bias-favicon.png">
         <style>
-          @page { size: A4; margin: 1.8cm 2cm 1.8cm 2cm; }
-          body { font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.45; color: #000; margin: 0; padding: 0; text-align: justify; }
+          @page { size: A4; margin: 1.8cm 2cm 2.2cm 2cm; }
+          /* Nomor halaman cetak rata kiri di tiap halaman: "2 | P a g e". */
+          @page {
+            @bottom-left {
+              content: counter(page) "  |  P a g e";
+              font-family: "Times New Roman", Times, serif;
+              font-size: 9pt;
+              color: #000;
+            }
+          }
+          body { font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.45; color: #000; margin: 0; padding: 0; text-align: justify; orphans: 3; widows: 3; }
           
           /* Header */
           .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
@@ -501,14 +542,25 @@ function generateContractHTML(item: any): string {
           
           .party-info { display: grid; grid-template-columns: 25px 140px 10px 1fr; margin-bottom: 4px; }
           
-          .pasal-block { page-break-inside: avoid; margin-top: 15px; }
+          /* Pasal boleh mengalir lintas halaman agar tidak ada ruang kosong
+             besar di bawah halaman; judul pasal selalu menempel dengan
+             ayat pertamanya, tiap ayat diusahakan tidak terpotong. */
+          .pasal-block { margin-top: 15px; }
           .pasal-title { text-align: center; font-weight: bold; margin-top: 16px; margin-bottom: 8px; page-break-after: avoid; }
           
           .list-item { display: flex; margin-bottom: 6px; page-break-inside: avoid; }
           .list-item .bullet { width: 35px; flex-shrink: 0; text-align: right; padding-right: 12px; }
           .list-item .text { flex-grow: 1; }
 
-          .unit-info-grid { display: grid; grid-template-columns: 160px 15px 1fr; row-gap: 2px; margin-left: 20px; margin-top: 4px; page-break-inside: avoid; }
+          .price-table { width: 100%; margin-top: 5px; border: none; border-collapse: collapse; font-size: 11pt; page-break-inside: avoid; }
+          .price-table td { padding: 1px 0; vertical-align: top; }
+          .price-table .col-dash { width: 20px; }
+          .price-table .col-amount { white-space: nowrap; text-align: right; width: 140px; }
+
+          .unit-info-grid { display: grid; grid-template-columns: 160px 15px 1fr; row-gap: 2px; margin-left: 20px; margin-top: 4px; }
+          /* Tiap unit utuh tidak terpotong, tapi antar-unit boleh ganti halaman
+             agar tidak ada ruang kosong besar. */
+          .unit-block { page-break-inside: avoid; }
 
           .signature-section { display: flex; justify-content: space-between; margin-top: 40px; text-align: center; page-break-inside: avoid; }
           .signature-box { width: 45%; display: flex; flex-direction: column; justify-content: space-between; min-height: 140px; }
@@ -602,7 +654,7 @@ function generateContractHTML(item: any): string {
           </div>
 
           <!-- Detail Unit -->
-          <div style="margin-top: 10px; margin-bottom: 15px; page-break-inside: avoid;">
+          <div style="margin-top: 10px; margin-bottom: 15px;">
             ${unitsInContract
               .map((uItem: any, index: number) => {
                 const targetUnit = findUnit(uItem.unit_id) || uItem.unit;
@@ -613,7 +665,7 @@ function generateContractHTML(item: any): string {
                   uItem.is_copier === true;
                 const uName = unitOnlyName(uItem.unit_id, uItem.unit);
                 const uBrand =
-                  uItem.unit?.brand?.name || targetUnit?.brand?.name || "EPSON";
+                  uItem.unit?.brand?.name || targetUnit?.brand?.name || "-";
                 const uSerial = unitSerialNo(uItem.unit_id, uItem.unit);
                 const uLoc =
                   uItem.contract?.location ||
@@ -627,12 +679,12 @@ function generateContractHTML(item: any): string {
 
                 const showMeter = isCopier || uStartBw > 0 || uStartColor > 0;
 
-                const meterHtml = showMeter
-                  ? `
-                    <div>Meter Awal</div><div>:</div><div>${uStartBw} (B/W)</div>
-                    <div>Meter Awal</div><div>:</div><div>${uStartColor} (Color)</div>
-              `
-                  : "";
+                const meterRows = [];
+                if (uStartBw > 0) meterRows.push(`<div>Meter Awal</div><div>:</div><div>${uStartBw} (B/W)</div>`);
+                if (uStartColor > 0) meterRows.push(`<div>Meter Awal</div><div>:</div><div>${uStartColor} (Warna)</div>`);
+                if (meterRows.length === 0) meterRows.push(`<div>Meter Awal</div><div>:</div><div>${uStartBw} (B/W)</div>`);
+
+                const meterHtml = showMeter ? meterRows.join("\n") : "";
 
                 const uRates = Array.isArray(uItem.rates) ? uItem.rates : [];
                 const uRatesHtml =
@@ -642,13 +694,13 @@ function generateContractHTML(item: any): string {
                           const lbl = rateLabel(r);
                           const bw = (Number(r.rate_per_page_bw) || 0).toLocaleString("id-ID");
                           const cl = (Number(r.rate_per_page_color) || 0).toLocaleString("id-ID");
-                          return `${lbl} — BW Rp ${bw}, Warna Rp ${cl}`;
+                          return `<b>${lbl}</b><br>BW Rp ${bw}, Warna Rp ${cl}`;
                         })
                         .join("<br>")}</div>`
                     : "";
 
                 return `
-                <div style="margin-bottom: 12px;">
+                <div class="unit-block" style="margin-bottom: 12px;">
                   <div><b>${index + 1}. ${uLoc}</b></div>
                   <div class="unit-info-grid">
                     <div>Merek</div><div>:</div><div><b>${uBrand}</b></div>
@@ -675,7 +727,7 @@ function generateContractHTML(item: any): string {
               JANGKA WAKTU PERJANJIAN
             </div>
             <div class="content-block">
-              Para Pihak sepakat bahwa jangka waktu Perjanjian ini adalah ${durationText}, berlaku efektif sejak <b>${item.contract?.start_date ? item.contract.start_date.slice(0, 10) : "-"} sampai dengan ${item.contract?.end_date ? item.contract.end_date.slice(0, 10) : "-"}</b> dan masa sewa dapat diperpanjang atas kesepakatan bersama dengan pemberitahuan terlebih dahulu dari Pihak Kedua selambat-lambatnya 2 (dua) minggu sebelum masa sewa berakhir. <i>Dan apabila tidak ada pemberitahuan, maka kontrak ini secara otomatis diperpanjang</i>.
+              Para Pihak sepakat bahwa jangka waktu Perjanjian ini adalah ${durationText}, berlaku efektif sejak <b>${formatTanggalID(item.contract?.start_date)} s/d ${formatTanggalID(item.contract?.end_date)}</b> dan masa sewa dapat diperpanjang atas kesepakatan bersama dengan pemberitahuan terlebih dahulu dari Pihak Kedua selambat-lambatnya 2 (dua) minggu sebelum masa sewa berakhir. <i>Dan apabila tidak ada pemberitahuan, maka kontrak ini secara otomatis diperpanjang</i>.
             </div>
           </div>
 
@@ -688,12 +740,11 @@ function generateContractHTML(item: any): string {
             <div class="list-item">
               <div class="bullet">(1)</div>
               <div class="text">Harga Sewa yang disepakati oleh Para Pihak adalah sebagai berikut :
-                <table style="width: 100%; margin-top: 5px; border: none; font-size: 11pt;">
+                <table class="price-table">
                   <tr>
-                    <td style="width: 20px; vertical-align: top;">-</td>
-                    <td>Sewa mesin per bulan per unit ${hasCopier && freeQuota > 0 ? `termasuk ${freeQuota} lembar per bulan untuk cetak warna` : ""}</td>
-                    <td style="width: 30px;">Rp</td>
-                    <td style="text-align: right; width: 120px;">${formatRupiah(totalMonthlyFee).replace("Rp ", "")}</td>
+                    <td class="col-dash">-</td>
+                    <td>Sewa mesin per bulan per unit${hasCopier && freeQuota > 0 ? ` termasuk ${freeQuota} lbr/bln cetak warna` : ""}</td>
+                    <td class="col-amount">${formatRupiah(totalMonthlyFee)}</td>
                   </tr>
                   ${hasCopier ? rateRowsHtml : ""}
                 </table>

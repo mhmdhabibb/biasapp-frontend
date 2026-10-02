@@ -19,4 +19,7 @@ export const notificationService = {
   remove(id: string) {
     return api.delete<ApiResponse<null>>(`/notifications/${id}`);
   },
+  hardRemove(id: string) {
+    return api.delete<ApiResponse<null>>(`/notifications/${id}?permanent=true`);
+  },
 };

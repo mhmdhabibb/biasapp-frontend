@@ -40,6 +40,7 @@ const form = ref({
   paper_type_id: null as any,
   color_mode: "bw",
   end_meter: 0,
+  reading_date: new Date().toISOString().slice(0, 10),
 });
 
 const selectedContract = computed(() =>
@@ -178,6 +179,11 @@ function getPaperSizeName(reading: any) {
 async function submitReading() {
   if (!form.value.contract_item_id)
     return toast.warning("Select a contract/unit!");
+  if (!form.value.reading_date)
+    return toast.warning("Reading date is required!");
+  const readingDate = new Date(
+    `${form.value.reading_date}T00:00:00`,
+  ).toISOString();
   const ci = selectedContract.value;
 
   // Multi-size mode: BW + Color rows per filled size x kind.
@@ -209,6 +215,7 @@ async function submitReading() {
           start_meter: startMeter,
           end_meter: endMeter,
           total_usage: Math.max(0, endMeter - startMeter),
+          reading_date: readingDate,
         });
       }
     }
@@ -257,6 +264,7 @@ async function submitReading() {
       start_meter: startMeter,
       end_meter: endMeter,
       total_usage: Math.max(0, endMeter - startMeter),
+      reading_date: readingDate,
     });
     await refresh(true);
     showAddModal.value = false;
@@ -354,6 +362,21 @@ async function submitReading() {
                 }})
               </option>
             </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label"
+              >Reading Date <span class="text-danger">*</span></label
+            >
+            <input
+              v-model="form.reading_date"
+              type="date"
+              class="form-input"
+              required
+            />
+            <small class="text-muted"
+              >Used to determine the billing period on the invoice.</small
+            >
           </div>
 
           <div

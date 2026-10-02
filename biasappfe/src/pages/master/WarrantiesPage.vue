@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Warranty } from '@/types'
@@ -249,6 +251,8 @@ async function handleSubmit() {
   }
 }
 
+const hardDelete = useHardDelete((id: string) => resources.warranties.hardRemove(id), fetchData)
+
 function openDelete(item: Warranty) { deletingItem.value = item; showConfirm.value = true }
 
 async function handleDelete() {
@@ -271,7 +275,7 @@ async function handleDelete() {
     <PageHeader title="Warranties" button-label="Add Warranty" permission="warranty:create" @add="openAdd" />
 
     <DataTable :columns="columns" :data="data" search-placeholder="Search warranties..." permission="warranty"
-      @edit="openEdit" @delete="openDelete">
+      @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #cell-customer_id="{ value }">
         {{ getCustomerName(value) }}
       </template>
@@ -375,6 +379,9 @@ async function handleDelete() {
     <ConfirmDialog :open="showConfirm" title="Delete Warranty"
       :message="`Are you sure you want to delete warranty '${deletingItem?.warranty_type}'?`"
       @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Warranty" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
 

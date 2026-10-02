@@ -4,9 +4,11 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, ProductCategory } from '@/types'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 
 const toast = useToast()
 
@@ -65,6 +67,8 @@ async function handleSubmit() {
   }
 }
 
+const hardDelete = useHardDelete((id: string) => resources.productCategories.hardRemove(id), fetchData)
+
 function openDelete(item: ProductCategory) { deletingItem.value = item; showConfirm.value = true }
 
 async function handleDelete() {
@@ -86,7 +90,7 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Product Categories" button-label="Add Category" permission="product_category:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search categories..." permission="product_category" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search categories..." permission="product_category" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Category' : 'Add Category'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="cat-name" class="form-label">Category Name</label>
@@ -98,6 +102,9 @@ async function handleDelete() {
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Category" :message="`Are you sure you want to delete category '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Category" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
 

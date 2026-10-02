@@ -545,6 +545,7 @@ export interface Supplier {
 
 export interface Contract {
   id: string | number;
+  end_date?: string;
   created_at: string;
   updated_at: string;
 }

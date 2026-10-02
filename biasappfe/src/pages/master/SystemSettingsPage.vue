@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -7,6 +8,7 @@ import type { SystemSetting, TableColumn } from '@/types'
 import { reactive, ref } from 'vue'
 import { useSystemSettings } from '@/composables/useSystemSettings'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 
 const toast = useToast()
 
@@ -15,7 +17,7 @@ const columns: TableColumn[] = [
   { key: 'value', label: 'Value' },
 ]
 
-const { systemSettings: data, fetchAll, create, update, remove, error } = useSystemSettings()
+const { systemSettings: data, fetchAll, create, update, remove, hardRemove, error } = useSystemSettings()
 fetchAll()
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -45,6 +47,8 @@ async function handleSubmit() {
   toast.success(editingItem.value ? 'System setting updated successfully!' : 'System setting saved successfully!')
 }
 
+const hardDelete = useHardDelete(hardRemove, fetchAll)
+
 function openDelete(item: SystemSetting) { deletingItem.value = item; showConfirm.value = true }
 async function handleDelete() {
   if (deletingItem.value) await remove(String(deletingItem.value.id))
@@ -57,7 +61,7 @@ async function handleDelete() {
   <div>
     <PageHeader title="System Settings" button-label="Add System Setting" permission="system_setting:create" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Search..." permission="system_setting" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search..." permission="system_setting" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit System Setting' : 'Add System Setting'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group" v-for="col in columns" :key="col.key">
         <label class="form-label">{{ col.label }}</label>
@@ -65,5 +69,8 @@ async function handleDelete() {
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete System Setting" message="Are you sure you want to delete this item?" @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen System Setting" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
