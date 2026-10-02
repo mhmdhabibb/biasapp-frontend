@@ -14,4 +14,7 @@ export const supplierService = {
   remove(id: string) {
     return api.delete<ApiResponse<null>>(`/suppliers/${id}`);
   },
+  hardRemove(id: string) {
+    return api.delete<ApiResponse<null>>(`/suppliers/${id}?permanent=true`);
+  },
 };

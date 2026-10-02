@@ -39,7 +39,7 @@ function openAdd() {
 
 async function handleSubmit() {
   if (!form.service_report_id || !form.product_id || form.qty < 1) {
-    toast.warning('Pilih service report dan sparepart, isi qty minimal 1')
+    toast.warning('Select a service report and sparepart, enter a qty of at least 1')
     return
   }
   saving.value = true
@@ -50,10 +50,10 @@ async function handleSubmit() {
       qty: Number(form.qty)
     })
     await master.refresh(true)
-    toast.success('Sparepart request dibuat')
+    toast.success('Sparepart request created')
     showModal.value = false
   } catch (err) {
-    toast.error(toast.fromError(err, 'Gagal membuat sparepart request'))
+    toast.error(toast.fromError(err, 'Failed to create sparepart request'))
   } finally {
     saving.value = false
   }
@@ -96,7 +96,7 @@ function getSR(id: number | null) {
       <div class="form-group">
         <label class="form-label" for="sr">Service Report</label>
         <select id="sr" v-model="form.service_report_id" class="form-select">
-          <option value="" disabled>Pilih service report</option>
+          <option value="" disabled>Select service report</option>
           <option v-for="sr in serviceReports" :key="sr.id" :value="sr.id">
             {{ sr.report_no || sr.service_report_no || sr.id }}
           </option>
@@ -105,7 +105,7 @@ function getSR(id: number | null) {
       <div class="form-group">
         <label class="form-label" for="sp">Sparepart</label>
         <select id="sp" v-model="form.product_id" class="form-select">
-          <option value="" disabled>Pilih produk</option>
+          <option value="" disabled>Select product</option>
           <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </div>

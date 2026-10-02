@@ -1,11 +1,33 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import AdminLayout from './components/layout/AdminLayout.vue'
 import ToastHost from './components/ui/ToastHost.vue'
+import { useAuth } from './composables/useAuth'
 
 const route = useRoute()
+const { isAuthenticated, refreshPermissions } = useAuth()
 const isLoginPage = computed(() => route.name === 'login')
+
+let permissionRefreshInterval: ReturnType<typeof setInterval> | undefined
+
+function refreshActiveSession() {
+  if (isAuthenticated.value && document.visibilityState === 'visible') {
+    void refreshPermissions()
+  }
+}
+
+onMounted(() => {
+  permissionRefreshInterval = setInterval(refreshActiveSession, 30000)
+  window.addEventListener('focus', refreshActiveSession)
+  document.addEventListener('visibilitychange', refreshActiveSession)
+})
+
+onUnmounted(() => {
+  if (permissionRefreshInterval) clearInterval(permissionRefreshInterval)
+  window.removeEventListener('focus', refreshActiveSession)
+  document.removeEventListener('visibilitychange', refreshActiveSession)
+})
 </script>
 
 <template>

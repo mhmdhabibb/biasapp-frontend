@@ -1,81 +1,101 @@
 <script setup lang="ts">
-import { usePermission } from '@/composables/usePermission';
-import { activeApiRequests } from '@/services/api';
-import type { TableColumn } from '@/types';
-import { computed, ref, useSlots } from 'vue';
+import { usePermission } from "@/composables/usePermission";
+import type { TableColumn } from "@/types";
+import { computed, ref, useSlots } from "vue";
 
 const props = defineProps<{
-  columns: TableColumn[]
-  data: any[]
-  searchPlaceholder?: string
+  columns: TableColumn[];
+  data: any[];
+  searchPlaceholder?: string;
   /** Backend module key (e.g. "customer") used to gate default edit/delete buttons */
-  permission?: string
-}>()
+  permission?: string;
+  /** Show the permanent-delete button (parent must gate this to superadmin) */
+  showHardDelete?: boolean;
+}>();
 
 defineEmits<{
-  (e: 'edit', item: any): void
-  (e: 'delete', item: any): void
-}>()
+  (e: "edit", item: any): void;
+  (e: "delete", item: any): void;
+  (e: "hard-delete", item: any): void;
+}>();
 
-const slots = useSlots()
-const { can } = usePermission()
+const slots = useSlots();
+const { can } = usePermission();
 
-const showEdit = computed(() => !props.permission || can(`${props.permission}:update`))
-const showDelete = computed(() => !props.permission || can(`${props.permission}:delete`))
-const showDefaultActions = computed(() => showEdit.value || showDelete.value)
+const showEdit = computed(
+  () => !props.permission || can(`${props.permission}:update`),
+);
+const showDelete = computed(
+  () => !props.permission || can(`${props.permission}:delete`),
+);
+const showDefaultActions = computed(() => showEdit.value || showDelete.value);
 // ACTION column: always shown when a custom #actions slot decides its own content,
 // otherwise only when at least one default action button is visible.
-const showActionsColumn = computed(() => Boolean(slots.actions) || showDefaultActions.value)
-const isLoading = computed(() => activeApiRequests.value > 0)
-const skeletonRows = Array.from({ length: 6 }, (_, index) => index)
+const showActionsColumn = computed(
+  () => Boolean(slots.actions) || showDefaultActions.value,
+);
 
-const searchQuery = ref('')
-const currentPage = ref(1)
-const perPage = 10
+const searchQuery = ref("");
+const currentPage = ref(1);
+const perPage = 10;
 
 const filteredData = computed(() => {
-  if (!searchQuery.value.trim()) return props.data
-  const q = searchQuery.value.toLowerCase()
+  if (!searchQuery.value.trim()) return props.data;
+  const q = searchQuery.value.toLowerCase();
   return props.data.filter((row) =>
     props.columns.some((col) => {
-      const val = row[col.key]
-      if (val == null) return false
-      return String(val).toLowerCase().includes(q)
-    })
-  )
-})
+      const val = row[col.key];
+      if (val == null) return false;
+      return String(val).toLowerCase().includes(q);
+    }),
+  );
+});
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredData.value.length / perPage)))
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(filteredData.value.length / perPage)),
+);
 const paginatedData = computed(() => {
-  const start = (currentPage.value - 1) * perPage
-  return filteredData.value.slice(start, start + perPage)
-})
+  const start = (currentPage.value - 1) * perPage;
+  return filteredData.value.slice(start, start + perPage);
+});
 
 function goToPage(page: number) {
   if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
+    currentPage.value = page;
   }
 }
 
 const visiblePages = computed(() => {
-  const pages: number[] = []
-  const total = totalPages.value
-  const current = currentPage.value
-  const delta = 2
-  for (let i = Math.max(1, current - delta); i <= Math.min(total, current + delta); i++) {
-    pages.push(i)
+  const pages: number[] = [];
+  const total = totalPages.value;
+  const current = currentPage.value;
+  const delta = 2;
+  for (
+    let i = Math.max(1, current - delta);
+    i <= Math.min(total, current + delta);
+    i++
+  ) {
+    pages.push(i);
   }
-  return pages
-})
+  return pages;
+});
 </script>
 
 <template>
   <div class="data-table-wrapper">
     <div class="data-table-toolbar">
       <div class="search-box">
-        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        <svg
+          class="search-icon"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
         <input
           v-model="searchQuery"
@@ -83,52 +103,45 @@ const visiblePages = computed(() => {
           class="form-input search-input"
           :placeholder="searchPlaceholder || 'Search data...'"
           @input="currentPage = 1"
-        >
+        />
       </div>
       <span class="data-count" aria-live="polite">
-        {{ isLoading ? 'Memuat...' : `${filteredData.length} items` }}
+        {{ `${filteredData.length} items` }}
       </span>
     </div>
 
-    <div v-if="isLoading" class="table-scroll" role="status" aria-label="Memuat data">
-      <table class="data-table skeleton-table" aria-hidden="true">
-        <thead>
-          <tr>
-            <th class="th-num">#</th>
-            <th v-for="col in columns" :key="col.key">{{ col.label }}</th>
-            <th v-if="showActionsColumn" class="th-actions">ACTION</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in skeletonRows" :key="row">
-            <td class="td-num"><span class="skeleton skeleton-index" /></td>
-            <td v-for="(col, colIndex) in columns" :key="col.key">
-              <span class="skeleton" :class="`skeleton-width-${(row + colIndex) % 3}`" />
-            </td>
-            <td v-if="showActionsColumn" class="td-actions">
-              <span class="skeleton skeleton-action" />
-              <span class="skeleton skeleton-action" />
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div v-else-if="data.length === 0" class="empty-state">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5">
-        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <line x1="9" y1="15" x2="15" y2="15"/>
+    <div v-if="data.length === 0" class="empty-state">
+      <svg
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="var(--color-text-muted)"
+        stroke-width="1.5"
+      >
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="9" y1="15" x2="15" y2="15" />
       </svg>
       <p class="empty-title">No data yet</p>
       <p class="empty-desc">Data you add will appear here</p>
     </div>
 
-    <div v-else-if="filteredData.length === 0 && searchQuery" class="empty-state">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5">
-        <circle cx="11" cy="11" r="8"/>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        <line x1="8" y1="11" x2="14" y2="11"/>
+    <div
+      v-else-if="filteredData.length === 0 && searchQuery"
+      class="empty-state"
+    >
+      <svg
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="var(--color-text-muted)"
+        stroke-width="1.5"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        <line x1="8" y1="11" x2="14" y2="11" />
       </svg>
       <p class="empty-title">Not found</p>
       <p class="empty-desc">No data matches "{{ searchQuery }}"</p>
@@ -154,7 +167,7 @@ const visiblePages = computed(() => {
             <td class="td-num">{{ (currentPage - 1) * perPage + idx + 1 }}</td>
             <td v-for="col in columns" :key="col.key">
               <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row">
-                {{ row[col.key] ?? '-' }}
+                {{ row[col.key] ?? "-" }}
               </slot>
             </td>
             <td v-if="showActionsColumn" class="td-actions">
@@ -165,9 +178,23 @@ const visiblePages = computed(() => {
                   title="Edit"
                   @click="$emit('edit', row)"
                 >
-                  <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  <svg
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
+                    ></path>
+                    <path
+                      d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
+                    ></path>
                   </svg>
                 </button>
                 <button
@@ -176,11 +203,47 @@ const visiblePages = computed(() => {
                   title="Delete"
                   @click="$emit('delete', row)"
                 >
-                  <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
                     <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                    <path
+                      d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                    ></path>
                     <line x1="10" y1="11" x2="10" y2="17"></line>
                     <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+                <button
+                  v-if="showHardDelete"
+                  class="action-btn action-btn--hard"
+                  title="Hapus permanen dari database (superadmin)"
+                  @click="$emit('hard-delete', row)"
+                >
+                  <svg
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path
+                      d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                    ></path>
+                    <line x1="12" y1="11" x2="12" y2="17"></line>
                   </svg>
                 </button>
               </slot>
@@ -261,34 +324,6 @@ const visiblePages = computed(() => {
   white-space: nowrap;
 }
 
-.skeleton {
-  display: block;
-  height: 14px;
-  border-radius: 4px;
-  background: linear-gradient(
-    100deg,
-    var(--color-border-light) 20%,
-    var(--color-surface-raised) 38%,
-    var(--color-border-light) 56%
-  );
-  background-size: 220% 100%;
-  animation: skeleton-shimmer 1.35s ease-in-out infinite;
-}
-
-.skeleton-width-0 { width: 42%; }
-.skeleton-width-1 { width: 68%; }
-.skeleton-width-2 { width: 86%; }
-.skeleton-index { width: 18px; margin: 0 auto; }
-.skeleton-action { width: 32px; height: 32px; border-radius: 8px; }
-
-@keyframes skeleton-shimmer {
-  to { background-position-x: -220%; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton { animation: none; }
-}
-
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -345,7 +380,8 @@ const visiblePages = computed(() => {
   border-bottom: none;
 }
 
-.th-num, .td-num {
+.th-num,
+.td-num {
   width: 48px;
   text-align: center;
   color: var(--color-text-muted);
@@ -405,6 +441,9 @@ const visiblePages = computed(() => {
   color: #fff;
   box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
 }
+
+/* .action-btn--hard lives in assets/main.css (global) so custom
+   #actions slots can reuse the same style. */
 
 .pagination {
   display: flex;

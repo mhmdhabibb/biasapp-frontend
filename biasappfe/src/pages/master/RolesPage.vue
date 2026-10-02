@@ -2,7 +2,9 @@
 // @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { useAuthStore } from '@/stores/auth.store'
@@ -34,6 +36,7 @@ const deletingRole = ref<Role | null>(null)
 const roleForm = ref({ name: '' })
 
 const activeTab = ref('roles') // 'users' or 'roles'
+const moduleSearchQuery = ref('')
 
 async function fetchData() {
   try {
@@ -71,6 +74,7 @@ const filteredRoles = computed(() => {
 })
 
 const selectedRole = computed(() => roles.value.find(r => String(r.id) === selectedRoleId.value))
+const enabledModuleCount = computed(() => permissionsByModule.value.filter(group => isModuleFullySelected(group.module)).length)
 
 const permissionsByModule = computed(() => {
   const grouped = new Map<string, Permission[]>()
@@ -93,13 +97,13 @@ const permissionsByModule = computed(() => {
     }
   })
 
-  // Permission tanpa modul (module_id NULL, mis. purchase_order:view)
+  // Permissions without a module (module_id NULL, e.g. purchase_order:view)
   grouped.forEach((perms, key) => {
     if (!key.startsWith('none:')) return
     result.push({
       module: {
         id: key,
-        name: `${key.slice(5)} (Tanpa Modul)`,
+        name: `${key.slice(5)} (No Module)`,
         is_active: true,
       } as Module,
       permissions: perms
@@ -108,9 +112,15 @@ const permissionsByModule = computed(() => {
   return result
 })
 
+const filteredPermissionGroups = computed(() => {
+  const query = moduleSearchQuery.value.trim().toLowerCase()
+  if (!query) return permissionsByModule.value
+  return permissionsByModule.value.filter(group => group.module.name.toLowerCase().includes(query))
+})
+
 // Watchers
-// Hanya set selectedPermissions ketika selectedRoleId berubah (saat ganti role), 
-// jangan di-watch secara live dari selectedRole untuk menghindari race condition saat user nge-klik cepat.
+// Only set selectedPermissions when selectedRoleId changes (when switching roles),
+// do not watch live from selectedRole to avoid race conditions when users click quickly.
 watch(selectedRoleId, (newId) => {
   const role = roles.value.find(r => String(r.id) === newId)
   if (role && role.permissions) {
@@ -142,21 +152,26 @@ function openDeleteRole(role: Role) {
   showConfirm.value = true
 }
 
+const hardDelete = useHardDelete(async (id: string) => {
+  await resources.roles.hardRemove(id)
+  if (selectedRoleId.value === id) selectedRoleId.value = null
+}, fetchData)
+
 async function handleSaveRole() {
   if (!roleForm.value.name.trim()) return
   try {
     if (editingRole.value) {
       await resources.roles.update(String(editingRole.value.id), { name: roleForm.value.name })
-      toast.success("Role berhasil diperbarui!")
+      toast.success("Role updated successfully!")
     } else {
       await resources.roles.create({ name: roleForm.value.name })
-      toast.success("Role berhasil disimpan!")
+      toast.success("Role saved successfully!")
     }
     showModal.value = false
     await fetchData()
   } catch (error: any) {
     console.error('Failed to save role:', error)
-    toast.error('Gagal menyimpan role: ' + (error.message || 'Error'))
+    toast.error('Failed to save role: ' + (error.message || 'Error'))
   }
 }
 
@@ -169,10 +184,10 @@ async function handleDeleteRole() {
     }
     showConfirm.value = false
     await fetchData()
-    toast.success("Role berhasil dihapus!")
+    toast.success("Role deleted successfully!")
   } catch (error: any) {
     console.error('Failed to delete role:', error)
-    toast.error('Gagal menghapus role: ' + (error.message || 'Error'))
+    toast.error('Failed to delete role: ' + (error.message || 'Error'))
   }
 }
 
@@ -227,7 +242,7 @@ async function savePermissions() {
     await authStore.refreshPermissions()
   } catch (error: any) {
     console.error(error)
-    toast.error('Gagal menyimpan: ' + (error.message || 'Error'))
+    toast.error('Failed to save: ' + (error.message || 'Error'))
   } finally {
     isSaving.value = false
   }
@@ -287,7 +302,7 @@ async function savePermissions() {
         >
           <div class="role-info">
             <h4 class="role-name">{{ role.name }}</h4>
-            <span class="role-desc">Role sistem</span>
+            <span class="role-desc">System role</span>
           </div>
           <div class="role-actions">
             <button v-if="authStore.hasPermission('role:update')" class="btn-icon" @click.stop="openEditRole(role)" title="Edit">
@@ -296,6 +311,9 @@ async function savePermissions() {
             <button v-if="authStore.hasPermission('role:delete')" class="btn-icon text-danger" @click.stop="openDeleteRole(role)" title="Delete">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path></svg>
             </button>
+            <button v-if="hardDelete.isSuperadmin" class="btn-icon btn-hard-delete" @click.stop="hardDelete.open(role)" title="Hapus permanen dari database (superadmin)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><line x1="12" y1="11" x2="12" y2="17"></line></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -303,7 +321,7 @@ async function savePermissions() {
 
     <!-- Right Panel: Permissions Matrix -->
     <div class="permissions-content">
-      <div v-if="isLoading" class="permission-loading-grid" role="status" aria-label="Memuat permissions">
+      <div v-if="isLoading" class="permission-loading-grid" role="status" aria-label="Loading permissions">
         <div v-for="item in 6" :key="item" class="permission-skeleton">
           <span class="permission-skeleton-title" />
           <span class="permission-skeleton-line" />
@@ -311,60 +329,84 @@ async function savePermissions() {
         </div>
       </div>
       <div v-else-if="!selectedRole" class="empty-state">
-        <p>Pilih role di panel kiri untuk mengatur permissions.</p>
+        <p>Select a role in the left panel to manage permissions.</p>
       </div>
       
       <div v-else class="permissions-wrapper">
-        <div class="master-toggle-bar">
-          <div class="toggle-group">
-            <label class="toggle-switch">
-              <input 
-                type="checkbox" 
-                :checked="isAllFullySelected"
-                @change="(e) => toggleAll((e.target as HTMLInputElement).checked)"
-              >
-              <span class="toggle-slider"></span>
-            </label>
-            <span class="toggle-label">Switch on all Management options</span>
+        <header class="permission-heading">
+          <div>
+            <p class="permission-eyebrow">ROLE ACCESS</p>
+            <h2>{{ selectedRole.name }}</h2>
+            <p class="permission-subtitle">Manage modules and actions available to this role.</p>
           </div>
-          <div class="save-indicator" v-if="isSaving">
-            <span class="text-sm text-gray-500">Saving...</span>
+          <div class="access-summary" aria-live="polite">
+            <strong>{{ selectedPermissions.length }}</strong>
+            <span>of {{ allPermissions.length }} permissions enabled</span>
+            <span class="summary-divider"></span>
+            <strong>{{ enabledModuleCount }}</strong>
+            <span>modules fully enabled</span>
+          </div>
+        </header>
+
+        <div class="permission-toolbar">
+          <label class="all-access-control">
+            <input
+              type="checkbox"
+              :checked="isAllFullySelected"
+              @change="(e) => toggleAll((e.target as HTMLInputElement).checked)"
+            >
+            <span class="all-access-copy">
+              <strong>Full access</strong>
+              <small>Enable every permission for this role</small>
+            </span>
+          </label>
+          <div class="module-search">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+            <input v-model="moduleSearchQuery" type="search" class="form-input" placeholder="Find a module" aria-label="Search modules">
+          </div>
+          <div class="save-indicator" :class="{ 'is-saving': isSaving }" aria-live="polite">
+            <span class="save-dot"></span>
+            {{ isSaving ? 'Saving changes' : 'Changes saved' }}
           </div>
         </div>
 
-        <div class="modules-grid">
-          <div v-for="group in permissionsByModule" :key="group.module.id" class="perm-card">
-            <div class="perm-card-header">
-              <div class="perm-card-title">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="card-icon">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                </svg>
-                <h4>{{ group.module.name }}</h4>
+        <div v-if="filteredPermissionGroups.length === 0" class="module-search-empty">
+          {{ moduleSearchQuery ? 'No modules match your search.' : 'No permission modules are configured.' }}
+        </div>
+
+        <div v-else class="module-list">
+          <section v-for="group in filteredPermissionGroups" :key="group.module.id" class="module-row">
+            <div class="module-row-heading">
+              <div class="module-identity">
+                <span class="module-mark" aria-hidden="true">{{ group.module.name.slice(0, 1).toUpperCase() }}</span>
+                <div>
+                  <h3>{{ group.module.name }}</h3>
+                  <p>{{ group.permissions.length }} available actions</p>
+                </div>
               </div>
-              <div class="perm-card-toggle">
-                <span class="status-text">{{ isModuleFullySelected(group.module) ? 'On' : 'Off' }}</span>
-                <label class="toggle-switch small">
-                  <input 
-                    type="checkbox" 
+              <label class="module-access-toggle">
+                <span>{{ isModuleFullySelected(group.module) ? 'All enabled' : 'Custom access' }}</span>
+                <span class="toggle-switch small">
+                  <input
+                    type="checkbox"
                     :checked="isModuleFullySelected(group.module)"
+                    :aria-label="`Toggle all ${group.module.name} permissions`"
                     @change="(e) => toggleModule(group.module, (e.target as HTMLInputElement).checked)"
                   >
                   <span class="toggle-slider"></span>
-                </label>
-              </div>
+                </span>
+              </label>
             </div>
-            
-            <div class="perm-card-body">
-              <p class="perm-desc">Izinkan akses ke fitur {{ group.module.name }}:</p>
-              <div class="checkbox-list">
-                <label v-for="p in group.permissions" :key="p.id" class="checkbox-label">
-                  <input type="checkbox" :value="String(p.id)" v-model="selectedPermissions" @change="savePermissions">
-                  {{ p.name.split(':').pop()?.toUpperCase() || p.name }}
-                </label>
-              </div>
+            <div class="permission-actions">
+              <label v-for="p in group.permissions" :key="p.id" class="permission-action">
+                <input type="checkbox" :value="String(p.id)" v-model="selectedPermissions" @change="savePermissions">
+                <span>{{ p.name.split(':').pop()?.replace(/-/g, ' ').toUpperCase() || p.name }}</span>
+              </label>
             </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>
@@ -372,37 +414,87 @@ async function savePermissions() {
     <!-- Modals -->
     <FormModal :open="showModal" :title="editingRole ? 'Edit Role' : 'Add Role'" maxWidth="400px" @close="showModal = false" @submit="handleSaveRole">
       <div class="form-group">
-        <label for="role-name" class="form-label">Nama Role</label>
-        <input id="role-name" v-model="roleForm.name" type="text" class="form-input" placeholder="Contoh: Admin">
+        <label for="role-name" class="form-label">Role Name</label>
+        <input id="role-name" v-model="roleForm.name" type="text" class="form-input" placeholder="Example: Admin">
       </div>
     </FormModal>
     
-    <ConfirmDialog :open="showConfirm" title="Hapus Role" :message="`Yakin ingin menghapus role '${deletingRole?.name}'?`" @close="showConfirm = false" @confirm="handleDeleteRole" />
+    <ConfirmDialog :open="showConfirm" title="Delete Role" :message="`Are you sure you want to delete role '${deletingRole?.name}'?`" @close="showConfirm = false" @confirm="handleDeleteRole" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Role" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
 
 <style scoped>
 .roles-management {
-  display: flex;
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
   height: calc(100vh - 120px);
-  background: var(--color-background);
-  gap: 24px;
+  min-height: 520px;
+  gap: 16px;
+}
+
+.roles-sidebar,
+.permissions-content {
+  min-width: 0;
+  border: 1px solid #dce4ec;
+  border-radius: 10px;
+  box-shadow: 0 3px 12px rgba(17, 34, 51, 0.04);
+}
+
+.module-search {
+  position: relative;
+  flex: 1 1 240px;
+  max-width: 340px;
+  margin-left: auto;
+  color: #748292;
+}
+
+.module-search svg {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.module-search .form-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px 0 38px;
+  border: 1px solid #d6dfe8;
+  border-radius: 7px;
+  background: #fff;
+  color: #253447;
+  font-size: 13px;
+}
+
+.module-search .form-input:focus {
+  border-color: #1697a6;
+  outline: 2px solid rgba(22, 151, 166, 0.13);
+  outline-offset: 1px;
+}
+
+.module-search-empty {
+  flex: 1;
+  padding: 48px 16px;
+  color: #6e7b89;
+  text-align: center;
 }
 
 /* Left Sidebar */
 .roles-sidebar {
-  width: 340px;
+  width: auto;
   background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
 .sidebar-header {
-  padding: 20px;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 16px;
+  border-bottom: 1px solid #e4eaf0;
 }
 
 .tabs {
@@ -532,14 +624,21 @@ async function savePermissions() {
 .btn-icon.text-danger:hover {
   color: #ef4444;
 }
+.btn-icon.btn-hard-delete {
+  color: #991b1b;
+  border: 1px dashed currentColor;
+  border-radius: 6px;
+}
+.btn-icon.btn-hard-delete:hover {
+  background: #991b1b;
+  border-style: solid;
+  color: #fff;
+}
 
 /* Right Panel */
 .permissions-content {
-  flex: 1;
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
   display: flex;
+  background: #ffffff;
   flex-direction: column;
   overflow: hidden;
 }
@@ -553,12 +652,227 @@ async function savePermissions() {
 .permissions-wrapper {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   height: 100%;
 }
-.master-toggle-bar {
+
+.permission-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid #e8edf2;
+}
+
+.permission-eyebrow {
+  margin: 0 0 5px;
+  color: #138895;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.permission-heading h2 {
+  margin: 0;
+  color: #18283a;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.permission-subtitle {
+  margin: 5px 0 0;
+  color: #738091;
+  font-size: 13px;
+}
+
+.access-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  color: #738091;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.access-summary strong {
+  color: #1b3547;
+  font-size: 18px;
+}
+
+.summary-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 8px;
+  background: #dce4ec;
+}
+
+.permission-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 24px;
+  border-bottom: 1px solid #e8edf2;
+  background: #fbfcfd;
+}
+
+.all-access-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+  cursor: pointer;
+}
+
+.all-access-control > input,
+.permission-action input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #148d9b;
+}
+
+.all-access-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.all-access-copy strong {
+  color: #26384a;
+  font-size: 13px;
+}
+
+.all-access-copy small {
+  color: #778493;
+  font-size: 11px;
+}
+
+.save-indicator {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #718091;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.save-indicator.is-saving {
+  color: #a46c19;
+}
+
+.save-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #37a67a;
+}
+
+.save-indicator.is-saving .save-dot {
+  background: #d99b35;
+}
+
+.module-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  padding: 16px 24px 24px;
+  overflow-y: auto;
+}
+
+.module-row {
+  padding: 14px 16px;
+  border: 1px solid #dfe6ed;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.module-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 13px;
+}
+
+.module-identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.module-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 8px;
+  background: #e8f4f3;
+  color: #167b80;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.module-identity h3 {
+  margin: 0;
+  color: #26384a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.module-identity p {
+  margin: 3px 0 0;
+  color: #7a8794;
+  font-size: 11px;
+}
+
+.module-access-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #72808e;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-left: 45px;
+}
+
+.permission-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid #dce4eb;
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: #435365;
+  font-size: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.permission-action:has(input:checked) {
+  border-color: #a8d7d3;
+  background: #eff8f7;
+  color: #176b70;
+}
+.master-toggle-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 20px 24px;
   border-bottom: 1px solid #e2e8f0;
 }
@@ -743,6 +1057,105 @@ input:checked + .toggle-slider:before {
 }
 .toggle-switch.small input:checked + .toggle-slider:before {
   transform: translateX(16px);
+}
+
+@media (max-width: 980px) {
+  @media (max-width: 980px) {
+    .roles-management {
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    .permission-heading,
+    .permission-toolbar {
+      padding-right: 16px;
+      padding-left: 16px;
+    }
+
+    .permission-heading {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .access-summary {
+      justify-content: flex-start;
+    }
+
+    .permission-toolbar {
+      flex-wrap: wrap;
+    }
+
+    .module-search {
+      flex-basis: 100%;
+      max-width: none;
+      margin-left: 0;
+    }
+
+    .module-list {
+      padding-right: 16px;
+      padding-left: 16px;
+    }
+  }
+
+  @media (max-width: 700px) {
+    .roles-management {
+      grid-template-columns: minmax(0, 1fr);
+      height: auto;
+      min-height: 0;
+    }
+
+    .roles-sidebar {
+      max-height: 270px;
+    }
+
+    .permissions-content {
+      min-height: 620px;
+    }
+
+    .master-toggle-bar {
+      align-items: stretch;
+      padding: 14px;
+    }
+
+    .all-access-control {
+      min-width: 0;
+    }
+
+    .save-indicator {
+      margin-left: auto;
+    }
+
+    .permission-heading {
+      padding: 18px 16px;
+    }
+
+    .permission-heading h2 {
+      font-size: 20px;
+    }
+
+    .access-summary {
+      flex-wrap: wrap;
+      white-space: normal;
+    }
+
+    .permission-toolbar {
+      padding: 12px 16px;
+    }
+
+    .module-list {
+      padding: 12px;
+    }
+
+    .module-row {
+      padding: 12px;
+    }
+
+    .permission-actions {
+      padding-left: 0;
+    }
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {

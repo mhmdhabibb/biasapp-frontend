@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -8,12 +8,14 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
+import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import type { TableColumn, ServiceReport } from '@/types'
 
 const { can } = usePermission()
 
 const {
   serviceReports: data,
+  deliveryOrders,
   contractItems,
   customers,
   technicians,
@@ -22,12 +24,43 @@ const {
   findTechnician,
 } = useMasterStore()
 
-const columns: TableColumn[] = [
-  { key: 'report_no', label: 'No. Laporan' },
+// Tab: laporan service (dari service request) vs service history delivery (dari DO).
+const activeTab = ref<'service' | 'delivery'>('service')
+
+const doColumns: TableColumn[] = [
+  { key: 'do_number', label: 'DO No.' },
   { key: 'customer_id', label: 'Customer' },
-  { key: 'service_type', label: 'Tipe Servis' },
-  { key: 'technician_id', label: 'Teknisi' },
-  { key: 'service_date', label: 'Tanggal Kunjungan' },
+  { key: 'do_type', label: 'Type' },
+  { key: 'technician_id', label: 'Technician' },
+  { key: 'delivery_date', label: 'Delivery Date' },
+  { key: 'status', label: 'Status' },
+]
+
+const deliveryHistories = computed(() =>
+  (deliveryOrders.value as any[]).filter((d: any) => hasDeliveryHistory(d)),
+)
+
+function doTypeLabel(type: string | undefined): string {
+  switch (String(type || '').toLowerCase()) {
+    case 'inbound': return 'Sparepart'
+    case 'sale': return 'Sales'
+    case 'service': return 'Service'
+    case 'replacement': return 'Replacement'
+    case 'return': return 'Return'
+    default: return 'Rental'
+  }
+}
+
+function printDO(item: any) {
+  printDeliveryServiceHistory(item)
+}
+
+const columns: TableColumn[] = [
+  { key: 'report_no', label: 'Report No.' },
+  { key: 'customer_id', label: 'Customer' },
+  { key: 'service_type', label: 'Service Type' },
+  { key: 'technician_id', label: 'Technician' },
+  { key: 'service_date', label: 'Visit Date' },
   { key: 'status', label: 'Status' },
 ]
 
@@ -151,14 +184,29 @@ function technicianName(id: any): string {
   return t ? t.user?.name || t.name || '-' : '-'
 }
 
-import { printServiceReport } from '@/utils/printReport'
+import { printServiceReport, printMultipleServiceReports, type ReportType } from '@/utils/printReport'
 
-function printReport(item: any) {
-  printServiceReport(item)
+const printModalOpen = ref(false)
+const printType = ref<ReportType>('technical')
+const printTarget = ref<any | null>(null)
+
+function openPrintModal(item: any = null) {
+  printTarget.value = item
+  printType.value = 'technical'
+  printModalOpen.value = true
+}
+
+function handleConfirmPrint() {
+  if (printTarget.value) {
+    printServiceReport(printTarget.value, printType.value)
+  } else {
+    printMultipleServiceReports(data.value, printType.value)
+  }
+  printModalOpen.value = false
 }
 
 function exportToExcel() {
-  const rows = [['No. Laporan', 'Customer', 'Kontrak', 'Tipe Servis', 'Teknisi', 'Tanggal Kunjungan', 'Status']]
+  const rows = [['Report No.', 'Customer', 'Contract', 'Service Type', 'Technician', 'Visit Date', 'Status']]
   for (const item of data.value) {
     rows.push([
       item.report_no || item.service_report_no || '-',
@@ -166,7 +214,7 @@ function exportToExcel() {
       contractNo(item.contract_item_id),
       item.service_type || '-',
       technicianName(item.technician_id),
-      item.service_date ? new Date(item.service_date).toLocaleDateString('id-ID') : '-',
+      item.service_date ? new Date(item.service_date).toLocaleDateString('en-GB') : '-',
       item.status || '-'
     ])
   }
@@ -174,14 +222,14 @@ function exportToExcel() {
   const encodedUri = encodeURI(csvContent)
   const link = document.createElement('a')
   link.setAttribute('href', encodedUri)
-  link.setAttribute('download', 'Data_Laporan_Servis.csv')
+  link.setAttribute('download', 'Data_Service_Reports.csv')
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
 }
 
 function printTable() {
-  window.print()
+  openPrintModal(null)
 }
 </script>
 
@@ -189,24 +237,32 @@ function printTable() {
   <div>
     <PageHeader title="Service Reports" button-label="Add Service Report" permission="service_report:create" @add="openAdd">
       <template #actions>
-        <button class="btn btn-outline" @click="exportToExcel">
+        <button v-if="activeTab === 'service'" class="btn btn-outline" @click="exportToExcel">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           Export Excel
         </button>
-        <button class="btn btn-outline" @click="printTable">
+        <button v-if="activeTab === 'service'" class="btn btn-outline" @click="openPrintModal(null)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
           Print / PDF
         </button>
       </template>
     </PageHeader>
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari laporan servis..." @edit="openEdit" @delete="openDelete">
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <button class="btn btn-sm" :class="activeTab === 'service' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'service'">
+        Service Reports ({{ (data as any[]).length }})
+      </button>
+      <button class="btn btn-sm" :class="activeTab === 'delivery' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'delivery'">
+        Delivery History ({{ deliveryHistories.length }})
+      </button>
+    </div>
+    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="data" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
-      <template #cell-service_date="{ value }">{{ value ? new Date(value).toLocaleDateString('id-ID') : '-' }}</template>
+      <template #cell-service_date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
       <template #cell-status="{ value }">
         <span :class="value === 'open' ? 'badge badge-warning' : value === 'in_progress' ? 'badge badge-info' : value === 'completed' ? 'badge badge-success' : 'badge badge-neutral'">
-          {{ value === 'open' ? 'Open' : value === 'in_progress' ? 'Proses' : value === 'completed' ? 'Selesai' : value || '-' }}
+          {{ value === 'open' ? 'Open' : value === 'in_progress' ? 'In Progress' : value === 'completed' ? 'Completed' : value || '-' }}
         </span>
       </template>
       <template #actions="{ row }">
@@ -216,7 +272,7 @@ function printTable() {
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
         </button>
-        <button v-if="can('service_report:read')" class="action-btn" title="Print Laporan" @click="printReport(row)" style="color: var(--color-primary); border-color: transparent;">
+        <button v-if="can('service_report:read')" class="action-btn" title="Print Report" @click="openPrintModal(row)" style="color: var(--color-primary); border-color: transparent;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
@@ -235,6 +291,26 @@ function printTable() {
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
             <line x1="10" y1="11" x2="10" y2="17"></line>
             <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+        </button>
+      </template>
+    </DataTable>
+    <DataTable v-if="activeTab === 'delivery'" :columns="doColumns" :data="deliveryHistories" search-placeholder="Search delivery history...">
+      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
+      <template #cell-do_type="{ value }">{{ doTypeLabel(value) }}</template>
+      <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
+      <template #cell-delivery_date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
+      <template #cell-status="{ value }">
+        <span :class="value === 'delivered' ? 'badge badge-success' : value === 'in_transit' ? 'badge badge-info' : 'badge badge-neutral'">
+          {{ String(value || '-').replace('_', ' ') }}
+        </span>
+      </template>
+      <template #actions="{ row }">
+        <button v-if="can('delivery_order:read')" class="action-btn" title="Print Service History" @click="printDO(row)" style="color: var(--color-primary); border-color: transparent;">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
       </template>
@@ -331,13 +407,13 @@ function printTable() {
         <label class="form-label">Change Sparepart / Component Replacement</label>
         <div v-for="(sp, idx) in form.spareparts" :key="idx" style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
           <select v-model="sp.product_id" class="form-select" style="flex: 1;">
-            <option value="" disabled>Pilih Produk (Sparepart)...</option>
+            <option value="" disabled>Select Product (Sparepart)...</option>
             <option v-for="p in useMasterStore().products" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
           <input type="number" v-model="sp.qty" class="form-input" style="width: 80px;" min="1" placeholder="Qty">
-          <button type="button" class="btn btn-sm btn-outline" @click="form.spareparts.splice(idx, 1)">Hapus</button>
+          <button type="button" class="btn btn-sm btn-outline" @click="form.spareparts.splice(idx, 1)">Delete</button>
         </div>
-        <button type="button" class="btn btn-sm btn-outline mt-2" @click="form.spareparts.push({product_id: '', qty: 1})">+ Tambah Sparepart</button>
+        <button type="button" class="btn btn-sm btn-outline mt-2" @click="form.spareparts.push({product_id: '', qty: 1})">+ Add Sparepart</button>
       </div>
       
       <!-- Tested and Completed Action Buttons -->
@@ -347,7 +423,7 @@ function printTable() {
           <div style="display: flex; align-items: center; gap: 10px;">
             <button type="button" class="btn btn-outline" :class="{'btn-primary': form.is_tested}" @click="form.is_tested = true">
               <svg v-if="form.is_tested" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              Tandai Tested
+              Mark as Tested
             </button>
             <span v-if="form.is_tested" class="text-success" style="font-weight: bold;">YES</span>
             <span v-else class="text-neutral">NO</span>
@@ -358,7 +434,7 @@ function printTable() {
           <div style="display: flex; align-items: center; gap: 10px;">
             <button type="button" class="btn btn-outline" :class="{'btn-primary': form.is_completed}" @click="form.is_completed = true">
               <svg v-if="form.is_completed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              Tandai Completed
+              Mark as Completed
             </button>
             <span v-if="form.is_completed" class="text-success" style="font-weight: bold;">YES</span>
             <span v-else class="text-neutral">NO</span>
@@ -378,16 +454,32 @@ function printTable() {
 
       <div class="form-row mt-3">
         <div class="form-group">
-          <label class="form-label">Tanda Tangan Teknisi</label>
+          <label class="form-label">Technician Signature</label>
           <SignaturePad v-model="form.technician_signature" height="150px" />
         </div>
         <div class="form-group">
-          <label class="form-label">Tanda Tangan Customer</label>
+          <label class="form-label">Customer Signature</label>
           <SignaturePad v-model="form.customer_signature" height="150px" />
         </div>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Laporan Servis" :message="`Yakin ingin menghapus laporan '${deletingItem?.report_no || (deletingItem as any)?.service_report_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Service Report" :message="`Are you sure you want to delete report '${deletingItem?.report_no || (deletingItem as any)?.service_report_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+
+    <!-- Print Modal -->
+    <FormModal :open="printModalOpen" title="Select Report Type" @close="printModalOpen = false" @submit="handleConfirmPrint">
+      <div class="form-group">
+        <label class="form-label">Report Type (PDF)</label>
+        <select v-model="printType" class="form-select">
+          <option value="technical">Technical Report Form</option>
+          <option value="history">Service History Form</option>
+          <option value="copier">Copier Service Report</option>
+        </select>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="printModalOpen = false">Cancel</button>
+        <button type="button" class="btn btn-primary" @click="handleConfirmPrint">Print / Download</button>
+      </template>
+    </FormModal>
   </div>
 </template>
 

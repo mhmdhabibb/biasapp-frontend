@@ -6,10 +6,13 @@ import { api } from "@/services/api";
 import { computed, onMounted, ref } from "vue";
 
 const toast = useToast();
-const { technicians } = useMasterStore();
+const { technicians, units, products } = useMasterStore();
 
 const jobOrders = ref<any[]>([]);
 const serviceRequests = ref<any[]>([]);
+const deliveryOrders = ref<any[]>([]);
+const activeTab = ref("sr");
+const draggedTask = ref<any | null>(null);
 
 const searchUnassigned = ref("");
 const searchTech = ref("");
@@ -18,15 +21,28 @@ const dragOverTechId = ref<string | number | null>(null);
 async function fetchJobOrders() {
   try {
     const data = await api.get<{ data: any[] }>("/job-orders");
-    jobOrders.value = data.data.map((j: any) => ({
-      ...j,
-      service_request_no: j.service_request?.request_no || "-",
-      customer_name:
-        j.service_request?.customer?.company_name ||
-        j.service_request?.customer?.name ||
-        "-",
-      problem: j.service_request?.problem_description || "-",
-    }));
+    jobOrders.value = data.data.map((j: any) => {
+      const isDelivery =
+        j.job_type === "delivery" || !!j.delivery_order_id || !!j.delivery_order;
+      const customer =
+        j.service_request?.customer || j.delivery_order?.customer || null;
+      return {
+        ...j,
+        taskType: isDelivery ? "do" : "sr",
+        service_request_no:
+          j.service_request?.request_no ||
+          j.delivery_order?.do_number ||
+          j.job_order_no ||
+          "-",
+        customer_name:
+          customer?.company_name || customer?.name || "-",
+        problem:
+          j.service_request?.problem_description ||
+          j.delivery_order?.notes ||
+          j.instructions ||
+          "-",
+      };
+    });
   } catch (error) {
     console.error("Failed to fetch data", error);
   }
@@ -41,9 +57,21 @@ async function fetchServiceRequests() {
   }
 }
 
+async function fetchDeliveryOrders() {
+  try {
+    const data = await api.get<{ data: any[] }>("/delivery-orders");
+    deliveryOrders.value = data.data.filter((d: any) =>
+      ['rental', 'sale', 'inbound'].includes(String(d.do_type || '').toLowerCase()),
+    );
+  } catch (error) {
+    console.error("Failed to fetch data DO", error);
+  }
+}
+
 onMounted(() => {
   fetchJobOrders();
   fetchServiceRequests();
+  fetchDeliveryOrders();
 });
 
 const unassignedRequests = computed(() => {
@@ -51,7 +79,7 @@ const unassignedRequests = computed(() => {
   const assignedSrIds = new Set(
     jobOrders.value.map((j) => j.service_request_id),
   );
-  return serviceRequests.value.filter(
+  return serviceRequests.value.map(sr => ({ ...sr, taskType: 'sr' })).filter(
     (sr) =>
       (sr.status === "pending" || sr.status === "open") &&
       !assignedSrIds.has(sr.id) &&
@@ -62,6 +90,31 @@ const unassignedRequests = computed(() => {
           .toLowerCase()
           .includes(searchUnassigned.value.toLowerCase())),
   );
+});
+
+const assignedDeliveryIds = computed(
+  () =>
+    new Set(
+      jobOrders.value
+        .map((j: any) => j.delivery_order_id || j.delivery_order?.id)
+        .filter(Boolean)
+        .map(String),
+    ),
+);
+
+const unassignedDeliveries = computed(() => {
+  return deliveryOrders.value.map(d => ({ ...d, taskType: 'do' })).filter(
+    (d) =>
+      !assignedDeliveryIds.value.has(String(d.id)) &&
+      !d.technician_id &&
+      (d.status === 'pending' || d.status === 'draft') &&
+      (d.do_number.toLowerCase().includes(searchUnassigned.value.toLowerCase()) ||
+        (d.customer?.name || "").toLowerCase().includes(searchUnassigned.value.toLowerCase())),
+  );
+});
+
+const displayedUnassigned = computed(() => {
+  return activeTab.value === 'sr' ? unassignedRequests.value : unassignedDeliveries.value;
 });
 
 const filteredTechs = computed(() => {
@@ -76,7 +129,28 @@ const filteredTechs = computed(() => {
 });
 
 function getJobsForTech(techId: string | number) {
-  return jobOrders.value.filter((j) => j.technician_id === techId);
+  const jobs = jobOrders.value
+    .filter((j) => String(j.technician_id) === String(techId))
+    .map((j: any) => ({
+      ...j,
+      taskType: j.taskType || (j.job_type === "delivery" ? "do" : "sr"),
+    }));
+  // Legacy: DO yang di-assign langsung (technician_id di DO) tapi belum punya baris job_orders.
+  const covered = new Set(
+    jobs
+      .map((j: any) => j.delivery_order_id || j.delivery_order?.id)
+      .filter(Boolean)
+      .map(String),
+  );
+  const dos = deliveryOrders.value
+    .filter(
+      (d) =>
+        String(d.technician_id) === String(techId) &&
+        !covered.has(String(d.id)) &&
+        !assignedDeliveryIds.value.has(String(d.id)),
+    )
+    .map((d) => ({ ...d, taskType: "do" }));
+  return [...jobs, ...dos];
 }
 
 function statusBadgeClass(status: string) {
@@ -143,6 +217,7 @@ let lastDragEnd = 0;
 
 function markDragEnd() {
   lastDragEnd = Date.now();
+  draggedTask.value = null;
 }
 
 function openJobDetail(job: any) {
@@ -170,7 +245,12 @@ function technicianLabel(techId?: string | number) {
 
 const detailCustomer = computed(() => {
   const sr = selectedJob.value?.service_request || selectedRequest.value;
-  return sr?.customer || null;
+  if (sr?.customer) return sr.customer;
+  return (
+    selectedJob.value?.delivery_order?.customer ||
+    selectedRequest.value?.customer ||
+    null
+  );
 });
 
 // Drag and drop logic
@@ -178,6 +258,85 @@ let draggedRequest: any = null;
 
 function onDragStart(req: any) {
   draggedRequest = req;
+  draggedTask.value = req;
+}
+
+function dateKey(value: string | Date | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function isTerminalStatus(status: string | undefined) {
+  return ["completed", "complete", "done", "cancelled", "canceled", "received", "delivered"]
+    .includes(String(status || "").toLowerCase());
+}
+
+function isTechnicianBusy(technicianId: string | number) {
+  const targetDate = dateKey(
+    draggedTask.value?.delivery_date || draggedTask.value?.scheduled_date || new Date(),
+  );
+  if (!targetDate) return false;
+
+  const hasSameDayJob = jobOrders.value.some((job) =>
+    String(job.technician_id) === String(technicianId) &&
+    dateKey(job.scheduled_date) === targetDate &&
+    !isTerminalStatus(job.status),
+  );
+  const hasSameDayDelivery = deliveryOrders.value.some((delivery) =>
+    String(delivery.technician_id) === String(technicianId) &&
+    dateKey(delivery.delivery_date) === targetDate &&
+    !isTerminalStatus(delivery.status),
+  );
+  return hasSameDayJob || hasSameDayDelivery;
+}
+
+function deliveryTypeLabel(type: string | undefined) {
+  switch (String(type || "").toLowerCase()) {
+    case "inbound": return "Sparepart Delivery";
+    case "sale": return "Sales Delivery";
+    default: return "Rental Delivery";
+  }
+}
+
+function isDeliveryJob(job: any): boolean {
+  return job?.taskType === "do" || job?.job_type === "delivery" || !!job?.delivery_order_id || !!job?.delivery_order;
+}
+
+function jobDo(job: any): any {
+  return job?.delivery_order || (job?.taskType === "do" && job?.do_number ? job : null) || null;
+}
+
+function jobDoType(job: any): string {
+  return job?.do_type || job?.delivery_order?.do_type || "";
+}
+
+function jobDeliveryDate(job: any): string {
+  return job?.delivery_order?.delivery_date || job?.delivery_date || job?.scheduled_date || "";
+}
+
+function jobDoAddress(job: any): string {
+  return job?.delivery_order?.delivery_address || job?.delivery_address || "";
+}
+
+function doItemsCount(job: any): number {
+  const items = job?.delivery_order?.delivery_order_items || job?.delivery_order_items || [];
+  return Array.isArray(items) ? items.length : 0;
+}
+
+function doItemLabel(item: any): string {
+  if (item?.unit_id) {
+    const u = (units.value as any[]).find((x: any) => String(x.id) === String(item.unit_id));
+    const name = item.unit?.model || u?.model || "Unit";
+    const sn = item.unit?.serial_no || u?.serial_no || "";
+    return `${name}${sn ? ` (${sn})` : ""} x${item.qty || 1}`;
+  }
+  if (item?.product_id) {
+    const p = (products.value as any[]).find((x: any) => String(x.id) === String(item.product_id));
+    return `${item.product?.name || p?.name || "Product"} x${item.qty || 1}`;
+  }
+  return `Item x${item?.qty || 1}`;
 }
 
 function onDragOver(techId: string | number) {
@@ -188,39 +347,124 @@ function onDragLeave() {
   dragOverTechId.value = null;
 }
 
+// ── Assign modal state ──
+const showAssignModal = ref(false);
+const assignTarget = ref<{ task: any; techId: string | number } | null>(null);
+const assignDeliveryDate = ref("");
+const assignScheduledDate = ref("");
+const isAssigning = ref(false);
+
+function toLocalDatetimeStr(d?: string | Date) {
+  const date = d ? new Date(d) : new Date();
+  if (isNaN(date.getTime())) return new Date().toISOString().slice(0, 16);
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
 async function onDrop(techId: string | number) {
   lastDragEnd = Date.now();
   if (!draggedRequest) return;
   dragOverTechId.value = null;
 
-  const payload = {
-    job_order_no: `JO-${Date.now().toString().slice(-6)}`,
-    service_request_id: draggedRequest.id,
-    technician_id: techId,
-    scheduled_date: new Date().toISOString(),
-    instructions: draggedRequest.problem_description || "Please check the unit",
-  };
+  // Open the assign modal instead of assigning directly
+  assignTarget.value = { task: { ...draggedRequest }, techId };
 
-  try {
-    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/job-orders`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (res.ok) {
-      draggedRequest = null;
-      fetchJobOrders();
-      toast.success("Job order berhasil di-assign ke teknisi.");
-    } else {
-      toast.error("Failed to assign job order");
-    }
-  } catch (error) {
-    toast.error("Something went wrong");
+  if (draggedRequest.taskType === "do") {
+    // Default: keep the existing delivery date
+    assignDeliveryDate.value = toLocalDatetimeStr(
+      draggedRequest.delivery_date || new Date().toISOString(),
+    );
+  } else {
+    // SR: default scheduled_date to now
+    assignScheduledDate.value = toLocalDatetimeStr(new Date().toISOString());
   }
+
+  draggedRequest = null;
+  showAssignModal.value = true;
+}
+
+function cancelAssign() {
+  showAssignModal.value = false;
+  assignTarget.value = null;
+}
+
+async function confirmAssign() {
+  if (!assignTarget.value || isAssigning.value) return;
+  isAssigning.value = true;
+
+  const { task, techId } = assignTarget.value;
+
+  if (task.taskType === "do") {
+    // Buat baris job_orders bertipe delivery; backend ikut update
+    // delivery_orders.technician_id + status jadi issued.
+    const payload = {
+      delivery_order_id: task.id,
+      job_type: "delivery",
+      technician_id: techId,
+      scheduled_date: new Date(assignDeliveryDate.value).toISOString(),
+      instructions: task.notes || `Delivery ${task.do_number || ""}`.trim(),
+    };
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/job-orders`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (res.ok) {
+        fetchJobOrders();
+        fetchDeliveryOrders();
+        toast.success("Delivery order successfully assigned to technician.");
+      } else {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.message || "Failed to assign delivery order");
+      }
+    } catch (error) {
+      toast.error("Something went wrong");
+    }
+  } else {
+    const payload = {
+      job_order_no: `JO-${Date.now().toString().slice(-6)}`,
+      service_request_id: task.id,
+      technician_id: techId,
+      scheduled_date: new Date(assignScheduledDate.value).toISOString(),
+      instructions: task.problem_description || "Please check the unit",
+    };
+
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/job-orders`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (res.ok) {
+        fetchJobOrders();
+        toast.success("Job order successfully assigned to technician.");
+      } else {
+        toast.error("Failed to assign job order");
+      }
+    } catch (error) {
+      toast.error("Something went wrong");
+    }
+  }
+
+  showAssignModal.value = false;
+  assignTarget.value = null;
+  isAssigning.value = false;
 }
 </script>
 
@@ -250,11 +494,19 @@ async function onDrop(techId: string | number) {
       <aside class="sidebar panel">
         <div class="sidebar-header">
           <div class="panel-title-wrap">
-            <h3 class="title">Service Requests</h3>
-            <span class="count-pill">{{ unassignedRequests.length }}</span>
+            <h3 class="title">Tasks</h3>
           </div>
-          <button class="btn btn-accent btn-sm">Action</button>
         </div>
+
+        <div class="sidebar-tabs" style="display: flex; gap: 8px; margin-top: -8px;">
+          <button class="btn btn-sm" :class="activeTab === 'sr' ? 'btn-primary' : 'btn-outline'" style="flex: 1" @click="activeTab = 'sr'">
+            Requests ({{ unassignedRequests.length }})
+          </button>
+          <button class="btn btn-sm" :class="activeTab === 'do' ? 'btn-primary' : 'btn-outline'" style="flex: 1" @click="activeTab = 'do'">
+            Deliveries ({{ unassignedDeliveries.length }})
+          </button>
+        </div>
+
         <div class="sidebar-search">
           <input
             v-model="searchUnassigned"
@@ -265,7 +517,7 @@ async function onDrop(techId: string | number) {
           <button
             class="btn-icon refresh-btn"
             title="Refresh"
-            @click="fetchServiceRequests"
+            @click="activeTab === 'sr' ? fetchServiceRequests() : fetchDeliveryOrders()"
           >
             <svg
               width="16"
@@ -283,7 +535,7 @@ async function onDrop(techId: string | number) {
           </button>
         </div>
         <div class="unassigned-list">
-          <div v-if="unassignedRequests.length === 0" class="empty-state">
+          <div v-if="displayedUnassigned.length === 0" class="empty-state">
             <svg
               width="28"
               height="28"
@@ -295,10 +547,10 @@ async function onDrop(techId: string | number) {
               <rect x="3" y="4" width="18" height="17" rx="3" />
               <path d="M8 2v4M16 2v4M3 10h18" />
             </svg>
-            <span>No new requests yet</span>
+            <span>No new tasks yet</span>
           </div>
           <div
-            v-for="req in unassignedRequests"
+            v-for="req in displayedUnassigned"
             :key="req.id"
             class="job-card draggble"
             draggable="true"
@@ -323,13 +575,59 @@ async function onDrop(techId: string | number) {
             </div>
             <div class="card-main">
               <div class="card-header">
-                <span class="ref-no">{{ req.request_no }}</span>
+                <span class="ref-no">{{ req.request_no || req.do_number }}</span>
                 <span class="date-tag">{{
                   formatDateDisplay(req.created_at)
                 }}</span>
               </div>
               <div class="card-body">
-                <div class="problem-text">{{ req.problem_description }}</div>
+                <template v-if="req.taskType === 'do'">
+                  <div class="card-customer" v-if="req.customer">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span>{{ req.customer.company_name || req.customer.name }}</span>
+                  </div>
+                  <div class="card-address" v-if="req.delivery_address">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>{{ req.delivery_address }}</span>
+                  </div>
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                      <line x1="12" y1="17" x2="12" y2="21" />
+                    </svg>
+                    <span style="font-weight: 500; color: var(--color-primary);">{{ deliveryTypeLabel(req.do_type) }}</span>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="card-customer" v-if="req.customer">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span>{{ req.customer.company_name || req.customer.name }}</span>
+                  </div>
+                  <div class="card-address" v-if="req.customer?.address">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>{{ req.customer.address }}</span>
+                  </div>
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
+                    </svg>
+                    <span style="font-weight: 500; color: var(--color-primary);">Service Request</span>
+                  </div>
+                  <div class="problem-text" style="margin-top: 6px;">{{ req.problem_description || 'No description' }}</div>
+                </template>
               </div>
             </div>
           </div>
@@ -374,12 +672,13 @@ async function onDrop(techId: string | number) {
               <span
                 class="tech-status"
                 :class="{
-                  online:
+                  online: !isTechnicianBusy(t.id) &&
                     String((t as any).status || 'AVAILABLE').toLowerCase() ===
                     'available',
+                  busy: isTechnicianBusy(t.id),
                 }"
               >
-                {{ (t as any).status || "AVAILABLE" }}
+                {{ isTechnicianBusy(t.id) ? "BUSY" : (t as any).status || "AVAILABLE" }}
               </span>
               <span class="tech-count"
                 >{{ getJobsForTech(t.id).length }}
@@ -424,7 +723,7 @@ async function onDrop(techId: string | number) {
               >
                 <div class="ac-row">
                   <span class="ref-no">{{
-                    job.service_request_no || job.job_order_no
+                    job.service_request_no || job.job_order_no || job.do_number
                   }}</span>
                   <span class="badge" :class="statusBadgeClass(job.status)">
                     {{ String(job.status || "new").replace("_", " ") }}
@@ -444,7 +743,8 @@ async function onDrop(techId: string | number) {
                     <rect x="3" y="4" width="18" height="17" rx="2" />
                     <path d="M8 2v4M16 2v4M3 10h18" />
                   </svg>
-                  <span>{{ formatDateDisplay(job.scheduled_date) }}</span>
+                  <span v-if="isDeliveryJob(job)">🚚 Delivery {{ formatFullDate(jobDeliveryDate(job)) }}</span>
+                  <span v-else>🗓 Scheduled {{ formatFullDate(job.scheduled_date) }}</span>
                   <span class="ac-dot">·</span>
                   <svg
                     width="11"
@@ -459,7 +759,32 @@ async function onDrop(techId: string | number) {
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                     <polyline points="9 22 9 12 15 12 15 22" />
                   </svg>
-                  <span class="ac-company">{{ job.customer_name || "-" }}</span>
+                  <span class="ac-company">{{ job.customer_name || job.customer?.company_name || job.customer?.name || job.delivery_order?.customer?.company_name || "-" }}</span>
+                </div>
+                <div class="ac-row muted" style="margin-top: 4px;">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path v-if="isDeliveryJob(job)" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path v-if="isDeliveryJob(job)" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    <path v-if="!isDeliveryJob(job)" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
+                  </svg>
+                  <span>{{ isDeliveryJob(job) ? deliveryTypeLabel(jobDoType(job)) : 'Service Request' }}</span>
+                  <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0" class="ac-dot">·</span>
+                  <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0">{{ doItemsCount(job) }} item{{ doItemsCount(job) > 1 ? "s" : "" }}</span>
+                </div>
+                <div v-if="isDeliveryJob(job) && jobDoAddress(job)" class="ac-row muted" style="margin-top: 4px;">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  <span class="ac-company">{{ jobDoAddress(job) }}</span>
+                </div>
+                <div class="ac-row muted" style="margin-top: 4px;">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path v-if="job.taskType === 'do'" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path v-if="job.taskType === 'do'" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    <path v-if="job.taskType === 'sr'" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
+                  </svg>
+                  <span>{{ job.taskType === 'do' ? deliveryTypeLabel(job.do_type) : 'Service Request' }}</span>
                 </div>
               </div>
             </div>
@@ -478,14 +803,15 @@ async function onDrop(techId: string | number) {
       <template v-if="selectedJob">
         <div class="detail-hero">
           <div class="detail-hero-main">
-            <span class="detail-hero-id">{{ selectedJob.job_order_no }}</span>
+            <span class="detail-hero-id">{{ selectedJob.job_order_no || selectedJob.do_number }}</span>
             <span class="badge" :class="statusBadgeClass(selectedJob.status)">
               {{ String(selectedJob.status || "new").replace("_", " ") }}
             </span>
           </div>
-          <span class="detail-hero-scheduled"
-            >Scheduled {{ formatFullDate(selectedJob.scheduled_date) }}</span
-          >
+          <span class="detail-hero-scheduled">
+            <template v-if="isDeliveryJob(selectedJob)">🚚 Delivery {{ formatFullDate(jobDeliveryDate(selectedJob)) }}</template>
+            <template v-else>🗓 Scheduled {{ formatFullDate(selectedJob.scheduled_date) }}</template>
+          </span>
         </div>
 
         <div class="detail-grid">
@@ -496,9 +822,9 @@ async function onDrop(techId: string | number) {
             }}</span>
           </div>
           <div class="detail-item">
-            <span class="detail-label">Scheduled Date</span>
+            <span class="detail-label">{{ isDeliveryJob(selectedJob) ? "Delivery Date" : "Scheduled Date" }}</span>
             <span class="detail-value">{{
-              formatFullDate(selectedJob.scheduled_date)
+              isDeliveryJob(selectedJob) ? formatFullDate(jobDeliveryDate(selectedJob)) : formatFullDate(selectedJob.scheduled_date)
             }}</span>
           </div>
           <div class="detail-item">
@@ -536,6 +862,65 @@ async function onDrop(techId: string | number) {
           </div>
         </div>
 
+        <div class="detail-section" v-if="selectedJob.delivery_order">
+          <div class="detail-section-title">Delivery Order</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">DO Number</span>
+              <span class="detail-value detail-link">{{
+                selectedJob.delivery_order.do_number
+              }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">DO Type</span>
+              <span class="detail-value">{{
+                deliveryTypeLabel(selectedJob.delivery_order.do_type)
+              }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">DO Status</span>
+              <span class="detail-value">{{
+                String(selectedJob.delivery_order.status || "-").replace(
+                  "_",
+                  " ",
+                )
+              }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Delivery Date</span>
+              <span class="detail-value">{{
+                formatFullDate(selectedJob.delivery_order.delivery_date)
+              }}</span>
+            </div>
+            <div class="detail-item" v-if="selectedJob.delivery_order.recipient_name">
+              <span class="detail-label">Recipient</span>
+              <span class="detail-value">{{
+                selectedJob.delivery_order.recipient_name
+              }}{{ selectedJob.delivery_order.recipient_phone ? ` (${selectedJob.delivery_order.recipient_phone})` : "" }}</span>
+            </div>
+            <div class="detail-item wide" v-if="selectedJob.delivery_order.delivery_address">
+              <span class="detail-label">Delivery Address</span>
+              <span class="detail-value">{{
+                selectedJob.delivery_order.delivery_address
+              }}</span>
+            </div>
+          </div>
+          <div
+            v-if="(selectedJob.delivery_order.delivery_order_items || []).length > 0"
+            style="margin-top: 8px;"
+          >
+            <div class="detail-label" style="margin-bottom: 6px;">Items ({{ (selectedJob.delivery_order.delivery_order_items || []).length }})</div>
+            <div
+              v-for="(it, iIdx) in selectedJob.delivery_order.delivery_order_items"
+              :key="iIdx"
+              class="detail-item"
+              style="padding: 6px 0; border-top: 1px dashed var(--color-border-light);"
+            >
+              <span class="detail-value">{{ Number(iIdx) + 1 }}. {{ doItemLabel(it) }}</span>
+            </div>
+          </div>
+        </div>
+
         <div class="detail-section" v-if="detailCustomer">
           <div class="detail-section-title">Customer</div>
           <div class="detail-grid">
@@ -565,22 +950,22 @@ async function onDrop(techId: string | number) {
         </div>
 
         <div class="detail-section">
-          <div class="detail-section-title">Problem</div>
+          <div class="detail-section-title">Problem / Notes</div>
           <p class="detail-text">
-            {{ selectedJob.service_request?.problem_description || "-" }}
+            {{ selectedJob.service_request?.problem_description || selectedJob.notes || selectedJob.problem || "-" }}
           </p>
         </div>
 
-        <div class="detail-section" v-if="selectedJob.instructions">
-          <div class="detail-section-title">Instructions</div>
-          <p class="detail-text">{{ selectedJob.instructions }}</p>
+        <div class="detail-section" v-if="selectedJob.instructions || selectedJob.action">
+          <div class="detail-section-title">Instructions / Action</div>
+          <p class="detail-text">{{ selectedJob.instructions || selectedJob.action }}</p>
         </div>
       </template>
 
       <template v-else-if="selectedRequest">
         <div class="detail-hero">
           <div class="detail-hero-main">
-            <span class="detail-hero-id">{{ selectedRequest.request_no }}</span>
+            <span class="detail-hero-id">{{ selectedRequest.request_no || selectedRequest.do_number }}</span>
             <span class="badge badge-neutral">{{
               String(selectedRequest.status || "-").replace("_", " ")
             }}</span>
@@ -592,9 +977,9 @@ async function onDrop(techId: string | number) {
 
         <div class="detail-grid">
           <div class="detail-item">
-            <span class="detail-label">Request Date</span>
+            <span class="detail-label">Date</span>
             <span class="detail-value">{{
-              formatFullDate(selectedRequest.request_date)
+              formatFullDate(selectedRequest.request_date || selectedRequest.delivery_date)
             }}</span>
           </div>
           <div class="detail-item">
@@ -632,15 +1017,67 @@ async function onDrop(techId: string | number) {
         </div>
 
         <div class="detail-section">
-          <div class="detail-section-title">Problem</div>
+          <div class="detail-section-title">Problem / Notes</div>
           <p class="detail-text">
-            {{ selectedRequest.problem_description || "-" }}
+            {{ selectedRequest.problem_description || selectedRequest.notes || selectedRequest.problem || "-" }}
           </p>
         </div>
       </template>
 
       <template #footer>
         <button class="btn btn-outline" @click="closeDetail">Close</button>
+      </template>
+    </FormModal>
+
+    <!-- Assign Confirmation Modal -->
+    <FormModal
+      :open="showAssignModal"
+      :title="assignTarget?.task?.taskType === 'do' ? 'Assign Delivery Order' : 'Assign Service Request'"
+      max-width="480px"
+      @close="cancelAssign"
+    >
+      <div v-if="assignTarget" class="assign-modal-body">
+        <div class="assign-info">
+          <div class="assign-info-row">
+            <span class="assign-label">Task</span>
+            <span class="assign-value font-bold">{{ assignTarget.task.request_no || assignTarget.task.do_number }}</span>
+          </div>
+          <div class="assign-info-row">
+            <span class="assign-label">Technician</span>
+            <span class="assign-value">{{ technicianLabel(assignTarget.techId) }}</span>
+          </div>
+          <div class="assign-info-row" v-if="assignTarget.task.customer">
+            <span class="assign-label">Customer</span>
+            <span class="assign-value">{{ assignTarget.task.customer?.company_name || assignTarget.task.customer?.name || '-' }}</span>
+          </div>
+        </div>
+
+        <div class="form-group mt-lg" v-if="assignTarget.task.taskType === 'do'">
+          <label class="form-label">Delivery Date <span class="text-danger">*</span></label>
+          <input
+            type="datetime-local"
+            v-model="assignDeliveryDate"
+            class="form-input"
+          />
+          <p class="assign-hint">Atur tanggal dan waktu pengantaran. Default: tanggal DO yang sudah ada.</p>
+        </div>
+
+        <div class="form-group mt-lg" v-else>
+          <label class="form-label">Scheduled Date <span class="text-danger">*</span></label>
+          <input
+            type="datetime-local"
+            v-model="assignScheduledDate"
+            class="form-input"
+          />
+          <p class="assign-hint">Atur tanggal dan waktu penjadwalan servis. Default: hari ini.</p>
+        </div>
+      </div>
+
+      <template #footer>
+        <button class="btn btn-outline" :disabled="isAssigning" @click="cancelAssign">Cancel</button>
+        <button class="btn btn-primary" :disabled="isAssigning" @click="confirmAssign">
+          {{ isAssigning ? 'Assigning...' : 'Confirm Assign' }}
+        </button>
       </template>
     </FormModal>
   </div>
@@ -946,6 +1383,11 @@ async function onDrop(techId: string | number) {
   background: var(--color-success-surface);
 }
 
+.tech-status.busy {
+  color: var(--color-danger);
+  background: var(--color-danger-surface, #fee2e2);
+}
+
 .tech-count {
   margin-left: auto;
   font-size: var(--font-size-xs);
@@ -1137,6 +1579,45 @@ async function onDrop(techId: string | number) {
   overflow: hidden;
 }
 
+.card-customer,
+.card-address,
+.card-recipient {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.card-customer svg,
+.card-address svg,
+.card-recipient svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  opacity: 0.55;
+}
+
+.card-customer {
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.card-address span,
+.card-recipient span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.card-body > .card-customer + .card-address,
+.card-body > .card-customer + .card-recipient,
+.card-body > .card-address + .card-recipient {
+  margin-top: 4px;
+}
+
 .job-card.assigned:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
@@ -1244,5 +1725,44 @@ async function onDrop(techId: string | number) {
   .tech-lanes {
     max-height: none;
   }
+}
+
+/* Assign modal */
+.assign-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.assign-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-base);
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-md);
+}
+
+.assign-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.assign-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.assign-value {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.assign-hint {
+  margin-top: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
 }
 </style>

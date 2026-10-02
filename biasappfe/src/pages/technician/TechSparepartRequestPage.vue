@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useToast } from '@/composables/useToast'
 import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -43,22 +43,23 @@ const form = ref({
 })
 
 async function submitRequest() {
-  if (!form.value.service_report_id) return toast.warning('Pilih pekerjaan terlebih dahulu!')
-  if (!form.value.product_id) return toast.warning('Pilih sparepart!')
-  if (form.value.qty < 1) return toast.warning('Quantity harus minimal 1!')
+  if (!form.value.service_report_id) return toast.warning('Select a job first!')
+  if (!form.value.product_id) return toast.warning('Select a sparepart!')
+  if (form.value.qty < 1) return toast.warning('Quantity must be at least 1!')
 
-  if (confirm('Submit request sparepart?')) {
+  if (confirm('Submit sparepart request?')) {
     try {
       await api.post('/service-spareparts/', {
         service_report_id: form.value.service_report_id,
+        technician_id: myTechId.value,
         product_id: form.value.product_id,
         qty: Number(form.value.qty)
       })
       await refresh(true)
-      toast.success('Request sparepart berhasil dikirim ke Admin/CS/Inventory.')
+      toast.success('Sparepart request successfully sent to Admin/CS/Inventory.')
       router.push(`/technician/call-services/${form.value.service_report_id}`)
     } catch (err: any) {
-      toast.error(err.message || 'Gagal mengirim request sparepart')
+      toast.error(err.message || 'Failed to send sparepart request')
     }
   }
 }
@@ -69,12 +70,12 @@ async function submitRequest() {
     <PageHeader title="Request Sparepart" :back-button="true" @back="router.back()" />
 
     <div class="card p-lg" style="max-width: 600px; margin: 0 auto;">
-      <h2 class="card-title mb-md">Form Request Sparepart</h2>
+      <h2 class="card-title mb-md">Sparepart Request Form</h2>
 
       <div class="form-group">
-        <label class="form-label">Terkait Pekerjaan (Service No)</label>
+        <label class="form-label">Related Job (Service No)</label>
         <select v-model="form.service_report_id" class="form-select">
-          <option :value="null">-- Pilih Service Report --</option>
+          <option :value="null">-- Select Service Report --</option>
           <option v-for="sr in myActiveReports" :key="sr.id" :value="sr.id">
             {{ sr.report_no }}
           </option>
@@ -84,9 +85,9 @@ async function submitRequest() {
       <div class="form-group">
         <label class="form-label">Sparepart <span class="text-danger">*</span></label>
         <select v-model="form.product_id" class="form-select">
-          <option :value="null">-- Pilih Sparepart --</option>
+          <option :value="null">-- Select Sparepart --</option>
           <option v-for="p in availableSpareparts" :key="p.id" :value="p.id">
-            {{ p.name }} (Stok: {{ p.stock }})
+            {{ p.name }} (Stock: {{ p.stock }})
           </option>
         </select>
       </div>

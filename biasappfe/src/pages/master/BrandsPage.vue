@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -8,14 +9,15 @@ import { reactive, ref } from 'vue'
 
 import { useBrands } from '@/composables/useBrands'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 
 const toast = useToast()
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Nama Brand' },
+  { key: 'name', label: 'Brand Name' },
 ]
 
-const { brands: data, fetchAll, create, update, remove, error } = useBrands()
+const { brands: data, fetchAll, create, update, remove, hardRemove, error } = useBrands()
 fetchAll()
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -43,14 +45,16 @@ async function handleSubmit() {
     await create(form.name)
   }
   showModal.value = false
-  toast.success(editingItem.value ? 'Brand berhasil diperbarui!' : 'Brand berhasil disimpan!')
+  toast.success(editingItem.value ? 'Brand updated successfully!' : 'Brand saved successfully!')
 }
+
+const hardDelete = useHardDelete(hardRemove, fetchAll)
 
 function openDelete(item: Brand) { deletingItem.value = item; showConfirm.value = true }
 async function handleDelete() {
   if (deletingItem.value) await remove(String(deletingItem.value.id))
   showConfirm.value = false
-  toast.success('Brand berhasil dihapus!')
+  toast.success('Brand deleted successfully!')
 }
 </script>
 
@@ -58,13 +62,16 @@ async function handleDelete() {
   <div>
     <PageHeader title="Brands" button-label="Add Brand" permission="brand:create" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Cari brand..." permission="brand" @edit="openEdit" @delete="openDelete" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search brands..." permission="brand" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
     <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Add Brand'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="brand-name" class="form-label">Nama Brand</label>
-        <input id="brand-name" v-model="form.name" type="text" class="form-input" placeholder="Contoh: Canon, HP, Epson">
+        <label for="brand-name" class="form-label">Brand Name</label>
+        <input id="brand-name" v-model="form.name" type="text" class="form-input" placeholder="Example: Canon, HP, Epson">
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Hapus Brand" :message="`Yakin ingin menghapus brand '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirm" title="Delete Brand" :message="`Are you sure you want to delete brand '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Brand" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
