@@ -323,6 +323,7 @@ export interface Sale {
   subtotal?: number;
   service_charge?: number;
   tax?: number;
+  discount?: number;
   total?: number;
   sale_items?: SaleItem[];
   created_at: string;
@@ -382,6 +383,7 @@ export interface SalesInvoice {
   subtotal: number;
   service_charge: number;
   tax: number;
+  discount?: number;
   total: number;
   status: string;
   payment_status: string;
@@ -413,7 +415,11 @@ export interface Payment {
   balance: number;
   bank_name: string;
   reference_no: string;
+  sender_name?: string;
+  notes?: string;
   status: string;
+  user_id?: string | null;
+  user?: { id?: string; name?: string; username?: string } | null;
   created_at: string;
   updated_at: string;
 }

@@ -45,10 +45,15 @@ const contract = computed(() => contractItems.value.find(ci => String(ci.unit_id
 const unit = computed(() => findUnit(job.value?.unit_id || job.value?.service_request?.unit_id || null))
 
 // ── Delivery jobs (JO dari delivery order) ──
-const isDeliveryJob = computed(() => {
-  const j: any = job.value
-  return !!j && (j.job_type === 'delivery' || !!j.delivery_order_id || !!j.delivery_order)
-})
+// Hanya job yang benar-benar terhubung ke delivery order (bukan sekadar
+// label job_type) yang menampilkan Service History Form.
+function hasDeliveryOrder(j: any): boolean {
+  if (!j) return false
+  if (j.delivery_order_id) return true
+  const d = j.delivery_order
+  return !!d && (!!d.id || !!d.do_number)
+}
+const isDeliveryJob = computed(() => hasDeliveryOrder(job.value))
 const deliveryOrder = computed(() => (job.value as any)?.delivery_order || null)
 const doCustomer = computed(() => deliveryOrder.value?.customer || findCustomer(deliveryOrder.value?.customer_id || null) || null)
 const doItems = computed(() => deliveryOrder.value?.delivery_order_items || [])
@@ -621,7 +626,7 @@ async function completeJob() {
             <label class="form-label">Direct Component Replacement</label>
             <div v-if="serviceReport?.service_spareparts && serviceReport.service_spareparts.length > 0">
               <div v-for="sp in serviceReport.service_spareparts" :key="sp.id" class="text-sm p-sm" style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span>{{ findProduct(sp.product_id)?.name || sp.product_id }}</span>
+                <span>{{ sp.product?.name || findProduct(sp.product_id)?.name || '-' }}</span>
                 <span class="font-bold">x {{ sp.qty }}</span>
               </div>
             </div>

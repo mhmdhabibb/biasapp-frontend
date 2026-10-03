@@ -5,16 +5,18 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useAuth } from '@/composables/useAuth'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { RentalInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
-import { printPaymentSlip, printBankPaymentNote } from '@/utils/paymentReceipt'
+import { printPaymentSlip, printPaymentStruk, paymentMethodOf, buildPaymentTimestamp, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
 import { computed, reactive, ref } from 'vue'
 
 const toast = useToast()
 const { can } = usePermission()
+const { currentUser } = useAuth()
 const {
   rentalInvoices: data,
   contractItems,
@@ -665,10 +667,11 @@ async function submitPayment() {
     }
 
     const payNo = `PAY-${Date.now()}`
+    const paymentTs = buildPaymentTimestamp(paymentForm.payment_date)
     await api.post(`/payments`, {
       payment_no: payNo,
       rental_invoice_id: paymentInvoiceId.value,
-      payment_date: paymentForm.payment_date + "T00:00:00Z",
+      payment_date: paymentTs,
       amount: paymentForm.amount,
       payment_method: paymentForm.payment_method,
       bank_name: paymentForm.payment_method === 'cash' ? 'CASH' : finalBankName,
@@ -682,7 +685,7 @@ async function submitPayment() {
       payment_no: payNo,
       invoice_no: inv?.invoice_no || '-',
       customer_name: customerName(inv?.customer_id),
-      payment_date: paymentForm.payment_date,
+      payment_date: paymentTs,
       amount: Number(paymentForm.amount || 0),
       reference_no: paymentForm.reference || '-',
       sender_name: paymentForm.sender_name,
@@ -690,6 +693,7 @@ async function submitPayment() {
       bank_name: finalBankName,
       status: 'pending',
       method: paymentForm.payment_method === 'cash' ? 'Tunai' : 'Transfer',
+      cs_name: currentUser.value?.name?.trim() || '-',
     })
     if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak tanda terima.')
     showPaymentModal.value = false
@@ -1042,7 +1046,11 @@ function printReceipt(item: any) {
     toast.warning('Bukti bayar tersedia setelah pembayaran disetujui Accounting.')
     return
   }
-  const opened = printBankPaymentNote({
+  printReceiptAsync(item, approved)
+}
+
+async function printReceiptAsync(item: any, approved: any) {
+  const payload = {
     payment_no: approved.payment_no,
     invoice_no: item.invoice_no,
     customer_name: customerName(item.customer_id),
@@ -1054,7 +1062,16 @@ function printReceipt(item: any) {
     notes: approved.notes,
     status: approved.status,
     lunas: true,
-  })
+    method: paymentMethodOf(approved.bank_name) || (approved.bank_name ? 'Transfer' : undefined),
+    cs_name: approved.user?.name || approved.user?.username || currentUser.value?.name?.trim() || '-',
+  }
+  const win = window.open('', '_blank')
+  if (!win) {
+    toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
+    return
+  }
+  payload.qr_data_url = await generatePaymentQrDataUrl(buildPaymentVerifyUrl(payload))
+  const opened = printPaymentStruk(payload, win)
   if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
 }
 
@@ -1485,7 +1502,7 @@ function printInvoice(item: any) {
 
       <div class="form-group">
         <label class="form-label">Payment Amount (Rp)</label>
-        <input v-model.number="paymentForm.amount" type="number" class="form-input" min="0" required>
+        <input :value="Number(paymentForm.amount || 0).toLocaleString('id-ID')" type="text" class="form-input" readonly title="Otomatis dari total invoice" style="background: var(--color-surface-raised); cursor: not-allowed;">
       </div>
       <div class="form-group">
         <label class="form-label">Reference No. / Receipt (Optional)</label>

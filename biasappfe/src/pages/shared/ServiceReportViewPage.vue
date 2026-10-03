@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMasterStore } from '@/composables/useMasterStore'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { printServiceReport, getServiceReportFormHtml } from '@/utils/printReport'
+import { groupMeterReadingsBySize } from '@/utils/meterReading'
 
 const route = useRoute()
 const router = useRouter()
@@ -105,7 +106,14 @@ const displayAfter = computed(() => {
   const after = numVal(sr.value?.meter_reading_after) || numVal((sr.value as any)?.reading_counter)
   return after > 0 ? after : (sr.value?.meter_reading_after ?? 0)
 })
-const displayUsage = computed(() => Math.max(0, (displayAfter.value || 0) - (displayBefore.value || 0)))
+// Rincian meter per ukuran kertas dari readings yang terhubung ke report.
+const meterSectionsView = computed(() =>
+  groupMeterReadingsBySize(
+    (sr.value as any)?.monthly_meter_readings ||
+      (sr.value as any)?.monthlyMeterReadings ||
+      [],
+  ),
+)
 
 function formatDate(d: string | null | undefined) {
   if (!d) return '-'
@@ -276,7 +284,7 @@ function statusColor(s: string) {
                     <span>Qty</span>
                   </div>
                   <div v-for="sp in sr.service_spareparts" :key="sp.id" class="sparepart-row">
-                    <span>{{ findProduct(sp.product_id)?.name || sp.product_id }}</span>
+                    <span>{{ sp.product?.name || findProduct(sp.product_id)?.name || '-' }}</span>
                     <span class="font-bold">{{ sp.qty }}</span>
                   </div>
                 </div>
@@ -298,6 +306,38 @@ function statusColor(s: string) {
             </span>
           </div>
           <div class="report-card-body">
+            <template v-if="meterSectionsView.length > 0">
+              <div
+                v-for="sec in meterSectionsView"
+                :key="sec.paper_size_id || 'general'"
+                class="meter-size-block"
+              >
+                <div class="meter-size-title">{{ sec.paper_size_name }}</div>
+                <div class="meter-grid">
+                  <template v-if="sec.bw">
+                    <div class="meter-item">
+                      <span class="meter-label">B/W Before</span>
+                      <span class="meter-value">{{ sec.bw.before }}</span>
+                    </div>
+                    <div class="meter-item">
+                      <span class="meter-label">B/W After</span>
+                      <span class="meter-value">{{ sec.bw.after }}</span>
+                    </div>
+                  </template>
+                  <template v-if="sec.color">
+                    <div class="meter-item">
+                      <span class="meter-label">Colour Before</span>
+                      <span class="meter-value">{{ sec.color.before }}</span>
+                    </div>
+                    <div class="meter-item">
+                      <span class="meter-label">Colour After</span>
+                      <span class="meter-value">{{ sec.color.after }}</span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+            <template v-else>
             <div class="meter-grid">
               <div class="meter-item">
                 <span class="meter-label">Meter Before</span>
@@ -307,11 +347,8 @@ function statusColor(s: string) {
                 <span class="meter-label">Meter After</span>
                 <span class="meter-value">{{ displayAfter }}</span>
               </div>
-              <div class="meter-item highlight">
-                <span class="meter-label">Total Usage</span>
-                <span class="meter-value">{{ displayUsage }}</span>
-              </div>
             </div>
+            </template>
             <div class="report-field">
               <span class="field-label">Paper Size</span>
               <div class="field-value" v-if="paperTypes.length > 0">
@@ -691,6 +728,19 @@ function statusColor(s: string) {
 }
 .meter-item.highlight .meter-value {
   color: #1d4ed8;
+}
+.meter-size-block {
+  margin-bottom: 16px;
+}
+.meter-size-block:last-of-type {
+  margin-bottom: 0;
+}
+.meter-size-title {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 8px;
 }
 
 /* Problem */

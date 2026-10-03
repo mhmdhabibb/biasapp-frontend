@@ -11,7 +11,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 
 const toast = useToast();
 const { can } = usePermission();
-const { customers, units, sales, findProduct, getUnitsByCustomer } =
+const { customers, units, sales, findProduct, getUnitsByCustomer, getContractsByCustomer, deliveryOrders } =
   useMasterStore();
 
 const columns: TableColumn[] = [
@@ -171,7 +171,21 @@ const customerRentalUnits = computed(() => {
     }
   }
 
-  return Array.from(unitMap.values());
+  // Tandai tiap barang: delivered boleh diajukan SR, sisanya tampil
+  // dengan label "Belum Dikirim" (checkbox terkunci).
+  return Array.from(unitMap.values()).map((u: any) => {
+    const key = String(u.id);
+    const delivered =
+      deliveredItemIds.value.unitIds.has(key) ||
+      deliveredItemIds.value.productIds.has(key);
+    return {
+      ...u,
+      delivered,
+      doStatus: delivered
+        ? "delivered"
+        : deliveredItemIds.value.statusOf.get(key) || null,
+    };
+  });
 });
 
 // Reset unit selection when customer changes
@@ -180,6 +194,98 @@ watch(
   () => {
     form.unit_ids = [];
   },
+);
+
+// Status DO yang dihitung sebagai "barang sudah dikirim": hanya delivered.
+const DELIVERED_DO_STATUS = new Set(["delivered"]);
+
+// ID unit/produk yang sudah dikirim (DO delivered) untuk customer terpilih,
+// mengikuti aturan backend: langsung di DO items, atau via rental/sale/
+// contract yang terhubung ke DO delivered.
+const deliveredItemIds = computed(() => {
+  const unitIds = new Set<string>();
+  const productIds = new Set<string>();
+  // Status DO per barang (untuk label "Belum Dikirim"), mencakup semua DO
+  // customer (status apa pun). Status "delivered" selalu menang.
+  const statusOf = new Map<string, string>();
+  if (!form.customer_id) return { unitIds, productIds, statusOf };
+  const cid = String(form.customer_id);
+
+  const saleIds = new Set(
+    sales.value
+      .filter((s: any) => String(s.customer_id) === cid)
+      .map((s: any) => String(s.id)),
+  );
+  const rentalIds = new Set(
+    rentalsData.value
+      .filter((r: any) => String(r.customer_id) === cid)
+      .map((r: any) => String(r.id)),
+  );
+  const contractIds = new Set(
+    getContractsByCustomer(form.customer_id).map((c: any) =>
+      String(c.contract_id || c.id),
+    ),
+  );
+
+  const markStatus = (id: unknown, status: string) => {
+    const key = String(id || "");
+    if (!key) return;
+    if (!statusOf.has(key) || status === "delivered") statusOf.set(key, status);
+  };
+
+  for (const delivery of deliveryOrders.value as any[]) {
+    const status = String(delivery.status || "").toLowerCase();
+    const linked =
+      String(delivery.customer_id || "") === cid ||
+      (delivery.sale_id && saleIds.has(String(delivery.sale_id))) ||
+      (delivery.rental_id && rentalIds.has(String(delivery.rental_id))) ||
+      (delivery.contract_id && contractIds.has(String(delivery.contract_id)));
+    if (!linked) continue;
+
+    for (const item of delivery.delivery_order_items || []) {
+      markStatus(item.unit_id, status || "-");
+      markStatus(item.product_id, status || "-");
+    }
+    if (!DELIVERED_DO_STATUS.has(status)) continue;
+
+    for (const item of delivery.delivery_order_items || []) {
+      if (item.unit_id) unitIds.add(String(item.unit_id));
+      if (item.product_id) productIds.add(String(item.product_id));
+    }
+    if (delivery.rental_id) {
+      const rental = rentalsData.value.find(
+        (r: any) => String(r.id) === String(delivery.rental_id),
+      );
+      for (const item of rental?.rental_items || []) {
+        if (item.unit_id) unitIds.add(String(item.unit_id));
+        if (item.product_id) productIds.add(String(item.product_id));
+      }
+    }
+    if (delivery.sale_id) {
+      const sale = sales.value.find(
+        (s: any) => String(s.id) === String(delivery.sale_id),
+      );
+      for (const item of (sale as any)?.sale_items || []) {
+        if (item.product_id) productIds.add(String(item.product_id));
+      }
+    }
+    if (delivery.contract_id) {
+      for (const contract of getContractsByCustomer(form.customer_id)) {
+        if (
+          String((contract as any).contract_id) ===
+            String(delivery.contract_id) &&
+          (contract as any).unit_id
+        ) {
+          unitIds.add(String((contract as any).unit_id));
+        }
+      }
+    }
+  }
+  return { unitIds, productIds, statusOf };
+});
+
+const hasDeliveredUnit = computed(() =>
+  customerRentalUnits.value.some((u: any) => u.delivered),
 );
 
 function openAdd() {
@@ -209,6 +315,18 @@ async function fetchRequests() {
 
 async function handleSubmit() {
   if (!form.customer_id || !form.problem_description) return;
+  // Pengaman frontend (backend juga menolak dengan 422 bila lolos dari sini).
+  const chosen = form.unit_ids.length > 0 ? form.unit_ids[0] : null;
+  if (
+    chosen &&
+    !deliveredItemIds.value.unitIds.has(String(chosen)) &&
+    !deliveredItemIds.value.productIds.has(String(chosen))
+  ) {
+    toast.error(
+      "Barang belum dikirim: service request hanya bisa dibuat setelah barang/DO berstatus delivered.",
+    );
+    return;
+  }
   isLoading.value = true;
 
   const payload = {
@@ -237,8 +355,10 @@ async function handleSubmit() {
       showModal.value = false;
       fetchRequests();
     } else {
-      const err = await res.json();
-      toast.error("Failed: " + JSON.stringify(err));
+      const err = await res.json().catch(() => ({}));
+      toast.error(
+        "Failed: " + ((err as any)?.message || JSON.stringify(err)),
+      );
     }
   } catch (error) {
     toast.error("A network error occurred.");
@@ -571,16 +691,50 @@ onMounted(() => {
             font-size: var(--font-size-sm);
           "
         >
-          No units/machines currently rented by this customer
+          Belum ada unit/barang tercatat untuk customer ini.
         </div>
-        <div v-else class="unit-checkbox-list">
+        <div v-else>
+          <div
+            v-if="!hasDeliveredUnit"
+            style="
+              padding: 12px;
+              margin-bottom: 8px;
+              background: var(--color-surface-raised);
+              border-radius: var(--radius-sm);
+              color: var(--color-text-muted);
+              font-size: var(--font-size-sm);
+            "
+          >
+            Belum ada barang yang dikirim (delivered) untuk customer ini —
+            service request baru bisa dibuat setelah barang/DO diterima customer.
+          </div>
+          <div class="unit-checkbox-list">
           <label
             v-for="u in customerRentalUnits"
             :key="u.id"
             class="unit-checkbox-item"
+            :class="{ 'unit-disabled': !u.delivered }"
           >
-            <input type="checkbox" :value="u.id" v-model="form.unit_ids" />
+            <input
+              type="checkbox"
+              :value="u.id"
+              v-model="form.unit_ids"
+              :disabled="!u.delivered"
+            />
             <span class="unit-checkbox-label">{{ u.label }}</span>
+            <span
+              v-if="!u.delivered"
+              class="delivery-badge delivery-pending"
+              :title="
+                u.doStatus
+                  ? `Status DO: ${u.doStatus}`
+                  : 'Belum ada DO untuk barang ini'
+              "
+            >
+              Belum Dikirim{{
+                u.doStatus ? ` (DO ${u.doStatus})` : ""
+              }}
+            </span>
             <span
               class="unit-source-badge"
               :class="
@@ -614,6 +768,7 @@ onMounted(() => {
               Billable
             </span>
           </label>
+          </div>
         </div>
       </div>
 
@@ -772,6 +927,30 @@ onMounted(() => {
 .warranty-none {
   background: #fef9c3;
   color: #a16207;
+}
+
+.delivery-badge {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.delivery-pending {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.unit-disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.unit-disabled:hover {
+  background: transparent;
 }
 
 /* Detail Modal Styles */

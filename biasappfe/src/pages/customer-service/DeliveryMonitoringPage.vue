@@ -4,7 +4,7 @@ import DataTable from '@/components/ui/DataTable.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
-import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
+import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import type { TableColumn } from '@/types'
 
 const toast = useToast()
@@ -83,6 +83,19 @@ async function handleSubmit() {
     toast.error('Failed to update')
   }
 }
+
+async function markDelivered(row: any) {
+  if (String(row.status || '').toLowerCase() === 'delivered') return
+  if (!window.confirm(`Tandai DO ${row.do_number || row.id} sebagai DELIVERED?\n\nSetelah delivered, customer bisa mengajukan service request untuk barang ini.`)) return
+  try {
+    await useResourcesStore().update('deliveryOrders', String(row.id), { status: 'delivered' })
+    await useMasterStore().refreshInBackground()
+    toast.success('Delivery order marked as delivered.')
+  } catch (err) {
+    console.error(err)
+    toast.error('Failed to update status')
+  }
+}
 </script>
 
 <template>
@@ -101,7 +114,8 @@ async function handleSubmit() {
       </template>
       <template #actions="{ row }">
         <button v-if="can('delivery_order:update')" class="btn btn-sm btn-outline" @click="openEdit(row)">Edit Report</button>
-        <button v-if="can('delivery_order:read')" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="printServiceHistory(row)">Print Service History</button>
+        <button v-if="can('delivery_order:update') && String(row.status || '').toLowerCase() !== 'delivered'" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="markDelivered(row)">Mark Delivered</button>
+        <button v-if="can('delivery_order:read') && hasDeliveryHistory(row) && String(row.do_type || '').toLowerCase() !== 'inbound'" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="printServiceHistory(row)">Print Service History</button>
       </template>
     </DataTable>
 

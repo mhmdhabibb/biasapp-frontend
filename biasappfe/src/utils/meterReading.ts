@@ -9,6 +9,52 @@ function dateKey(value: unknown): string | null {
   return parsed === null ? null : new Date(parsed).toISOString().slice(0, 10);
 }
 
+export function normalizeMeterMode(m: unknown): "bw" | "color" {
+  return /colou?r/i.test(String(m || "")) ? "color" : "bw";
+}
+
+export interface MeterSizeSection {
+  paper_size_id: string;
+  paper_size_name: string;
+  bw: { before: number; after: number } | null;
+  color: { before: number; after: number } | null;
+}
+
+function numOrZero(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Kelompokkan monthly readings per ukuran kertas + mode (B/W & Colour)
+ *  untuk ditampilkan di report (digital & cetak). */
+export function groupMeterReadingsBySize(readings: any[]): MeterSizeSection[] {
+  const map = new Map<string, MeterSizeSection>();
+  for (const r of readings || []) {
+    const psId = String(r?.paper_size_id || "");
+    const key = psId || "-";
+    if (!map.has(key)) {
+      map.set(key, {
+        paper_size_id: psId,
+        paper_size_name:
+          r?.paper_size?.name ||
+          r?.paper_size_name ||
+          (psId ? `Ukuran ${psId.slice(0, 8)}` : "Tanpa ukuran"),
+        bw: null,
+        color: null,
+      });
+    }
+    const sec = map.get(key)!;
+    const mode = normalizeMeterMode(r?.color_mode);
+    sec[mode] = {
+      before: numOrZero(r?.start_meter),
+      after: numOrZero(r?.end_meter),
+    };
+  }
+  return [...map.values()].sort((a, b) =>
+    a.paper_size_name.localeCompare(b.paper_size_name),
+  );
+}
+
 export function findPreviousServiceReportMeter(
   currentReport: any,
   reports: any[],

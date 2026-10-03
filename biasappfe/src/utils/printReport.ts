@@ -1,4 +1,5 @@
 import { useMasterStore } from "@/composables/useMasterStore";
+import { groupMeterReadingsBySize } from "@/utils/meterReading";
 
 interface ReportCtx {
   masterStore: any;
@@ -211,6 +212,50 @@ function resolveMeterAfter(item: any): string {
   const after = numVal(item.meter_reading_after) || numVal(item.reading_counter)
   if (after > 0) return String(after)
   return item.meter_reading_after ?? item.reading_counter ?? ""
+}
+
+/** Blok METER READING form cetak copier: rincian per ukuran kertas bila
+ *  readings terhubung sudah ada, else ringkasan BEFORE/AFTER tunggal (legacy). */
+function copierMeterBlockHtml(item: any, ctx: ReportCtx): string {
+  const detail = copierMeterTableHtml(item);
+  if (detail) {
+    return `<tr><td colspan="2" class="bg-black">METER READING</td></tr>${detail}`;
+  }
+  return `
+        <tr><td colspan="2" class="bg-black">METER READING</td></tr>
+        <tr>
+          <td class="text-center">BEFORE</td>
+          <td class="text-center">AFTER</td>
+        </tr>
+        <tr>
+          <td class="text-center">${resolveMeterBefore(item, ctx)}</td>
+          <td class="text-center">${resolveMeterAfter(item)}</td>
+        </tr>`;
+}
+function copierMeterTableHtml(item: any): string {
+  const sections = groupMeterReadingsBySize(
+    item.monthly_meter_readings || item.monthlyMeterReadings || [],
+  );
+  if (sections.length === 0) return "";
+  const rows = sections
+    .map((sec) => {
+      const cells = (mode: "bw" | "color", label: string) => {
+        const m = sec[mode];
+        if (!m) return "";
+        return `<tr><td>${sec.paper_size_name} — ${label}</td><td style="text-align:center;">${m.before}</td><td style="text-align:center;">${m.after}</td></tr>`;
+      };
+      return cells("bw", "B/W") + cells("color", "Colour");
+    })
+    .join("");
+  if (!rows) return "";
+  return `
+    <tr><td colspan="2" style="padding:0;">
+      <table style="width:100%; border-collapse:collapse; font-size:11px;">
+        <tr><td colspan="3" style="background:#000; color:#fff; font-weight:bold; padding:3px 6px;">METER READING PER PAPER SIZE</td></tr>
+        <tr style="font-weight:bold;"><td style="padding:3px 6px;">PAPER SIZE</td><td style="padding:3px 6px; text-align:center;">BEFORE</td><td style="padding:3px 6px; text-align:center;">AFTER</td></tr>
+        ${rows}
+      </table>
+    </td></tr>`;
 }
 
 function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
@@ -427,15 +472,7 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
           <td class="text-center">${ctx.u.model || "-"}</td>
           <td class="text-center">${ctx.u.serial_no || "-"}</td>
         </tr>
-        <tr><td colspan="2" class="bg-black">METER READING</td></tr>
-        <tr>
-          <td class="text-center">BEFORE</td>
-          <td class="text-center">AFTER</td>
-        </tr>
-        <tr>
-          <td class="text-center">${resolveMeterBefore(item, ctx)}</td>
-          <td class="text-center">${resolveMeterAfter(item)}</td>
-        </tr>
+        ${copierMeterBlockHtml(item, ctx)}
         <tr><td colspan="2" class="bg-black">PAPER SIZE</td></tr>
         <tr>
           <td colspan="2" style="vertical-align: top; font-weight: normal;">${paperTypesHtml(item, ctx)}</td>

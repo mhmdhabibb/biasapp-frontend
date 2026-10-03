@@ -11,6 +11,7 @@ import { useResourcesStore } from '@/stores/resources.store'
 import type { Sale, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
+import { buildPaymentTimestamp } from '@/utils/paymentReceipt'
 
 const toast = useToast()
 const { can, canApprove } = usePermission()
@@ -89,7 +90,7 @@ async function handlePayment() {
         const paymentPayload = {
             payment_no: 'PAY-' + Math.floor(Date.now() / 1000),
             sales_invoice_id: invoice.id,
-            payment_date: paymentData.payment_date + "T00:00:00Z",
+            payment_date: buildPaymentTimestamp(paymentData.payment_date),
             amount: Number(paymentData.amount),
             tax_deduction: 0,
             bank_name: paymentData.method_type === 'CASH' ? 'CASH' : finalBankName,
@@ -155,6 +156,7 @@ function generateSingleInvoiceHtml(item: any) {
   }
 
   const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
+  const discountStr = (item.discount || 0).toLocaleString('id-ID')
   const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
 
   return `
@@ -250,7 +252,7 @@ function generateSingleInvoiceHtml(item: any) {
         <tr>
           <td class="label">Discount</td>
           <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
-          <td class="val-col" style="border-left: none; text-align: right;">-</td>
+          <td class="val-col" style="border-left: none; text-align: right;">${discountStr}</td>
         </tr>
         <tr>
           <td class="label">Amount</td>
@@ -340,7 +342,7 @@ function exportMonthToExcel() {
     }
 
     csvContent += `;;;;Sub Total:;${subtotal}\n`
-    csvContent += `;;;;Discount:;0\n`
+    csvContent += `;;;;Discount:;${item.discount || 0}\n`
     csvContent += `;;;;Grand Total:;${grandTotal}\n`
     csvContent += `;;;;;;\n`
     csvContent += `------------------------------------------------------------------------;;;;;;\n`
@@ -455,6 +457,7 @@ const form = reactive({
   po_no: '',
   installation_address: '',
   total_amount: 0,
+  discount: 0,
   status: 'pending',
   has_warranty: true,
   warranty: {
@@ -467,7 +470,8 @@ const form = reactive({
 
 const calcSubtotal = computed(() => saleItems.value.reduce((sum, item) => sum + (item.qty * item.unit_price), 0))
 // You can use calcSubtotal to set total_amount automatically before submit
-const calcTotal = computed(() => calcSubtotal.value)
+const calcDiscount = computed(() => Math.max(0, Number(form.discount) || 0))
+const calcTotal = computed(() => Math.max(0, calcSubtotal.value - calcDiscount.value))
 
 function addSaleItem() {
   saleItems.value.push({ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' })
@@ -489,7 +493,7 @@ function onProductChange(idx: number) {
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, status: 'pending', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
+  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, discount: 0, status: 'pending', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
   saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
   showModal.value = true
 }
@@ -508,6 +512,7 @@ function openEdit(item: any) {
       installation_address: item.installation_address || '',
     sale_date: item.sale_date ? item.sale_date.slice(0, 10) : '',
     total_amount: item.total_amount || item.total,
+    discount: item.discount || 0,
     status: item.status || 'pending',
     has_warranty: item.has_warranty || (item.warranties && item.warranties.length > 0) || false,
     warranty: item.warranties && item.warranties.length > 0 ? {
@@ -552,6 +557,7 @@ async function handleSubmit() {
   const saleData = {
     ...form,
     subtotal: calcSubtotal.value,
+    discount: calcDiscount.value,
     total: calcTotal.value,
     sale_items: saleItems.value.map(item => ({
       ...item,
@@ -982,7 +988,14 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         </div>
       </div>
 
+      <div class="form-group">
+        <label for="sale-discount" class="form-label">Discount (Rp)</label>
+        <input id="sale-discount" v-model.number="form.discount" type="number" class="form-input" min="0" placeholder="0">
+      </div>
+
       <div class="sale-summary">
+        <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(calcSubtotal) }}</span></div>
+        <div class="summary-row"><span>Discount</span><span>{{ formatRupiah(calcDiscount) }}</span></div>
         <div class="summary-row summary-total"><span>Total</span><span>{{ formatRupiah(calcTotal) }}</span></div>
       </div>
     </FormModal>
@@ -1201,7 +1214,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         </template>
         <div>
           <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Amount</label>
-          <input type="number" class="form-input" v-model="paymentData.amount" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+          <input type="text" class="form-input" :value="Number(paymentData.amount || 0).toLocaleString('id-ID')" readonly title="Otomatis dari total invoice" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface-raised); cursor: not-allowed;" />
         </div>
         <div>
           <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Reference No. / Receipt (Optional)</label>

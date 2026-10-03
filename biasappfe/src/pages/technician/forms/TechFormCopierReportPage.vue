@@ -13,7 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { currentUser } = useAuth()
-const { serviceReports, contractItems, monthlyMeterReadings, findUnit, findCustomer, findTechnician, refreshInBackground } = useMasterStore()
+const { serviceReports, contractItems, monthlyMeterReadings, findUnit, findCustomer, findTechnician, findProduct, refreshInBackground } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
@@ -84,7 +84,144 @@ const form = ref({
 const isLoading = ref(true)
 const isSaving = ref(false)
 
-const usage = computed(() => Math.max(0, Number(form.value.meter_after || 0) - beforeMeter.value))
+// ---- Meter per ukuran kertas ----
+// Section per paper size (dari readings yang terhubung ke report ini +
+// ukuran dari contract rates). Tiap section berisi baris B/W dan Colour
+// dengan Before (readonly) + After (input) + Usage masing-masing.
+interface CopierMeterRow {
+  key: string
+  paper_size_id: string
+  paper_size_name: string
+  paper_type_id: string | null
+  color_mode: 'bw' | 'color'
+  color_label: string
+  reading_id: string | null
+  before: number
+}
+
+const normMeterMode = (m: any): 'bw' | 'color' =>
+  /colou?r/i.test(String(m || '')) ? 'color' : 'bw'
+
+function contractItemForUnit(): any {
+  const unitId = String(job.value?.unit_id || unit.value?.id || '')
+  if (!unitId) return null
+  return (contractItems.value || []).find((c: any) =>
+    String(c.unit_id || c.unit?.id || '') === unitId,
+  ) || null
+}
+
+// Meter awal untuk kombinasi (ukuran, mode): reading terbaru di store,
+// fallback ke nilai awal kontrak.
+function prevMeterFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): number {
+  const storeReadings: any[] =
+    (monthlyMeterReadings as any)?.value || (monthlyMeterReadings as any) || []
+  const sized = storeReadings.filter((r: any) =>
+    (!ci || String(r.contract_item_id || '') === String(ci.id)) &&
+    String(r.paper_size_id || '') === String(paperSizeId || '') &&
+    normMeterMode(r.color_mode) === mode,
+  )
+  if (sized.length > 0) {
+    const latest = sized.reduce((prev: any, curr: any) =>
+      new Date(prev.created_at).getTime() > new Date(curr.created_at).getTime() ? prev : curr,
+    )
+    return num(latest.end_meter)
+  }
+  if (!ci) return 0
+  return mode === 'color' ? num(ci.start_meter_color) : num(ci.start_meter_bw)
+}
+
+const meterSections = computed(() => {
+  const sections = new Map<string, { paper_size_id: string; paper_size_name: string; rows: CopierMeterRow[] }>()
+  const ci = contractItemForUnit()
+  const ensureSection = (psId: string, psName: string) => {
+    const key = psId || '-'
+    if (!sections.has(key)) {
+      sections.set(key, { paper_size_id: psId, paper_size_name: psName, rows: [] })
+    }
+    return sections.get(key)!
+  }
+  const hasRow = (psId: string, mode: 'bw' | 'color') =>
+    (sections.get(psId || '-')?.rows || []).some((r) => r.color_mode === mode)
+
+  // 1. Readings yang sudah terhubung ke report ini.
+  const readings: any[] =
+    job.value?.monthly_meter_readings || job.value?.monthlyMeterReadings || []
+  for (const r of readings) {
+    const psId = String(r.paper_size_id || '')
+    const mode = normMeterMode(r.color_mode)
+    const sec = ensureSection(
+      psId,
+      r.paper_size?.name || r.paper_size_name || (psId ? `Ukuran ${psId.slice(0, 8)}` : 'Tanpa ukuran'),
+    )
+    const before = num(r.start_meter) > 0 ? num(r.start_meter) : prevMeterFor(psId, mode, ci)
+    sec.rows.push({
+      key: `${psId}|${mode}`,
+      paper_size_id: psId,
+      paper_size_name: sec.paper_size_name,
+      paper_type_id: r.paper_type_id ?? null,
+      color_mode: mode,
+      color_label: mode === 'color' ? 'Colour' : 'B/W',
+      reading_id: r.id ? String(r.id) : null,
+      before,
+    })
+  }
+
+  // 2. Ukuran dari contract rates yang belum tercakup.
+  for (const rate of (((ci as any)?.rates || []) as any[])) {
+    const psId = String(rate.paper_size_id || '')
+    if (!psId) continue
+    const sec = ensureSection(
+      psId,
+      rate.paper_size?.name || rate.paper_size_name || `Ukuran ${psId.slice(0, 8)}`,
+    )
+    for (const mode of ['bw', 'color'] as const) {
+      if (hasRow(psId, mode)) continue
+      sec.rows.push({
+        key: `${psId}|${mode}`,
+        paper_size_id: psId,
+        paper_size_name: sec.paper_size_name,
+        paper_type_id: rate.paper_type_id ?? null,
+        color_mode: mode,
+        color_label: mode === 'color' ? 'Colour' : 'B/W',
+        reading_id: null,
+        before: prevMeterFor(psId, mode, ci),
+      })
+    }
+  }
+
+  return [...sections.values()]
+    .map((sec) => ({
+      ...sec,
+      rows: sec.rows.sort((a, b) => (a.color_mode === b.color_mode ? 0 : a.color_mode === 'bw' ? -1 : 1)),
+    }))
+    .sort((a, b) => a.paper_size_name.localeCompare(b.paper_size_name))
+})
+
+// Nilai After per baris (prefill: end meter tersimpan, else before).
+const sectionAfters = ref<Record<string, number | null>>({})
+
+function initSectionAfters() {
+  const readings: any[] =
+    job.value?.monthly_meter_readings || job.value?.monthlyMeterReadings || []
+  const next: Record<string, number | null> = {}
+  for (const sec of meterSections.value) {
+    for (const row of sec.rows) {
+      const linked = row.reading_id
+        ? readings.find((r: any) => String(r.id) === String(row.reading_id))
+        : null
+      const savedEnd = num(linked?.end_meter)
+      next[row.key] = savedEnd > 0 ? savedEnd : row.before
+    }
+  }
+  sectionAfters.value = next
+}
+
+function filledAfter(row: CopierMeterRow): number | null {
+  const raw = sectionAfters.value[row.key]
+  if (raw === null || raw === undefined || String(raw).trim() === '') return null
+  const v = Number(raw)
+  return Number.isFinite(v) ? v : null
+}
 
 const sparepartRequests = computed(() => {
   const list = job.value?.service_spareparts || []
@@ -132,6 +269,7 @@ onMounted(async () => {
     form.value.technician_signature = job.value.technician_signature_copier || ''
     form.value.customer_name = job.value.customer_name_copier || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || ''
     form.value.technician_name = job.value.technician_name_copier || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || ''
+    initSectionAfters()
   } catch (err: any) {
     toast.error(err.message || 'Failed to load service report')
   } finally {
@@ -141,19 +279,77 @@ onMounted(async () => {
 
 async function saveForm() {
   if (isLoading.value || !job.value || isSaving.value) return
-  if (Number(form.value.meter_after) < beforeMeter.value) {
-    toast.warning(`Meter After (${form.value.meter_after}) must not be smaller than Before (${beforeMeter.value}).`)
-    return
-  }
   if (!form.value.customer_signature || !form.value.technician_signature || !form.value.customer_name.trim()) {
     toast.warning('Customer name, customer and technician signatures are required.')
     return
   }
+  const sections = meterSections.value
+  const ci = contractItemForUnit()
+  const unitId = String(job.value?.unit_id || unit.value?.id || '')
+
+  // Kumpulkan baris per ukuran yang diisi + validasi After >= Before.
+  const filled: Array<{ row: CopierMeterRow; after: number }> = []
+  for (const sec of sections) {
+    for (const row of sec.rows) {
+      const after = filledAfter(row)
+      if (after === null) continue
+      if (after < row.before) {
+        toast.warning(`${sec.paper_size_name} (${row.color_label}): After (${after}) must not be smaller than Before (${row.before}).`)
+        return
+      }
+      filled.push({ row, after })
+    }
+  }
+  if (sections.length > 0 && filled.length === 0) {
+    toast.warning('Fill in After Meter for at least one paper size.')
+    return
+  }
+  if (sections.length > 0 && !ci) {
+    toast.warning('Unit is not linked to a contract item — cannot save per-size readings.')
+    return
+  }
+  if (sections.length === 0 && Number(form.value.meter_after) < beforeMeter.value) {
+    toast.warning(`Meter After (${form.value.meter_after}) must not be smaller than Before (${beforeMeter.value}).`)
+    return
+  }
+
+  // Sinkron field tunggal legacy: pakai baris B/W pertama yang diisi (else baris pertama).
+  let legacyBefore = beforeMeter.value
+  let legacyAfter = Number(form.value.meter_after || 0)
+  if (filled.length > 0) {
+    const primary = filled.find((f) => f.row.color_mode === 'bw') || filled[0]!
+    legacyBefore = primary.row.before
+    legacyAfter = primary.after
+  }
+
   isSaving.value = true
   try {
+    // Simpan rincian per ukuran ke monthly readings (update yang terhubung,
+    // buat baru bila belum ada — ikut menghitung tagihan seperti Meter Readings).
+    for (const f of filled) {
+      if (f.row.reading_id) {
+        await api.patch(`/monthly-meter-readings/${f.row.reading_id}`, {
+          start_meter: f.row.before,
+          end_meter: f.after,
+        })
+      } else {
+        await api.post('/monthly-meter-readings/', {
+          user_id: currentUser.value?.id,
+          contract_item_id: ci.id,
+          unit_id: unitId,
+          paper_size_id: f.row.paper_size_id,
+          paper_type_id: f.row.paper_type_id,
+          color_mode: f.row.color_mode,
+          start_meter: f.row.before,
+          end_meter: f.after,
+          reading_date: new Date().toISOString(),
+          service_report_id: serviceId,
+        })
+      }
+    }
     await api.patch(`/service-reports/${serviceId}`, {
-      meter_reading_before: beforeMeter.value,
-      meter_reading_after: Number(form.value.meter_after),
+      meter_reading_before: legacyBefore,
+      meter_reading_after: legacyAfter,
       customer_signature_copier: form.value.customer_signature,
       technician_signature_copier: form.value.technician_signature,
       customer_name_copier: form.value.customer_name,
@@ -176,6 +372,22 @@ async function saveForm() {
       <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
       <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
       <template v-else>
+      <template v-if="meterSections.length > 0">
+        <div v-for="sec in meterSections" :key="sec.paper_size_id || 'general'" class="size-card">
+          <div class="size-title">Paper Size: {{ sec.paper_size_name }}</div>
+          <div v-for="row in sec.rows" :key="row.key" class="meter-grid">
+            <div class="form-group">
+              <label class="form-label">{{ row.color_label }} — Before (Read Only)</label>
+              <input type="number" :value="row.before" class="form-input" readonly disabled>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ row.color_label }} — After <span class="text-danger">*</span></label>
+              <input type="number" v-model.number="sectionAfters[row.key]" class="form-input" :min="row.before" placeholder="Enter meter after service">
+            </div>
+          </div>
+        </div>
+      </template>
+      <template v-else>
       <div class="form-group">
         <label class="form-label">Paper Size (Read Only)</label>
         <div v-if="paperTypes.length > 0" class="paper-box">
@@ -195,9 +407,9 @@ async function saveForm() {
         <div class="form-group">
           <label class="form-label">After Meter <span class="text-danger">*</span></label>
           <input type="number" v-model.number="form.meter_after" class="form-input" :min="beforeMeter" placeholder="Enter meter after service">
-          <p class="form-hint">Usage: <b>{{ usage }}</b> sheets.</p>
         </div>
       </div>
+      </template>
 
       <div class="form-group">
         <label class="form-label">Copy Quality Check</label>
@@ -212,7 +424,7 @@ async function saveForm() {
         <label class="form-label">Sparepart Request (Read Only)</label>
         <div v-if="sparepartRequests.length > 0" class="sparepart-box">
           <div v-for="(sp, i) in sparepartRequests" :key="sp.id || i">
-            {{ i + 1 }}. {{ sp.product?.name || sp.product_name || sp.product_id }} - Qty {{ sp.qty }}
+            {{ i + 1 }}. {{ sp.product?.name || sp.product_name || findProduct(sp.product_id)?.name || '-' }} - Qty {{ sp.qty }}
           </div>
         </div>
         <div v-else class="sparepart-box sparepart-empty">
@@ -282,6 +494,20 @@ async function saveForm() {
   color: var(--color-text-muted);
   font-style: italic;
   border-style: dashed;
+}
+
+.size-card {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border-light);
+  margin-bottom: 12px;
+}
+
+.size-title {
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  margin-bottom: 10px;
 }
 
 .sparepart-box {

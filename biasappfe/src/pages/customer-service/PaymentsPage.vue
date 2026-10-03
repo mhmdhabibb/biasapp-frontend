@@ -10,11 +10,16 @@ import { useResourcesStore } from "@/stores/resources.store";
 import { useToast } from "@/composables/useToast";
 import { useAuth } from "@/composables/useAuth";
 import {
+  buildPaymentTimestamp,
+  buildPaymentVerifyUrl,
+  generatePaymentQrDataUrl,
   paymentMethodOf,
   printPaymentReceipt,
   printPaymentSlip,
+  printPaymentStruk,
 } from "@/utils/paymentReceipt";
 import type { TableColumn, Payment } from "@/types";
+import type { PaymentReceiptData } from "@/utils/paymentReceipt";
 
 const toast = useToast();
 const { can, canApprove } = usePermission();
@@ -62,6 +67,7 @@ const form = reactive({
   tax_deduction: 0,
   balance: 0,
   reference_no: "",
+  sender_name: "",
   status: "pending",
 });
 
@@ -110,6 +116,7 @@ function openEdit(item: any) {
     tax_deduction: item.tax_deduction,
     balance: item.balance,
     reference_no: item.reference_no,
+    sender_name: item.sender_name || "",
     status: item.status || "pending",
   });
   showModal.value = true;
@@ -119,11 +126,18 @@ async function handleSubmit() {
   if (!form.payment_no.trim()) return;
   form.balance = form.amount - form.tax_deduction;
   const isNew = !editingItem.value;
+  // Simpan jam transaksi asli bila tanggalnya hari ini.
+  const paymentTs = isNew
+    ? buildPaymentTimestamp(form.payment_date)
+    : form.payment_date;
   try {
     if (editingItem.value) {
       await resources.update("payments", editingItem.value.id as any, form);
     } else {
-      await resources.create("payments", form);
+      await resources.create("payments", {
+        ...form,
+        payment_date: paymentTs,
+      });
     }
     useMasterStore().refreshInBackground();
     showModal.value = false;
@@ -142,10 +156,12 @@ async function handleSubmit() {
         payment_no: form.payment_no,
         invoice_no: invNo,
         customer_name: customerName(form.customer_id),
-        payment_date: form.payment_date,
+        payment_date: paymentTs,
         amount: form.amount,
         reference_no: form.reference_no,
+        sender_name: form.sender_name,
         status: "pending",
+        cs_name: currentUser.value?.name?.trim() || "-",
       });
       if (!opened)
         toast.warning("Izinkan pop-up browser untuk mencetak tanda terima.");
@@ -204,7 +220,7 @@ async function updateApprovalStatus(
 }
 
 function customerName(id: any): string {
-  const c = findCustomer(id as any);
+  const c = findCustomer(id as any) as any;
   return c ? c.company_name || c.name || "-" : "-";
 }
 
@@ -230,6 +246,14 @@ function senderName(item: Payment): string {
   if ((item as any).sender_name) return (item as any).sender_name;
   const match = item.bank_name?.match(/\bA\/N\s*:\s*([^)]*)\)?/i);
   return match?.[1]?.trim() || "-";
+}
+
+/** Nama CS pembuat payment (dikunci). Fallback ke login saat ini untuk data lama. */
+function csNameOf(item: any): string {
+  const fromRecord =
+    (item as any)?.user?.name || (item as any)?.user?.username || "";
+  if (String(fromRecord).trim()) return String(fromRecord).trim();
+  return currentUser.value?.name?.trim() || "-";
 }
 
 function invoiceNo(item: any): string {
@@ -260,26 +284,58 @@ function invoicePaidState(item: Payment): { lunas: boolean; partial: boolean } {
   return { lunas: ps === "paid", partial: ps === "partially_paid" || ps === "partial" };
 }
 
-function printReceipt(item: Payment) {
-  if (item.status !== "approved") {
-    toast.warning(
-      "Kwitansi hanya bisa dicetak setelah ACC menyetujui pembayaran (approved).",
-    );
-    return;
-  }
+function receiptPayload(item: Payment): PaymentReceiptData {
   const { lunas, partial } = invoicePaidState(item);
-  const opened = printPaymentReceipt({
+  const s = senderName(item);
+  return {
     payment_no: item.payment_no,
     invoice_no: invoiceNo(item),
     customer_name: paymentCustomerName(item),
     payment_date: item.payment_date,
     amount: item.amount,
     reference_no: item.reference_no,
+    sender_name: s && s !== "-" ? s : "",
     status: item.status,
     lunas,
     partial,
     method: paymentMethodOf((item as any).bank_name),
-  });
+    cs_name: csNameOf(item),
+  };
+}
+
+/** Struk 80mm — cetak default untuk payment approved. */
+async function printReceipt(item: Payment) {
+  if (item.status !== "approved") {
+    toast.warning(
+      "Kwitansi hanya bisa dicetak setelah ACC menyetujui pembayaran (approved).",
+    );
+    return;
+  }
+  const payload = receiptPayload(item);
+  // Buka window dulu (sinkron) agar tidak diblokir pop-up blocker,
+  // baru generate QR lalu isi konten.
+  const win = window.open("", "_blank");
+  if (!win) {
+    toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
+    return;
+  }
+  payload.qr_data_url = await generatePaymentQrDataUrl(
+    buildPaymentVerifyUrl(payload),
+  );
+  const opened = printPaymentStruk(payload, win);
+  if (!opened)
+    toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
+}
+
+/** Kwitansi A5 — opsi kedua untuk payment approved. */
+function printReceiptA5(item: Payment) {
+  if (item.status !== "approved") {
+    toast.warning(
+      "Kwitansi hanya bisa dicetak setelah ACC menyetujui pembayaran (approved).",
+    );
+    return;
+  }
+  const opened = printPaymentReceipt(receiptPayload(item));
   if (!opened)
     toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
 }
@@ -294,6 +350,10 @@ function printSlip(item: any) {
     printReceipt(item as Payment);
     return;
   }
+  const slipSender = (() => {
+    const s = senderName(item);
+    return s && s !== "-" ? s : "";
+  })();
   const opened = printPaymentSlip({
     payment_no: item.payment_no,
     invoice_no: invoiceNo(item),
@@ -301,8 +361,10 @@ function printSlip(item: any) {
     payment_date: item.payment_date,
     amount: item.amount,
     reference_no: item.reference_no,
+    sender_name: slipSender,
     status: item.status,
     method: paymentMethodOf((item as any).bank_name),
+    cs_name: csNameOf(item),
   });
   if (!opened)
     toast.warning("Izinkan pop-up browser untuk mencetak tanda terima.");
@@ -438,8 +500,27 @@ function printSlip(item: any) {
         <button
           v-if="can('payment:read') && row.status === 'approved'"
           class="action-btn"
-          title="Print Receipt (Approved)"
+          title="Print Struk (Approved)"
           @click="printReceipt(row)"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z M8 10h8 M8 14h8 M8 18h5"></path>
+          </svg>
+        </button>
+        <button
+          v-if="can('payment:read') && row.status === 'approved'"
+          class="action-btn"
+          title="Print Kwitansi A5 (Approved)"
+          @click="printReceiptA5(row)"
         >
           <svg
             width="16"
@@ -661,10 +742,12 @@ function printSlip(item: any) {
           <label for="pay-amount" class="form-label">Amount (Rp)</label>
           <input
             id="pay-amount"
-            v-model.number="form.amount"
-            type="number"
+            :value="Number(form.amount || 0).toLocaleString('id-ID')"
+            type="text"
             class="form-input"
-            min="0"
+            readonly
+            title="Otomatis dari total invoice"
+            style="background: var(--color-surface-raised); cursor: not-allowed;"
           />
         </div>
         <div class="form-group">
@@ -686,6 +769,16 @@ function printSlip(item: any) {
           type="text"
           class="form-input"
           placeholder="Transfer / receipt no."
+        />
+      </div>
+      <div class="form-group">
+        <label for="pay-sender" class="form-label">Sender Name (Nama Pengirim)</label>
+        <input
+          id="pay-sender"
+          v-model="form.sender_name"
+          type="text"
+          class="form-input"
+          placeholder="Nama pengirim dana — tampil di tanda terima"
         />
       </div>
       <div class="form-group">

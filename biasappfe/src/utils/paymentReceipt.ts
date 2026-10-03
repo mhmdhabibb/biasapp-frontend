@@ -18,6 +18,10 @@ export interface PaymentReceiptData {
   bank_name?: string;
   /** Berita/catatan saat payment. Hanya ditampilkan pada bukti bayar bila ada. */
   notes?: string;
+  /** Nama CS pembuat payment (dikunci dari backend user_id). Tampil di tanda terima. */
+  cs_name?: string;
+  /** QR hasil generate (data URL) untuk ditampilkan di struk. */
+  qr_data_url?: string;
 }
 
 /** 'CASH' -> Tunai, bank lain -> Transfer, kosong -> undefined */
@@ -25,6 +29,18 @@ export function paymentMethodOf(bankName?: string): string | undefined {
   const v = String(bankName || "").trim();
   if (!v || v === "-") return undefined;
   return v.toUpperCase() === "CASH" ? "Tunai" : "Transfer";
+}
+
+/**
+ * Timestamp transaksi untuk dikirim ke backend.
+ * Tanggal hari ini -> jam SEKARANG (jam transaksi asli ikut tersimpan).
+ * Tanggal mundur (backdate) -> tengah malam (jam aslinya tidak diketahui).
+ */
+export function buildPaymentTimestamp(dateStr: string): string {
+  const day = String(dateStr || "").slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  if (day && day === today) return new Date().toISOString();
+  return `${day}T00:00:00Z`;
 }
 
 function escapeHtml(value: unknown): string {
@@ -284,6 +300,149 @@ export function printPaymentReceipt(payment: PaymentReceiptData): boolean {
 }
 
 /**
+ * URL verifikasi publik yang di-encode ke QR struk.
+ * Discan membuka halaman verifikasi dengan data langsung dari server,
+ * sehingga tidak bisa dipalsukan. Base URL diambil dari origin frontend
+ * saat mencetak agar selalu menunjuk deployment yang benar.
+ */
+export function buildPaymentVerifyUrl(
+  payment: PaymentReceiptData,
+  baseUrl: string = window.location.origin,
+): string {
+  return `${baseUrl.replace(/\/$/, "")}/verify-payment?no=${encodeURIComponent(payment.payment_no)}`;
+}
+
+/** Generate QR data URL dari teks. Mengembalikan undefined bila gagal. */
+export async function generatePaymentQrDataUrl(
+  text: string,
+): Promise<string | undefined> {
+  try {
+    // Dynamic import agar kegagalan load lib QR tidak merusak seluruh modul.
+    const { default: QRCode } = (await import("qrcode")) as unknown as {
+      default: {
+        toDataURL(text: string, opts?: Record<string, unknown>): Promise<string>;
+      };
+    };
+    return await QRCode.toDataURL(text, {
+      width: 220,
+      margin: 1,
+      errorCorrectionLevel: "M",
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * STRUK BUKTI PEMBAYARAN — format nota 80mm gaya Indomaret/BCA untuk
+ * payment yang sudah approved (kwitansi LUNAS). Hanya dicetak setelah
+ * accounting menyetujui pembayaran.
+ *
+ * `existingWindow` diisi bila pemanggil sudah membuka window lebih dulu
+ * (agar tidak diblokir pop-up blocker saat generate QR async).
+ */
+export function printPaymentStruk(
+  payment: PaymentReceiptData,
+  existingWindow?: Window | null,
+): boolean {
+  if (payment.status !== "approved") return false;
+
+  const printWindow = existingWindow || window.open("", "_blank");
+  if (!printWindow) return false;
+
+  const { date, time } = formatTransactionDate(payment.payment_date);
+  const senderRaw = String(payment.sender_name || "").trim();
+  const customerRaw = String(payment.customer_name || "").trim() || "-";
+  const receivedFromRaw =
+    senderRaw && senderRaw.toLowerCase() !== customerRaw.toLowerCase()
+      ? `${customerRaw} (${senderRaw})`
+      : customerRaw;
+  const safe = {
+    paymentNo: escapeHtml(payment.payment_no),
+    invoiceNo: escapeHtml(payment.invoice_no),
+    receivedFrom: escapeHtml(receivedFromRaw),
+    referenceNo: escapeHtml(payment.reference_no || "-"),
+    method: escapeHtml(payment.method || "-"),
+    date: escapeHtml(date),
+    time: escapeHtml(time),
+    amount: escapeHtml(formatMoney(payment.amount)),
+    qrDataUrl: payment.qr_data_url || "",
+  };
+  const rows: Array<[string, string]> = [
+    ["No. Struk", safe.paymentNo],
+    ["Tanggal", `${safe.date} ${safe.time}`],
+    ["Invoice", safe.invoiceNo],
+    ["Diterima dari", safe.receivedFrom],
+    ["Metode", safe.method],
+    ["Referensi", safe.referenceNo],
+  ];
+  const rowHtml = rows
+    .map(
+      ([label, value]) =>
+        `<div class="row"><span>${escapeHtml(label)}</span><span>${value}</span></div>`,
+    )
+    .join("");
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="id">
+      <head>
+        <meta charset="utf-8">
+        <title>Struk - ${safe.paymentNo}</title>
+        <style>
+          @page { size: 80mm auto; margin: 6mm; }
+          * { box-sizing: border-box; }
+          body { margin: 0; background: #fff; color: #111; font-family: 'Courier New', Courier, monospace; font-size: 12px; }
+          .struk { width: 100%; max-width: 300px; margin: 0 auto; padding: 6px 4px 14px; }
+          .center { text-align: center; }
+          .brand { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; }
+          .brand-sub { font-size: 10px; margin-top: 2px; }
+          .title { font-size: 14px; font-weight: 700; letter-spacing: 2px; margin: 8px 0 2px; }
+          .dash { border-top: 1px dashed #111; margin: 8px 0; }
+          .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; line-height: 1.4; }
+          .row span:first-child { white-space: nowrap; }
+          .row span:last-child { text-align: right; word-break: break-word; }
+          .total { display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; margin: 4px 0; }
+          .qr { margin-top: 12px; }
+          .qr-img { width: 150px; height: 150px; margin: 6px 0; }
+          .qr-cap { font-size: 10px; }
+          .foot { font-size: 10px; margin-top: 10px; line-height: 1.5; }
+          @media print { .struk { max-width: none; } }
+        </style>
+      </head>
+      <body>
+        <main class="struk">
+          <div class="center">
+            <div class="brand">PT. BIAS SURYA TEKNOLOGI</div>
+            <div class="brand-sub">Ruko Purimas Blok A No.47, Batam<br>Telp: +62811 704 5657</div>
+            <div class="title">BUKTI PEMBAYARAN</div>
+          </div>
+          <div class="dash"></div>
+          ${rowHtml}
+          <div class="dash"></div>
+          <div class="total"><span>TOTAL</span><span>Rp ${safe.amount}</span></div>
+          <div class="dash"></div>
+          <div class="center qr">
+            <div>Batam, ${safe.date}</div>
+            ${safe.qrDataUrl ? `<img class="qr-img" src="${safe.qrDataUrl}" alt="QR detail pembayaran">` : ""}
+            <div class="qr-cap">Scan untuk verifikasi<br>keaslian pembayaran</div>
+          </div>
+          <div class="dash"></div>
+          <div class="center foot">Simpan struk ini sebagai<br>bukti pembayaran yang sah.<br>Terima kasih.</div>
+        </main>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 300);
+  return true;
+}
+
+/**
  * TANDA TERIMA PEMBAYARAN — bukti langsung untuk customer saat membayar,
  * sebelum accounting memverifikasi dana (payment masih pending).
  * BUKAN kwitansi pelunasan: tidak ada stempel LUNAS.
@@ -303,15 +462,24 @@ export function printPaymentSlip(payment: PaymentReceiptData): boolean {
   const formattedAmount = `Rp ${payment.amount.toLocaleString("id-ID")}`;
   const words = spellNumber(payment.amount);
   const amountInWords = `${payment.amount < 0 ? "minus " : ""}${words.charAt(0).toUpperCase()}${words.slice(1)} rupiah`;
+  // "Diterima dari" = Company (Sender). Bila tidak ada sender (mis. cash),
+  // tampil nama company saja.
+  const senderRaw = String(payment.sender_name || "").trim();
+  const customerRaw = String(payment.customer_name || "").trim() || "-";
+  const receivedFromRaw =
+    senderRaw && senderRaw.toLowerCase() !== customerRaw.toLowerCase()
+      ? `${customerRaw} (${senderRaw})`
+      : customerRaw;
   const safe = {
     paymentNo: escapeHtml(payment.payment_no),
     invoiceNo: escapeHtml(payment.invoice_no),
-    customerName: escapeHtml(payment.customer_name),
+    customerName: escapeHtml(receivedFromRaw),
     referenceNo: escapeHtml(payment.reference_no || "-"),
     method: escapeHtml(payment.method || ""),
     date: escapeHtml(formattedDate),
     amount: escapeHtml(formattedAmount),
     amountInWords: escapeHtml(amountInWords),
+    csName: escapeHtml(payment.cs_name?.trim() || "-"),
   };
   const methodRow = safe.method
     ? `<div class="row"><div class="label">Metode</div><div class="value">${safe.method} (via CS)</div></div>`
@@ -339,8 +507,9 @@ export function printPaymentSlip(payment: PaymentReceiptData): boolean {
           .pending-stamp { border: 3px double #57534e; border-radius: 50%; color: #57534e; font-weight: 900; line-height: 1.2; padding: 14px 10px; text-align: center; transform: rotate(-8deg); font-size: 12px; }
           .pending-stamp small { display: block; font-size: 8px; margin-top: 3px; }
           .notice { margin-top: 12px; font-size: 10px; color: #57534e; border-top: 1px dashed #a8a29e; padding-top: 8px; }
-          .sign { min-width: 150px; text-align: center; }
-          .sign-line { border-top: 1px solid #17212b; margin-top: 44px; padding-top: 5px; }
+          .sign { min-width: 170px; text-align: center; }
+          .sign-name { font-weight: 700; margin-top: 44px; border-bottom: 1px solid #17212b; padding-bottom: 5px; }
+          .sign-role { padding-top: 5px; }
         </style>
       </head>
       <body>
@@ -357,7 +526,7 @@ export function printPaymentSlip(payment: PaymentReceiptData): boolean {
           <footer class="footer">
             <div class="amount">${safe.amount}</div>
             <div class="pending-stamp">DITERIMA CS<small>MENUNGGU VERIFIKASI</small></div>
-            <div class="sign"><div>Batam, ${safe.date}</div><div class="sign-line">CS Penerima</div></div>
+            <div class="sign"><div>Batam, ${safe.date}</div><div>Yang menerima,</div><div class="sign-name">(${safe.csName})</div><div class="sign-role">CS Penerima</div></div>
           </footer>
           <div class="notice">Pembayaran diterima oleh Customer Service dan <b>BUKAN kwitansi pelunasan</b>. Kwitansi resmi berstempel LUNAS diterbitkan setelah Accounting memverifikasi dana masuk. Apabila dana tidak masuk, pembayaran ini dinyatakan batal.</div>
         </main>

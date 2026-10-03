@@ -13,7 +13,7 @@ import type { SalesInvoice, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
-import { printBankPaymentNote } from '@/utils/paymentReceipt'
+import { printPaymentStruk, paymentMethodOf, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -78,6 +78,7 @@ const form = reactive({
   subtotal: 0,
   service_charge: 0,
   tax: 0,
+  discount: 0,
   total: 0,
   status: 'unpaid',
 })
@@ -293,7 +294,7 @@ async function exportInvoicesToExcel(
       const subTotal = item.subtotal || item.total_amount || item.total || 0
       const grandTotal = item.total_amount || item.total || 0
       addRow([{}, {}, {}, { v: 'Sub Total', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: subTotal, style: 'totalCell' }])
-      addRow([{}, {}, {}, { v: 'Discount', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: '-', style: 'totalCell' }])
+      addRow([{}, {}, {}, { v: 'Discount', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: item.discount || 0, style: 'totalCell' }])
       addRow([{}, {}, {}, { v: 'Amount', style: 'grandTotalCell' }, { v: 'Rp', style: 'grandTotalCell' }, { v: grandTotal, style: 'grandTotalCell' }])
 
       addRow([])
@@ -373,7 +374,7 @@ async function exportAnnualPdf() {
   if (w) { w.document.write(fullHtml); w.document.close() }
 }
 
-const calcTotal = computed(() => form.subtotal + form.service_charge + form.tax)
+const calcTotal = computed(() => Math.max(0, form.subtotal + form.service_charge + form.tax - (Number(form.discount) || 0)))
 
 function onSaleChange() {
   const s = findSale(form.sale_id)
@@ -382,6 +383,7 @@ function onSaleChange() {
     form.subtotal = s.subtotal
     form.service_charge = s.service_charge
     form.tax = s.tax
+    form.discount = (s as any).discount || 0
     form.total = s.total
   }
 }
@@ -402,6 +404,7 @@ function openEdit(item: SalesInvoice) {
     subtotal: item.subtotal,
     service_charge: item.service_charge,
     tax: item.tax,
+    discount: item.discount || 0,
     total: item.total,
     status: item.status,
   })
@@ -507,6 +510,7 @@ function invoiceHtml(item: any): string {
   }
 
   const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
+  const discountStr = (item.discount || 0).toLocaleString('id-ID')
   const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
 
   // Stempel pelunasan: hanya bila invoice sudah di-approve accounting.
@@ -664,7 +668,7 @@ function invoiceHtml(item: any): string {
             <tr>
               <td class="label">Discount</td>
               <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
-              <td class="val-col" style="border-left: none; text-align: right;">-</td>
+              <td class="val-col" style="border-left: none; text-align: right;">${discountStr}</td>
             </tr>
             <tr>
               <td class="label">Amount</td>
@@ -710,6 +714,50 @@ function printInvoice(item: any) {
     printWindow.document.write(html)
     printWindow.document.close()
   }
+}
+
+function hasApprovedPayment(item: any) {
+  return invoicePayments(item).some((payment: any) => payment.status === 'approved')
+}
+
+function printReceipt(item: any) {
+  const approved = invoicePayments(item).find((payment: any) => payment.status === 'approved')
+  if (!approved) {
+    toast.warning('Bukti bayar tersedia setelah pembayaran disetujui Accounting.')
+    return
+  }
+  printReceiptAsync(item, approved)
+}
+
+async function printReceiptAsync(item: any, approved: any) {
+  const ps = String(item.payment_status || '').toLowerCase()
+  const sender = approved.sender_name
+    || String(approved.bank_name || '').match(/\bA\/N\s*:\s*([^)]*)\)?/i)?.[1]?.trim()
+    || ''
+  const payload = {
+    payment_no: approved.payment_no,
+    invoice_no: item.invoice_no,
+    customer_name: customerName(item.customer_id),
+    payment_date: approved.payment_date,
+    amount: Number(approved.amount || 0),
+    reference_no: approved.reference_no || '-',
+    sender_name: sender,
+    bank_name: approved.bank_name,
+    notes: approved.notes,
+    status: approved.status,
+    lunas: ps === 'paid',
+    partial: ps === 'partially_paid' || ps === 'partial',
+    method: paymentMethodOf(approved.bank_name),
+    cs_name: approved.user?.name || approved.user?.username || '-',
+  }
+  const win = window.open('', '_blank')
+  if (!win) {
+    toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
+    return
+  }
+  payload.qr_data_url = await generatePaymentQrDataUrl(buildPaymentVerifyUrl(payload))
+  const opened = printPaymentStruk(payload, win)
+  if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
 }
 </script>
 
@@ -792,6 +840,11 @@ function printInvoice(item: any) {
               <rect x="6" y="14" width="12" height="8"></rect>
             </svg>
           </button>
+          <button v-if="hasApprovedPayment(row) && can('sales_invoice:read')" class="action-btn action-btn--edit" title="Print Struk Bukti Bayar" @click="printReceipt(row)" style="color: var(--color-success); width: 36px; height: 36px;">
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z M8 10h8 M8 14h8 M8 18h5"></path>
+            </svg>
+          </button>
           <button v-if="can('sales_invoice:read')" class="action-btn action-btn--edit" title="Detail" @click="openDetail(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -851,6 +904,10 @@ function printInvoice(item: any) {
       <div class="form-group">
         <label for="si-tax" class="form-label">Tax (Rp)</label>
         <input id="si-tax" v-model.number="form.tax" type="number" class="form-input" min="0">
+      </div>
+      <div class="form-group">
+        <label for="si-discount" class="form-label">Discount (Rp)</label>
+        <input id="si-discount" v-model.number="form.discount" type="number" class="form-input" min="0">
       </div>
       <div class="sale-summary">
         <div class="summary-row summary-total"><span>Total</span><span>{{ formatRupiah(calcTotal) }}</span></div>
