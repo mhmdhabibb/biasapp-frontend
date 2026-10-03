@@ -14,7 +14,7 @@ export function useSuppliersStore() {
     try {
       suppliers.value = (await supplierService.list()).data;
     } catch (reason) {
-      error.value = reason instanceof ApiError ? reason.message : "Gagal memuat data";
+      error.value = reason instanceof ApiError ? reason.message : "Failed to load data";
     } finally {
       isLoading.value = false;
     }
@@ -35,5 +35,10 @@ export function useSuppliersStore() {
     await fetchAll();
   }
 
-  return { suppliers, isLoading, error, fetchAll, create, update, remove };
+  async function hardRemove(id: string) {
+    await supplierService.hardRemove(id);
+    await fetchAll();
+  }
+
+  return { suppliers, isLoading, error, fetchAll, create, update, remove, hardRemove };
 }

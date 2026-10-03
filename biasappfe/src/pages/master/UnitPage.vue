@@ -3,8 +3,10 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Unit, UOM } from '@/types'
@@ -53,7 +55,7 @@ async function fetchData() {
     uoms.value = resUoms.data as any
   } catch (error: any) {
     console.error('Failed to fetch data:', error)
-    toast.error('Gagal mengambil data dari server: ' + (error.message || 'Error'))
+    toast.error('Failed to fetch data from server: ' + (error.message || 'Error'))
   }
 }
 
@@ -76,7 +78,8 @@ const form = reactive({
   current_meter_bw: 0,
   current_meter_color: 0,
   free_quota_color: 0,
-  rates: [] as { paper_size_id: string; rate_per_page_bw: number; rate_per_page_color: number }[],
+  free_quota_bw: 0,
+  rates: [] as { paper_size_id: string; paper_type_id: string | null; rate_per_page_bw: number; rate_per_page_color: number; free_quota_bw: number; free_quota_color: number; quota_applies_to: string }[],
   specsData: {
     cpu: '',
     ram: '',
@@ -89,7 +92,7 @@ const form = reactive({
 })
 
 function addRate() {
-  form.rates.push({ paper_size_id: '', rate_per_page_bw: 0, rate_per_page_color: 0 })
+  form.rates.push({ paper_size_id: '', paper_type_id: null, rate_per_page_bw: 0, rate_per_page_color: 0, free_quota_bw: 0, free_quota_color: 0, quota_applies_to: 'color' })
 }
 
 function removeRate(index: number) {
@@ -106,7 +109,7 @@ watch([() => form.brand_id, () => form.model], ([newBrand, newModel]) => {
 })
 
 function openAdd() {
-  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
+  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, free_quota_bw: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
   showModal.value = true
 }
 
@@ -124,10 +127,15 @@ function openEdit(item: any) {
     current_meter_bw: item.current_meter_bw || 0,
     current_meter_color: item.current_meter_color || 0,
     free_quota_color: item.free_quota_color || 0,
+    free_quota_bw: (item as any).free_quota_bw || 0,
     rates: Array.isArray(item.rates) ? item.rates.map((r: any) => ({
       paper_size_id: r.paper_size_id,
+      paper_type_id: r.paper_type_id ?? null,
       rate_per_page_bw: r.rate_per_page_bw,
-      rate_per_page_color: r.rate_per_page_color
+      rate_per_page_color: r.rate_per_page_color,
+      free_quota_bw: r.free_quota_bw ?? 0,
+      free_quota_color: r.free_quota_color ?? 0,
+      quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : 'color'
     })) : [],
     specsData: item.specs ? (typeof item.specs === 'string' ? JSON.parse(item.specs || '{}') : item.specs) : { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
   })
@@ -136,7 +144,7 @@ function openEdit(item: any) {
 
 async function handleSubmit() {
   if (!form.brand_id || !form.type_id || !form.name.trim() || !form.serial_no.trim()) {
-    toast.warning('Harap lengkapi semua field yang wajib (Nama Unit, Brand, Tipe, Serial Number).')
+    toast.warning('Please complete all required fields (Unit Name, Brand, Type, Serial Number).')
     return
   }
   try {
@@ -146,30 +154,32 @@ async function handleSubmit() {
     }
     if (editingItem.value) {
       await resources.units.update(String(editingItem.value.id), payload)
-      toast.success("Unit berhasil diperbarui!")
+      toast.success("Unit updated successfully!")
     } else {
       await resources.units.create(payload)
-      toast.success("Unit berhasil disimpan!")
+      toast.success("Unit saved successfully!")
     }
     await fetchData()
     showModal.value = false
   } catch (error: any) {
     console.error('Failed to save unit:', error)
-    toast.error('Gagal menyimpan data Unit: ' + (error.message || 'Terjadi kesalahan'))
+    toast.error('Failed to save Unit data: ' + (error.message || 'An error occurred'))
   }
 }
 
 function openDelete(item: Unit) { deletingItem.value = item; showConfirm.value = true }
+
+const hardDelete = useHardDelete((id: string) => resources.units.hardRemove(id), fetchData)
 
 async function handleDelete() {
   if (deletingItem.value) {
     try {
       await resources.units.remove(String(deletingItem.value.id))
       await fetchData()
-      toast.success("Unit berhasil dihapus!")
+      toast.success("Unit deleted successfully!")
     } catch (error) {
       console.error('Failed to delete unit:', error)
-      toast.error('Gagal menghapus data Unit')
+      toast.error('Failed to delete Unit data')
     }
   }
   showConfirm.value = false
@@ -179,6 +189,31 @@ function getBrandName(id: string | null): string {
   if (!id) return '-'
   const b = brands.value.find(b => b.id === id)
   return b ? b.name : '-'
+}
+
+function statusBadgeClass(status: string | null | undefined): string {
+  switch ((status || '').toLowerCase()) {
+    case 'available':
+      return 'badge-success'
+    case 'rented':
+      return 'badge-info'
+    case 'maintenance':
+      return 'badge-warning'
+    case 'broken':
+      return 'badge-danger'
+    case 'sold':
+      return 'badge-neutral'
+    default:
+      return 'badge-neutral'
+  }
+}
+
+function formatStatus(status: string | null | undefined): string {
+  if (!status) return '-'
+  return status
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
 }
 
 const badgeTrue = {
@@ -210,9 +245,14 @@ const badgeFalse = {
     <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" permission="unit:create"
       @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search units..." permission="unit" @edit="openEdit"
-      @delete="openDelete">
+      @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
+      </template>
+      <template #cell-status="{ value }">
+        <span class="badge" :class="statusBadgeClass(value)">
+          {{ formatStatus(value) }}
+        </span>
       </template>
       <template #cell-is_computer="{ value }">
         <span :style="value ? badgeTrue : badgeFalse">
@@ -258,19 +298,19 @@ const badgeFalse = {
       <div class="form-group" style="margin-top: 1rem;">
         <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" v-model="form.is_copier" style="width: 1rem; height: 1rem;" />
-          Adalah Mesin Fotocopy
+          Is a Photocopy Machine
         </label>
       </div>
       <div class="form-group" style="margin-top: 1rem;">
         <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" v-model="form.is_computer" style="width: 1rem; height: 1rem;" />
-          Adalah Komputer / PC / Laptop
+          Is a Computer / PC / Laptop
         </label>
       </div>
 
       <div v-if="form.is_computer"
         style="margin-top: 1rem; border-top: 1px solid var(--color-border-light); padding-top: 1rem;">
-        <h4 style="margin-bottom: 1rem; font-weight: 600;">Spesifikasi Komputer / Desktop</h4>
+        <h4 style="margin-bottom: 1rem; font-weight: 600;">Computer / Desktop Specifications</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group">
             <label class="form-label">CPU</label>
@@ -288,7 +328,7 @@ const badgeFalse = {
             <label class="form-label">Storage Type</label>
             <CustomSelect v-model="form.specsData.storage_type"
               :options="[{ value: 'SSD', label: 'SSD' }, { value: 'HDD', label: 'HDD' }, { value: 'NVMe', label: 'NVMe' }]"
-              placeholder="Pilih Tipe" />
+              placeholder="Select Type" />
           </div>
           <div class="form-group">
             <label class="form-label">OS</label>
@@ -299,7 +339,7 @@ const badgeFalse = {
             <input v-model="form.specsData.vga" type="text" class="form-input" placeholder="e.g. Intel Iris Xe">
           </div>
           <div class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Paket Office</label>
+            <label class="form-label">Office Package</label>
             <input v-model="form.specsData.office" type="text" class="form-input"
               placeholder="e.g. Office Home & Student 2021">
           </div>
@@ -308,5 +348,8 @@ const badgeFalse = {
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Unit" :message="`Are you sure you want to delete this unit?`"
       @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Unit" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>

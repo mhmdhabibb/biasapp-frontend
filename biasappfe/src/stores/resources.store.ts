@@ -14,21 +14,34 @@ const errors = reactive<Partial<Record<ResourceName, string>>>({});
 const initialized = ref(false);
 
 export function useResourcesStore() {
-  async function fetchAll(name: ResourceName, query?: ResourceQuery) {
-    loading[name] = true;
-    errors[name] = "";
+  async function fetchAll(
+    name: ResourceName,
+    query?: ResourceQuery,
+    tracksLoading = true,
+  ) {
+    // tracksLoading=false (silent/background refresh) tidak boleh menyentuh
+    // flag loading agar tidak memicu spinner/skeleton di UI.
+    if (tracksLoading) loading[name] = true;
+    if (tracksLoading) errors[name] = "";
     try {
-      data[name] = (await resources[name].list(query)).data;
+      data[name] = (await resources[name].list(query, tracksLoading)).data;
       return data[name];
     } catch (reason) {
-      errors[name] =
-        reason instanceof ApiError
-          ? reason.message
-          : "Gagal memuat data dari server";
+      if (tracksLoading) {
+        errors[name] =
+          reason instanceof ApiError
+            ? reason.message
+            : "Failed to load data from the server";
+      }
       return [];
     } finally {
-      loading[name] = false;
+      if (tracksLoading) loading[name] = false;
     }
+  }
+
+  /** Silent refresh: update data tanpa efek loading/skeleton/error. */
+  async function fetchAllSilent(name: ResourceName, query?: ResourceQuery) {
+    return fetchAll(name, query, false);
   }
 
   async function create(name: ResourceName, payload: Partial<ResourceRecord>) {
@@ -70,6 +83,7 @@ export function useResourcesStore() {
     initialized,
     records,
     fetchAll,
+    fetchAllSilent,
     fetchAllDomains,
     create,
     update,

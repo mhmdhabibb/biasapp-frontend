@@ -248,6 +248,34 @@
   color: var(--color-text-secondary);
 }
 
+/* ---- Permanent (hard) delete action button ----
+ * Dark-red dashed style to signal irreversible deletion.
+ * Global (not scoped) so custom #actions slots can reuse it. */
+.action-btn--hard {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(153, 27, 27, 0.12);
+  color: #991b1b;
+  border: 1px dashed currentColor;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.action-btn--hard:hover {
+  background: #991b1b;
+  border-style: solid;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(153, 27, 27, 0.4);
+}
+
 /* ---- Text utilities ---- */
 .text-xs {
   font-size: var(--font-size-xs);

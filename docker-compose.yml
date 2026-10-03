@@ -1,14 +1,14 @@
-version: '3.8'
+version: "3.8"
 
 services:
   frontend:
     build:
-      context: ./biasappfe          # <-- Ubah ke ./biasappfe
+      context: ./biasappfe # <-- Ubah ke ./biasappfe
       dockerfile: Dockerfile
     container_name: biasapp-frontend
     restart: always
     env_file:
-      - ./biasappfe/.env            # <-- Arahkan ke file .env di dalam biasappfe
+      - ./biasappfe/.env # <-- Arahkan ke file .env di dalam biasappfe
     ports:
       - "8080:80"
     environment:

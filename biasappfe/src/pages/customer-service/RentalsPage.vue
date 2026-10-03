@@ -6,13 +6,18 @@ import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
+import { resources } from "@/services/resource.service";
+import {
+  printPaymentReceipt,
+  printPaymentSlip,
+} from "@/utils/paymentReceipt";
 import type { TableColumn } from "@/types";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 const toast = useToast();
-const { canApprove } = usePermission();
-const { customers, units, products, refresh } = useMasterStore();
+const { can } = usePermission();
+const { customers, units, products, payments, refresh } = useMasterStore();
 const { t } = useI18n();
 
 const columns = computed<TableColumn[]>(() => [
@@ -22,6 +27,7 @@ const columns = computed<TableColumn[]>(() => [
   { key: "start_date", label: t("rentals.start") },
   { key: "end_date", label: t("rentals.end") },
   { key: "total", label: t("rentals.total") },
+  { key: "invoice_actions", label: "Invoices" },
   { key: "status", label: t("rentals.status") },
 ]);
 
@@ -29,8 +35,30 @@ const rentals = ref<any[]>([]);
 
 const showModal = ref(false);
 const isLoading = ref(false);
+const showInvoiceModal = ref(false);
+const isLoadingRentalInvoices = ref(false);
+const selectedRental = ref<any>(null);
+const selectedInvoice = ref<any>(null);
+const isSavingPayment = ref(false);
+const paymentForm = reactive({
+  amount: 0,
+  payment_date: new Date().toISOString().slice(0, 10),
+  payment_method: "transfer",
+  bank_name: "",
+  account_number: "",
+  sender_name: "",
+  reference_no: "",
+});
+
+const visibleRentalInvoices = computed(() => {
+  return [...(selectedRental.value?.rental_invoices || [])].sort(
+    (a: any, b: any) =>
+      new Date(a.period_start).getTime() - new Date(b.period_start).getTime(),
+  );
+});
 
 const paperSizes = ref<{ id: string; name: string }[]>([]);
+const paperTypes = ref<{ id: string; name: string }[]>([]);
 
 const rentalItems = ref<
   {
@@ -42,6 +70,8 @@ const rentalItems = ref<
     start_meter_bw: number;
     start_meter_color: number;
     free_quota_color: number;
+    free_quota_bw: number;
+    placement_location: string;
     is_copier: boolean;
     is_computer: boolean;
     specs: {
@@ -56,8 +86,12 @@ const rentalItems = ref<
     description: string;
     rates: {
       paper_size_id: string;
+      paper_type_id: string | null;
       rate_per_page_bw: number;
       rate_per_page_color: number;
+      free_quota_bw: number;
+      free_quota_color: number;
+      quota_applies_to: string;
     }[];
   }[]
 >([]);
@@ -67,8 +101,6 @@ const form = reactive({
   start_date: new Date().toISOString().slice(0, 10),
   duration_months: 12,
   duration_days: 0,
-  tax: 0,
-  deposit: 0,
   notes: "",
   po_no: "",
   installation_address: "",
@@ -82,7 +114,27 @@ const calcSubtotal = computed(() => {
   return sub;
 });
 
-const calcTotal = computed(() => calcSubtotal.value + form.tax + form.deposit);
+const calcTotal = computed(() => calcSubtotal.value);
+
+// Unit bersifat unik: yang sedang rented/sold/maintenance/broken tidak bisa
+// dipilih lagi. Unit rented tetap ditampilkan (disabled) agar CS tahu statusnya.
+function unitStatusOf(u: any): string {
+  return String(u?.status || "available").toLowerCase();
+}
+
+const availableUnits = computed(() =>
+  (units.value as any[]).filter((u: any) => {
+    const s = unitStatusOf(u);
+    return s === "available" || s === "";
+  }),
+);
+
+const unavailableUnits = computed(() =>
+  (units.value as any[]).filter((u: any) => {
+    const s = unitStatusOf(u);
+    return s !== "available" && s !== "";
+  }),
+);
 
 function addRentalItem() {
   rentalItems.value.push({
@@ -94,6 +146,8 @@ function addRentalItem() {
     start_meter_bw: 0,
     start_meter_color: 0,
     free_quota_color: 0,
+    free_quota_bw: 0,
+    placement_location: "",
     is_copier: false,
     is_computer: false,
     specs: {
@@ -118,13 +172,58 @@ function addItemRate(item: any) {
   if (!item.rates) item.rates = [];
   item.rates.push({
     paper_size_id: "",
+    paper_type_id: null,
     rate_per_page_bw: 0,
     rate_per_page_color: 0,
+    free_quota_bw: 0,
+    free_quota_color: 0,
+    quota_applies_to: "color",
   });
 }
 
 function removeItemRate(item: any, index: number) {
   if (item.rates) item.rates.splice(index, 1);
+}
+
+function paperSizeName(id: any): string {
+  if (!id) return "";
+  const found = (paperSizes.value as any[]).find(
+    (x: any) => String(x.id) === String(id),
+  );
+  return found ? found.name : String(id).slice(0, 8);
+}
+
+function paperTypeName(id: any): string {
+  if (!id) return "";
+  const found = (paperTypes.value as any[]).find(
+    (x: any) => String(x.id) === String(id),
+  );
+  return found ? found.name : String(id).slice(0, 8);
+}
+
+function rateTitle(rate: any): string {
+  const size = rate.paper_size_id
+    ? paperSizeName(rate.paper_size_id)
+    : "Semua ukuran";
+  const kind = rate.paper_type_id
+    ? " / " + paperTypeName(rate.paper_type_id)
+    : "";
+  return size + kind;
+}
+
+function fmtRp(n: any): string {
+  return "Rp " + (Number(n) || 0).toLocaleString("id-ID");
+}
+
+function rateSummary(rate: any): string {
+  const isBW = rate.quota_applies_to === "bw";
+  const free = Number(isBW ? rate.free_quota_bw : rate.free_quota_color) || 0;
+  const mode = isBW ? "BW" : "Warna";
+  const bw = fmtRp(rate.rate_per_page_bw);
+  const color = fmtRp(rate.rate_per_page_color);
+  if (!free)
+    return `Tanpa free — semua ditagih penuh (BW ${bw}/lbr, Warna ${color}/lbr).`;
+  return `Free ${free} lbr ${mode} per bulan, selebihnya BW ${bw}/lbr, Warna ${color}/lbr.`;
 }
 
 function onItemSelectChange(item: any) {
@@ -136,17 +235,21 @@ function onItemSelectChange(item: any) {
     if (u) {
       item.is_copier = !!u.is_copier;
       item.is_computer = !!(u as any).is_computer;
-      if (u.current_meter_bw !== undefined)
-        item.start_meter_bw = u.current_meter_bw;
-      if (u.current_meter_color !== undefined)
-        item.start_meter_color = u.current_meter_color;
+      // NOTE: Initial meter is NOT auto-filled from the master unit.
+      // Admin must enter it manually on the first rental to keep reports accurate.
       if (u.free_quota_color !== undefined)
         item.free_quota_color = u.free_quota_color;
+      if ((u as any).free_quota_bw !== undefined)
+        item.free_quota_bw = (u as any).free_quota_bw;
       if (Array.isArray(u.rates) && u.rates.length > 0) {
         item.rates = u.rates.map((r: any) => ({
           paper_size_id: r.paper_size_id,
+          paper_type_id: r.paper_type_id ?? null,
           rate_per_page_bw: r.rate_per_page_bw,
           rate_per_page_color: r.rate_per_page_color,
+          free_quota_bw: r.free_quota_bw ?? 0,
+          free_quota_color: r.free_quota_color ?? 0,
+          quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
         }));
       }
     }
@@ -169,8 +272,6 @@ async function openAdd() {
     start_date: new Date().toISOString().slice(0, 10),
     duration_months: 12,
     duration_days: 0,
-    tax: 0,
-    deposit: 0,
     po_no: "",
     notes: "",
     installation_address: "",
@@ -185,6 +286,8 @@ async function openAdd() {
       start_meter_bw: 0,
       start_meter_color: 0,
       free_quota_color: 0,
+      free_quota_bw: 0,
+      placement_location: "",
       is_copier: false,
       is_computer: false,
       specs: {
@@ -219,12 +322,54 @@ async function fetchRentals() {
       };
     });
   } catch (error) {
-    console.error("Gagal mengambil data rentals", error);
+    console.error("Failed to fetch rentals data", error);
   }
 }
 
 async function handleSubmit() {
   if (!form.customer_id) return;
+
+  // Validation: copier requires an initial meter (paper size/kind rates are optional)
+  for (let idx = 0; idx < rentalItems.value.length; idx++) {
+    const item = rentalItems.value[idx]!;
+    if (!item!.selected_item) {
+      toast.error(`Item #${idx + 1}: select a Unit / Product first.`);
+      return;
+    }
+    if (item.is_copier) {
+      if ((item.start_meter_bw ?? 0) < 0 || (item.start_meter_color ?? 0) < 0) {
+        toast.error(
+          `Item #${idx + 1}: initial BW / Colour meter cannot be negative.`,
+        );
+        return;
+      }
+    }
+  }
+
+  try {
+    const latestPaperSizes = await resources.paperSizes.list();
+    paperSizes.value = latestPaperSizes.data as any;
+  } catch {
+    toast.error("Failed to validate paper sizes. Please try again.");
+    return;
+  }
+
+  const validPaperSizeIDs = new Set(
+    paperSizes.value.map((paperSize) => String(paperSize.id)),
+  );
+  for (let itemIndex = 0; itemIndex < rentalItems.value.length; itemIndex++) {
+    const rates = rentalItems.value[itemIndex]?.rates || [];
+    for (let rateIndex = 0; rateIndex < rates.length; rateIndex++) {
+      const paperSizeID = rates[rateIndex]?.paper_size_id;
+      if (paperSizeID && !validPaperSizeIDs.has(String(paperSizeID))) {
+        toast.error(
+          `Item #${itemIndex + 1}, price #${rateIndex + 1}: selected paper size no longer exists. Please select it again.`,
+        );
+        return;
+      }
+    }
+  }
+
   isLoading.value = true;
 
   const payload = {
@@ -232,8 +377,8 @@ async function handleSubmit() {
     start_date: new Date(form.start_date).toISOString(),
     duration_months: form.duration_months,
     duration_days: form.duration_days,
-    tax: form.tax,
-    deposit: form.deposit,
+    tax: 0,
+    deposit: 0,
     po_no: form.po_no,
     notes: form.notes,
     installation_address: form.installation_address,
@@ -247,8 +392,29 @@ async function handleSubmit() {
         monthly_rent: item.monthly_rent,
         start_meter_bw: item.start_meter_bw,
         start_meter_color: item.start_meter_color,
+        free_quota_color: item.free_quota_color,
+        free_quota_bw: (item as any).free_quota_bw ?? 0,
+        placement_location: (item as any).placement_location || "",
         specs: item.specs || {},
         description: item.description,
+        rates: (item.rates || [])
+          .filter(
+            (r: any) =>
+              r.paper_size_id ||
+              Number(r.rate_per_page_bw) ||
+              Number(r.rate_per_page_color) ||
+              Number(r.free_quota_bw) ||
+              Number(r.free_quota_color),
+          )
+          .map((r: any) => ({
+            paper_size_id: r.paper_size_id || null,
+            paper_type_id: r.paper_type_id || null,
+            rate_per_page_bw: Number(r.rate_per_page_bw) || 0,
+            rate_per_page_color: Number(r.rate_per_page_color) || 0,
+            free_quota_bw: Number(r.free_quota_bw) || 0,
+            free_quota_color: Number(r.free_quota_color) || 0,
+            quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
+          })),
       };
     }),
   };
@@ -270,7 +436,9 @@ async function handleSubmit() {
       fetchRentals(); // refresh
     } else {
       const err = await res.json();
-      toast.error(t("rentals.failed", { error: JSON.stringify(err) }));
+      toast.error(
+        t("rentals.failed", { error: err.message || JSON.stringify(err) }),
+      );
     }
   } catch (error) {
     console.error(error);
@@ -284,7 +452,133 @@ function formatRupiah(val: number): string {
   return "Rp " + (val || 0).toLocaleString("id-ID");
 }
 
-import { resources } from "@/services/resource.service";
+async function openRentalInvoices(rental: any) {
+  selectedRental.value = rental;
+  showInvoiceModal.value = true;
+  isLoadingRentalInvoices.value = true;
+  try {
+    await api.post(`/rents/${rental.id}/generate-invoices`, {});
+    const response = await api.get<{ data: any }>(`/rents/${rental.id}`);
+    selectedRental.value = response.data;
+  } catch (error: any) {
+    toast.error(toast.fromError(error, "Failed to prepare rental invoices"));
+  } finally {
+    isLoadingRentalInvoices.value = false;
+  }
+}
+
+function openInvoicePayment(invoice: any) {
+  selectedInvoice.value = invoice;
+  paymentForm.amount = Number(invoice.total_pay || invoice.subtotal || 0);
+  paymentForm.payment_date = new Date().toISOString().slice(0, 10);
+  paymentForm.payment_method = "transfer";
+  paymentForm.bank_name = "";
+  paymentForm.account_number = "";
+  paymentForm.sender_name = "";
+  paymentForm.reference_no = "";
+}
+
+async function submitInvoicePayment() {
+  if (!selectedInvoice.value || paymentForm.amount <= 0) {
+    toast.warning("Payment amount must be greater than 0.");
+    return;
+  }
+  if (
+    paymentForm.payment_method === "transfer" &&
+    (!paymentForm.bank_name.trim() ||
+      !paymentForm.account_number.trim() ||
+      !paymentForm.sender_name.trim())
+  ) {
+    toast.warning("Please complete the bank, account number, and sender name.");
+    return;
+  }
+
+  isSavingPayment.value = true;
+  const invoiceId = String(selectedInvoice.value.id);
+  const invNo = selectedInvoice.value.invoice_no || "-";
+  const payNo = `PAY-${Date.now()}`;
+  try {
+    const bankName =
+      paymentForm.payment_method === "cash"
+        ? "CASH"
+        : `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`;
+    await api.post("/payments", {
+      payment_no: payNo,
+      rental_invoice_id: invoiceId,
+      payment_date: `${paymentForm.payment_date}T00:00:00Z`,
+      amount: paymentForm.amount,
+      bank_name: bankName,
+      reference_no: paymentForm.reference_no.trim() || "-",
+    });
+    toast.success("Payment recorded and pending approval.");
+    const customer =
+      customers.value.find(
+        (item: any) => String(item.id) === String(selectedRental.value.customer_id),
+      ) || selectedRental.value?.customer;
+    const opened = printPaymentSlip({
+      payment_no: payNo,
+      invoice_no: invNo,
+      customer_name: customer?.company_name || customer?.name || "-",
+      payment_date: paymentForm.payment_date,
+      amount: Number(paymentForm.amount || 0),
+      reference_no: paymentForm.reference_no.trim() || "-",
+      status: "pending",
+      method: paymentForm.payment_method === "cash" ? "Tunai" : "Transfer",
+    });
+    if (!opened)
+      toast.warning("Izinkan pop-up browser untuk mencetak tanda terima.");
+    selectedInvoice.value = null;
+    const rentalResponse = await api.get<{ data: any }>(
+      `/rents/${selectedRental.value.id}`,
+    );
+    selectedRental.value = rentalResponse.data;
+  } catch (error: any) {
+    toast.error(toast.fromError(error, "Failed to record payment"));
+  } finally {
+    isSavingPayment.value = false;
+  }
+}
+
+function approvedPayments(invoice: any): any[] {
+  if (!can("payment:read")) return [];
+  return invoicePayments(invoice).filter(
+    (payment: any) => payment.status === "approved",
+  );
+}
+
+function hasPendingPaymentApproval(invoice: any): boolean {
+  return invoicePayments(invoice).some(
+    (payment: any) => payment.status === "pending",
+  );
+}
+
+function invoicePayments(invoice: any): any[] {
+  const currentPayments = payments.value.filter(
+    (payment: any) => String(payment.rental_invoice_id) === String(invoice.id),
+  );
+  return currentPayments.length ? currentPayments : invoice.payments || [];
+}
+
+function printRentalPaymentReceipt(invoice: any, payment: any) {
+  const customer =
+    customers.value.find(
+      (item: any) => String(item.id) === String(invoice.customer_id),
+    ) || selectedRental.value?.customer;
+  const ps = String(invoice.payment_status || "").toLowerCase();
+  const opened = printPaymentReceipt({
+    payment_no: payment.payment_no,
+    invoice_no: invoice.invoice_no,
+    customer_name: customer?.company_name || customer?.name || "-",
+    payment_date: payment.payment_date,
+    amount: Number(payment.amount || 0),
+    reference_no: payment.reference_no,
+    status: payment.status,
+    lunas: ps === "paid",
+    partial: ps === "partially_paid" || ps === "partial",
+  });
+  if (!opened)
+    toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
+}
 
 onMounted(async () => {
   await refresh(true);
@@ -292,6 +586,12 @@ onMounted(async () => {
   try {
     const res = await resources.paperSizes.list();
     paperSizes.value = res.data as any;
+    try {
+      const pt = await (resources as any).paperTypes.list();
+      paperTypes.value = pt.data as any;
+    } catch {
+      paperTypes.value = [];
+    }
   } catch (e) {
     console.error("Failed to fetch paper sizes:", e);
   }
@@ -330,10 +630,10 @@ onMounted(async () => {
         }}
       </template>
       <template #cell-start_date="{ value }">{{
-        new Date(value).toLocaleDateString("id-ID")
+        new Date(value).toLocaleDateString("en-GB")
       }}</template>
       <template #cell-end_date="{ value }">{{
-        new Date(value).toLocaleDateString("id-ID")
+        new Date(value).toLocaleDateString("en-GB")
       }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
       <template #cell-status="{ value }">
@@ -344,7 +644,237 @@ onMounted(async () => {
           {{ value || "-" }}
         </span>
       </template>
+      <template #cell-invoice_actions="{ row }">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline"
+          @click="openRentalInvoices(row)"
+        >
+          Invoice Details
+        </button>
+      </template>
     </DataTable>
+
+    <FormModal
+      :open="showInvoiceModal"
+      :title="
+        selectedRental
+          ? `Rental Invoices ${selectedRental.rental_no}`
+          : 'Rental Invoices'
+      "
+      max-width="900px"
+      @close="
+        showInvoiceModal = false;
+        selectedInvoice = null;
+      "
+    >
+      <div v-if="isLoadingRentalInvoices" class="text-muted text-center py-lg">
+        Loading rental invoices...
+      </div>
+      <div v-else-if="selectedRental" class="rental-invoice-list">
+        <article
+          v-for="invoice in visibleRentalInvoices"
+          :key="invoice.id"
+          class="rental-invoice-row"
+        >
+          <div class="rental-invoice-info">
+            <strong>{{ invoice.invoice_no }}</strong>
+            <span
+              >{{
+                invoice.period_start
+                  ? new Date(invoice.period_start).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })
+                  : "-"
+              }}
+              –
+              {{
+                invoice.period_end
+                  ? new Date(invoice.period_end).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })
+                  : "-"
+              }}</span
+            >
+          </div>
+          <div class="rental-invoice-total">
+            <strong>{{
+              formatRupiah(invoice.total_pay || invoice.subtotal || 0)
+            }}</strong>
+            <span
+              class="badge"
+              :class="
+                invoice.payment_status === 'paid'
+                  ? 'badge-success'
+                  : invoice.payment_status === 'partially_paid'
+                    ? 'badge-info'
+                    : 'badge-warning'
+              "
+            >
+              {{
+                invoice.payment_status === "paid"
+                  ? "Paid"
+                  : invoice.payment_status === "partially_paid"
+                    ? "Partial"
+                    : "Unpaid"
+              }}
+            </span>
+          </div>
+          <div class="rental-invoice-actions">
+            <span
+              v-if="hasPendingPaymentApproval(invoice)"
+              class="badge badge-warning"
+            >
+              Menunggu approval accounting
+            </span>
+            <button
+              v-for="payment in approvedPayments(invoice)"
+              :key="payment.id"
+              type="button"
+              class="btn btn-sm btn-outline"
+              @click="printRentalPaymentReceipt(invoice, payment)"
+            >
+              Kwitansi / Bukti Bayar
+            </button>
+            <button
+              v-if="invoice.payment_status !== 'paid' && can('payment:create')"
+              type="button"
+              class="btn btn-sm btn-primary"
+              :disabled="isSavingPayment"
+              @click="openInvoicePayment(invoice)"
+            >
+              Payment
+            </button>
+          </div>
+        </article>
+        <div v-if="!visibleRentalInvoices.length" class="rental-invoice-empty">
+          <strong>{{
+            selectedRental.rental_items?.some(
+              (item: any) => item.unit?.is_copier,
+            )
+              ? "No invoices for this period yet."
+              : "No invoices with a started period yet."
+          }}</strong>
+          <span
+            v-if="
+              selectedRental.rental_items?.some(
+                (item: any) => item.unit?.is_copier,
+              )
+            "
+            >Enter the copier meter reading first to generate invoices.</span
+          >
+        </div>
+      </div>
+      <template #footer>
+        <button
+          type="button"
+          class="btn btn-outline"
+          @click="
+            showInvoiceModal = false;
+            selectedInvoice = null;
+          "
+        >
+          Close
+        </button>
+      </template>
+    </FormModal>
+
+    <FormModal
+      :open="!!selectedInvoice"
+      :title="
+        selectedInvoice ? `Payment ${selectedInvoice.invoice_no}` : 'Payment'
+      "
+      @close="selectedInvoice = null"
+      @submit="submitInvoicePayment"
+    >
+      <div class="form-group">
+        <label class="form-label">Payment Date</label>
+        <input
+          v-model="paymentForm.payment_date"
+          type="date"
+          class="form-input"
+          required
+        />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment Method</label>
+        <select v-model="paymentForm.payment_method" class="form-select">
+          <option value="transfer">Bank Transfer</option>
+          <option value="cash">Cash</option>
+        </select>
+      </div>
+      <template v-if="paymentForm.payment_method === 'transfer'">
+        <div class="form-group">
+          <label class="form-label">Bank Name</label>
+          <input
+            v-model="paymentForm.bank_name"
+            type="text"
+            class="form-input"
+            placeholder="BCA, Mandiri, BRI"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Account Number</label>
+          <input
+            v-model="paymentForm.account_number"
+            type="text"
+            class="form-input"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sender Name</label>
+          <input
+            v-model="paymentForm.sender_name"
+            type="text"
+            class="form-input"
+            required
+          />
+        </div>
+      </template>
+      <div class="form-group">
+        <label class="form-label">Payment Amount</label>
+        <input
+          v-model.number="paymentForm.amount"
+          type="number"
+          class="form-input"
+          min="1"
+          required
+        />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reference No.</label>
+        <input
+          v-model="paymentForm.reference_no"
+          type="text"
+          class="form-input"
+          placeholder="Optional"
+        />
+      </div>
+      <template #footer>
+        <button
+          type="button"
+          class="btn btn-outline"
+          :disabled="isSavingPayment"
+          @click="selectedInvoice = null"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          :disabled="isSavingPayment"
+          @click="submitInvoicePayment"
+        >
+          {{ isSavingPayment ? "Saving..." : "Record Payment" }}
+        </button>
+      </template>
+    </FormModal>
 
     <FormModal
       :open="showModal"
@@ -400,7 +930,7 @@ onMounted(async () => {
 
       <div class="form-row">
         <div class="form-group">
-          <label for="duration-days" class="form-label">Tambahan Hari</label>
+          <label for="duration-days" class="form-label">Additional Days</label>
           <input
             id="duration-days"
             v-model.number="form.duration_days"
@@ -410,36 +940,52 @@ onMounted(async () => {
           />
         </div>
         <div class="form-group">
-          <label for="po-no" class="form-label">PO No (Opsional)</label>
+          <label for="po-no" class="form-label">PO No (Optional)</label>
           <input
             id="po-no"
             v-model="form.po_no"
             type="text"
             class="form-input"
-            placeholder="Misal: PO-2024-001"
+            placeholder="E.g. PO-2024-001"
           />
         </div>
         <div class="form-group">
-          <label for="notes" class="form-label">Catatan</label>
-          <textarea id="notes" v-model="form.notes" class="form-input" placeholder="Opsional" rows="2"></textarea>
+          <label for="notes" class="form-label">Notes</label>
+          <textarea
+            id="notes"
+            v-model="form.notes"
+            class="form-input"
+            placeholder="Optional"
+            rows="2"
+          ></textarea>
         </div>
       </div>
 
       <div class="form-group" style="margin-bottom: var(--space-md)">
         <label for="install-address" class="form-label"
-          >Alamat Instalasi / Pengiriman (Otomatis Dibuatkan DO)</label
+          >Installation / Delivery Address (DO Auto-Generated)</label
         >
         <textarea
           id="install-address"
           v-model="form.installation_address"
           class="form-input"
-          placeholder="Masukkan alamat lengkap pengiriman unit..."
+          placeholder="Enter the full unit delivery address..."
           rows="2"
           required
         ></textarea>
       </div>
 
-      <div class="form-section-title">Mesin Sewa & Input Meteran Awal</div>
+      <div class="form-group" style="margin-bottom: var(--space-md)">
+        <label class="form-label" style="font-size: 0.8rem"
+          >Note: each machine below may use its own delivery address (one DO is
+          auto-generated per distinct address). Leave empty to follow the
+          address above.</label
+        >
+      </div>
+
+      <div class="form-section-title">
+        Rented Machines & Initial Meter Input
+      </div>
 
       <div
         v-for="(item, idx) in rentalItems"
@@ -474,35 +1020,56 @@ onMounted(async () => {
               font-weight: var(--font-weight-bold);
             "
           >
-            Centang jika item ini adalah Mesin Copier (Perlu Input Meteran Awal)
+            Check if this item is a Copier Machine (Requires Initial Meter
+            Input)
           </label>
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
-          <label class="form-label">Pilih Unit / Produk</label>
+          <label class="form-label">Select Unit</label>
           <select
             v-model="item.selected_item"
             class="form-select"
             required
             @change="onItemSelectChange(item)"
           >
-            <option value="">-- Pilih Mesin atau Produk --</option>
-            <optgroup label="Mesin (Unit)">
-              <option v-for="u in units" :key="u.id" :value="'unit_' + u.id">
-                {{ u.model }} ({{ (u as any).brand?.name }})
-              </option>
-            </optgroup>
-            <optgroup label="Produk / Lainnya">
-              <option v-for="p in products" :key="p.id" :value="'prod_' + p.id">
-                {{ p.name }} ({{ (p as any).category?.name || "-" }})
-              </option>
-            </optgroup>
+            <option value="">-- Select Unit --</option>
+            <option
+              v-for="u in availableUnits"
+              :key="u.id"
+              :value="'unit_' + u.id"
+            >
+              {{ u.model }} ({{ (u as any).brand?.name }}) — S/N:
+              {{ u.serial_no || "N/A" }}
+            </option>
+            <option
+              v-for="u in unavailableUnits"
+              :key="u.id"
+              :value="'unit_' + u.id"
+              disabled
+            >
+              {{ u.model }} ({{ (u as any).brand?.name }}) — S/N:
+              {{ u.serial_no || "N/A" }} — {{ unitStatusOf(u) }}
+            </option>
           </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: var(--space-md)">
+          <label class="form-label" style="font-size: 0.8rem"
+            >Delivery Address for this machine (optional — empty follows the
+            address above; distinct addresses get separate DOs)</label
+          >
+          <textarea
+            v-model="item.placement_location"
+            class="form-input"
+            rows="2"
+            placeholder="Leave empty to use the installation address above"
+          ></textarea>
         </div>
 
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Biaya Sewa / Bulan (Rp)</label>
+            <label class="form-label">Rental Fee / Month (Rp)</label>
             <input
               v-model.number="item.monthly_rent"
               type="number"
@@ -512,7 +1079,7 @@ onMounted(async () => {
             />
           </div>
           <div class="form-group">
-            <label class="form-label">Qty Item</label>
+            <label class="form-label">Item Qty</label>
             <input
               v-model.number="item.qty"
               type="number"
@@ -523,7 +1090,7 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- Copier Section moved from Gambar 1 to Gambar 2 -->
+        <!-- Copier Section moved from Figure 1 to Figure 2 -->
         <div
           v-if="item.is_copier"
           style="
@@ -540,49 +1107,39 @@ onMounted(async () => {
               color: var(--color-primary);
             "
           >
-            Data Mesin Fotocopy
+            Photocopy Machine Details
           </h4>
           <div
             style="
               display: grid;
-              grid-template-columns: 1fr 1fr 1fr;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
               gap: 0.75rem;
             "
           >
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem"
-                >Current BW Meter</label
+                >Initial BW Meter (Rental Start) *</label
               >
               <input
                 v-model.number="item.start_meter_bw"
                 type="number"
                 class="form-input"
                 min="0"
-                placeholder="0"
+                placeholder="Required on first rental"
+                :required="item.is_copier"
               />
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem"
-                >Current Color Meter</label
+                >Initial Colour Meter (Rental Start) *</label
               >
               <input
                 v-model.number="item.start_meter_color"
                 type="number"
                 class="form-input"
                 min="0"
-                placeholder="0"
-              />
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem"
-                >Free Quota Color</label
-              >
-              <input
-                v-model.number="item.free_quota_color"
-                type="number"
-                class="form-input"
-                min="0"
-                placeholder="0"
+                placeholder="Required on first rental"
+                :required="item.is_copier"
               />
             </div>
           </div>
@@ -599,7 +1156,7 @@ onMounted(async () => {
               <label
                 class="form-label"
                 style="margin: 0; font-weight: 600; font-size: 0.85rem"
-                >Daftar Harga Kertas (Rates)</label
+                >Harga per Lembar — BW & Warna (opsional)</label
               >
               <button
                 type="button"
@@ -610,82 +1167,151 @@ onMounted(async () => {
                 + Tambah Harga
               </button>
             </div>
+            <p
+              class="text-muted"
+              style="font-size: 0.75rem; margin: 0 0 0.5rem 0"
+            >
+              Satu kartu = satu aturan harga. Kosongkan ukuran &amp; jenis bila
+              tarifnya berlaku umum; isi bila beda ukuran/jenis beda harga.
+            </p>
 
             <div
               v-for="(rate, rIdx) in item.rates"
               :key="rIdx"
               style="
-                display: grid;
-                grid-template-columns: 2fr 1fr 1fr auto;
-                gap: 0.5rem;
-                margin-bottom: 0.5rem;
-                align-items: center;
+                margin-bottom: 0.75rem;
                 background: var(--color-surface, #f8fafc);
-                padding: 0.5rem;
-                border-radius: 6px;
+                padding: 0.75rem;
+                border-radius: 8px;
                 border: 1px solid var(--color-border-light, #e2e8f0);
               "
             >
-              <div>
-                <select
-                  v-model="rate.paper_size_id"
-                  class="form-select"
-                  style="font-size: 0.8rem"
-                >
-                  <option value="">Pilih Ukuran</option>
-                  <option v-for="p in paperSizes" :key="p.id" :value="p.id">
-                    {{ p.name }}
-                  </option>
-                </select>
-              </div>
-              <div>
-                <input
-                  v-model.number="rate.rate_per_page_bw"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="Tarif BW"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div>
-                <input
-                  v-model.number="rate.rate_per_page_color"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="Tarif Warna"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <button
-                type="button"
-                @click="removeItemRate(item, rIdx)"
+              <div
                 style="
-                  background: none;
-                  border: none;
-                  color: #ef4444;
-                  cursor: pointer;
-                  padding: 0.4rem;
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 0.5rem;
                 "
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                <strong style="font-size: 0.85rem"
+                  >Harga #{{ rIdx + 1 }} &mdash; {{ rateTitle(rate) }}</strong
                 >
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path
-                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                  ></path>
-                </svg>
-              </button>
+                <button
+                  type="button"
+                  @click="removeItemRate(item, rIdx)"
+                  class="btn btn-sm"
+                  style="color: #ef4444; font-size: 0.75rem"
+                >
+                  Hapus
+                </button>
+              </div>
+              <div class="rental-rate-fields">
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label"
+                    >Ukuran Kertas
+                    <span class="text-muted">(opsional)</span></label
+                  >
+                  <select
+                    v-model="rate.paper_size_id"
+                    class="form-select"
+                    style="font-size: 0.8rem"
+                  >
+                    <option value="">&#8212; Semua ukuran &#8212;</option>
+                    <option v-for="p in paperSizes" :key="p.id" :value="p.id">
+                      {{ p.name }}
+                    </option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label"
+                    >Jenis Kertas
+                    <span class="text-muted">(opsional)</span></label
+                  >
+                  <select
+                    v-model="rate.paper_type_id"
+                    class="form-select"
+                    style="font-size: 0.8rem"
+                  >
+                    <option :value="null">&#8212; Semua jenis &#8212;</option>
+                    <option v-for="p in paperTypes" :key="p.id" :value="p.id">
+                      {{ p.name }}
+                    </option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Tarif BW per lembar (Rp)</label>
+                  <input
+                    v-model.number="rate.rate_per_page_bw"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="Masukkan tarif BW"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Tarif warna per lembar (Rp)</label>
+                  <input
+                    v-model.number="rate.rate_per_page_color"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="Masukkan tarif warna"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label"
+                    >Kuota gratis BW (lembar/bulan)</label
+                  >
+                  <input
+                    v-model.number="rate.free_quota_bw"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="Contoh: 200 lembar"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label"
+                    >Kuota gratis warna (lembar/bulan)</label
+                  >
+                  <input
+                    v-model.number="rate.free_quota_color"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="Contoh: 200 lembar"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Kuota gratis berlaku untuk</label>
+                  <select
+                    v-model="rate.quota_applies_to"
+                    class="form-select"
+                    style="font-size: 0.8rem"
+                    title="Free quota applies to"
+                  >
+                    <option value="color">Warna (BW ditagih penuh)</option>
+                    <option value="bw">BW (Warna ditagih penuh)</option>
+                  </select>
+                </div>
+              </div>
+              <div
+                class="text-muted"
+                style="
+                  font-size: 0.75rem;
+                  margin-top: 0.5rem;
+                  background: var(--color-surface-sunken, #f1f5f9);
+                  padding: 0.4rem 0.6rem;
+                  border-radius: 6px;
+                "
+              >
+                {{ rateSummary(rate) }}
+              </div>
             </div>
             <div
               v-if="!item.rates || item.rates.length === 0"
@@ -698,7 +1324,8 @@ onMounted(async () => {
                 border-radius: 6px;
               "
             >
-              Belum ada ukuran kertas yang ditambahkan.
+              Belum ada harga per lembar. Klik + Tambah Harga bila ada tarif
+              cetak, atau kosongkan bila hanya sewa bulanan.
             </div>
           </div>
         </div>
@@ -712,12 +1339,12 @@ onMounted(async () => {
         >
           <div class="form-group">
             <label class="form-label" style="font-size: 0.8rem"
-              >Deskripsi / Keterangan (Tampil di Invoice)</label
+              >Description / Notes (Shown on Invoice)</label
             >
             <textarea
               v-model="item.description"
               class="form-input"
-              placeholder="Misal: Kondisi mulus, termasuk kabel power..."
+              placeholder="E.g. Good condition, including power cable..."
               rows="2"
             ></textarea>
           </div>
@@ -735,7 +1362,7 @@ onMounted(async () => {
           <button
             type="button"
             class="btn-remove-item"
-            title="Hapus Mesin"
+            title="Remove Machine"
             @click="removeRentalItem(idx)"
           >
             <svg
@@ -754,7 +1381,7 @@ onMounted(async () => {
                 d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
               ></path>
             </svg>
-            Hapus Mesin
+            Remove Machine
           </button>
         </div>
       </div>
@@ -764,53 +1391,23 @@ onMounted(async () => {
         class="btn btn-outline btn-sm mb-4"
         @click="addRentalItem"
       >
-        + Tambah Mesin Lain
+        + Add Another Machine
       </button>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label for="rent-tax" class="form-label">Pajak (Rp)</label>
-          <input
-            id="rent-tax"
-            v-model.number="form.tax"
-            type="number"
-            class="form-input"
-            min="0"
-          />
-        </div>
-        <div class="form-group">
-          <label for="rent-deposit" class="form-label"
-            >Uang Muka / Deposit (Rp)</label
-          >
-          <input
-            id="rent-deposit"
-            v-model.number="form.deposit"
-            type="number"
-            class="form-input"
-            min="0"
-          />
-        </div>
-      </div>
 
       <div class="sale-summary mt-4">
         <div class="summary-row">
-          <span>Total Biaya Sewa ({{ form.duration_months }} bln)</span
+          <span>Total Rental Fee ({{ form.duration_months }} months)</span
           ><span>{{ formatRupiah(calcSubtotal) }}</span>
         </div>
-        <div class="summary-row">
-          <span>Pajak</span><span>{{ formatRupiah(form.tax) }}</span>
-        </div>
-        <div class="summary-row">
-          <span>Deposit</span><span>{{ formatRupiah(form.deposit) }}</span>
-        </div>
+
         <div class="summary-row summary-total">
-          <span>Total Tagihan Kontrak</span
+          <span>Total Contract Amount</span
           ><span>{{ formatRupiah(calcTotal) }}</span>
         </div>
       </div>
 
       <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">
-        Menyimpan data & men-generate Kontrak...
+        Saving data & generating contract...
       </div>
     </FormModal>
   </div>
@@ -822,6 +1419,24 @@ onMounted(async () => {
   grid-template-columns: 1fr 1fr;
   gap: var(--space-base);
   margin-bottom: var(--space-sm);
+}
+.rental-rate-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm) var(--space-md);
+}
+.rental-rate-fields .form-group {
+  min-width: 0;
+}
+.rental-rate-fields .form-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  margin-bottom: 4px;
+}
+@media (max-width: 480px) {
+  .rental-rate-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .form-section-title {
   font-size: var(--font-size-sm);
@@ -930,6 +1545,95 @@ onMounted(async () => {
 }
 .text-gray-500 {
   color: var(--color-text-muted);
+}
+
+.rental-invoice-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rental-invoice-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.rental-invoice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.rental-invoice-info,
+.rental-invoice-total {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rental-invoice-info strong,
+.rental-invoice-total strong {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.rental-invoice-info span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.rental-invoice-total {
+  justify-items: end;
+}
+
+.rental-invoice-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 32px 16px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  text-align: center;
+  font-size: var(--font-size-sm);
+}
+
+.rental-invoice-empty strong {
+  color: var(--color-text);
+}
+
+@media (max-width: 640px) {
+  .rental-invoice-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .rental-invoice-total {
+    justify-items: start;
+  }
+
+  .rental-invoice-row > button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .rental-invoice-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .rental-invoice-actions > * {
+    flex: 1 1 100%;
+    text-align: center;
+  }
 }
 
 /* Status Badges */

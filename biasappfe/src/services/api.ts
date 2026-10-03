@@ -31,8 +31,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const tracksLoading = !options.method || options.method === "GET";
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  tracksLoading = !options.method || options.method === "GET",
+): Promise<T> {
   if (tracksLoading) activeApiRequests.value++;
   try {
     const headers = new Headers(options.headers);
@@ -51,7 +54,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (!response.ok) {
       if (response.status === 401) sessionStorage.removeItem("bias_token");
       throw new ApiError(
-        body?.message || body?.error || "Terjadi kesalahan pada server",
+        body?.message || body?.error || "A server error occurred",
         response.status,
       );
     }
@@ -62,7 +65,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, tracksLoading = true) =>
+    request<T>(path, {}, tracksLoading),
   post: <T>(path: string, data: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(data) }),
   put: <T>(path: string, data: unknown) =>
@@ -71,3 +75,35 @@ export const api = {
     request<T>(path, { method: "PATCH", body: JSON.stringify(data) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
+
+export async function downloadFile(
+  path: string,
+  filename: string,
+): Promise<void> {
+  const headers = new Headers();
+  const token = sessionStorage.getItem("bias_token");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers });
+  if (!response.ok) {
+    if (response.status === 401) sessionStorage.removeItem("bias_token");
+    const body = (await response.json().catch(() => null)) as {
+      message?: string;
+      error?: string;
+    } | null;
+    throw new ApiError(
+      body?.message || body?.error || "A server error occurred",
+      response.status,
+    );
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

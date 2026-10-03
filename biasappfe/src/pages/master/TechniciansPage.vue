@@ -4,8 +4,10 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Technician } from '@/types'
 
@@ -28,7 +30,7 @@ async function fetchData() {
     users.value = userRes.data
   } catch (error) {
     console.error('Failed to fetch technicians:', error)
-    toast.error('Gagal mengambil data technician: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to fetch technician data: ' + ((error as any).message || 'Error'))
   }
 }
 
@@ -80,10 +82,10 @@ async function handleSubmit() {
       })
     } else {
       if (!form.user_id) {
-        return toast.warning('Pilih user untuk dijadikan technician!')
+        return toast.warning('Please select a user to assign as technician!')
       }
       if (!form.employee_code.trim()) {
-        return toast.warning('Employee code wajib diisi!')
+        return toast.warning('Employee code is required!')
       }
       // Backend create requires user_id + employee_code only
       await resources.technicians.create({
@@ -94,12 +96,14 @@ async function handleSubmit() {
     await fetchData()
     masterStore.refresh()
     showModal.value = false
-    toast.success(editingItem.value ? 'Technician berhasil diperbarui!' : 'Technician berhasil disimpan!')
+    toast.success(editingItem.value ? 'Technician updated successfully!' : 'Technician saved successfully!')
   } catch (error) {
     console.error('Failed to save technician:', error)
-    toast.error('Gagal menyimpan technician: ' + ((error as any).message || 'Error'))
+    toast.error('Failed to save technician: ' + ((error as any).message || 'Error'))
   }
 }
+
+const hardDelete = useHardDelete((id: string) => resources.technicians.hardRemove(id), fetchData)
 
 function openDelete(item: Technician) { deletingItem.value = item; showConfirm.value = true }
 
@@ -109,10 +113,10 @@ async function handleDelete() {
       await resources.technicians.remove(String(deletingItem.value.id))
       await fetchData()
       masterStore.refresh()
-      toast.success('Technician berhasil dihapus!')
+      toast.success('Technician deleted successfully!')
     } catch (error) {
       console.error('Failed to delete technician:', error)
-      toast.error('Gagal menghapus technician')
+      toast.error('Failed to delete technician')
     }
   }
   showConfirm.value = false
@@ -123,7 +127,7 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Technicians" button-label="Add Technician" permission="technician:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search technician..." permission="technician" @edit="openEdit" @delete="openDelete">
+    <DataTable :columns="columns" :data="data" search-placeholder="Search technician..." permission="technician" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #cell-status="{ value }">
         <span
           class="badge"
@@ -163,6 +167,9 @@ async function handleDelete() {
       </template>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Technician" :message="`Are you sure you want to delete technician '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Technician" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
 

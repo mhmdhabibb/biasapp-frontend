@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useToast } from '@/composables/useToast'
 import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import { findPreviousServiceReportMeter } from '@/utils/meterReading'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -15,9 +16,12 @@ const router = useRouter()
 const { currentUser } = useAuth()
 const {
   getServiceReportsByTechnician,
+  serviceReports,
   getTechnicianIdByUser,
   findCustomer,
   findUnit,
+  contractItems,
+  monthlyMeterReadings,
   refresh
 } = useMasterStore()
 
@@ -61,6 +65,45 @@ function getUnitName(unitId: number | null) {
   return u ? u.model : '-'
 }
 
+const numVal = (v: any) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+// Previous meter: saved -> linked reading -> unit -> contract.
+// Previously only `job.meter_reading_before || 0`, so old reports were always 0.
+function resolvePreviousMeter(job: any): number {
+  const saved = numVal(job?.meter_reading_before) || numVal(job?.reading_counter)
+  if (saved > 0) return saved
+  const readings: any[] = job?.monthly_meter_readings || job?.monthlyMeterReadings || []
+  let lastEnd = 0
+  for (const r of readings) lastEnd = Math.max(lastEnd, numVal(r.end_meter) || numVal(r.start_meter))
+  if (lastEnd > 0) return lastEnd
+  const previousVisit = findPreviousServiceReportMeter(job, serviceReports.value, contractItems.value)
+  if (previousVisit !== null) return previousVisit
+  // latest reading of this unit from the store (previous period)
+  const unitId = String(job?.unit_id || '')
+  if (unitId) {
+    const storeReadings: any[] = (monthlyMeterReadings as any)?.value || (monthlyMeterReadings as any) || []
+    const forUnit = storeReadings.filter((r: any) => String(r.unit_id || r.unit?.id || '') === unitId)
+    forUnit.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    if (forUnit.length > 0) {
+      const last = numVal(forUnit[0].end_meter) || numVal(forUnit[0].start_meter)
+      if (last > 0) return last
+    }
+  }
+  const u: any = unitId ? findUnit(unitId as any) : null
+  const fromUnit = numVal(u?.current_meter_bw) || numVal(u?.current_meter_color)
+  if (fromUnit > 0) return fromUnit
+  if (unitId) {
+    const items: any[] = (contractItems as any)?.value || (contractItems as any) || []
+    const ci = items.find((c: any) => String(c.unit_id || c.unit?.id || '') === unitId)
+    const fromContract = numVal(ci?.start_mono_value) || numVal(ci?.start_color_value)
+    if (fromContract > 0) return fromContract
+  }
+  return 0
+}
+
 function openMaintenance(job: any) {
   selectedJob.value = job
   // Reset form
@@ -73,8 +116,8 @@ function openMaintenance(job: any) {
     machineTesting: false
   }
   meterReadingForm.value = {
-    previous_meter: job.meter_reading_before || 0,
-    current_meter: job.meter_reading_after || job.meter_reading_before || 0
+    previous_meter: resolvePreviousMeter(job),
+    current_meter: numVal(job.meter_reading_after) || numVal(job.meter_reading_before) || resolvePreviousMeter(job)
   }
   form.value = {
     remarks: job.remarks || '',
@@ -86,11 +129,11 @@ function openMaintenance(job: any) {
 async function completeMaintenance() {
   if (!selectedJob.value) return
   if (meterReadingForm.value.current_meter < meterReadingForm.value.previous_meter) {
-    toast.warning('Current meter tidak boleh lebih kecil dari previous meter!')
+    toast.warning('Current meter must not be smaller than previous meter!')
     return
   }
 
-  if (confirm('Selesaikan Maintenance?')) {
+  if (confirm('Complete Maintenance?')) {
     // Serialize checklists into repair_action
     const cl = []
     if (checklist.value.cleaning) cl.push('Cleaning')
@@ -128,10 +171,10 @@ async function completeMaintenance() {
       })
 
       showDetailModal.value = false
-      toast.success('Maintenance Selesai!')
+      toast.success('Maintenance Completed!')
       refresh(true)
     } catch (err: any) {
-      toast.error(err.message || 'Gagal menyelesaikan maintenance')
+      toast.error(err.message || 'Failed to complete maintenance')
     }
   }
 }
@@ -139,11 +182,11 @@ async function completeMaintenance() {
 
 <template>
   <div class="tech-maintenance">
-    <PageHeader title="Maintenance Rutin" />
+    <PageHeader title="Routine Maintenance" />
 
     <div class="card mb-lg">
       <div class="card-header">
-        <h2 class="card-title">Jadwal Maintenance (Aktif)</h2>
+        <h2 class="card-title">Maintenance Schedule (Active)</h2>
       </div>
       <div class="table-responsive">
         <table class="table">
@@ -162,18 +205,18 @@ async function completeMaintenance() {
               <td>{{ job.report_no }}</td>
               <td>{{ getCustomerName(job.customer_id) }}</td>
               <td>{{ getUnitName(job.unit_id) }}</td>
-              <td>{{ job.service_date ? new Date(job.service_date).toLocaleDateString('id-ID') : '-' }}</td>
+              <td>{{ job.service_date ? new Date(job.service_date).toLocaleDateString('en-GB') : '-' }}</td>
               <td>
                 <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : 'warning')">
                   {{ job.status.toUpperCase().replace('_', ' ') }}
                 </span>
               </td>
               <td>
-                <button v-if="can('service_report:update')" class="btn btn-sm btn-primary" @click="openMaintenance(job)">Proses</button>
+                <button v-if="can('service_report:update')" class="btn btn-sm btn-primary" @click="openMaintenance(job)">Process</button>
               </td>
             </tr>
             <tr v-if="activeJobs.length === 0">
-              <td colspan="6" class="text-center py-lg text-muted">Tidak ada jadwal maintenance aktif.</td>
+              <td colspan="6" class="text-center py-lg text-muted">No active maintenance schedules.</td>
             </tr>
           </tbody>
         </table>
@@ -184,7 +227,7 @@ async function completeMaintenance() {
     <div v-if="showDetailModal" class="modal-backdrop">
       <div class="modal">
         <div class="modal-header">
-          <h2 class="modal-title">Form Maintenance</h2>
+          <h2 class="modal-title">Maintenance Form</h2>
           <button class="btn-close" @click="showDetailModal = false">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
@@ -201,11 +244,11 @@ async function completeMaintenance() {
             </div>
             <div>
               <span class="text-xs text-muted block">Schedule</span>
-              <span class="font-bold">{{ selectedJob?.service_date ? new Date(selectedJob.service_date).toLocaleDateString('id-ID') : '-' }}</span>
+              <span class="font-bold">{{ selectedJob?.service_date ? new Date(selectedJob.service_date).toLocaleDateString('en-GB') : '-' }}</span>
             </div>
           </div>
 
-          <h3 class="text-sm font-bold mb-sm mt-md border-b pb-xs">Checklist Pekerjaan</h3>
+          <h3 class="text-sm font-bold mb-sm mt-md border-b pb-xs">Work Checklist</h3>
           <div class="checklist-grid mb-md">
             <label class="flex items-center gap-sm cursor-pointer"><input type="checkbox" v-model="checklist.cleaning"> Cleaning</label>
             <label class="flex items-center gap-sm cursor-pointer"><input type="checkbox" v-model="checklist.roller"> Roller Check</label>
@@ -228,18 +271,18 @@ async function completeMaintenance() {
           </div>
 
           <div class="form-group">
-            <label class="form-label">Hasil Maintenance</label>
+            <label class="form-label">Maintenance Result</label>
             <textarea v-model="form.remarks" class="form-textarea" rows="2"></textarea>
           </div>
           
           <div class="form-group">
-            <label class="form-label">Catatan Tambahan</label>
+            <label class="form-label">Additional Notes</label>
             <textarea v-model="form.notes" class="form-textarea" rows="2"></textarea>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-outline" @click="showDetailModal = false">Batal</button>
-          <button v-if="can('service_report:update')" class="btn btn-primary" @click="completeMaintenance">Selesaikan Maintenance</button>
+          <button class="btn btn-outline" @click="showDetailModal = false">Cancel</button>
+          <button v-if="can('service_report:update')" class="btn btn-primary" @click="completeMaintenance">Complete Maintenance</button>
         </div>
       </div>
     </div>

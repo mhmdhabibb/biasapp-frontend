@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref } from 'vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useResourcesStore } from '@/stores/resources.store'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
+import { useResourcesStore } from '@/stores/resources.store'
+import type { SparepartRequest, TableColumn } from '@/types'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import type { TableColumn, SparepartRequest } from '@/types'
 
 const { can } = usePermission()
 const store = useMasterStore()
@@ -21,6 +21,7 @@ const creatingId = ref<string | number | null>(null)
 const columns: TableColumn[] = [
   { key: 'request_no', label: 'Request No' },
   { key: 'service_report_id', label: 'Service No' },
+  { key: 'technician_id', label: 'Requested By' },
   { key: 'product_id', label: 'Sparepart' },
   { key: 'qty', label: 'Qty' },
   { key: 'status', label: 'Status' },
@@ -38,6 +39,12 @@ function getSR(id: number | null) {
   return sr ? sr.report_no || sr.service_report_no || '-' : '-'
 }
 
+function getTechnician(id: string | number | null) {
+  if (!id) return '-'
+  const technician = store.findTechnician(id)
+  return technician?.name || '-'
+}
+
 async function handleCreatePO(request: SparepartRequest) {
   if (creatingId.value !== null) return
   creatingId.value = request.id
@@ -50,10 +57,10 @@ async function handleCreatePO(request: SparepartRequest) {
       status: 'draft'
     })
     await store.refresh(true)
-    toast.success(`Purchase order dibuat untuk ${request.request_no}`)
+    toast.success(`Purchase order created for ${request.request_no}`)
     router.push('/accounting/purchase-orders')
   } catch (err) {
-    toast.error(toast.fromError(err, 'Gagal membuat purchase order'))
+    toast.error(toast.fromError(err, 'Failed to create purchase order'))
   } finally {
     creatingId.value = null
   }
@@ -70,6 +77,7 @@ async function handleCreatePO(request: SparepartRequest) {
       search-placeholder="Search requests...">
       <template #cell-product_id="{ value }">{{ getProduct(value) }}</template>
       <template #cell-service_report_id="{ value }">{{ getSR(value) }}</template>
+      <template #cell-technician_id="{ value }">{{ getTechnician(value) }}</template>
       <template #cell-status="{ value }">
         <span class="badge" :class="{
           'badge-warning': value === 'pending',

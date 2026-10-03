@@ -1,4 +1,5 @@
 <script setup lang="ts">
+<<<<<<< HEAD
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
@@ -14,70 +15,103 @@ import CreateJobModal from './CreateJobModal.vue'
 const router = useRouter()
 const { currentUser } = useAuth()
 const { canAny } = usePermission()
+=======
+import PageHeader from "@/components/ui/PageHeader.vue";
+import { useAuth } from "@/composables/useAuth";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
+import { useMasterStore } from "@/composables/useMasterStore";
+import { usePermission } from "@/composables/usePermission";
+import CreateJobModal from "./CreateJobModal.vue";
+import { useRouter } from "vue-router";
+import { computed, ref } from "vue";
+
+useAutoRefresh();
+
+const router = useRouter();
+const { currentUser } = useAuth();
+const { canAny } = usePermission();
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 const {
   jobOrders,
   serviceReports,
   technicians,
   findCustomer,
   findUnit,
-  refresh
-} = useMasterStore()
-
-let intervalId: any = null
-
-onMounted(() => {
-  // Auto-reload data every 30 seconds
-  intervalId = setInterval(() => {
-    refresh(true)
-  }, 30000)
-})
-
-onUnmounted(() => {
-  if (intervalId) clearInterval(intervalId)
-})
+  refresh,
+} = useMasterStore();
 
 // Find the technician record that belongs to the current logged-in user
 const myTechnician = computed(() => {
-  if (!currentUser.value?.id) return null
-  return technicians.value.find((t: any) => t.user_id === currentUser.value?.id || t.user_id == currentUser.value?.id)
-})
+  if (!currentUser.value?.id) return null;
+  return technicians.value.find(
+    (t: any) =>
+      t.user_id === currentUser.value?.id || t.user_id == currentUser.value?.id,
+  );
+});
 
 const myJobs = computed(() => {
-  const techId = myTechnician.value?.id
-  if (!techId) return []
-  return jobOrders.value.filter(j => j.technician_id === techId)
-})
+  const techId = myTechnician.value?.id;
+  if (!techId) return [];
+  return jobOrders.value.filter((j) => j.technician_id === techId);
+});
 
 const isToday = (dateStr: string) => {
-  if (!dateStr) return false
-  const d = new Date(dateStr)
-  const today = new Date()
-  return d.getDate() === today.getDate() &&
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const today = new Date();
+  return (
+    d.getDate() === today.getDate() &&
     d.getMonth() === today.getMonth() &&
     d.getFullYear() === today.getFullYear()
-}
+  );
+};
 
 const getSlaHours = (createdStr: string) => {
-  if (!createdStr) return 0
-  const created = new Date(createdStr).getTime()
-  const now = new Date().getTime()
-  return (now - created) / (1000 * 60 * 60)
-}
+  if (!createdStr) return 0;
+  const created = new Date(createdStr).getTime();
+  const now = new Date().getTime();
+  return (now - created) / (1000 * 60 * 60);
+};
 
-const newJobs = computed(() => myJobs.value.filter(j => j.status === 'scheduled' || j.status === 'assigned').length)
-const inProgressJobs = computed(() => myJobs.value.filter(j => j.status === 'in_progress').length)
-const completedToday = computed(() => myJobs.value.filter(j => j.status === 'completed' && isToday(j.updated_at)).length)
-const slaBreached = computed(() => myJobs.value.filter(j => j.status !== 'completed' && j.status !== 'cancelled' && getSlaHours(j.created_at) > 2).length)
+const newJobs = computed(
+  () =>
+    myJobs.value.filter(
+      (j) => j.status === "scheduled" || j.status === "assigned",
+    ).length,
+);
+const inProgressJobs = computed(
+  () => myJobs.value.filter((j) => j.status === "in_progress").length,
+);
+const completedToday = computed(
+  () =>
+    myJobs.value.filter(
+      (j) => j.status === "completed" && isToday(j.updated_at),
+    ).length,
+);
+const slaBreached = computed(
+  () =>
+    myJobs.value.filter(
+      (j) =>
+        j.status !== "completed" &&
+        j.status !== "cancelled" &&
+        getSlaHours(j.created_at) > 2,
+    ).length,
+);
 
-const activeJobs = computed(() => myJobs.value.filter(j => j.status !== 'completed' && j.status !== 'cancelled'))
+const activeJobs = computed(() =>
+  myJobs.value.filter(
+    (j) => j.status !== "completed" && j.status !== "cancelled",
+  ),
+);
 
 const formatSla = (createdStr: string) => {
-  if (!createdStr) return '-'
-  const hours = getSlaHours(createdStr)
-  if (hours > 2) return `Breached (${hours.toFixed(1)}h)`
-  return `${hours.toFixed(1)}h / 2.0h`
-}
+  if (!createdStr) return "-";
+  const hours = getSlaHours(createdStr);
+  if (hours > 2) return `Breached (${hours.toFixed(1)}h)`;
+  return `${hours.toFixed(1)}h / 2.0h`;
+};
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 const showModal = ref(false)
@@ -85,49 +119,102 @@ const showModal = ref(false)
 
 
 >>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+const showModal = ref(false);
+
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 function getCustomerName(id: number | null) {
-  return findCustomer(id as any)?.company_name || '-'
+  return findCustomer(id as any)?.company_name || "-";
 }
 
 function getUnitName(unitId: string | null) {
-  if (!unitId) return '-'
-  const u = findUnit(unitId as any)
-  return u ? u.model : '-'
+  if (!unitId) return "-";
+  const u = findUnit(unitId as any);
+  return u ? u.model : "-";
 }
 
 function goToDetail(id: number) {
-  router.push(`/technician/call-services/${id}`)
+  router.push(`/technician/call-services/${id}`);
 }
 </script>
 
 <template>
 <<<<<<< HEAD
+<<<<<<< HEAD
   <div class="dashboard-container">
     <PageHeader title="Dashboard" />
     <p class="subtitle">Ringkasan pekerjaan Anda hari ini.</p>
+=======
+  <div class="tech-dashboard">
+    <div class="welcome-header">
+      <div class="user-greeting">
+        <h1 class="greeting-title">
+          Hello, {{ currentUser?.name || "Technician" }}! 👋
+        </h1>
+        <p class="greeting-subtitle">Here is your job summary for today.</p>
+      </div>
+    </div>
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 
-    <!-- Top Cards -->
+    <!-- Summary Grid -->
     <div class="top-cards">
       <div class="card card-primary">
         <div class="card-header">
-          <span>Baru</span>
+          <span>New Jobs</span>
           <span class="icon-wrapper">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
           </span>
         </div>
         <div class="card-value">{{ newJobs }}</div>
         <div class="card-footer">
-          <span class="icon-up"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg></span>
-          Menunggu dikerjakan
+          <span class="icon-up"
+            ><svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="18 15 12 9 6 15"></polyline></svg
+          ></span>
+          Waiting for assignment
         </div>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <span>Berjalan</span>
+          <span>In Progress</span>
           <span class="icon-wrapper">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
           </span>
+<<<<<<< HEAD
 =======
   <div class="tech-dashboard">
     <div class="welcome-header">
@@ -150,13 +237,29 @@ function goToDetail(id: number) {
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
         </div>
-        <div class="stat-content">
-          <span class="stat-value">{{ newJobs }}</span>
-          <span class="stat-label">Baru</span>
+        <div class="card-value">{{ inProgressJobs }}</div>
+        <div class="card-footer">
+          <span class="icon-up text-success-color"
+            ><svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="18 15 12 9 6 15"></polyline></svg
+          ></span>
+          Assigned and working
         </div>
       </div>
 
+<<<<<<< HEAD
       <div class="stat-box info">
         <div class="stat-icon-wrapper">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -187,12 +290,27 @@ function goToDetail(id: number) {
       </div>
 
 <<<<<<< HEAD
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
       <div class="card">
         <div class="card-header">
-          <span>Selesai</span>
+          <span>Completed Today</span>
           <span class="icon-wrapper">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
           </span>
+<<<<<<< HEAD
 =======
       <div class="stat-box danger">
         <div class="stat-icon-wrapper">
@@ -203,10 +321,65 @@ function goToDetail(id: number) {
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
 >>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
         </div>
-        <div class="stat-content">
-          <span class="stat-value">{{ slaBreached }}</span>
-          <span class="stat-label">SLA Lewat</span>
+        <div class="card-value">{{ completedToday }}</div>
+        <div class="card-footer">
+          <span class="icon-up text-success-color"
+            ><svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="18 15 12 9 6 15"></polyline></svg
+          ></span>
+          Successfully resolved
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span>Breached SLA</span>
+          <span class="icon-wrapper">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
+          </span>
+        </div>
+        <div class="card-value text-danger-color">{{ slaBreached }}</div>
+        <div class="card-footer">
+          <span
+            class="icon-up text-danger-color"
+            style="background: rgba(239, 68, 68, 0.1)"
+            ><svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline></svg
+          ></span>
+          Action required immediately
         </div>
       </div>
     </div>
@@ -214,10 +387,11 @@ function goToDetail(id: number) {
     <!-- Active Jobs Section -->
     <div class="jobs-section">
       <div class="section-header">
-        <h2 class="section-title">Pekerjaan Aktif</h2>
+        <h2 class="section-title">Active Jobs</h2>
         <span class="badge badge-primary">{{ activeJobs.length }} Total</span>
       </div>
 
+<<<<<<< HEAD
 <<<<<<< HEAD
         <template v-if="activeJobs.length > 0">
           <div v-for="job in activeJobs" :key="job.id" class="list-item clickable" @click="goToDetail(job.id)">
@@ -235,28 +409,67 @@ function goToDetail(id: number) {
             <div class="list-arrow">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
 =======
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
       <div class="jobs-list" v-if="activeJobs.length > 0">
-        <div v-for="job in activeJobs" :key="job.id" class="job-card" @click="goToDetail(job.id)">
+        <div
+          v-for="job in activeJobs"
+          :key="job.id"
+          class="job-card"
+          @click="goToDetail(job.id)"
+        >
           <div class="job-card-header">
             <span class="job-number">{{ job.job_order_no }}</span>
-            <span class="badge"
-              :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'scheduled' || job.status === 'assigned' ? 'warning' : 'danger')">
-              {{ job.status.toUpperCase().replace('_', ' ') }}
+            <span
+              class="badge"
+              :class="
+                'badge-' +
+                (job.status === 'in_progress'
+                  ? 'info'
+                  : job.status === 'scheduled' || job.status === 'assigned'
+                    ? 'warning'
+                    : 'danger')
+              "
+            >
+              {{ job.status.toUpperCase().replace("_", " ") }}
             </span>
           </div>
 
           <div class="job-details">
             <div class="detail-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                 <polyline points="9 22 9 12 15 12 15 22"></polyline>
               </svg>
-              <span>{{ getCustomerName(job.service_request?.customer_id || null) }}</span>
+              <span>{{
+                getCustomerName(
+                  job.service_request?.customer_id ||
+                    job.delivery_order?.customer_id ||
+                    job.delivery_order?.customer?.id ||
+                    null,
+                )
+              }}</span>
             </div>
             <div class="detail-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
                 <rect x="9" y="9" width="6" height="6"></rect>
                 <line x1="9" y1="1" x2="9" y2="4"></line>
@@ -268,51 +481,102 @@ function goToDetail(id: number) {
                 <line x1="1" y1="9" x2="4" y2="9"></line>
                 <line x1="1" y1="14" x2="4" y2="14"></line>
               </svg>
-              <span>{{ findUnit(job.service_request?.unit_id || null)?.model || '-' }}</span>
+              <span v-if="job.delivery_order || job.job_type === 'delivery'">{{
+                (job.delivery_order?.do_number || job.job_order_no || "Delivery") +
+                ((job.delivery_order?.delivery_order_items || []).length > 0
+                  ? ` • ${(job.delivery_order?.delivery_order_items || []).length} item${(job.delivery_order?.delivery_order_items || []).length > 1 ? "s" : ""}`
+                  : "")
+              }}</span>
+              <span v-else>{{
+                findUnit(job.service_request?.unit_id || null)?.model || "-"
+              }}</span>
             </div>
             <div class="detail-row problem-desc">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="8" x2="12" y2="12"></line>
                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
               </svg>
-              <span class="truncate">{{ job.instructions || job.service_request?.problem_description || `Tanpa
-                deskripsi` }}</span>
+              <span class="truncate">{{
+                job.instructions ||
+                job.service_request?.problem_description ||
+                `No description`
+              }}</span>
             </div>
           </div>
 
           <div class="job-card-footer">
-            <div class="sla-indicator" :class="{ 'breached': getSlaHours(job.created_at) > 2 }">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+            <div
+              class="sla-indicator"
+              :class="{ breached: getSlaHours(job.created_at) > 2 }"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <circle cx="12" cy="12" r="10"></circle>
                 <polyline points="12 6 12 12 16 14"></polyline>
               </svg>
               <span>SLA: {{ formatSla(job.created_at) }}</span>
             </div>
             <div class="action-arrow">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <polyline points="9 18 15 12 9 6"></polyline>
               </svg>
+<<<<<<< HEAD
 >>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
             </div>
           </div>
         </div>
       </div>
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 
       <div v-else class="empty-state">
         <div class="empty-icon">🎉</div>
-        <h3>Semua Beres!</h3>
-        <p>Tidak ada pekerjaan aktif untuk Anda saat ini.</p>
+        <h3>All Caught Up!</h3>
+        <p>You have no active jobs at the moment.</p>
       </div>
+<<<<<<< HEAD
 >>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
     </div>
     <!-- Create Job Modal -->
-    <CreateJobModal :open="showModal" @close="showModal = false" @refresh="refresh(true)" />
+    <CreateJobModal
+      :open="showModal"
+      @close="showModal = false"
+      @refresh="refresh(true)"
+    />
   </div>
 </template>
 
@@ -341,6 +605,74 @@ function goToDetail(id: number) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+.greeting-subtitle {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* Top Cards (CS Dashboard Style) */
+.top-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  background: var(--color-surface, #fff);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--color-border);
+}
+
+.card-primary {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+}
+
+.card-primary .card-subtitle,
+.card-primary .icon-wrapper {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.card:not(.card-primary) .card-header {
+  color: var(--color-text);
+}
+
+.icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  opacity: 0.6;
+}
+
+.card-value {
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1;
+  margin: 8px 0;
+}
+
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 .card-footer {
   font-size: 13px;
   display: flex;
@@ -349,6 +681,7 @@ function goToDetail(id: number) {
 }
 .card:not(.card-primary) .card-footer {
   color: var(--color-text-muted);
+<<<<<<< HEAD
 =======
 .greeting-subtitle {
   font-size: 14px;
@@ -384,11 +717,22 @@ function goToDetail(id: number) {
   width: 40px;
   height: 40px;
   border-radius: 12px;
+=======
+}
+
+.icon-up {
+  width: 20px;
+  height: 20px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border-radius: 4px;
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 .card-primary .icon-up {
   background: rgba(255, 255, 255, 0.2);
@@ -397,23 +741,21 @@ function goToDetail(id: number) {
 .primary .stat-icon-wrapper {
   background: rgba(59, 130, 246, 0.1);
   color: #3b82f6;
+=======
+.card-primary .icon-up {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 }
 
-.info .stat-icon-wrapper {
-  background: rgba(14, 165, 233, 0.1);
-  color: #0ea5e9;
+.text-success-color {
+  color: #10b981;
 }
-
-.success .stat-icon-wrapper {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
-}
-
-.danger .stat-icon-wrapper {
-  background: rgba(239, 68, 68, 0.1);
+.text-danger-color {
   color: #ef4444;
 }
 
+<<<<<<< HEAD
 .stat-content {
   display: flex;
   flex-direction: column;
@@ -434,6 +776,8 @@ function goToDetail(id: number) {
   color: var(--color-text-secondary);
 }
 
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 /* Jobs Section */
 .jobs-section {
   display: flex;
@@ -462,8 +806,11 @@ function goToDetail(id: number) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 .list-item.clickable {
 =======
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 /* Mobile App Job Card */
 .job-card {
   background: var(--color-surface, #fff);
@@ -474,7 +821,10 @@ function goToDetail(id: number) {
   display: flex;
   flex-direction: column;
   gap: 14px;
+<<<<<<< HEAD
 >>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.2s;

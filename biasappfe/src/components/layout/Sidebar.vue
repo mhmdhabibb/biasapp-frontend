@@ -1,18 +1,15 @@
 <script setup lang="ts">
+import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
+import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
-<<<<<<< HEAD
-=======
+import { api } from '@/services/api'
+import FormModal from '@/components/ui/FormModal.vue'
 import type { MenuGroup } from '@/types'
 import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
->>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
 import { canView, permissionKeysFor } from '@/router/permission-map'
-import { canAccessRoute, normalizeRole } from '@/router/role-access'
-import type { MenuGroup } from '@/types'
-import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
 
 const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
 
@@ -24,7 +21,46 @@ const router = useRouter()
 const { currentUser, logout } = useAuth()
 const { modules } = useModules()
 const { t } = useI18n()
-const { success: toastSuccess } = useToast()
+const { success: toastSuccess, error: toastError } = useToast()
+
+const showPwdModal = ref(false)
+const pwdForm = reactive({ old_password: '', new_password: '', confirm_password: '' })
+const isSavingPwd = ref(false)
+
+function openPwdModal() {
+  pwdForm.old_password = ''
+  pwdForm.new_password = ''
+  pwdForm.confirm_password = ''
+  showPwdModal.value = true
+}
+
+async function submitPwdChange() {
+  if (!pwdForm.old_password || !pwdForm.new_password) {
+    toastError('Lengkapi password lama dan baru.')
+    return
+  }
+  if (pwdForm.new_password.length < 6) {
+    toastError('Password baru minimal 6 karakter.')
+    return
+  }
+  if (pwdForm.new_password !== pwdForm.confirm_password) {
+    toastError('Konfirmasi password tidak cocok.')
+    return
+  }
+  isSavingPwd.value = true
+  try {
+    await api.post('/auth/change-password', {
+      old_password: pwdForm.old_password,
+      new_password: pwdForm.new_password,
+    })
+    showPwdModal.value = false
+    toastSuccess('Password berhasil diubah.')
+  } catch (err: any) {
+    toastError(err?.message || 'Gagal mengubah password.')
+  } finally {
+    isSavingPwd.value = false
+  }
+}
 
 const allMenuGroups: MenuGroup[] = [
   {
@@ -35,8 +71,8 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.permissions', icon: 'key', route: '/master/permissions' },
       { label: 'sidebar.modules', icon: 'grid', route: '/master/modules' },
       { label: 'sidebar.customers', icon: 'building', route: '/master/customers' },
-      { label: 'sidebar.technicians', icon: 'wrench', route: '/master/technicians' },
-      { label: 'sidebar.suppliers', icon: 'truck', route: '/master/suppliers' },
+      // { label: 'sidebar.technicians', icon: 'wrench', route: '/master/technicians' },
+      // { label: 'sidebar.suppliers', icon: 'truck', route: '/master/suppliers' },
       { label: 'sidebar.unit_types', icon: 'layers', route: '/master/unit-types' },
       { label: 'sidebar.brands', icon: 'tag', route: '/master/brands' },
       { label: 'sidebar.paper_size', icon: 'file', route: '/master/paper-size' },
@@ -82,8 +118,6 @@ const allMenuGroups: MenuGroup[] = [
     items: [
       { label: 'sidebar.my_jobs', icon: 'tool', route: '/technician/call-services', roles: ['technician'] },
       { label: 'sidebar.maintenance', icon: 'wrench', route: '/technician/maintenance', roles: ['technician'] },
-      { label: 'sidebar.sparepart_requests', icon: 'box', route: '/technician/sparepart-request', roles: ['technician'] },
-      { label: 'sidebar.meter_readings', icon: 'activity', route: '/technician/meter-readings', roles: ['technician'] },
       { label: 'sidebar.service_history', icon: 'file-text', route: '/technician/service-history', roles: ['technician'] },
     ],
   }
@@ -115,7 +149,7 @@ const menuGroups = computed(() => {
 
       // 4. Visibility is driven by the `<key>:view` permission of the route
       //    (see router/permission-map.ts). `read` alone never opens a menu.
-  if (!canAccessRoute(routeName, role, permissions)) return false
+      const routeName = String(router.resolve(item.route).name || '')
       const permKeys = permissionKeysFor(routeName)
 
       if (!permKeys) {
@@ -139,6 +173,17 @@ const menuGroups = computed(() => {
   })).filter(group => group.items.length > 0)
 })
 
+const panelName = computed(() => {
+  const role = normalizeRole(currentUser.value?.role)
+  switch (role) {
+    case 'admin': return 'Admin Panel'
+    case 'customer_service': return 'CS Panel'
+    case 'accounting': return 'Accounting Panel'
+    case 'technician': return 'Technician Panel'
+    default: return 'BIAS Panel'
+  }
+})
+
 const expandedGroups = ref<Set<string>>(new Set(allMenuGroups.map(g => g.title.includes('.') ? t(g.title) : g.title)))
 
 function toggleGroup(title: string) {
@@ -160,7 +205,7 @@ function navigate(itemRoute: string) {
 
 function handleLogout() {
   logout()
-  toastSuccess('Logout berhasil')
+  toastSuccess('Logout successful')
   router.push('/login')
 }
 
@@ -195,66 +240,39 @@ const iconPaths: Record<string, string> = {
   'credit-card': 'M1 4h22v16H1z M1 10h22',
   'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 8v4 M12 16h.01',
   'truck': 'M1 3h15v13H1z M16 8h4l3 3v5h-7z M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z M18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
-  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01', 
+  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01',
   'bell': 'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0',
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="open"
-      class="sidebar-backdrop"
-      @click="emit('close')"
-    />
+    <div v-if="open" class="sidebar-backdrop" @click="emit('close')" />
   </Teleport>
 
   <aside class="sidebar" :class="{ 'sidebar-open': open }">
     <div class="sidebar-header">
       <img class="sidebar-logo" src="@/assets/bias-logo.png" alt="BIAS" />
-      <span class="sidebar-app-name">Admin Panel</span>
+      <span class="sidebar-app-name">{{ panelName }}</span>
     </div>
 
     <nav class="sidebar-nav" aria-label="Main navigation menu">
       <div v-for="group in menuGroups" :key="group.title" class="menu-group">
-        <button
-          class="menu-group-toggle"
-          :aria-expanded="expandedGroups.has(group.title)"
-          @click="toggleGroup(group.title)"
-        >
+        <button class="menu-group-toggle" :aria-expanded="expandedGroups.has(group.title)"
+          @click="toggleGroup(group.title)">
           <span class="menu-group-title">{{ group.title }}</span>
-          <svg
-            class="menu-group-chevron"
-            :class="{ 'chevron-open': expandedGroups.has(group.title) }"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="6 9 12 15 18 9"/>
+          <svg class="menu-group-chevron" :class="{ 'chevron-open': expandedGroups.has(group.title) }" width="14"
+            height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
 
         <ul v-show="expandedGroups.has(group.title)" class="menu-list">
           <li v-for="item in group.items" :key="item.route">
-            <button
-              class="menu-item"
-              :class="{ 'menu-item-active': isActive(item.route) }"
-              @click="navigate(item.route)"
-            >
-              <svg
-                class="menu-icon"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
+            <button class="menu-item" :class="{ 'menu-item-active': isActive(item.route) }"
+              @click="navigate(item.route)">
+              <svg class="menu-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path :d="iconPaths[item.icon] || iconPaths.grid" />
               </svg>
               <span>{{ item.label }}</span>
@@ -272,17 +290,45 @@ const iconPaths: Record<string, string> = {
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
           <span class="sidebar-user-role">{{
-            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Superadmin'
-          }}</span>
+            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c =>
+              c.toUpperCase()) : 'Superadmin'
+            }}</span>
         </div>
       </div>
+      <button class="btn-logout" title="Ubah Password" @click="openPwdModal">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0110 0v4"></path>
+        </svg>
+      </button>
       <button class="btn-logout" title="Logout" @click="handleLogout">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
         </svg>
       </button>
     </div>
   </aside>
+
+  <FormModal :open="showPwdModal" title="Ubah Password" max-width="420px" @close="showPwdModal = false"
+    @submit="submitPwdChange">
+    <div class="form-group">
+      <label class="form-label">Password Lama</label>
+      <input v-model="pwdForm.old_password" type="password" class="form-input" placeholder="Password saat ini"
+        autocomplete="current-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password Baru (min. 6 karakter)</label>
+      <input v-model="pwdForm.new_password" type="password" class="form-input" placeholder="Password baru"
+        autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Konfirmasi Password Baru</label>
+      <input v-model="pwdForm.confirm_password" type="password" class="form-input" placeholder="Ulangi password baru"
+        autocomplete="new-password">
+    </div>
+  </FormModal>
 </template>
 
 <style scoped>
@@ -317,6 +363,7 @@ const iconPaths: Record<string, string> = {
   .sidebar-backdrop {
     display: none;
   }
+
   .sidebar {
     transform: translateX(0);
   }

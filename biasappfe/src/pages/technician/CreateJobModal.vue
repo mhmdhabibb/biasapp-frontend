@@ -118,7 +118,7 @@ async function submitJob() {
     
     emit('refresh')
     emit('close')
-    toast.success(form.technician_id ? 'Pekerjaan berhasil dibuat dan teknisi di-assign!' : 'Service Request berhasil dibuat!')
+    toast.success(form.technician_id ? 'Job successfully created and technician assigned!' : 'Service Request successfully created!')
     
     Object.assign(form, {
       job_type: 'call_service',

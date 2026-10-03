@@ -29,6 +29,7 @@ export interface Permission {
 export interface Module {
   id: string | number;
   name: string;
+  slug?: string;
   is_active: boolean;
   created_at: string;
   deleted_at: string | null;
@@ -137,6 +138,7 @@ export interface Unit {
   uom?: UOM | null;
   model: string;
   serial_no: string;
+  status?: string;
   is_copier?: boolean;
   current_meter_bw?: number;
   current_meter_color?: number;
@@ -226,6 +228,9 @@ export interface JobOrder {
   job_order_no: string;
   job_type: string;
   service_request_id?: string | null;
+  delivery_order_id?: string | null;
+  delivery_order?: any;
+  service_request?: any;
   customer_id?: string | null;
   unit_id?: string | null;
   technician_id: string;
@@ -262,6 +267,8 @@ export interface ServiceReport {
   visit_date?: string;
   is_chargeable?: boolean;
   reading_counter?: number;
+  meter_reading_before?: number;
+  meter_reading_after?: number;
   is_complete?: boolean;
   inspection_result?: string;
   notes?: string;
@@ -299,6 +306,7 @@ export interface Sale {
   sale_no: string;
   customer_id: string | null;
   sale_date: string;
+  installation_address?: string;
   total_amount: number;
   status: string;
   subtotal?: number;
@@ -386,12 +394,15 @@ export interface Payment {
   id: string | number;
   payment_no: string;
   rental_invoice_id: string | number | null;
+  sales_invoice_id?: string | number | null;
   customer_id: string | number | null;
   payment_date: string;
   amount: number;
   tax_deduction: number;
   balance: number;
+  bank_name: string;
   reference_no: string;
+  status: string;
   created_at: string;
   updated_at: string;
 }
@@ -432,6 +443,8 @@ export interface SparepartRequest {
   id: string | number;
   request_no: string;
   service_report_id: string | number | null;
+  technician_id?: string | number | null;
+  technician?: Technician | null;
   product_id: string | number | null;
   qty: number;
   status: string;
@@ -493,10 +506,23 @@ export interface ProcurementDeliveryOrder {
   do_number: string;
   do_type?: string;
   purchase_order_id: string | number | null;
+  rental_id?: string | number | null;
+  rental?: { rental_no?: string } | null;
+  recipient_name?: string;
+  recipient_phone?: string;
+  delivery_address?: string;
   delivery_date: string;
   status: string;
   notes?: string;
-  delivery_order_items?: { product_id?: string | null; qty?: number }[];
+  delivery_order_items?: {
+    id?: string | number;
+    product_id?: string | null;
+    product?: { name?: string } | null;
+    unit_id?: string | null;
+    unit?: { model?: string; serial_no?: string } | null;
+    qty?: number;
+    remarks?: string;
+  }[];
   created_at: string;
   updated_at: string;
 }
@@ -519,6 +545,7 @@ export interface Supplier {
 
 export interface Contract {
   id: string | number;
+  end_date?: string;
   created_at: string;
   updated_at: string;
 }
@@ -531,6 +558,10 @@ export interface SystemSetting {
 
 export interface Notification {
   id: string | number;
+  title: string;
+  message: string;
+  type?: string;
+  is_read: boolean;
   created_at: string;
   updated_at: string;
 }

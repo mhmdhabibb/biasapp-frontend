@@ -12,7 +12,7 @@ const {
 } = useMasterStore()
 
 // Service History shows all COMPLETED service reports, maybe filtered by this tech or all history
-// The prompt says: "Tujuannya agar Teknisi dapat mengetahui histori masalah unit sebelum melakukan service."
+// The goal: so Technicians can see unit problem history before servicing.
 // So we should show ALL history, regardless of which tech did it.
 const completedJobs = computed(() => {
   return serviceReports.value.filter(j => j.status === 'completed')
@@ -44,10 +44,10 @@ const filteredHistory = computed(() => {
 })
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
-  regular: 'Reguler',
+  regular: 'Regular',
   repair: 'Repair',
   maintenance: 'Maintenance',
-  installation: 'Instalasi',
+  installation: 'Installation',
   emergency: 'Emergency',
   meter_reading: 'Meter Reading'
 }
@@ -73,7 +73,7 @@ function getTechName(id: number | null) {
 
 <template>
   <div class="tech-history">
-    <PageHeader title="Riwayat Service" />
+    <PageHeader title="Service History" />
 
     <div class="card mb-lg p-lg">
       <div class="filters-grid">
@@ -86,13 +86,13 @@ function getTechName(id: number | null) {
           <input v-model="filterUnit" type="text" class="form-input" placeholder="Search model or SN...">
         </div>
         <div class="form-group mb-0">
-          <label class="form-label">Jenis Service</label>
+          <label class="form-label">Service Type</label>
           <select v-model="filterType" class="form-select">
-            <option value="">Semua Jenis</option>
-            <option value="regular">Reguler</option>
+            <option value="">All Types</option>
+            <option value="regular">Regular</option>
             <option value="repair">Repair</option>
             <option value="maintenance">Maintenance</option>
-            <option value="installation">Instalasi</option>
+            <option value="installation">Installation</option>
             <option value="emergency">Emergency</option>
             <option value="meter_reading">Meter Reading</option>
           </select>
@@ -105,17 +105,17 @@ function getTechName(id: number | null) {
         <table class="table">
           <thead>
             <tr>
-              <th>Tanggal Selesai</th>
+              <th>Completion Date</th>
               <th>Customer</th>
               <th>Unit & SN</th>
-              <th>Jenis Service</th>
-              <th>Tindakan / Hasil</th>
-              <th>Teknisi</th>
+              <th>Service Type</th>
+              <th>Action / Result</th>
+              <th>Technician</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="job in filteredHistory" :key="job.id">
-              <td>{{ job.time_out ? new Date(job.time_out).toLocaleString('id-ID') : '-' }}</td>
+              <td>{{ job.time_out ? new Date(job.time_out).toLocaleString('en-GB') : '-' }}</td>
               <td>{{ getCustomerName(job.customer_id) }}</td>
               <td>{{ getUnitName(job.unit_id) }}</td>
               <td>
@@ -126,13 +126,13 @@ function getTechName(id: number | null) {
               <td>
                 <div class="text-sm">
                   <strong>Problem:</strong> {{ job.machine_problem || '-' }}<br>
-                  <strong>Perbaikan:</strong> {{ job.repair_action || '-' }}
+                  <strong>Repair:</strong> {{ job.repair_action || '-' }}
                 </div>
               </td>
               <td>{{ getTechName(job.technician_id) }}</td>
             </tr>
             <tr v-if="filteredHistory.length === 0">
-              <td colspan="6" class="text-center py-lg text-muted">Tidak ada histori service yang sesuai filter.</td>
+              <td colspan="6" class="text-center py-lg text-muted">No service history matching the filter.</td>
             </tr>
           </tbody>
         </table>

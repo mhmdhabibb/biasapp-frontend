@@ -1,98 +1,112 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
-import Sidebar from './Sidebar.vue'
-import TopBar from './TopBar.vue'
-import BottomNav from './BottomNav.vue'
-import { useMasterStore } from '@/composables/useMasterStore'
-import { useAuth } from '@/composables/useAuth'
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useRoute } from "vue-router";
+import Sidebar from "./Sidebar.vue";
+import TopBar from "./TopBar.vue";
+import BottomNav from "./BottomNav.vue";
+import { useMasterStore } from "@/composables/useMasterStore";
+import { useAuth } from "@/composables/useAuth";
 
-const route = useRoute()
-const sidebarOpen = ref(false)
+const route = useRoute();
+const sidebarOpen = ref(false);
 
-const { refresh } = useMasterStore()
-const { currentUser } = useAuth()
+const { refreshInBackground } = useMasterStore();
+const { currentUser } = useAuth();
 
-let adminInterval: any = null
+let adminInterval: any = null;
 
-const isTechnician = computed(() => currentUser.value?.role === 'technician')
-const windowWidth = ref(window.innerWidth)
+const isTechnician = computed(() => currentUser.value?.role === "technician");
+const windowWidth = ref(window.innerWidth);
 
 const handleResize = () => {
-  windowWidth.value = window.innerWidth
-}
+  windowWidth.value = window.innerWidth;
+};
 
 const useMobileLayout = computed(() => {
   // Only use mobile app style if it's a technician AND the screen is small (phone/tablet portrait)
-  return isTechnician.value && windowWidth.value <= 768
-})
+  return isTechnician.value && windowWidth.value <= 768;
+});
 
 onMounted(() => {
-  window.addEventListener('resize', handleResize)
+  window.addEventListener("resize", handleResize);
   adminInterval = setInterval(() => {
-    refresh(true)
-  }, 30000)
-})
+    refreshInBackground();
+  }, 30000);
+});
 
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-  if (adminInterval) clearInterval(adminInterval)
-})
+  window.removeEventListener("resize", handleResize);
+  if (adminInterval) clearInterval(adminInterval);
+});
 
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {
-    '/master/users': 'Users',
-    '/master/roles': 'Roles',
-    '/master/permissions': 'Permissions',
-    '/master/modules': 'Modules',
-    '/master/customers': 'Customers',
-    '/master/technicians': 'Technicians',
-    '/master/unit-types': 'Unit Types',
-    '/master/brands': 'Brands',
-    '/master/paper-size': 'Paper Size',
-    '/master/paper-type': 'Paper Type',
-    '/master/product-categories': 'Product Categories',
-    '/master/uoms': 'UOM',
-    '/master/products': 'Products',
-    '/master/units': 'Units',
-    '/master/warranties': 'Warranties',
-    '/customer-service/contract-items': 'Contract Items',
-    '/customer-service/service-reports': 'Service Reports',
-    '/customer-service/monthly-meter-readings': 'Monthly Meter Readings',
-    '/customer-service/sales': 'Sales',
-    '/customer-service/rental-invoices': 'Rental Invoices',
-    '/customer-service/sales-invoices': 'Sales Invoices',
-    '/customer-service/payments': 'Payments',
-    '/customer-service/warranty-claims': 'Warranty Claims',
-    '/accounting/dashboard': 'Accounting Dashboard',
-    '/accounting/sparepart-requests': 'Sparepart Requests (Procurement)',
-    '/accounting/purchase-orders': 'Purchase Orders',
-    '/accounting/delivery-orders': 'Delivery Orders',
-    '/technician/dashboard': 'BIAS Technician',
-    '/technician/call-services': 'My Jobs',
-    '/technician/maintenance': 'Maintenance',
-    '/technician/sparepart-request': 'Request Sparepart',
-    '/technician/meter-readings': 'Meter Readings',
-    '/technician/service-history': 'Service History'
-  }
-  const exact = titles[route.path]
-  if (exact) return exact
-  if (route.path.startsWith('/technician/call-services/')) return 'My Jobs'
-  return 'BIAS App'
-})
+    "/master/users": "Users",
+    "/master/roles": "Roles",
+    "/master/permissions": "Permissions",
+    "/master/modules": "Modules",
+    "/master/customers": "Customers",
+    "/master/technicians": "Technicians",
+    "/master/unit-types": "Unit Types",
+    "/master/brands": "Brands",
+    "/master/paper-size": "Paper Size",
+    "/master/paper-type": "Paper Type",
+    "/master/product-categories": "Product Categories",
+    "/master/uoms": "UOM",
+    "/master/products": "Products",
+    "/master/units": "Units",
+    "/master/warranties": "Warranties",
+    "/customer-service/contract-items": "Contract Items",
+    "/customer-service/service-reports": "Service Reports",
+    "/customer-service/monthly-meter-readings": "Monthly Meter Readings",
+    "/customer-service/sales": "Sales",
+    "/customer-service/rental-invoices": "Rental Invoices",
+    "/customer-service/sales-invoices": "Sales Invoices",
+    "/customer-service/payments": "Payments",
+    "/customer-service/warranty-claims": "Warranty Claims",
+    "/accounting/dashboard": "Accounting Dashboard",
+    "/accounting/sparepart-requests": "Sparepart Requests (Procurement)",
+    "/accounting/purchase-orders": "Purchase Orders",
+    "/accounting/delivery-orders": "Delivery Orders",
+    "/technician/dashboard": "BIAS Technician",
+    "/technician/call-services": "My Jobs",
+    "/technician/maintenance": "Maintenance",
+    "/technician/sparepart-request": "Request Sparepart",
+    "/technician/meter-readings": "Meter Readings",
+    "/technician/service-history": "Service History",
+  };
+  const exact = titles[route.path];
+  if (exact) return exact;
+  if (route.path.startsWith("/technician/call-services/")) return "My Jobs";
+  return "BIAS App";
+});
 </script>
 
 <template>
   <div :class="['admin-layout', { 'mobile-layout-wrapper': useMobileLayout }]">
     <!-- Desktop Sidebar: shown unless it's strictly in mobile layout mode -->
-    <Sidebar v-if="!useMobileLayout || sidebarOpen" :open="sidebarOpen" @close="sidebarOpen = false" />
+    <Sidebar
+      v-if="!useMobileLayout || sidebarOpen"
+      :open="sidebarOpen"
+      @close="sidebarOpen = false"
+    />
 
-    <div class="admin-main" :class="{ 'mobile-app-container': useMobileLayout }">
-      <TopBar :title="pageTitle" @toggle-sidebar="sidebarOpen = !sidebarOpen" :hideHamburger="useMobileLayout" />
-      <main class="admin-content" :class="{ 'has-bottom-nav': useMobileLayout }">
+    <div
+      class="admin-main"
+      :class="{ 'mobile-app-container': useMobileLayout }"
+    >
+      <TopBar
+        :title="pageTitle"
+        @toggle-sidebar="sidebarOpen = !sidebarOpen"
+        :hideHamburger="useMobileLayout"
+      />
+      <main
+        class="admin-content"
+        :class="{ 'has-bottom-nav': useMobileLayout }"
+      >
         <slot />
       </main>
-      
+
       <!-- Mobile Bottom Navigation -->
       <BottomNav v-if="useMobileLayout" />
     </div>
@@ -107,7 +121,7 @@ const pageTitle = computed(() => {
 }
 
 .admin-layout.mobile-layout-wrapper {
-  background: var(--color-surface-raised, #f8fafc); 
+  background: var(--color-surface-raised, #f8fafc);
 }
 
 .admin-main {
@@ -154,6 +168,6 @@ const pageTitle = computed(() => {
 }
 
 .admin-main.mobile-app-container .admin-content.has-bottom-nav {
-  padding-bottom: 80px; 
+  padding-bottom: 80px;
 }
 </style>
