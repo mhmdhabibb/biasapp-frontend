@@ -436,7 +436,7 @@ function goToDetail(id: number) {
     <CreateJobModal
       :open="showModal"
       @close="showModal = false"
-      @refresh="refresh(true)"
+      @refresh="refresh()"
     />
   </div>
 </template>

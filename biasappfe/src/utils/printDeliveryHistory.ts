@@ -123,37 +123,37 @@ export function printDeliveryServiceHistory(item: any): boolean {
           <table class="meta-table">
             <tr>
               <td style="width: 30%; border-right: 1px solid #000;">DO Number</td>
-              <td>: ${esc(item.do_number || "-")}</td>
+              <td>${esc(item.do_number || "-")}</td>
             </tr>
             <tr>
               <td style="border-right: 1px solid #000;">Delivery Date</td>
-              <td>: ${esc(dateStr)}</td>
+              <td>${esc(dateStr)}</td>
             </tr>
           </table>
 
           <div class="section-title">CUSTOMER DETAIL</div>
           <table class="data-table">
-            <tr><td class="label-col">Company Name</td><td class="val-col">: ${esc(custName)}</td></tr>
-            <tr><td class="label-col">Customer Type</td><td class="val-col">: ${esc(customer.category || "-")}</td></tr>
-            <tr><td class="label-col">Address</td><td class="val-col">: ${esc(customer.address || "-")}</td></tr>
-            <tr><td class="label-col">Installation Address</td><td class="val-col">: ${esc(item.delivery_address || "-")}</td></tr>
-            <tr><td class="label-col">Phone</td><td class="val-col">: ${esc(custPhone)}</td></tr>
-            <tr><td class="label-col">Person in Charge</td><td class="val-col">: ${esc(picName)}</td></tr>
+            <tr><td class="label-col">Company Name</td><td class="val-col">${esc(custName)}</td></tr>
+            <tr><td class="label-col">Customer Type</td><td class="val-col">${esc(String(item.customer_category || customer.category || "Corporate"))}</td></tr>
+            <tr><td class="label-col">Address</td><td class="val-col">${esc(customer.address || "-")}</td></tr>
+            <tr><td class="label-col">Installation Address</td><td class="val-col">${esc(item.delivery_address || "-")}</td></tr>
+            <tr><td class="label-col">Phone</td><td class="val-col">${esc(custPhone)}</td></tr>
+            <tr><td class="label-col">Person in Charge</td><td class="val-col">${esc(picName)}</td></tr>
           </table>
 
           <div class="section-title">PRODUCT DETAIL</div>
           <table class="data-table">
-            <tr><td class="label-col">Brand</td><td class="val-col">: ${esc(brand?.name || "-")}</td></tr>
+            <tr><td class="label-col">Brand</td><td class="val-col">${esc(brand?.name || "-")}</td></tr>
             <tr><td class="label-col">Product Types</td><td class="val-col">: ${u.is_computer ? "Computer/Desktop" : "Photocopy"}</td></tr>
-            <tr><td class="label-col">Model/Type</td><td class="val-col">: ${esc(u.model || "-")}</td></tr>
-            <tr><td class="label-col">Serial Number</td><td class="val-col">: ${esc(u.serial_no || "-")}</td></tr>
+            <tr><td class="label-col">Model/Type</td><td class="val-col">${esc(u.model || "-")}</td></tr>
+            <tr><td class="label-col">Serial Number</td><td class="val-col">${esc(u.serial_no || "-")}</td></tr>
             ${
               itemsCount > 1
                 ? `<tr><td class="label-col">Items (${itemsCount})</td><td class="val-col">${itemsList}</td></tr>`
                 : ""
             }
-            <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col">: ${esc(item.problem || "")}</td></tr>
-            <tr><td class="label-col" style="height: 50px;">Action / Remarks</td><td class="val-col">: ${esc(item.action || item.notes || "")}</td></tr>
+            <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col">${esc(item.problem || "")}</td></tr>
+            <tr><td class="label-col" style="height: 50px;">Action / Remarks</td><td class="val-col">${esc(item.action || item.notes || "")}</td></tr>
           </table>
 
           <table class="bottom-table">
@@ -163,16 +163,16 @@ export function printDeliveryServiceHistory(item: any): boolean {
               </td>
               <td>
                 <div style="display: flex;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Tested</div><div style="padding: 2px;">: ${item.is_tested ? "YES" : "NO"}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Tested</div><div style="padding: 2px;">${item.is_tested ? "YES" : "NO"}</div>
                 </div>
                 <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Complete</div><div style="padding: 2px;">: ${item.is_completed ? "YES" : "NO"}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Complete</div><div style="padding: 2px;">${item.is_completed ? "YES" : "NO"}</div>
                 </div>
                 <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time in</div><div style="padding: 2px;">: ${esc(item.time_in || "")}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time in</div><div style="padding: 2px;">${esc(item.time_in || "")}</div>
                 </div>
                 <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time Out</div><div style="padding: 2px;">: ${esc(item.time_out || "")}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time Out</div><div style="padding: 2px;">${esc(item.time_out || "")}</div>
                 </div>
               </td>
             </tr>
@@ -181,19 +181,17 @@ export function printDeliveryServiceHistory(item: any): boolean {
           <div style="display: flex; justify-content: space-between; padding: 5px 20px 20px; font-weight: bold; border-top: 2px solid #000;">
             <div style="width: 45%; text-align: center;">
               <div>TESTED ${item.is_tested ? "YES" : "NO"}</div>
-              <div style="margin-top: 10px; text-align: left;">TECHNICIAN</div>
-              <div style="min-height: 50px; border-bottom: 1px solid #000; text-align: center;">
+              <div style="min-height: 50px; border-bottom: 1px solid #000; text-align: center; margin-top: 10px;">
                 ${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : ""}
               </div>
-              <div style="margin-top: 5px;">${esc(tech.name || tech.full_name || "")}</div>
+              <div style="margin-top: 5px;">${esc(item.technician_name || tech.name || tech.full_name || tech.user?.name || "")}</div>
             </div>
             <div style="width: 45%; text-align: center; display: flex; flex-direction: column; justify-content: flex-end;">
               <div style="margin-bottom: 10px;">COMPLETE ${item.is_completed ? "YES" : "NO"}</div>
               <div style="border-bottom: 1px solid #000; padding-bottom: 5px; min-height: 50px;">
-                CUSTOMER<br>
                 ${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : ""}
               </div>
-              <div style="background-color: #000; color: #fff; padding: 4px; font-size: 10px;">Signature & Company Stamp</div>
+              <div style="margin-top: 5px;">${esc(item.customer_name || picName || "")}</div>
             </div>
           </div>
         </div>

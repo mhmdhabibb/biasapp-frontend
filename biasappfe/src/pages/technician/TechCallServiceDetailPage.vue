@@ -23,9 +23,7 @@ const {
   findCustomer,
   findUnit,
   findProduct,
-  getTechnicianIdByUser,
-  refresh
-} = useMasterStore()
+  getTechnicianIdByUser, refreshInBackground } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const job = computed(() => jobOrders.value.find(j => String(j.id) === serviceId))
@@ -77,6 +75,9 @@ const doForm = ref({
   is_completed: false,
   customer_signature: '',
   technician_signature: '',
+  customer_name: '',
+  technician_name: '',
+  customer_category: '',
 })
 const isDoFormInit = ref(false)
 const isSavingDoForm = ref(false)
@@ -84,6 +85,7 @@ const isSavingDoForm = ref(false)
 function initDoForm() {
   const d: any = deliveryOrder.value
   if (!d || isDoFormInit.value) return
+  const theCustomer = doCustomer.value || customer.value
   doForm.value = {
     problem: d.problem || '',
     action: d.action || '',
@@ -93,6 +95,9 @@ function initDoForm() {
     is_completed: !!d.is_completed,
     customer_signature: d.customer_signature || '',
     technician_signature: d.technician_signature || '',
+    customer_name: d.customer_name || (theCustomer?.pic_name || theCustomer?.name || ''),
+    technician_name: d.technician_name || currentUser.value?.name || '',
+    customer_category: d.customer_category || theCustomer?.category || '',
   }
   isDoFormInit.value = true
 }
@@ -109,7 +114,7 @@ watchEffect(() => {
 
 const isDeliveryFormCompleted = computed(() => {
   const f = doForm.value
-  return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature
+  return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature && !!(f.customer_name || '').trim()
 })
 
 function nowHM(): string {
@@ -127,7 +132,7 @@ async function acceptDeliveryJob() {
     await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'in_transit', time_in: timeIn })
     doForm.value.time_in = timeIn
     toast.success('Delivery job accepted. Start time recorded.')
-    await refresh(true)
+    await refreshInBackground()
     initDoForm()
   } catch (err: any) {
     toast.error(err.message || 'Failed to accept delivery job')
@@ -141,7 +146,7 @@ async function saveDeliveryForm(silent = false) {
   isSavingDoForm.value = true
   try {
     await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { ...doForm.value })
-    await refresh(true)
+    await refreshInBackground()
     if (!silent) toast.success('Service history saved.')
     return true
   } catch (err: any) {
@@ -168,7 +173,7 @@ async function completeDeliveryJob() {
     await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'delivered', time_out: timeOut })
     await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
     toast.success('Delivery completed. End time recorded.')
-    await refresh(true)
+    await refreshInBackground()
     router.push('/technician/call-services')
   } catch (err: any) {
     toast.error(err.message || 'Failed to complete delivery')
@@ -229,10 +234,10 @@ const isAllFormsCompleted = computed(() => {
   return techOk && signaturesOk && copierOk
 })
 
-onMounted(() => refresh(true))
+onMounted(() => refreshInBackground())
 
 async function ensureServiceReport(now: string) {
-  await refresh(true)
+  await refreshInBackground()
   if (serviceReport.value) return serviceReport.value
 
   const unitId = job.value?.unit_id || job.value?.service_request?.unit_id || unit.value?.id
@@ -246,6 +251,7 @@ async function ensureServiceReport(now: string) {
     job_order_id: job.value.id,
     unit_id: String(unitId),
     customer_id: String(customerId),
+    customer_category: customer.value?.category || job.value?.customer?.category || '',
     technician_id: job.value.technician_id,
     service_type: 'repair',
     status: 'in_progress',
@@ -258,7 +264,7 @@ async function ensureServiceReport(now: string) {
     meter_reading_before: resolveBeforeMeter(),
   })
 
-  await refresh(true)
+  await refreshInBackground()
   if (!serviceReport.value) {
     throw new Error('Report created successfully, but it could not be loaded yet. Please try again.')
   }
@@ -295,7 +301,7 @@ async function acceptJob() {
     await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
 
     toast.success('Job accepted. Start time recorded.')
-    await refresh(true)
+    await refreshInBackground()
   } catch (err: any) {
     toast.error(err.message || 'Failed to accept job')
   } finally {
@@ -330,7 +336,7 @@ async function completeJob() {
 
 
       toast.success('Job completed! Sparepart replacement data queued for Procurement.')
-      await refresh(true)
+      await refreshInBackground()
       router.push('/technician/call-services')
     } catch (err: any) {
       toast.error(err.message || 'Failed to complete job')
@@ -425,6 +431,13 @@ async function completeJob() {
             <textarea v-model="doForm.problem" class="form-textarea" rows="3" placeholder="Describe the problem..."></textarea>
           </div>
           <div class="form-group">
+            <label class="form-label">Customer Type</label>
+            <select v-model="doForm.customer_category" class="form-select">
+              <option value="Corporate">Corporate</option>
+              <option value="Government">Government</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">Action / Repair <span class="text-danger">*</span></label>
             <textarea v-model="doForm.action" class="form-textarea" rows="3" placeholder="Action taken..."></textarea>
           </div>
@@ -448,11 +461,15 @@ async function completeJob() {
           </div>
           <div style="display: flex; gap: 1rem; margin-top: 1rem;">
             <div class="form-group" style="flex: 1;">
-              <label class="form-label">Technician Signature <span class="text-danger">*</span></label>
+              <label class="form-label">Technician Name</label>
+              <input v-model="doForm.technician_name" type="text" class="form-input" readonly disabled>
+              <label class="form-label mt-sm">Technician Signature <span class="text-danger">*</span></label>
               <SignaturePad v-model="doForm.technician_signature" height="150px" />
             </div>
             <div class="form-group" style="flex: 1;">
-              <label class="form-label">Customer Signature <span class="text-danger">*</span></label>
+              <label class="form-label">Customer / PIC Name <span class="text-danger">*</span></label>
+              <input v-model="doForm.customer_name" type="text" class="form-input" placeholder="Customer PIC name">
+              <label class="form-label mt-sm">Customer Signature <span class="text-danger">*</span></label>
               <SignaturePad v-model="doForm.customer_signature" height="150px" />
             </div>
           </div>
@@ -482,8 +499,8 @@ async function completeJob() {
           </div>
           <div class="form-group mt-md" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
             <div class="text-sm font-bold mb-xs">Signatures</div>
-            <div class="text-sm text-muted">Technician: <strong>{{ deliveryOrder?.technician_signature ? 'Signed' : '-' }}</strong></div>
-            <div class="text-sm text-muted">Customer: <strong>{{ deliveryOrder?.customer_signature ? 'Signed' : '-' }}</strong></div>
+            <div class="text-sm text-muted">Technician: <strong>{{ deliveryOrder?.technician_name || '-' }} ({{ deliveryOrder?.technician_signature ? 'Signed' : '-' }})</strong></div>
+            <div class="text-sm text-muted">Customer: <strong>{{ deliveryOrder?.customer_name || '-' }} ({{ deliveryOrder?.customer_signature ? 'Signed' : '-' }})</strong></div>
           </div>
           <div class="mt-md text-success font-bold flex items-center gap-sm">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>

@@ -103,7 +103,7 @@ async function handlePayment() {
        status: 'paid'
     }
     await resources.update("sales", viewingItem.value.id as any, payload)
-    await useMasterStore().refresh(true)
+    await useMasterStore().refreshInBackground()
     showPaymentModal.value = false
     toast.success("Payment recorded successfully!")
   } catch (err: any) {
@@ -120,9 +120,9 @@ function generateSingleInvoiceHtml(item: any) {
   const custPhone = customer?.phone || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Mr./Mrs. '
-  if (gender === 'L') prefix = 'Mr. '
-  if (gender === 'P') prefix = 'Mrs. '
+  let prefix = 'Bapak/Ibu '
+  if (gender === 'L') prefix = 'Bapak '
+  if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
 
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
@@ -304,9 +304,9 @@ function exportMonthToExcel() {
     const custPhone = (customer?.phone || '-').replace(/;/g, ',')
     const pic = customer?.pic_name || '-'
     const gender = customer?.pic_gender
-    let prefix = 'Mr./Mrs. '
-    if (gender === 'L') prefix = 'Mr. '
-    if (gender === 'P') prefix = 'Mrs. '
+    let prefix = 'Bapak/Ibu '
+    if (gender === 'L') prefix = 'Bapak '
+    if (gender === 'P') prefix = 'Ibu '
     const picDisplay = pic !== '-' ? (prefix + pic).replace(/;/g, ',') : '-'
 
     const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
@@ -574,7 +574,7 @@ async function handleSubmit() {
     } else {
       res = await resources.create("sales", saleData)
     }
-    await useMasterStore().refresh(true)
+    await useMasterStore().refreshInBackground()
     showModal.value = false
     toast.success(editingItem.value ? "Sale updated successfully!" : "Sale saved successfully!")
 
@@ -599,7 +599,7 @@ async function handleDelete() {
   if (deletingItem.value) {
     try {
       await resources.remove("sales", deletingItem.value.id as any)
-      useMasterStore().refresh(true)
+      useMasterStore().refreshInBackground()
       toast.success("Sale deleted successfully!")
     } catch (error) {
       toast.error("Failed to delete data!")

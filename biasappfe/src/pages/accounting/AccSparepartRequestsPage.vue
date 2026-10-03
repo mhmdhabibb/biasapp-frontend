@@ -56,7 +56,7 @@ async function handleCreatePO(request: SparepartRequest) {
       order_date: new Date().toISOString(),
       status: 'draft'
     })
-    await store.refresh(true)
+    await store.refreshInBackground()
     toast.success(`Purchase order created for ${request.request_no}`)
     router.push('/accounting/purchase-orders')
   } catch (err) {

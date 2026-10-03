@@ -3,6 +3,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
+import { useAuth } from '@/composables/useAuth'
 import { api } from '@/services/api'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { computed, onMounted, ref } from 'vue'
@@ -11,11 +12,13 @@ import { useRoute, useRouter } from 'vue-router'
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { serviceReports, contractItems, monthlyMeterReadings, findUnit, refresh } = useMasterStore()
+const { currentUser } = useAuth()
+const { serviceReports, contractItems, monthlyMeterReadings, findUnit, findCustomer, findTechnician, refreshInBackground } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
 const job = computed(() => reportRecord.value || serviceReports.value.find((sr: any) => String(sr.id) === serviceId))
+const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
 
 const unit = computed(() => {
   const unitId = job.value?.unit_id || job.value?.unit?.id
@@ -75,6 +78,8 @@ const form = ref({
   copy_quality: 'Good',
   customer_signature: '',
   technician_signature: '',
+  customer_name: '',
+  technician_name: '',
 })
 const isLoading = ref(true)
 const isSaving = ref(false)
@@ -117,7 +122,7 @@ const paperTypes = computed(() => {
 
 onMounted(async () => {
   try {
-    await refresh(true)
+    await refreshInBackground()
     const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
     reportRecord.value = response.data
     if (!job.value) throw new Error('Service report not found')
@@ -125,6 +130,8 @@ onMounted(async () => {
     form.value.meter_after = after > 0 ? after : beforeMeter.value
     form.value.customer_signature = job.value.customer_signature_copier || ''
     form.value.technician_signature = job.value.technician_signature_copier || ''
+    form.value.customer_name = job.value.customer_name_copier || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || ''
+    form.value.technician_name = job.value.technician_name_copier || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || ''
   } catch (err: any) {
     toast.error(err.message || 'Failed to load service report')
   } finally {
@@ -138,8 +145,8 @@ async function saveForm() {
     toast.warning(`Meter After (${form.value.meter_after}) must not be smaller than Before (${beforeMeter.value}).`)
     return
   }
-  if (!form.value.customer_signature || !form.value.technician_signature) {
-    toast.warning('Customer and technician signatures are required.')
+  if (!form.value.customer_signature || !form.value.technician_signature || !form.value.customer_name.trim()) {
+    toast.warning('Customer name, customer and technician signatures are required.')
     return
   }
   isSaving.value = true
@@ -149,9 +156,11 @@ async function saveForm() {
       meter_reading_after: Number(form.value.meter_after),
       customer_signature_copier: form.value.customer_signature,
       technician_signature_copier: form.value.technician_signature,
+      customer_name_copier: form.value.customer_name,
+      technician_name_copier: form.value.technician_name,
     })
     toast.success('Copier Report saved successfully')
-    await refresh(true)
+    await refreshInBackground()
     router.back()
   } catch (err: any) {
     toast.error(err.message || 'Failed to save form')
@@ -214,11 +223,17 @@ async function saveForm() {
 
       <div class="signature-grid">
         <div class="form-group">
-          <label class="form-label">Customer Signature <span class="text-danger">*</span></label>
+          <label class="form-label">Customer Type</label>
+          <input :value="customerType" type="text" class="form-input" readonly disabled>
+          <label class="form-label mt-sm">Customer / PIC Name <span class="text-danger">*</span></label>
+          <input v-model="form.customer_name" type="text" class="form-input" placeholder="Customer PIC name">
+          <label class="form-label mt-sm">Customer Signature <span class="text-danger">*</span></label>
           <SignaturePad v-model="form.customer_signature" height="160px" />
         </div>
         <div class="form-group">
-          <label class="form-label">Technician Signature <span class="text-danger">*</span></label>
+          <label class="form-label">Technician Name</label>
+          <input v-model="form.technician_name" type="text" class="form-input" readonly disabled>
+          <label class="form-label mt-sm">Technician Signature <span class="text-danger">*</span></label>
           <SignaturePad v-model="form.technician_signature" height="160px" />
         </div>
       </div>

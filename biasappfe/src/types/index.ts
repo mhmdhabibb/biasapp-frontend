@@ -37,6 +37,7 @@ export interface Module {
 
 export interface Customer {
   id: string | number;
+  category: string;
   company_name: string;
   pic_name: string;
   pic_gender?: string;
@@ -275,6 +276,16 @@ export interface ServiceReport {
   testing_confirmed?: boolean;
   customer_signature?: string | null;
   technician_signature?: string | null;
+  customer_name?: string | null;
+  technician_name?: string | null;
+  customer_signature_copier?: string | null;
+  technician_signature_copier?: string | null;
+  customer_name_copier?: string | null;
+  technician_name_copier?: string | null;
+  customer_signature_technical?: string | null;
+  technician_signature_technical?: string | null;
+  customer_name_technical?: string | null;
+  technician_name_technical?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

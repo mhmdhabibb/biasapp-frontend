@@ -36,15 +36,15 @@ function openPwdModal() {
 
 async function submitPwdChange() {
   if (!pwdForm.old_password || !pwdForm.new_password) {
-    toastError('Lengkapi password lama dan baru.')
+    toastError('Complete Current Password and New Password!.')
     return
   }
   if (pwdForm.new_password.length < 6) {
-    toastError('Password baru minimal 6 karakter.')
+    toastError('New Password must be more than 6 characters!.')
     return
   }
   if (pwdForm.new_password !== pwdForm.confirm_password) {
-    toastError('Konfirmasi password tidak cocok.')
+    toastError('Confirm Password not matching!.')
     return
   }
   isSavingPwd.value = true
@@ -54,9 +54,9 @@ async function submitPwdChange() {
       new_password: pwdForm.new_password,
     })
     showPwdModal.value = false
-    toastSuccess('Password berhasil diubah.')
+    toastSuccess('Password has been changed!.')
   } catch (err: any) {
-    toastError(err?.message || 'Gagal mengubah password.')
+    toastError(err?.message || 'Failed to change password!.')
   } finally {
     isSavingPwd.value = false
   }
@@ -240,18 +240,14 @@ const iconPaths: Record<string, string> = {
   'credit-card': 'M1 4h22v16H1z M1 10h22',
   'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 8v4 M12 16h.01',
   'truck': 'M1 3h15v13H1z M16 8h4l3 3v5h-7z M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z M18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
-  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01', 
+  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01',
   'bell': 'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0',
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="open"
-      class="sidebar-backdrop"
-      @click="emit('close')"
-    />
+    <div v-if="open" class="sidebar-backdrop" @click="emit('close')" />
   </Teleport>
 
   <aside class="sidebar" :class="{ 'sidebar-open': open }">
@@ -262,44 +258,21 @@ const iconPaths: Record<string, string> = {
 
     <nav class="sidebar-nav" aria-label="Main navigation menu">
       <div v-for="group in menuGroups" :key="group.title" class="menu-group">
-        <button
-          class="menu-group-toggle"
-          :aria-expanded="expandedGroups.has(group.title)"
-          @click="toggleGroup(group.title)"
-        >
+        <button class="menu-group-toggle" :aria-expanded="expandedGroups.has(group.title)"
+          @click="toggleGroup(group.title)">
           <span class="menu-group-title">{{ group.title }}</span>
-          <svg
-            class="menu-group-chevron"
-            :class="{ 'chevron-open': expandedGroups.has(group.title) }"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="6 9 12 15 18 9"/>
+          <svg class="menu-group-chevron" :class="{ 'chevron-open': expandedGroups.has(group.title) }" width="14"
+            height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
 
         <ul v-show="expandedGroups.has(group.title)" class="menu-list">
           <li v-for="item in group.items" :key="item.route">
-            <button
-              class="menu-item"
-              :class="{ 'menu-item-active': isActive(item.route) }"
-              @click="navigate(item.route)"
-            >
-              <svg
-                class="menu-icon"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
+            <button class="menu-item" :class="{ 'menu-item-active': isActive(item.route) }"
+              @click="navigate(item.route)">
+              <svg class="menu-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path :d="iconPaths[item.icon] || iconPaths.grid" />
               </svg>
               <span>{{ item.label }}</span>
@@ -317,36 +290,43 @@ const iconPaths: Record<string, string> = {
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
           <span class="sidebar-user-role">{{
-            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Superadmin'
+            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c =>
+              c.toUpperCase()) : 'Superadmin'
           }}</span>
         </div>
       </div>
       <button class="btn-logout" title="Ubah Password" @click="openPwdModal">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
           <path d="M7 11V7a5 5 0 0110 0v4"></path>
         </svg>
       </button>
       <button class="btn-logout" title="Logout" @click="handleLogout">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
         </svg>
       </button>
     </div>
   </aside>
 
-  <FormModal :open="showPwdModal" title="Ubah Password" max-width="420px" @close="showPwdModal = false" @submit="submitPwdChange">
+  <FormModal :open="showPwdModal" title="Ubah Password" max-width="420px" @close="showPwdModal = false"
+    @submit="submitPwdChange">
     <div class="form-group">
       <label class="form-label">Password Lama</label>
-      <input v-model="pwdForm.old_password" type="password" class="form-input" placeholder="Password saat ini" autocomplete="current-password">
+      <input v-model="pwdForm.old_password" type="password" class="form-input" placeholder="Password saat ini"
+        autocomplete="current-password">
     </div>
     <div class="form-group">
       <label class="form-label">Password Baru (min. 6 karakter)</label>
-      <input v-model="pwdForm.new_password" type="password" class="form-input" placeholder="Password baru" autocomplete="new-password">
+      <input v-model="pwdForm.new_password" type="password" class="form-input" placeholder="Password baru"
+        autocomplete="new-password">
     </div>
     <div class="form-group">
       <label class="form-label">Konfirmasi Password Baru</label>
-      <input v-model="pwdForm.confirm_password" type="password" class="form-input" placeholder="Ulangi password baru" autocomplete="new-password">
+      <input v-model="pwdForm.confirm_password" type="password" class="form-input" placeholder="Ulangi password baru"
+        autocomplete="new-password">
     </div>
   </FormModal>
 </template>
@@ -383,6 +363,7 @@ const iconPaths: Record<string, string> = {
   .sidebar-backdrop {
     display: none;
   }
+
   .sidebar {
     transform: translateX(0);
   }

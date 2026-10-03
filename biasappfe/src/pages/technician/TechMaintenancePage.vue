@@ -21,9 +21,7 @@ const {
   findCustomer,
   findUnit,
   contractItems,
-  monthlyMeterReadings,
-  refresh
-} = useMasterStore()
+  monthlyMeterReadings, refreshInBackground } = useMasterStore()
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
@@ -172,7 +170,7 @@ async function completeMaintenance() {
 
       showDetailModal.value = false
       toast.success('Maintenance Completed!')
-      refresh(true)
+      refreshInBackground()
     } catch (err: any) {
       toast.error(err.message || 'Failed to complete maintenance')
     }

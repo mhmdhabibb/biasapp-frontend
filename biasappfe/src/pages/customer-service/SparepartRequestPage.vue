@@ -49,7 +49,7 @@ async function handleSubmit() {
       product_id: form.product_id,
       qty: Number(form.qty)
     })
-    await master.refresh(true)
+    await master.refreshInBackground()
     toast.success('Sparepart request created')
     showModal.value = false
   } catch (err) {

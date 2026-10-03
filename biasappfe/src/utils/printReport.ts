@@ -10,6 +10,7 @@ interface ReportCtx {
   custPhone: string;
   picName: string;
   custAddress: string;
+  custCategory: string;
   dateStr: string;
   contract: any;
   isCopier: boolean;
@@ -58,6 +59,7 @@ function buildCtx(item: any): ReportCtx {
     custPhone: customer.phone || "-",
     picName: customer.pic_name || "-",
     custAddress: customer.address || "-",
+    custCategory: item.customer_category || customer.category || "Corporate",
     dateStr: item.service_date
       ? new Date(item.service_date).toLocaleDateString("en-GB")
       : "-",
@@ -212,6 +214,8 @@ function resolveMeterAfter(item: any): string {
 }
 
 function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
+  const techName = item.technician_name_copier || item.technician_name || ctx.tech.name || ctx.tech.full_name || ctx.tech.user?.name || "";
+  const custName = item.customer_name_copier || item.customer_name || ctx.picName || "";
   return `
     <table class="grid-table" style="border-top: none;">
       <tr>
@@ -225,9 +229,9 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
         </td>
       </tr>
       <tr>
-          <td style="text-align: center;">TECHNICIAN<br>${ctx.tech.name || ctx.tech.full_name || ""}</td>
+          <td style="text-align: center;">TECHNICIAN<br>${techName}</td>
         <td style="padding: 0; vertical-align: bottom;">
-          <div style="text-align: center; margin-bottom: 2px;">CUSTOMER</div>
+          <div style="text-align: center; margin-bottom: 2px;">CUSTOMER<br>${custName}</div>
           <div class="bg-black" style="font-size: 9px; padding: 2px;">Signature & Company Stamp</div>
         </td>
       </tr>
@@ -238,16 +242,23 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
 function signatureBlockHtml(item: any, ctx: ReportCtx, type: 'technical' | 'history' = 'history'): string {
   const techSig = type === 'technical' ? item.technician_signature_technical : item.technician_signature;
   const custSig = type === 'technical' ? item.customer_signature_technical : item.customer_signature;
+  const techName = type === 'technical'
+    ? item.technician_name_technical || item.technician_name || ctx.tech.user?.name || ctx.tech.name || ctx.tech.full_name || ""
+    : item.technician_name || ctx.tech.user?.name || ctx.tech.name || ctx.tech.full_name || "";
+  const custName = type === 'technical'
+    ? item.customer_name_technical || item.customer_name || ctx.picName
+    : item.customer_name || ctx.picName;
   return `
     <div class="signature-block">
       <div class="sig-side">
         <div>TECHNICIAN</div>
         <div class="sig-line">${techSig ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
-        <div class="sig-name">${ctx.tech.name || ctx.tech.full_name || ""}</div>
+        <div class="sig-name">${techName}</div>
       </div>
       <div class="sig-side sig-customer">
         <div class="sig-cust">CUSTOMER<br>
           ${custSig ? '<img src="' + custSig + '" style="max-height: 50px;" />' : ""}
+          <div class="sig-name">${custName}</div>
         </div>
         <div class="sig-stamp">Signature & Company Stamp</div>
       </div>
@@ -273,7 +284,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
       <div class="section-title">CUSTOMER DETAIL</div>
       <table class="data-table">
         <tr><td class="label-col">Company Name</td><td class="val-col"> ${ctx.custName}</td></tr>
-        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.customer.category || "-"}</td></tr>
+        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.custCategory}</td></tr>
         <tr><td class="label-col">Project Name</td><td class="val-col"> ${item.project_name || "-"}</td></tr>
         <tr><td class="label-col">Address</td><td class="val-col"> ${ctx.custAddress}</td></tr>
         <tr><td class="label-col">Phone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
@@ -328,14 +339,14 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
        
        
         <tr>
-          <td>Date In : ${ctx.dateStr}</td>
+          <td>Date In ${ctx.dateStr}</td>
        
         </tr>
       </table>
       <div class="section-title">CUSTOMER DETAIL</div>
       <table class="data-table">
         <tr><td class="label-col">Company Name</td><td class="val-col"> ${ctx.custName}</td></tr>
-        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.customer.category || "-"}</td></tr>
+        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.custCategory}</td></tr>
         <tr><td class="label-col">Project Name</td><td class="val-col"> ${item.project_name || "-"}</td></tr>
         <tr><td class="label-col">Address</td><td class="val-col"> ${ctx.custAddress}</td></tr>
         <tr><td class="label-col">Phone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
@@ -353,16 +364,16 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col"> ${item.remarks || "-"}</td></tr>
       </table>
  
-       <table class="bottom-table">
+      <table class="bottom-table">
         <tr>
           <td style="width: 50%; border-right: 2px solid #000;">
             <div style="margin-bottom: 20px;">TESTED YES / NO</div>
           </td>
           <td>
-            <div class="kv"><div class="kv-k">Tested</div><div>: ${item.is_tested ? "YES" : "NO"}</div></div>
-            <div class="kv"><div class="kv-k">Complete</div><div>: ${item.is_completed ? "YES" : "NO"}</div></div>
-            <div class="kv"><div class="kv-k">Time in</div><div>: ${fmtTime(item.time_in)}</div></div>
-            <div class="kv"><div class="kv-k">Time Out</div><div>: ${fmtTime(item.time_out)}</div></div>
+            <div class="kv"><div class="kv-k">Tested</div><div>${item.is_tested ? "YES" : "NO"}</div></div>
+            <div class="kv"><div class="kv-k">Complete</div><div>${item.is_completed ? "YES" : "NO"}</div></div>
+            <div class="kv"><div class="kv-k">Time in</div><div>${fmtTime(item.time_in)}</div></div>
+            <div class="kv"><div class="kv-k">Time Out</div><div>${fmtTime(item.time_out)}</div></div>
           </td>
         </tr>
       </table>

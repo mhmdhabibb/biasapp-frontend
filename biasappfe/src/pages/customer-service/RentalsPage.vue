@@ -17,7 +17,7 @@ import { useI18n } from "vue-i18n";
 
 const toast = useToast();
 const { can } = usePermission();
-const { customers, units, products, payments, refresh } = useMasterStore();
+const { customers, units, products, payments, refreshInBackground } = useMasterStore();
 const { t } = useI18n();
 
 const columns = computed<TableColumn[]>(() => [
@@ -266,7 +266,7 @@ function onItemSelectChange(item: any) {
 }
 
 async function openAdd() {
-  await refresh(true);
+  await refreshInBackground();
   Object.assign(form, {
     customer_id: "",
     start_date: new Date().toISOString().slice(0, 10),
@@ -581,7 +581,7 @@ function printRentalPaymentReceipt(invoice: any, payment: any) {
 }
 
 onMounted(async () => {
-  await refresh(true);
+  await refreshInBackground();
   fetchRentals();
   try {
     const res = await resources.paperSizes.list();

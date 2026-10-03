@@ -12,15 +12,13 @@ const {
   jobOrders,
   getTechnicianIdByUser,
   findCustomer,
-  findUnit,
-  refresh
-} = useMasterStore()
+  findUnit, refreshInBackground } = useMasterStore()
 
 let refreshInterval: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
-  void refresh(true)
-  refreshInterval = setInterval(() => void refresh(true), 30000)
+  void refreshInBackground()
+  refreshInterval = setInterval(() => void refreshInBackground(), 30000)
 })
 
 onUnmounted(() => {

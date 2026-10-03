@@ -64,7 +64,7 @@ async function run(id: string | number, action: () => Promise<unknown>) {
   busyId.value = id
   try {
     await action()
-    await store.refresh(true)
+    await store.refreshInBackground()
   } catch (err) {
     toast.error(toast.fromError(err, 'Failed to update purchase order'))
   } finally {

@@ -12,6 +12,12 @@ export interface PaymentReceiptData {
   partial?: boolean;
   /** Metode pembayaran: 'Tunai' / 'Transfer'. Kosong bila tidak diketahui. */
   method?: string;
+  /** Nama pengirim dana (dari form payment). */
+  sender_name?: string;
+  /** Nama bank / rekening tujuan yang dicatat saat payment. */
+  bank_name?: string;
+  /** Berita/catatan saat payment. Hanya ditampilkan pada bukti bayar bila ada. */
+  notes?: string;
 }
 
 /** 'CASH' -> Tunai, bank lain -> Transfer, kosong -> undefined */
@@ -69,6 +75,121 @@ function spellNumber(value: number): string {
     return `${spellNumber(Math.floor(number / 1000000))} juta${number % 1000000 ? ` ${spellNumber(number % 1000000)}` : ""}`;
   }
   return String(number);
+}
+
+function formatMoney(value: number): string {
+  return value.toLocaleString("id-ID", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatTransactionDate(value: string): { date: string; time: string } {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return { date: "-", time: "-" };
+  return {
+    date: parsed.toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).replace(/\//g, "-"),
+    time: `${parsed.toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })} WIB`,
+  };
+}
+
+function extractSenderName(value?: string): string {
+  const match = String(value || "").match(/A\/N:\s*([^)]*)/i);
+  return match?.[1]?.trim() || "";
+}
+
+function extractSenderAccount(value?: string): string {
+  const match = String(value || "").match(/-\s*([^()]+)\s*(?:\(|$)/);
+  return match?.[1]?.trim() || "-";
+}
+
+function extractBankName(value?: string): string {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "-") return "-";
+  return raw.split("-")[0]?.trim() || raw;
+}
+
+export function printBankPaymentNote(payment: PaymentReceiptData): boolean {
+  if (payment.status !== "approved" || !payment.lunas) return false;
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return false;
+
+  const { date, time } = formatTransactionDate(payment.payment_date);
+  const bankName = payment.bank_name || payment.method || "-";
+  const adminFee = 0;
+  const total = payment.amount + adminFee;
+  const notes = String(payment.notes || "").trim();
+  const senderName = payment.sender_name || extractSenderName(payment.bank_name) || payment.customer_name || "-";
+  const senderAccount = extractSenderAccount(payment.bank_name);
+  const rows = [
+    ["Nomor Referensi", payment.reference_no || "-"],
+    ["Tanggal Transaksi", date],
+    ["Waktu Transaksi", time],
+    ["Nomor Rekening Tujuan", "-"],
+    ["Nama Rekening Tujuan", "PT BIAS SURYA TEKNOLOGI"],
+    ["Email Penerima", "-"],
+    ["Bank Tujuan", extractBankName(bankName)],
+    ["Nama Pengirim", senderName],
+    ["Nomor Rekening Pengirim", senderAccount],
+    ["Nominal", formatMoney(payment.amount)],
+    ["Biaya Admin", formatMoney(adminFee)],
+    ["Total", formatMoney(total)],
+  ];
+  const rowHtml = rows.map(([label, value], index) => `
+    ${index === 9 ? '<div class="divider"></div>' : ''}
+    <div class="row"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>
+  `).join("");
+  const notesHtml = notes
+    ? `<div class="row"><div class="label">Berita</div><div class="value">${escapeHtml(notes)}</div></div>`
+    : "";
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="id">
+      <head>
+        <meta charset="utf-8">
+        <title>Bukti Bayar - ${escapeHtml(payment.payment_no)}</title>
+        <style>
+          @page { size: 80mm auto; margin: 8mm; }
+          body { margin: 0; background: #fff; color: #2d2f33; font-family: Arial, Helvetica, sans-serif; }
+          .receipt { width: 100%; max-width: 360px; margin: 0 auto; padding: 18px 18px 22px; }
+          .brand { font-size: 28px; font-weight: 800; letter-spacing: 0.5px; color: #1f6f64; margin-bottom: 72px; }
+          .brand-mark { display: inline-block; color: #ef5b2a; margin-right: 6px; transform: skew(-10deg); }
+          .title { text-align: center; font-size: 22px; margin-bottom: 28px; }
+          .row { display: grid; grid-template-columns: 1fr 1.12fr; gap: 16px; align-items: start; margin: 22px 0; font-size: 16px; line-height: 1.45; }
+          .label { color: #2f3439; }
+          .value { color: #2f3439; text-align: right; word-break: break-word; }
+          .divider { height: 1px; background: #ddd; margin: 28px 0 8px; }
+          @media print { .receipt { max-width: none; } }
+        </style>
+      </head>
+      <body>
+        <main class="receipt">
+          <div class="brand"><span class="brand-mark">▰</span>BIAS</div>
+          <div class="title">Transaksi Berhasil</div>
+          ${rowHtml}
+          ${notesHtml}
+        </main>
+      </body>
+    </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 300);
+  return true;
 }
 
 export function printPaymentReceipt(payment: PaymentReceiptData): boolean {

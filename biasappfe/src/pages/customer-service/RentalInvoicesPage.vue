@@ -10,7 +10,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { RentalInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
-import { printPaymentSlip } from '@/utils/paymentReceipt'
+import { printPaymentSlip, printBankPaymentNote } from '@/utils/paymentReceipt'
 import { computed, reactive, ref } from 'vue'
 
 const toast = useToast()
@@ -204,7 +204,7 @@ async function exportInvoicesToExcel(
       const pic = customer?.pic_name || ''
       const picGender = customer?.pic_gender
       const picPhone = customer?.phone || ''
-      const picPrefix = picGender === 'L' ? 'Mr.' : picGender === 'P' ? 'Mrs.' : ''
+      const picPrefix = picGender === 'L' ? 'Bapak' : picGender === 'P' ? 'Ibu' : 'Bapak/Ibu'
       const picDisplay = pic ? ('PIC ' + (picPrefix ? picPrefix + ' ' : '') + pic + (picPhone ? ' - ' + picPhone : '')) : 'PIC Finance'
 
       const brandName = unit?.brand?.name || unit?.brand_name || ''
@@ -620,7 +620,7 @@ function openEdit(item: RentalInvoice) {
 async function handleUpdateStatus(item: any, newStatus: string) {
   try {
     await api.patch(`/rental-invoices/${item.id}`, { status: newStatus })
-    await refresh()
+    await refreshInBackground()
     toast.success(`Invoice status updated to ${newStatus}`)
   } catch (error: any) {
     toast.error('Failed to update status: ' + (error.message || 'Error'))
@@ -672,6 +672,7 @@ async function submitPayment() {
       amount: paymentForm.amount,
       payment_method: paymentForm.payment_method,
       bank_name: paymentForm.payment_method === 'cash' ? 'CASH' : finalBankName,
+      sender_name: paymentForm.sender_name,
       reference_no: paymentForm.reference || '-',
       notes: paymentForm.notes
     })
@@ -684,12 +685,15 @@ async function submitPayment() {
       payment_date: paymentForm.payment_date,
       amount: Number(paymentForm.amount || 0),
       reference_no: paymentForm.reference || '-',
+      sender_name: paymentForm.sender_name,
+      notes: paymentForm.notes,
+      bank_name: finalBankName,
       status: 'pending',
       method: paymentForm.payment_method === 'cash' ? 'Tunai' : 'Transfer',
     })
     if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak tanda terima.')
     showPaymentModal.value = false
-    refresh()
+    refreshInBackground()
   } catch (error: any) {
     toast.error('Failed to record payment: ' + (error.message || 'Error'))
   }
@@ -733,9 +737,9 @@ function invoiceHtml(item: any): string {
   const custAddress = customer?.address || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Mr./Mrs. '
-  if (gender === 'L') prefix = 'Mr. '
-  if (gender === 'P') prefix = 'Mrs. '
+  let prefix = 'Bapak/Ibu '
+  if (gender === 'L') prefix = 'Bapak '
+  if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
 
   const dateStr = item.invoice_date
@@ -1015,7 +1019,7 @@ function invoiceHtml(item: any): string {
       <div class="sig-col">
         <span class="sig-label">Received By,</span>
         <div class="sig-line"></div>
-        <div class="sig-name">&nbsp;</div>
+        <div class="sig-name">${picDisplay}</div>
       </div>
       <div class="sig-col">
         <span class="sig-label">PT. BiAS SURYA TEKNOLOGI</span>
@@ -1030,6 +1034,28 @@ function invoiceHtml(item: any): string {
 </html>`
 
   return html
+}
+
+function printReceipt(item: any) {
+  const approved = invoicePayments(item).find((payment: any) => payment.status === 'approved')
+  if (!approved) {
+    toast.warning('Bukti bayar tersedia setelah pembayaran disetujui Accounting.')
+    return
+  }
+  const opened = printBankPaymentNote({
+    payment_no: approved.payment_no,
+    invoice_no: item.invoice_no,
+    customer_name: customerName(item.customer_id),
+    payment_date: approved.payment_date,
+    amount: Number(approved.amount || 0),
+    reference_no: approved.reference_no || '-',
+    sender_name: approved.sender_name,
+    bank_name: approved.bank_name,
+    notes: approved.notes,
+    status: approved.status,
+    lunas: true,
+  })
+  if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
 }
 
 function printInvoice(item: any) {
@@ -1196,6 +1222,18 @@ function printInvoice(item: any) {
               <polyline points="6 9 6 2 18 2 18 9"></polyline>
               <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
               <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+          </button>
+          <button v-if="row.status === 'approved' && row.payment_status === 'paid' && can('rental_invoice:read')"
+            class="action-btn action-btn--edit" title="Bukti Bayar" @click="printReceipt(row)"
+            style="color: #0e7490; width: 36px; height: 36px;">
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
           </button>
           <button v-if="can('rental_invoice:update')" class="action-btn action-btn--edit" title="Edit"

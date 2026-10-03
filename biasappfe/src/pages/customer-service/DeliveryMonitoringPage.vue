@@ -49,7 +49,9 @@ const form = reactive({
   time_in: '',
   time_out: '',
   customer_signature: '',
-  technician_signature: ''
+  technician_signature: '',
+  customer_name: '',
+  technician_name: ''
 })
 
 function openEdit(item: any) {
@@ -62,7 +64,9 @@ function openEdit(item: any) {
     time_in: item.time_in || '',
     time_out: item.time_out || '',
     customer_signature: item.customer_signature || '',
-    technician_signature: item.technician_signature || ''
+    technician_signature: item.technician_signature || '',
+    customer_name: item.customer_name || '',
+    technician_name: item.technician_name || ''
   })
   showModal.value = true
 }
@@ -71,7 +75,7 @@ async function handleSubmit() {
   try {
     if (editingItem.value) {
       await useResourcesStore().update('deliveryOrders', String(editingItem.value.id), form)
-      await useMasterStore().refresh(true)
+      await useMasterStore().refreshInBackground()
     }
     showModal.value = false
   } catch (err) {
@@ -131,11 +135,15 @@ async function handleSubmit() {
       
       <div style="display: flex; gap: 1rem; margin-top: 1rem;">
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Technician Signature</label>
+          <label class="form-label">Technician Name</label>
+          <input v-model="form.technician_name" type="text" class="form-input" placeholder="Technician name">
+          <label class="form-label mt-sm">Technician Signature</label>
           <SignaturePad v-model="form.technician_signature" height="150px" />
         </div>
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Customer Signature</label>
+          <label class="form-label">Customer / PIC Name</label>
+          <input v-model="form.customer_name" type="text" class="form-input" placeholder="Customer PIC name">
+          <label class="form-label mt-sm">Customer Signature</label>
           <SignaturePad v-model="form.customer_signature" height="150px" />
         </div>
       </div>

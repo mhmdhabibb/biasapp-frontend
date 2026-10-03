@@ -13,6 +13,7 @@ import type { SalesInvoice, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
+import { printBankPaymentNote } from '@/utils/paymentReceipt'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -418,7 +419,7 @@ async function handleSubmit() {
       await resources.create("salesInvoices", form)
       toast.success("Success create new invoice")
     }
-    useMasterStore().refresh(true)
+    useMasterStore().refreshInBackground()
     showModal.value = false
   } catch (error) {
     toast.error("Failed to save invoice")
@@ -430,7 +431,7 @@ async function handleDelete() {
   if (deletingItem.value) {
     try {
       await resources.remove("salesInvoices", deletingItem.value.id as any)
-      useMasterStore().refresh(true)
+      useMasterStore().refreshInBackground()
       toast.success("Invoice deleted successfully!")
     } catch (error) {
       toast.error("Failed to delete invoice!")
@@ -442,7 +443,7 @@ async function handleDelete() {
 async function handleUpdateStatus(item: any, newStatus: string) {
   try {
     await api.patch(`/sales-invoices/${item.id}`, { status: newStatus })
-    await useMasterStore().refresh(true)
+    await useMasterStore().refreshInBackground()
     toast.success(`Invoice status updated to ${newStatus}`)
   } catch (error: any) {
     toast.error('Failed to update status: ' + (error.message || 'Error'))
@@ -471,9 +472,9 @@ function invoiceHtml(item: any): string {
   const custPhone = customer?.phone || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Mr./Mrs. '
-  if (gender === 'L') prefix = 'Mr. '
-  if (gender === 'P') prefix = 'Mrs. '
+  let prefix = 'Bapak/Ibu '
+  if (gender === 'L') prefix = 'Bapak '
+  if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
   
   const invoiceNo = item.invoice_no || '-'
@@ -683,7 +684,7 @@ function invoiceHtml(item: any): string {
           ${stampHtml}
           <div class="signatures">
             <div class="sig-box">
-              Received By,
+              Received By, (${picDisplay})
               <div class="sig-line"></div>
             </div>
             <div class="sig-box">

@@ -125,7 +125,7 @@ async function handleSubmit() {
     } else {
       await resources.create("payments", form);
     }
-    useMasterStore().refresh(true);
+    useMasterStore().refreshInBackground();
     showModal.value = false;
     toast.success(
       editingItem.value
@@ -163,7 +163,7 @@ async function handleDelete() {
   if (deletingItem.value) {
     try {
       await resources.remove("payments", deletingItem.value.id as any);
-      useMasterStore().refresh(true);
+      useMasterStore().refreshInBackground();
       toast.success("Payment successfully deleted!");
     } catch (error) {
       toast.error("Failed to delete payment!");
@@ -192,7 +192,7 @@ async function updateApprovalStatus(
   }
   try {
     await resources.update("payments", String(item.id), { status });
-    await useMasterStore().refresh(true);
+    await useMasterStore().refreshInBackground();
     toast.success(
       status === "approved" ? "Payment approved." : "Payment rejected.",
     );
