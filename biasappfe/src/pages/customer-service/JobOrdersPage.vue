@@ -8,12 +8,11 @@ import { isCopierReport } from "@/utils/copierReport";
 import { computed, onMounted, ref } from "vue";
 
 const toast = useToast();
-const { technicians, units, products } = useMasterStore();
+const { technicians, units, products, serviceReports, refreshOnly } = useMasterStore();
 
 const jobOrders = ref<any[]>([]);
 const serviceRequests = ref<any[]>([]);
 const deliveryOrders = ref<any[]>([]);
-const serviceReports = ref<any[]>([]);
 const activeTab = ref("sr");
 const draggedTask = ref<any | null>(null);
 
@@ -74,12 +73,9 @@ async function fetchDeliveryOrders() {
 }
 
 async function fetchServiceReports() {
-  try {
-    const data = await api.get<{ data: any[] }>("/service-reports");
-    serviceReports.value = data.data || [];
-  } catch (error) {
-    console.error("Failed to fetch data service reports", error);
-  }
+  // Master store: limit 100 + auto-refresh (interval & visibility),
+  // jadi tab Visits selalu memakai data terbaru tanpa fetch terpisah.
+  await refreshOnly(["serviceReports"]);
 }
 
 onMounted(() => {

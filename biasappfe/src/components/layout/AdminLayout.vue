@@ -10,7 +10,7 @@ import { useAuth } from "@/composables/useAuth";
 const route = useRoute();
 const sidebarOpen = ref(false);
 
-const { refreshInBackground } = useMasterStore();
+const { refreshInBackground, refreshIfStale } = useMasterStore();
 const { currentUser } = useAuth();
 
 let adminInterval: any = null;
@@ -32,12 +32,22 @@ onMounted(() => {
   adminInterval = setInterval(() => {
     refreshInBackground();
   }, 30000);
+  // Kembali dari tab browser lain / minimize: refresh silent bila data basi,
+  // jadi tidak perlu reload manual agar angka & tabel muncul terbaru.
+  document.addEventListener("visibilitychange", onVisibleTab);
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", handleResize);
+  document.removeEventListener("visibilitychange", onVisibleTab);
   if (adminInterval) clearInterval(adminInterval);
 });
+
+function onVisibleTab() {
+  if (document.visibilityState === "visible") {
+    void refreshIfStale();
+  }
+}
 
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {

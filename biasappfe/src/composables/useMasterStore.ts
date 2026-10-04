@@ -52,6 +52,9 @@ const store = reactive({
 
 let syncPromise: Promise<void> | null = null;
 let syncing = false;
+// Waktu sync penuh terakhir (ms epoch). Dipakai refreshIfStale agar kembali
+// ke tab browser / navigasi tidak memicu sync berulang bila data masih segar.
+let lastFullSyncAt = 0;
 
 export function useMasterStore() {
   const resources = useResourcesStore();
@@ -184,6 +187,7 @@ export function useMasterStore() {
     if (syncing && syncPromise) return syncPromise;
     syncing = true;
 
+    const isFullSync = !names || names.length === 0;
     const registry = buildSyncTasks(tracksLoading);
     const picked = (
       names && names.length > 0
@@ -195,6 +199,7 @@ export function useMasterStore() {
       .then(() => undefined)
       .finally(() => {
         syncing = false;
+        if (isFullSync) lastFullSyncAt = Date.now();
       });
     return syncPromise;
   }
@@ -208,6 +213,17 @@ export function useMasterStore() {
   function refreshOnly(names: string[]) {
     if (!names || names.length === 0) return refreshInBackground();
     return runSyncTasks(names, false);
+  }
+
+  /**
+   * Refresh hanya bila data terakhir sudah basi (lebih tua dari maxAgeMs).
+   * Dipakai saat tab browser kembali aktif / navigasi, agar data selalu
+   * segar tanpa perlu reload manual — tapi tidak menghantam backend bila
+   * data masih segar.
+   */
+  function refreshIfStale(maxAgeMs = 15000) {
+    if (Date.now() - lastFullSyncAt < maxAgeMs) return Promise.resolve();
+    return refreshInBackground();
   }
 
   syncFromApi();
@@ -308,6 +324,7 @@ export function useMasterStore() {
     refresh: syncFromApi,
     refreshInBackground: () => syncFromApi(true, false),
     refreshOnly,
+    refreshIfStale,
     findCustomer,
     findTechnician,
     findUnit,
