@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -24,6 +25,8 @@ const {
   contractItems,
   customers,
   technicians,
+  units,
+  products,
   sparepartRequests,
   findContractItem,
   findCustomer,
@@ -31,6 +34,54 @@ const {
   findProduct,
   findServiceReport,
 } = useMasterStore()
+
+const customerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name,
+  })),
+)
+
+const unitOptions = computed(() =>
+  (units.value as any[]).map((u: any) => ({
+    value: u.id,
+    label: `${u.model} (SN: ${u.serial_number})`,
+  })),
+)
+
+const serviceTypeOptions = [
+  { value: 'corrective', label: 'Corrective' },
+  { value: 'preventive', label: 'Preventive' },
+  { value: 'installation', label: 'Installation' },
+  { value: 'relocation', label: 'Relocation' },
+]
+
+const technicianOptions = computed(() =>
+  (technicians.value as any[]).map((t: any) => ({
+    value: t.id,
+    label: t.name,
+  })),
+)
+
+const statusOptions = [
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'Continue (In Progress)' },
+  { value: 'completed', label: 'Done (Test OK)' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
+
+const sparepartProductOptions = computed(() =>
+  (products.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+)
+
+const printTypeOptions = [
+  { value: 'technical', label: 'Technical Report Form' },
+  { value: 'history', label: 'Service History Form' },
+  { value: 'copier', label: 'Copier Service Report' },
+]
 
 // Tab: service reports | delivery history | sparepart requests
 const activeTab = ref<'service' | 'delivery' | 'sparepart'>('service')
@@ -141,7 +192,7 @@ const columns: TableColumn[] = [
 // Copier report punya list tersendiri (CopierReportsPage) — disembunyikan
 // dari list Service Reports.
 const serviceOnlyReports = computed(() =>
-  ((data as any)?.value || data as any[]).filter(
+  data.value.filter(
     (item: any) => !isCopierReport(item),
   ),
 )
@@ -213,7 +264,7 @@ function openEdit(item: any) {
 }
 
 function handleSubmit() {
-  if (!form.report_no.trim() && !form.service_report_no?.trim()) return
+  if (!form.report_no.trim()) return
   
   const finalForm = { ...form, service_report_no: form.report_no }
   
@@ -433,33 +484,19 @@ function printTable() {
       </div>
       <div class="form-group">
         <label for="sr-customer" class="form-label">Customer</label>
-        <select id="sr-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ (c as any).company_name || (c as any).name }}</option>
-        </select>
+        <CustomSelect id="sr-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div class="form-group">
         <label class="form-label">Unit / Machine</label>
-        <select v-model="form.unit_id" class="form-select">
-          <option :value="null">-- Select Unit --</option>
-          <option v-for="u in (useMasterStore().units as any)" :key="u.id" :value="u.id">{{ u.model }} (SN: {{ u.serial_number }})</option>
-        </select>
+        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="sr-type" class="form-label">Service Type</label>
-        <select id="sr-type" v-model="form.service_type" class="form-select">
-          <option value="corrective">Corrective</option>
-          <option value="preventive">Preventive</option>
-          <option value="installation">Installation</option>
-          <option value="relocation">Relocation</option>
-        </select>
+        <CustomSelect id="sr-type" v-model="form.service_type" :options="serviceTypeOptions" class="form-select" />
       </div>
       <div class="form-group">
         <label for="sr-tech" class="form-label">Technician</label>
-        <select id="sr-tech" v-model="form.technician_id" class="form-select">
-          <option :value="null">-- Select Technician --</option>
-          <option v-for="t in technicians" :key="t.id" :value="t.id">{{ (t as any).name }}</option>
-        </select>
+        <CustomSelect id="sr-tech" v-model="form.technician_id" :options="technicianOptions" placeholder="-- Select Technician --" class="form-select" />
       </div>
       <div class="form-group">
         <label class="form-label">Project Name</label>
@@ -497,12 +534,7 @@ function printTable() {
       </div>
       <div class="form-group">
         <label for="sr-status" class="form-label">Status</label>
-        <select id="sr-status" v-model="form.status" class="form-select">
-          <option value="open">Open</option>
-          <option value="in_progress">Continue (In Progress)</option>
-          <option value="completed">Done (Test OK)</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
+        <CustomSelect id="sr-status" v-model="form.status" :options="statusOptions" class="form-select" />
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -517,10 +549,7 @@ function printTable() {
       <div class="form-group" v-if="form.status === 'in_progress' || true">
         <label class="form-label">Change Sparepart / Component Replacement</label>
         <div v-for="(sp, idx) in form.spareparts" :key="idx" style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <select v-model="sp.product_id" class="form-select" style="flex: 1;">
-            <option value="" disabled>Select Product (Sparepart)...</option>
-            <option v-for="p in useMasterStore().products" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
+          <CustomSelect v-model="sp.product_id" :options="sparepartProductOptions" placeholder="Select Product (Sparepart)..." class="form-select" style="flex: 1;" />
           <input type="number" v-model="sp.qty" class="form-input" style="width: 80px;" min="1" placeholder="Qty">
           <button type="button" class="btn btn-sm btn-outline" @click="form.spareparts.splice(idx, 1)">Delete</button>
         </div>
@@ -580,11 +609,7 @@ function printTable() {
     <FormModal :open="printModalOpen" title="Select Report Type" @close="printModalOpen = false" @submit="handleConfirmPrint">
       <div class="form-group">
         <label class="form-label">Report Type (PDF)</label>
-        <select v-model="printType" class="form-select">
-          <option value="technical">Technical Report Form</option>
-          <option value="history">Service History Form</option>
-          <option value="copier">Copier Service Report</option>
-        </select>
+        <CustomSelect v-model="printType" :options="printTypeOptions" class="form-select" />
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="printModalOpen = false">Cancel</button>

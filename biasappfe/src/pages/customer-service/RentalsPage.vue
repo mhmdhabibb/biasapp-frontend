@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DataTable from "@/components/ui/DataTable.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAuth } from "@/composables/useAuth";
@@ -205,6 +206,47 @@ const unavailableUnits = computed(() =>
     return s !== "available" && s !== "";
   }),
 );
+
+const rentPaymentMethodOptions = [
+  { value: "transfer", label: "Bank Transfer" },
+  { value: "cash", label: "Cash" },
+];
+const rentCustomerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label:
+      `${(c as any).company_name || (c as any).name}` +
+      `${(c as any).pic_name ? " - " + (c as any).pic_name : ""}`,
+  })),
+);
+const rentUnitOptions = computed(() => [
+  ...(availableUnits.value as any[]).map((u: any) => ({
+    value: "unit_" + u.id,
+    label: `${u.model} (${(u as any).brand?.name}) — S/N: ${u.serial_no || "N/A"}`,
+  })),
+  ...(unavailableUnits.value as any[]).map((u: any) => ({
+    value: "unit_" + u.id,
+    label: `${u.model} (${(u as any).brand?.name}) — S/N: ${u.serial_no || "N/A"} — ${unitStatusOf(u)}`,
+    disabled: true,
+  })),
+]);
+const rentPaperSizeOptions = computed(() => [
+  { value: "", label: "— Semua ukuran —" },
+  ...(paperSizes.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+]);
+const rentPaperTypeOptions = computed(() =>
+  (paperTypes.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+);
+const rentQuotaAppliesToOptions = [
+  { value: "color", label: "Warna (BW ditagih penuh)" },
+  { value: "bw", label: "BW (Warna ditagih penuh)" },
+];
 
 function addRentalItem() {
   rentalItems.value.push({
@@ -1017,10 +1059,7 @@ onMounted(async () => {
       </div>
       <div class="form-group">
         <label class="form-label">Payment Method</label>
-        <select v-model="paymentForm.payment_method" class="form-select">
-          <option value="transfer">Bank Transfer</option>
-          <option value="cash">Cash</option>
-        </select>
+        <CustomSelect v-model="paymentForm.payment_method" :options="rentPaymentMethodOptions" class="form-select" />
       </div>
       <template v-if="paymentForm.payment_method === 'transfer'">
         <div class="form-group">
@@ -1102,18 +1141,13 @@ onMounted(async () => {
         <label for="rent-customer" class="form-label">{{
           t("rentals.customer_label")
         }}</label>
-        <select
+        <CustomSelect
           id="rent-customer"
           v-model="form.customer_id"
+          :options="rentCustomerOptions"
+          :placeholder="t('rentals.customer_select')"
           class="form-select"
-          required
-        >
-          <option value="">{{ t("rentals.customer_select") }}</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">
-            {{ (c as any).company_name || (c as any).name
-            }}{{ (c as any).pic_name ? " - " + (c as any).pic_name : "" }}
-          </option>
-        </select>
+        />
       </div>
 
       <div class="form-row">
@@ -1243,31 +1277,13 @@ onMounted(async () => {
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
           <label class="form-label">Select Unit</label>
-          <select
+          <CustomSelect
             v-model="item.selected_item"
+            :options="rentUnitOptions"
+            placeholder="-- Select Unit --"
             class="form-select"
-            required
-            @change="onItemSelectChange(item)"
-          >
-            <option value="">-- Select Unit --</option>
-            <option
-              v-for="u in availableUnits"
-              :key="u.id"
-              :value="'unit_' + u.id"
-            >
-              {{ u.model }} ({{ (u as any).brand?.name }}) — S/N:
-              {{ u.serial_no || "N/A" }}
-            </option>
-            <option
-              v-for="u in unavailableUnits"
-              :key="u.id"
-              :value="'unit_' + u.id"
-              disabled
-            >
-              {{ u.model }} ({{ (u as any).brand?.name }}) — S/N:
-              {{ u.serial_no || "N/A" }} — {{ unitStatusOf(u) }}
-            </option>
-          </select>
+            @update:modelValue="onItemSelectChange(item)"
+          />
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
@@ -1428,32 +1444,25 @@ onMounted(async () => {
                     >Ukuran Kertas
                     <span class="text-muted">(opsional)</span></label
                   >
-                  <select
+                  <CustomSelect
                     v-model="rate.paper_size_id"
+                    :options="rentPaperSizeOptions"
                     class="form-select"
                     style="font-size: 0.8rem"
-                  >
-                    <option value="">&#8212; Semua ukuran &#8212;</option>
-                    <option v-for="p in paperSizes" :key="p.id" :value="p.id">
-                      {{ p.name }}
-                    </option>
-                  </select>
+                  />
                 </div>
                 <div class="form-group" style="margin: 0">
                   <label class="form-label"
                     >Jenis Kertas
                     <span class="text-muted">(opsional)</span></label
                   >
-                  <select
+                  <CustomSelect
                     v-model="rate.paper_type_id"
+                    :options="rentPaperTypeOptions"
+                    placeholder="— Semua jenis —"
                     class="form-select"
                     style="font-size: 0.8rem"
-                  >
-                    <option :value="null">&#8212; Semua jenis &#8212;</option>
-                    <option v-for="p in paperTypes" :key="p.id" :value="p.id">
-                      {{ p.name }}
-                    </option>
-                  </select>
+                  />
                 </div>
                 <div class="form-group" style="margin: 0">
                   <label class="form-label">Tarif BW per lembar (Rp)</label>
@@ -1505,15 +1514,13 @@ onMounted(async () => {
                 </div>
                 <div class="form-group" style="margin: 0">
                   <label class="form-label">Kuota gratis berlaku untuk</label>
-                  <select
+                  <CustomSelect
                     v-model="rate.quota_applies_to"
+                    :options="rentQuotaAppliesToOptions"
                     class="form-select"
                     style="font-size: 0.8rem"
                     title="Free quota applies to"
-                  >
-                    <option value="color">Warna (BW ditagih penuh)</option>
-                    <option value="bw">BW (Warna ditagih penuh)</option>
-                  </select>
+                  />
                 </div>
               </div>
               <div

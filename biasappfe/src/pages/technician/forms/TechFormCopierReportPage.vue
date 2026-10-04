@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
@@ -83,6 +84,12 @@ const form = ref({
 })
 const isLoading = ref(true)
 const isSaving = ref(false)
+
+const copyQualityOptions = [
+  { value: 'Good', label: 'Good' },
+  { value: 'Fair', label: 'Fair' },
+  { value: 'Poor', label: 'Poor' },
+]
 
 // ---- Meter per ukuran kertas ----
 // Section per paper size (dari readings yang terhubung ke report ini +
@@ -413,11 +420,7 @@ async function saveForm() {
 
       <div class="form-group">
         <label class="form-label">Copy Quality Check</label>
-        <select v-model="form.copy_quality" class="form-select">
-          <option>Good</option>
-          <option>Fair</option>
-          <option>Poor</option>
-        </select>
+        <CustomSelect v-model="form.copy_quality" class="form-select" :options="copyQualityOptions" />
       </div>
 
       <div class="form-group">

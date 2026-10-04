@@ -1,12 +1,14 @@
 <script setup lang="ts">
 // @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
+import { useAuth } from '@/composables/useAuth'
 import { useResourcesStore } from '@/stores/resources.store'
 import { api } from '@/services/api'
 import type { SalesInvoice, TableColumn } from '@/types'
@@ -17,6 +19,13 @@ import { printPaymentStruk, paymentMethodOf, buildPaymentVerifyUrl, generatePaym
 
 const toast = useToast()
 const { can } = usePermission()
+const { currentUser } = useAuth()
+
+/** Penanda tangan dokumen: pembuat invoice (user backend), fallback user login. */
+function signerName(item: any): string {
+  return item?.user?.name || item?.user?.username
+    || (currentUser as any)?.value?.name || (currentUser as any)?.name || '-'
+}
 const {
   salesInvoices: data,
   sales,
@@ -84,6 +93,24 @@ const form = reactive({
 })
 
 const defaultForm = { ...form }
+
+const siSaleOptions = computed(() =>
+  (sales.value as any[]).map((s: any) => ({
+    value: s.id,
+    label: `${s.sale_no} — ${formatRupiah(s.total)}`,
+  })),
+)
+const siCustomerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name || '-',
+  })),
+)
+const siStatusOptions = [
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'overdue', label: 'Overdue' },
+]
 
 // Date Range & Month Filters
 const startDateFilter = ref('')
@@ -338,7 +365,7 @@ async function exportInvoicesToExcel(
       addRow([])
       addRow([{ v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {}, {}, { v: 'Received By,' }, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
       addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Account No. 106-08-85757', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { style: 'border' }])
-      addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { v: 'Grace', style: 'plainBold' }])
+      addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { v: signerName(item), style: 'plainBold' }])
       addRow([])
     }
 
@@ -517,6 +544,7 @@ function invoiceHtml(item: any): string {
   if (gender === 'L') prefix = 'Bapak '
   if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
+  const signer = signerName(item)
   
   const invoiceNo = item.invoice_no || '-'
   const invoiceDate = item.created_at || item.due_date
@@ -731,7 +759,7 @@ function invoiceHtml(item: any): string {
             </div>
             <div class="sig-box">
               Sincerely,
-              <div class="sig-line">Grace</div>
+              <div class="sig-line">${signer}</div>
             </div>
           </div>
         </div>
@@ -786,7 +814,7 @@ async function printReceiptAsync(item: any, approved: any) {
     lunas: ps === 'paid',
     partial: ps === 'partially_paid' || ps === 'partial',
     method: paymentMethodOf(approved.bank_name),
-    cs_name: approved.user?.name || approved.user?.username || '-',
+    cs_name: approved.user?.name || approved.user?.username || (currentUser as any)?.value?.name || (currentUser as any)?.name || '-',
   }
   const win = window.open('', '_blank')
   if (!win) {
@@ -913,17 +941,11 @@ async function printReceiptAsync(item: any, approved: any) {
       </div>
       <div class="form-group">
         <label for="si-sale" class="form-label">Sale Reference</label>
-        <select id="si-sale" v-model="form.sale_id" class="form-select" @change="onSaleChange">
-          <option :value="null">-- Select Sale --</option>
-          <option v-for="s in sales" :key="s.id" :value="s.id">{{ s.sale_no }} — {{ formatRupiah(s.total) }}</option>
-        </select>
+        <CustomSelect id="si-sale" v-model="form.sale_id" :options="siSaleOptions" placeholder="-- Select Sale --" class="form-select" @update:modelValue="onSaleChange" />
       </div>
       <div class="form-group">
         <label for="si-customer" class="form-label">Customer</label>
-        <select id="si-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
-        </select>
+        <CustomSelect id="si-customer" v-model="form.customer_id" :options="siCustomerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="si-due" class="form-label">Due Date</label>
@@ -952,11 +974,7 @@ async function printReceiptAsync(item: any, approved: any) {
       </div>
       <div class="form-group">
         <label for="si-status" class="form-label">Status</label>
-        <select id="si-status" v-model="form.status" class="form-select">
-          <option value="unpaid">Unpaid</option>
-          <option value="paid">Paid</option>
-          <option value="overdue">Overdue</option>
-        </select>
+        <CustomSelect id="si-status" v-model="form.status" :options="siStatusOptions" class="form-select" />
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Sales Invoice" :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />

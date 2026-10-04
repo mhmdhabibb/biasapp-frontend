@@ -6,6 +6,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { isCopierReport } from '@/utils/copierReport'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 
 const router = useRouter()
 const { currentUser } = useAuth()
@@ -74,6 +75,16 @@ const SERVICE_TYPE_LABELS: Record<string, string> = {
   meter_reading: 'Meter Reading'
 }
 
+const serviceTypeOptions = [
+  { value: '', label: 'All Types' },
+  { value: 'regular', label: 'Regular' },
+  { value: 'repair', label: 'Repair' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'installation', label: 'Installation' },
+  { value: 'emergency', label: 'Emergency' },
+  { value: 'meter_reading', label: 'Meter Reading' },
+]
+
 function getServiceTypeLabel(type: string) {
   return SERVICE_TYPE_LABELS[type] || type || '-'
 }
@@ -109,15 +120,7 @@ function getTechName(id: number | null) {
         </div>
         <div class="form-group mb-0">
           <label class="form-label">Service Type</label>
-          <select v-model="filterType" class="form-select">
-            <option value="">All Types</option>
-            <option value="regular">Regular</option>
-            <option value="repair">Repair</option>
-            <option value="maintenance">Maintenance</option>
-            <option value="installation">Installation</option>
-            <option value="emergency">Emergency</option>
-            <option value="meter_reading">Meter Reading</option>
-          </select>
+          <CustomSelect v-model="filterType" class="form-select" :options="serviceTypeOptions" />
         </div>
       </div>
     </div>

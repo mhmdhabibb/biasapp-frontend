@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -410,7 +411,7 @@ async function exportInvoicesToExcel(
       addRow([{ v: 'Received By,', mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'plainBoldCenter' }])
       addRow([])
       addRow([{ v: '_______________________', mergeAcross: 1, style: 'plainCenter' }, {}, {}, { v: '_______________________', mergeAcross: 1, style: 'plainCenter' }])
-      addRow([{ v: '', mergeAcross: 1 }, {}, {}, { v: 'Grace Hutapea', mergeAcross: 1, style: 'plainBoldCenter' }])
+      addRow([{ v: '', mergeAcross: 1 }, {}, {}, { v: item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-', mergeAcross: 1, style: 'plainBoldCenter' }])
       addRow([{}, {}, { v: 'Admin Finance', mergeAcross: 2, style: 'plainCenter' }])
       addRow([])
     }
@@ -469,6 +470,36 @@ const form = reactive({
 })
 
 const defaultForm = { ...form }
+
+const customerFilterOptions = computed(() => [
+  { value: '', label: 'All Customers' },
+  ...(customers.value as any[]).map((customer: any) => ({
+    value: String(customer.id),
+    label: customer.company_name || customer.name || '-',
+  })),
+])
+const riContractOptions = computed(() =>
+  (contractItems.value as any[]).map((ci: any) => ({
+    value: ci.id,
+    label: ci.contract_no,
+  })),
+)
+const riCustomerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name || '-',
+  })),
+)
+const riStatusOptions = [
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'overdue', label: 'Overdue' },
+]
+const riPaymentMethodOptions = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'transfer', label: 'Bank Transfer' },
+  { value: 'credit_card', label: 'Credit / Debit Card' },
+]
 
 async function exportAnnualExcel() {
   if (isExporting.value) return
@@ -771,6 +802,7 @@ function invoiceHtml(item: any): string {
   if (gender === 'L') prefix = 'Bapak '
   if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
+  const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
 
   const dateStr = item.invoice_date
     ? new Date(item.invoice_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
@@ -1064,7 +1096,7 @@ function invoiceHtml(item: any): string {
       <div class="sig-col">
         <span class="sig-label">PT. BiAS SURYA TEKNOLOGI</span>
         <div class="sig-line"></div>
-        <div class="sig-name">Grace Hutapea</div>
+        <div class="sig-name">${signer}</div>
         <div class="sig-role">Admin Finance</div>
       </div>
     </div>
@@ -1148,11 +1180,7 @@ function printInvoice(item: any) {
         </div>
         <div class="filter-item">
           <label class="filter-label">Customer</label>
-          <select v-model="customerFilter" class="form-select filter-input">
-            <option value="">All Customers</option>
-            <option v-for="customer in customers" :key="customer.id" :value="String(customer.id)">{{
-              customer.company_name || customer.name || '-' }}</option>
-          </select>
+          <CustomSelect v-model="customerFilter" :options="customerFilterOptions" class="form-select filter-input" />
         </div>
         <button v-if="startDateFilter || endDateFilter || monthFilter || customerFilter" type="button"
           class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
@@ -1318,17 +1346,11 @@ function printInvoice(item: any) {
       </div>
       <div class="form-group">
         <label for="ri-contract" class="form-label">Contract</label>
-        <select id="ri-contract" v-model="form.contract_item_id" class="form-select" @change="onContractChange">
-          <option :value="null">-- Select Contract --</option>
-          <option v-for="ci in contractItems" :key="ci.id" :value="ci.id">{{ ci.contract_no }}</option>
-        </select>
+        <CustomSelect id="ri-contract" v-model="form.contract_item_id" :options="riContractOptions" placeholder="-- Select Contract --" class="form-select" @update:modelValue="onContractChange" />
       </div>
       <div class="form-group">
         <label for="ri-customer" class="form-label">Customer</label>
-        <select id="ri-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
-        </select>
+        <CustomSelect id="ri-customer" v-model="form.customer_id" :options="riCustomerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -1401,11 +1423,7 @@ function printInvoice(item: any) {
       </div>
       <div class="form-group">
         <label for="ri-status" class="form-label">Status</label>
-        <select id="ri-status" v-model="form.status" class="form-select">
-          <option value="unpaid">Unpaid</option>
-          <option value="paid">Paid</option>
-          <option value="overdue">Overdue</option>
-        </select>
+        <CustomSelect id="ri-status" v-model="form.status" :options="riStatusOptions" class="form-select" />
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Invoice"
@@ -1493,11 +1511,7 @@ function printInvoice(item: any) {
       </div>
       <div class="form-group">
         <label class="form-label">Payment Method</label>
-        <select v-model="paymentForm.payment_method" class="form-select" required>
-          <option value="cash">Cash</option>
-          <option value="transfer">Bank Transfer</option>
-          <option value="credit_card">Credit / Debit Card</option>
-        </select>
+        <CustomSelect v-model="paymentForm.payment_method" :options="riPaymentMethodOptions" class="form-select" />
       </div>
 
       <template v-if="paymentForm.payment_method === 'transfer'">

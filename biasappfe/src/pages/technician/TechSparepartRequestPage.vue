@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
@@ -33,6 +34,14 @@ const myActiveReports = computed(() =>
 
 // In a real app, products would be filtered to spareparts category
 const availableSpareparts = computed(() => products.value)
+
+const serviceReportOptions = computed(() =>
+  myActiveReports.value.map((sr: any) => ({ value: sr.id, label: sr.report_no })),
+)
+
+const sparepartOptions = computed(() =>
+  availableSpareparts.value.map((p: any) => ({ value: p.id, label: `${p.name} (Stock: ${p.stock})` })),
+)
 
 const form = ref({
   service_report_id: serviceId,
@@ -72,22 +81,12 @@ async function submitRequest() {
 
       <div class="form-group">
         <label class="form-label">Related Job (Service No)</label>
-        <select v-model="form.service_report_id" class="form-select">
-          <option :value="null">-- Select Service Report --</option>
-          <option v-for="sr in myActiveReports" :key="sr.id" :value="sr.id">
-            {{ sr.report_no }}
-          </option>
-        </select>
+        <CustomSelect v-model="form.service_report_id" class="form-select" :options="serviceReportOptions" placeholder="-- Select Service Report --" />
       </div>
 
       <div class="form-group">
         <label class="form-label">Sparepart <span class="text-danger">*</span></label>
-        <select v-model="form.product_id" class="form-select">
-          <option :value="null">-- Select Sparepart --</option>
-          <option v-for="p in availableSpareparts" :key="p.id" :value="p.id">
-            {{ p.name }} (Stock: {{ p.stock }})
-          </option>
-        </select>
+        <CustomSelect v-model="form.product_id" class="form-select" :options="sparepartOptions" placeholder="-- Select Sparepart --" />
       </div>
 
       <div class="form-group">

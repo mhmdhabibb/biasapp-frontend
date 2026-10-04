@@ -8,6 +8,7 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { useResourcesStore } from '@/stores/resources.store'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
+import { useAuth } from '@/composables/useAuth'
 import { useRouter } from 'vue-router'
 import type { TableColumn, PurchaseOrder } from '@/types'
 
@@ -16,6 +17,49 @@ const store = useMasterStore()
 const resources = useResourcesStore()
 const toast = useToast()
 const router = useRouter()
+const { currentUser } = useAuth()
+
+/** PO dari sparepart request tidak punya customer_id langsung:
+ *  fallback lewat service report terkait agar data customer tetap muncul. */
+function resolvePORequest(po: any) {
+  if (!po) return null
+  if (po.sparepart_request) return po.sparepart_request
+  const id = po.sparepart_request_id
+  if (id == null) return null
+  return (store.sparepartRequests.value as any[]).find((r: any) => String(r.id) === String(id)) || null
+}
+
+function resolvePOCustomer(po: any) {
+  if (!po) return null
+  if (po.customer) return po.customer
+  if (po.customer_id) {
+    const direct = store.findCustomer(po.customer_id as any)
+    if (direct) return direct
+  }
+  const req: any = resolvePORequest(po)
+  const srId = req?.service_report_id || po.service_report_id
+  let sr: any = req?.service_report || po?.service_report || null
+  if (!sr && srId != null) {
+    sr = (store.serviceReports.value as any[]).find((s: any) => String(s.id) === String(srId))
+      || ((store as any).findServiceReport ? (store as any).findServiceReport(srId) : null)
+  }
+  if (sr?.customer) return sr.customer
+  if (sr?.customer_id) {
+    const viaSr = store.findCustomer(sr.customer_id as any)
+    if (viaSr) return viaSr
+  }
+  return null
+}
+
+/** Nama penanda tangan: pembuat PO (user backend), fallback user login. */
+function poSignerName(po: any): string {
+  return po?.user?.name || po?.user?.username
+    || (currentUser as any)?.value?.name || (currentUser as any)?.name || '-'
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c))
+}
 
 const busyId = ref<string | number | null>(null)
 const detailPO = ref<PurchaseOrder | null>(null)
@@ -35,9 +79,8 @@ function rp(value: number) {
 }
 
 function getCustomerName(po: any) {
-  if (!po?.customer_id) return '-'
-  const customer = store.findCustomer(po.customer_id)
-  return customer ? customer.company_name : '-'
+  const customer = resolvePOCustomer(po)
+  return customer ? (customer.company_name || customer.name || '-') : '-'
 }
 
 function detailTotals(po: PurchaseOrder | null) {
@@ -54,9 +97,15 @@ const columns: TableColumn[] = [
   { key: 'status', label: 'Status' }
 ]
 
-function getRequestNo(id: number | null) {
-  const req = store.sparepartRequests.value.find(r => r.id === id)
-  return req ? req.request_no : '-'
+function getRequestNo(id: number | string | null, po?: any) {
+  if (po?.sparepart_request?.request_no) return po.sparepart_request.request_no
+  const req = (store.sparepartRequests.value as any[]).find((r: any) => String(r.id) === String(id))
+  if (req) return req.request_no
+  if (po) {
+    const resolved = resolvePORequest(po)
+    if (resolved?.request_no) return resolved.request_no
+  }
+  return '-'
 }
 
 async function run(id: string | number, action: () => Promise<unknown>) {
@@ -99,31 +148,32 @@ async function handleGenerateDO(po: PurchaseOrder) {
 function lineItems(po: any) {
   if (po.purchase_order_items && po.purchase_order_items.length > 0) {
     return po.purchase_order_items.map((item: any) => ({
-      name: item.item_name || store.findProduct(item.product_id)?.name || 'Sparepart',
+      name: item.product?.name || item.item_name || store.findProduct(item.product_id)?.name || 'Sparepart',
       qty: item.qty,
       price: item.unit_price,
       total: item.total_price || item.qty * item.unit_price
     }))
   }
 
-  const req = store.sparepartRequests.value.find(r => r.id === po.sparepart_request_id)
+  const req: any = resolvePORequest(po)
   if (!req) return []
-  const product = store.findProduct(req.product_id as any)
-  const price = product?.price || 0
-  return [{ name: product?.name || 'Sparepart', qty: req.qty, price, total: price * req.qty }]
+  const product = req.product || store.findProduct(req.product_id as any)
+  const price = req.unit_price || product?.price || 0
+  return [{ name: req.item_name || product?.name || 'Sparepart', qty: req.qty, price, total: price * (req.qty || 1) }]
 }
 
 function printInvoice(po: any) {
-  const customer = store.findCustomer(po.customer_id as any)
-  const custName = customer?.company_name || customer?.name || '-'
-  const custAddress = customer?.address || '-'
-  const custPhone = customer?.phone || '-'
+  const customer = resolvePOCustomer(po)
+  const custName = escapeHtml(customer?.company_name || customer?.name || '-')
+  const custAddress = escapeHtml(customer?.address || '-')
+  const custPhone = escapeHtml(customer?.phone || '-')
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Mr./Ms. '
-  if (gender === 'L') prefix = 'Mr. '
-  if (gender === 'P') prefix = 'Ms. '
-  const picDisplay = pic !== '-' ? prefix + pic : '-'
+  let prefix = 'Bapak/Ibu '
+  if (gender === 'L') prefix = 'Bapak '
+  if (gender === 'P') prefix = 'Ibu '
+  const picDisplay = escapeHtml(pic !== '-' ? prefix + pic : '-')
+  const signer = escapeHtml(poSignerName(po))
 
   const invoiceDate = po.order_date || po.created_at
   const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
@@ -137,7 +187,7 @@ function printInvoice(po: any) {
     ? items.map((item: any, idx: number) => `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
-          <td>${item.name}</td>
+          <td>${escapeHtml(item.name)}</td>
           <td style="text-align: center;">${item.qty}</td>
           <td style="text-align: center;">unit</td>
           <td class="rp-col">Rp</td><td class="val-col">${(item.price || 0).toLocaleString('id-ID')}</td>
@@ -234,7 +284,7 @@ function printInvoice(po: any) {
                   </tr>
                   <tr>
                     <td class="label">Request :</td>
-                    <td>${getRequestNo(po.sparepart_request_id)}</td>
+                    <td>${getRequestNo(po.sparepart_request_id, po)}</td>
                   </tr>
                   <tr>
                     <td colspan="2" class="bg-blue">To :</td>
@@ -318,7 +368,7 @@ function printInvoice(po: any) {
             </div>
             <div class="sig-box">
               Sincerely,
-              <div class="sig-line">Grace</div>
+              <div class="sig-line">${signer}</div>
             </div>
           </div>
         </div>
@@ -356,8 +406,8 @@ function printInvoice(po: any) {
       <template #cell-order_date="{ value }">
         {{ value ? new Date(value).toLocaleDateString() : '-' }}
       </template>
-      <template #cell-sparepart_request_id="{ value }">
-        <span class="font-mono text-sm">{{ getRequestNo(value) }}</span>
+      <template #cell-sparepart_request_id="{ value, row }">
+        <span class="font-mono text-sm">{{ getRequestNo(value, row) }}</span>
       </template>
       <template #cell-status="{ value }">
         <span class="badge"
@@ -467,7 +517,7 @@ function printInvoice(po: any) {
             </div>
             <div class="detail-field">
               <span class="detail-label">Request Ref</span>
-              <span class="detail-value font-mono">{{ getRequestNo(detailPO.sparepart_request_id) }}</span>
+              <span class="detail-value font-mono">{{ getRequestNo(detailPO.sparepart_request_id, detailPO) }}</span>
             </div>
             <div class="detail-field">
               <span class="detail-label">Customer</span>

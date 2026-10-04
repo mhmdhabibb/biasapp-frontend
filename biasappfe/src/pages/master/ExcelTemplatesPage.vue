@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -74,6 +75,11 @@ const form = reactive({
   master_key: '',
   file: null as File | null,
 })
+const masterKeyOptions = computed(() => MASTER_OPTIONS.map(m => ({
+  value: m.key,
+  label: `${m.label}${hasTemplate(m.key) ? ' (sudah ada template)' : ''}`,
+  disabled: hasTemplate(m.key),
+})))
 
 function formatSize(bytes: any): string {
   const n = Number(bytes || 0)
@@ -238,17 +244,7 @@ const canManage = computed(() => can('excel_template:create'))
     >
       <div class="form-group">
         <label class="form-label">Master Data</label>
-        <select v-model="form.master_key" class="form-input">
-          <option value="">-- Pilih Master Data --</option>
-          <option
-            v-for="m in MASTER_OPTIONS"
-            :key="m.key"
-            :value="m.key"
-            :disabled="hasTemplate(m.key)"
-          >
-            {{ m.label }}{{ hasTemplate(m.key) ? ' (sudah ada template)' : '' }}
-          </option>
-        </select>
+        <CustomSelect v-model="form.master_key" :options="masterKeyOptions" placeholder="-- Pilih Master Data --" />
         <p
           v-if="form.master_key && hasTemplate(form.master_key)"
           style="margin-top: 6px; font-size: 12px; color: var(--color-danger, #dc2626);"

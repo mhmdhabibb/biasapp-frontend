@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -88,6 +89,15 @@ function getUnitName(unitId: number | null) {
   return u ? u.model : '-'
 }
 
+const filterStatusOptions = [
+  { value: '', label: 'All Statuses' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
+
 function goToDetail(id: number) {
   router.push(`/technician/call-services/${id}`)
 }
@@ -113,14 +123,7 @@ function goToDetail(id: number) {
         </div>
         <div class="form-group mb-0">
           <label class="form-label">Status</label>
-          <select v-model="filterStatus" class="form-select">
-            <option value="">All Statuses</option>
-            <option value="pending">Pending</option>
-            <option value="assigned">Assigned</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+          <CustomSelect v-model="filterStatus" class="form-select" :options="filterStatusOptions" />
         </div>
       </div>
     </div>

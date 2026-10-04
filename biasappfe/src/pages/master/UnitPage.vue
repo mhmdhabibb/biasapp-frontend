@@ -250,6 +250,9 @@ const badgeFalse = {
       <template #toolbar>
         <ExcelImportButtons master-key="unit" @imported="fetchData" />
       </template>
+      <template #cell-uom.name="{ row }">
+        {{ row.uom?.name ?? "-" }}
+      </template>
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
       </template>

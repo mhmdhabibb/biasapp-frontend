@@ -22,7 +22,6 @@ const {
   serviceReports: data,
   customers,
   units,
-  technicians,
   findCustomer,
   findUnit,
   findTechnician,
@@ -158,39 +157,6 @@ async function handleGenerate() {
   }
 }
 
-// ---- Assign ke teknisi ----
-const showAssign = ref(false)
-const assignItem = ref<any>(null)
-const assignTechId = ref<string>('')
-const isAssigning = ref(false)
-
-function openAssign(item: any) {
-  assignItem.value = item
-  assignTechId.value = item.technician_id ? String(item.technician_id) : ''
-  showAssign.value = true
-}
-
-async function handleAssign() {
-  if (!assignItem.value) return
-  if (!assignTechId.value) {
-    toast.warning('Pilih teknisi dulu!')
-    return
-  }
-  isAssigning.value = true
-  try {
-    await resources.update('serviceReports', String(assignItem.value.id), {
-      technician_id: assignTechId.value,
-    } as any)
-    await refreshInBackground()
-    showAssign.value = false
-    toast.success(`Copier report ${assignItem.value.report_no} di-assign ke ${technicianName(assignTechId.value)}!`)
-  } catch (err: any) {
-    toast.error(err?.message || 'Gagal assign teknisi!')
-  } finally {
-    isAssigning.value = false
-  }
-}
-
 // ---- Delete ----
 const showConfirm = ref(false)
 const deletingItem = ref<any>(null)
@@ -238,6 +204,15 @@ async function handleDelete() {
         </div>
       </template>
     </PageHeader>
+
+    <div class="info-alert mb-4">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="16" x2="12" y2="12" />
+        <line x1="12" y1="8" x2="12.01" y2="8" />
+      </svg>
+      <span>Assign teknisi untuk visit dilakukan di <b>Job Orders → tab Visits</b>. Halaman ini untuk monitoring, generate, dan print copier report.</span>
+    </div>
 
     <DataTable
       :columns="columns"
@@ -293,20 +268,6 @@ async function handleDelete() {
               <polyline points="6 9 6 2 18 2 18 9" />
               <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
               <rect x="6" y="14" width="12" height="8" />
-            </svg>
-          </button>
-          <button
-            v-if="can('service_report:update')"
-            class="action-btn action-btn--edit"
-            title="Assign ke teknisi"
-            style="color: var(--color-success); width: 36px; height: 36px;"
-            @click="openAssign(row)"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <line x1="19" y1="8" x2="19" y2="14" />
-              <line x1="22" y1="11" x2="16" y2="11" />
             </svg>
           </button>
           <button
@@ -404,35 +365,6 @@ async function handleDelete() {
       </template>
     </FormModal>
 
-    <FormModal :open="showAssign" :title="assignItem ? `Assign ${assignItem.report_no}` : 'Assign Teknisi'" @close="showAssign = false">
-      <div class="form-group">
-        <label class="form-label">Customer</label>
-        <div>{{ assignItem ? customerName(assignItem.customer_id) : '-' }}</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Unit</label>
-        <div>{{ assignItem ? unitName(assignItem.unit_id) : '-' }}</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Technician</label>
-        <select v-model="assignTechId" class="form-input">
-          <option value="">-- Pilih Teknisi --</option>
-          <option v-for="t in (technicians as any[])" :key="t.id" :value="String(t.id)">
-            {{ t.user?.name || t.name || '-' }}
-          </option>
-        </select>
-        <p v-if="!(technicians as any[])?.length" style="margin-top: 6px; font-size: 12px; color: var(--color-text-muted);">
-          Belum ada data teknisi.
-        </p>
-      </div>
-      <template #footer>
-        <button type="button" class="btn btn-outline" :disabled="isAssigning" @click="showAssign = false">Cancel</button>
-        <button type="button" class="btn btn-accent" :disabled="isAssigning" @click="handleAssign">
-          {{ isAssigning ? 'Menyimpan...' : 'Assign' }}
-        </button>
-      </template>
-    </FormModal>
-
     <FormModal :open="showResult" title="Hasil Generate" @close="showResult = false">
       <template v-if="genResult">
         <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
@@ -461,6 +393,26 @@ async function handleDelete() {
 </template>
 
 <style scoped>
+.mb-4 {
+  margin-bottom: var(--space-lg);
+}
+
+.info-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-info-surface, #e0f2fe);
+  color: var(--color-info, #0284c7);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+
+.info-alert svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .cr-head {
   display: flex;
   align-items: flex-start;

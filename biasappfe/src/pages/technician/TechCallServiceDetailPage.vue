@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
@@ -86,6 +87,11 @@ const doForm = ref({
 })
 const isDoFormInit = ref(false)
 const isSavingDoForm = ref(false)
+
+const customerCategoryOptions = [
+  { value: 'Corporate', label: 'Corporate' },
+  { value: 'Government', label: 'Government' },
+]
 
 function initDoForm() {
   const d: any = deliveryOrder.value
@@ -437,10 +443,7 @@ async function completeJob() {
           </div>
           <div class="form-group">
             <label class="form-label">Customer Type</label>
-            <select v-model="doForm.customer_category" class="form-select">
-              <option value="Corporate">Corporate</option>
-              <option value="Government">Government</option>
-            </select>
+            <CustomSelect v-model="doForm.customer_category" class="form-select" :options="customerCategoryOptions" />
           </div>
           <div class="form-group">
             <label class="form-label">Action / Repair <span class="text-danger">*</span></label>

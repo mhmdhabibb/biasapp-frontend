@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -35,6 +36,38 @@ const {
 } = useMasterStore()
 
 const resources = useResourcesStore()
+
+const customerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: `${c.company_name || c.name}${c.pic_name ? ' - ' + c.pic_name : ''}`,
+  })),
+)
+
+const productOptions = computed(() =>
+  (products.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+)
+
+const storageTypeOptions = [
+  { value: 'SSD', label: 'SSD' },
+  { value: 'HDD', label: 'HDD' },
+  { value: 'NVMe', label: 'NVMe' },
+]
+
+const warrantyTypeOptions = [
+  { value: 'machine', label: 'Machine' },
+  { value: 'sparepart', label: 'Sparepart' },
+  { value: 'service', label: 'Service' },
+]
+
+const paymentMethodOptions = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'TRANSFER', label: 'Bank Transfer' },
+  { value: 'CREDIT_CARD', label: 'Credit / Debit Card' },
+]
 
 const columns: TableColumn[] = [
   { key: 'date', label: 'Transaction Date' },
@@ -145,6 +178,7 @@ function generateSingleInvoiceHtml(item: any) {
   if (gender === 'L') prefix = 'Bapak '
   if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
+  const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
 
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
@@ -296,7 +330,7 @@ function generateSingleInvoiceHtml(item: any) {
         </div>
         <div class="sig-box">
           Sincerely,
-          <div class="sig-line">Grace</div>
+          <div class="sig-line">${signer}</div>
         </div>
       </div>
     </div>
@@ -893,10 +927,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
       </div>
       <div class="form-group">
         <label for="sale-customer" class="form-label">Customer</label>
-        <select id="sale-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ (c as any).company_name || (c as any).name }}{{ (c as any).pic_name ? ' - ' + (c as any).pic_name : '' }}</option>
-        </select>
+        <CustomSelect id="sale-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="sale-date" class="form-label">Date</label>
@@ -915,10 +946,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
       <div class="form-section-title">Sale Items</div>
       <div v-for="(item, idx) in saleItems" :key="idx" class="sale-item-row">
         <div class="form-group sale-item-product">
-          <select v-model="item.product_id" class="form-select" @change="onProductChange(idx)">
-            <option :value="null">-- Product --</option>
-            <option v-for="p in products" :key="p.id" :value="p.id">{{ (p as any).name }}</option>
-          </select>
+          <CustomSelect v-model="item.product_id" :options="productOptions" placeholder="-- Product --" class="form-select" @update:modelValue="onProductChange(idx)" />
         </div>
         <div class="form-group sale-item-qty">
           <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
@@ -947,12 +975,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
-              <select v-model="item.specs.storage_type" class="form-select">
-                <option value="">Select</option>
-                <option value="SSD">SSD</option>
-                <option value="HDD">HDD</option>
-                <option value="NVMe">NVMe</option>
-              </select>
+              <CustomSelect v-model="item.specs.storage_type" :options="storageTypeOptions" placeholder="Select" class="form-select" />
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>
@@ -985,11 +1008,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group">
             <label class="form-label">Warranty Type</label>
-            <select v-model="form.warranty.warranty_type" class="form-select">
-              <option value="machine">Machine</option>
-              <option value="sparepart">Sparepart</option>
-              <option value="service">Service</option>
-            </select>
+            <CustomSelect v-model="form.warranty.warranty_type" :options="warrantyTypeOptions" class="form-select" />
           </div>
           <div style="display: flex; gap: 0.5rem;">
             <div class="form-group" style="flex: 1;">
@@ -1236,11 +1255,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         </div>
         <div>
           <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Method</label>
-          <select class="form-input" v-model="paymentData.method_type" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;">
-            <option value="CASH">Cash</option>
-            <option value="TRANSFER">Bank Transfer</option>
-            <option value="CREDIT_CARD">Credit / Debit Card</option>
-          </select>
+          <CustomSelect v-model="paymentData.method_type" :options="paymentMethodOptions" class="form-input" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" />
         </div>
         
         <template v-if="paymentData.method_type === 'TRANSFER'">

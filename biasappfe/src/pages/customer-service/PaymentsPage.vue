@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import FormModal from "@/components/ui/FormModal.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
@@ -27,6 +28,24 @@ const { can, canApprove } = usePermission();
 const { currentUser } = useAuth();
 const route = useRoute();
 const pageRouter = useRouter();
+
+const {
+  payments: data,
+  rentalInvoices,
+  salesInvoices,
+  customers,
+  findRentalInvoice,
+  findSalesInvoice,
+  findCustomer,
+} = useMasterStore();
+
+const resources = useResourcesStore();
+
+const canManageApprovals = computed(
+  () =>
+    canApprove("payment") ||
+    currentUser.value?.role?.trim().toLowerCase() === "accounting",
+);
 
 // Deep-link dari notifikasi: ?payment_no=PAY-... langsung buka modal
 // transaksinya begitu data payments termuat.
@@ -65,22 +84,6 @@ watch(
     tryDeepLink();
   },
 );
-const canManageApprovals = computed(
-  () =>
-    canApprove("payment") ||
-    currentUser.value?.role?.trim().toLowerCase() === "accounting",
-);
-const {
-  payments: data,
-  rentalInvoices,
-  salesInvoices,
-  customers,
-  findRentalInvoice,
-  findSalesInvoice,
-  findCustomer,
-} = useMasterStore();
-
-const resources = useResourcesStore();
 
 const columns: TableColumn[] = [
   { key: "payment_no", label: "Payment No." },
@@ -120,6 +123,39 @@ const form = reactive({
 });
 
 const defaultForm = { ...form };
+
+const invoiceTypeOptions = [
+  { value: "rental", label: "Rental" },
+  { value: "sales", label: "Sales" },
+];
+const rentalInvoiceOptions = computed(() =>
+  (rentalInvoices.value as any[]).map((inv: any) => ({
+    value: inv.id,
+    label: `${inv.invoice_no} — ${formatRupiah((inv as any).total_pay || (inv as any).total || 0)}`,
+  })),
+);
+const salesInvoiceOptions = computed(() =>
+  (salesInvoices.value as any[]).map((inv: any) => ({
+    value: inv.id,
+    label: `${inv.invoice_no} — ${formatRupiah(inv.total || 0)}`,
+  })),
+);
+const payCustomerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name || "-",
+  })),
+);
+const payStatusOptions = computed(() => {
+  const opts = [{ value: "pending", label: "Pending" }];
+  if (canManageApprovals.value) {
+    opts.push(
+      { value: "approved", label: "Approved" },
+      { value: "rejected", label: "Rejected" },
+    );
+  }
+  return opts;
+});
 
 function onInvoiceChange() {
   if (form.invoice_type === "rental") {
@@ -646,63 +682,49 @@ function printSlip(item: any) {
       </div>
       <div class="form-group">
         <label for="pay-inv-type" class="form-label">Invoice Type</label>
-        <select
+        <CustomSelect
           id="pay-inv-type"
           v-model="form.invoice_type"
+          :options="invoiceTypeOptions"
           class="form-select"
-          @change="onInvoiceChange"
-        >
-          <option value="rental">Rental</option>
-          <option value="sales">Sales</option>
-        </select>
+          @update:modelValue="onInvoiceChange"
+        />
       </div>
       <div class="form-group" v-if="form.invoice_type === 'rental'">
         <label for="pay-invoice" class="form-label"
           >Select Rental Invoice</label
         >
-        <select
+        <CustomSelect
           id="pay-invoice"
           v-model="form.rental_invoice_id"
+          :options="rentalInvoiceOptions"
+          placeholder="-- Select Invoice --"
           class="form-select"
-          @change="onInvoiceChange"
-        >
-          <option :value="null">-- Select Invoice --</option>
-          <option v-for="inv in rentalInvoices" :key="inv.id" :value="inv.id">
-            {{ inv.invoice_no }} —
-            {{
-              formatRupiah((inv as any).total_pay || (inv as any).total || 0)
-            }}
-          </option>
-        </select>
+          @update:modelValue="onInvoiceChange"
+        />
       </div>
       <div class="form-group" v-else>
         <label for="pay-invoice-sales" class="form-label"
           >Select Sales Invoice</label
         >
-        <select
+        <CustomSelect
           id="pay-invoice-sales"
           v-model="form.sales_invoice_id"
+          :options="salesInvoiceOptions"
+          placeholder="-- Select Invoice --"
           class="form-select"
-          @change="onInvoiceChange"
-        >
-          <option :value="null">-- Select Invoice --</option>
-          <option v-for="inv in salesInvoices" :key="inv.id" :value="inv.id">
-            {{ inv.invoice_no }} — {{ formatRupiah(inv.total || 0) }}
-          </option>
-        </select>
+          @update:modelValue="onInvoiceChange"
+        />
       </div>
       <div class="form-group">
         <label for="pay-customer" class="form-label">Customer</label>
-        <select
+        <CustomSelect
           id="pay-customer"
           v-model="form.customer_id"
+          :options="payCustomerOptions"
+          placeholder="-- Select Customer --"
           class="form-select"
-        >
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">
-            {{ c.company_name || c.name || "-" }}
-          </option>
-        </select>
+        />
       </div>
       <div class="form-group">
         <label for="pay-date" class="form-label">Payment Date</label>
@@ -761,11 +783,7 @@ function printSlip(item: any) {
         <label for="pay-status" class="form-label"
           >Status (Finance Approval)</label
         >
-        <select id="pay-status" v-model="form.status" class="form-select">
-          <option value="pending">Pending</option>
-          <option v-if="canManageApprovals" value="approved">Approved</option>
-          <option v-if="canManageApprovals" value="rejected">Rejected</option>
-        </select>
+        <CustomSelect id="pay-status" v-model="form.status" :options="payStatusOptions" class="form-select" />
       </div>
     </FormModal>
     <ConfirmDialog

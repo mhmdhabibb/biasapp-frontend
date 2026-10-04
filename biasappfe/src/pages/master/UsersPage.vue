@@ -4,6 +4,7 @@ import { api } from '@/services/api'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import { useToast } from '@/composables/useToast'
@@ -26,6 +27,7 @@ const assignableRoles = computed(() => {
   if (isPrivileged.value) return roles.value
   return roles.value.filter((r: any) => String(r.name || '').toLowerCase() !== 'superadmin')
 })
+const roleOptions = computed(() => assignableRoles.value.map((r: any) => ({ value: r.id, label: r.name })))
 
 function rowRoleName(row: any): string {
   return String(
@@ -271,10 +273,7 @@ async function handleDelete() {
       </div>
       <div class="form-group">
         <label for="user-role" class="form-label">Role</label>
-        <select id="user-role" v-model="form.role_id" class="form-select">
-          <option :value="null">-- Select Role --</option>
-          <option v-for="r in assignableRoles" :key="r.id" :value="r.id">{{ r.name }}</option>
-        </select>
+        <CustomSelect id="user-role" v-model="form.role_id" :options="roleOptions" placeholder="-- Select Role --" />
       </div>
       <div class="form-group">
         <label for="user-password" class="form-label">Password</label>

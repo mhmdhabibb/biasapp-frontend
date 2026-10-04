@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, watch } from "vue";
+import { ref, reactive, onMounted, onUnmounted, watch, computed } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import ExcelImportButtons from "@/components/ui/ExcelImportButtons.vue";
@@ -31,6 +31,9 @@ const columns: TableColumn[] = [
 const data = ref<Product[]>([]);
 const categories = ref<ProductCategory[]>([]);
 const uoms = ref<UOM[]>([]);
+
+const categoryOptions = computed(() => categories.value.map(c => ({ value: c.id, label: c.name })))
+const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
 async function fetchData() {
   try {
@@ -300,21 +303,12 @@ function formatRupiah(val: number): string {
       </div>
       <div class="form-group">
         <label for="category_id" class="form-label">Category</label>
-        <select
-          name="category_id"
+        <CustomSelect
           id="category_id"
           v-model="form.category_id"
-          class="form-input"
-        >
-          <option value="">-- Select Category --</option>
-          <option
-            v-for="category in categories"
-            :key="category.id"
-            :value="category.id"
-          >
-            {{ category.name }}
-          </option>
-        </select>
+          :options="categoryOptions"
+          placeholder="-- Select Category --"
+        />
         <p
           v-if="categories.length === 0"
           style="
@@ -329,17 +323,12 @@ function formatRupiah(val: number): string {
       </div>
       <div class="form-group">
         <label for="uom_id" class="form-label">UOM (Unit)</label>
-        <select
-          name="uom_id"
+        <CustomSelect
           id="uom_id"
           v-model="form.uom_id"
-          class="form-input"
-        >
-          <option value="">-- Select UOM --</option>
-          <option v-for="uom in uoms" :key="uom.id" :value="uom.id">
-            {{ uom.name }}
-          </option>
-        </select>
+          :options="uomOptions"
+          placeholder="-- Select UOM --"
+        />
         <p
           v-if="uoms.length === 0"
           style="

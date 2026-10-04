@@ -4,6 +4,7 @@ import html2pdf from "html2pdf.js";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import FormModal from "@/components/ui/FormModal.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { resources } from "@/services/resource.service";
@@ -118,6 +119,23 @@ onMounted(async () => {
     paperTypes.value = resT.data as any;
   } catch (e) {}
 });
+const customerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name || "-",
+  })),
+);
+const unitOptions = computed(() =>
+  (units.value as any[]).map((u: any) => ({
+    value: u.id,
+    label: `${u.name} (S/N: ${u.serial_no})`,
+  })),
+);
+const statusOptions = [
+  { value: "active", label: "Active" },
+  { value: "expired", label: "Expired" },
+  { value: "terminated", label: "Terminated" },
+];
 const form = reactive({
   contract_no: "",
   customer_id: null as string | null,
@@ -1270,21 +1288,11 @@ function unitSerialNo(id: any, rowUnit?: any): string {
       </div>
       <div class="form-group">
         <label for="ci-customer" class="form-label">Company</label>
-        <select id="ci-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Company --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">
-            {{ c.company_name || c.name || "-" }}
-          </option>
-        </select>
+        <CustomSelect id="ci-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Company --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="ci-unit" class="form-label">Unit</label>
-        <select id="ci-unit" v-model="form.unit_id" class="form-select">
-          <option :value="null">-- Select Unit --</option>
-          <option v-for="u in units" :key="u.id" :value="u.id">
-            {{ u.name }} (S/N: {{ u.serial_no }})
-          </option>
-        </select>
+        <CustomSelect id="ci-unit" v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="ci-location" class="form-label">Location</label>
@@ -1360,11 +1368,7 @@ function unitSerialNo(id: any, rowUnit?: any): string {
       </div>
       <div class="form-group">
         <label for="ci-status" class="form-label">Status</label>
-        <select id="ci-status" v-model="form.status" class="form-select">
-          <option value="active">Active</option>
-          <option value="expired">Expired</option>
-          <option value="terminated">Terminated</option>
-        </select>
+        <CustomSelect id="ci-status" v-model="form.status" :options="statusOptions" class="form-select" />
       </div>
     </FormModal>
 
