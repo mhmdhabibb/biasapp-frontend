@@ -2,6 +2,7 @@
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import type { Supplier, TableColumn } from '@/types'
@@ -62,7 +63,11 @@ async function handleDelete() {
   <div>
     <PageHeader title="Suppliers" button-label="Add Supplier" permission="supplier:create" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Search..." permission="supplier" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search..." permission="supplier" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="supplier" @imported="fetchAll" />
+      </template>
+    </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Supplier' : 'Add Supplier'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group" v-for="col in columns" :key="col.key">
         <label class="form-label">{{ col.label }}</label>

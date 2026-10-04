@@ -8,6 +8,7 @@ import { usePermission } from "@/composables/usePermission";
 import { api } from "@/services/api";
 import { resources } from "@/services/resource.service";
 import PageHeader from "@/components/ui/PageHeader.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
 
 const toast = useToast();
 const { can } = usePermission();
@@ -175,6 +176,26 @@ function getPaperSizeName(reading: any) {
   );
   return found ? found.name : "-";
 }
+
+const contractItemOptions = computed(() =>
+  contractItems.value.map((c: any) => ({
+    value: c.id,
+    label: `${getCustomerName(c.id)} - ${getUnitName(c.id)} (${getSerialNumber(c.id)})`,
+  })),
+);
+
+const paperSizeOptions = computed(() =>
+  paperSizes.value.map((p: any) => ({ value: p.id, label: p.name })),
+);
+
+const paperTypeOptions = computed(() =>
+  paperTypes.value.map((p: any) => ({ value: p.id, label: p.name })),
+);
+
+const colorModeOptions = [
+  { value: "bw", label: "BW" },
+  { value: "color", label: "Color" },
+];
 
 async function submitReading() {
   if (!form.value.contract_item_id)
@@ -354,14 +375,7 @@ async function submitReading() {
             <label class="form-label"
               >Unit / Customer <span class="text-danger">*</span></label
             >
-            <select v-model="form.contract_item_id" class="form-select">
-              <option :value="null">-- Select Unit / Contract --</option>
-              <option v-for="c in contractItems" :key="c.id" :value="c.id">
-                {{ getCustomerName(c.id) }} - {{ getUnitName(c.id) }} ({{
-                  getSerialNumber(c.id)
-                }})
-              </option>
-            </select>
+            <CustomSelect v-model="form.contract_item_id" class="form-select" :options="contractItemOptions" placeholder="-- Select Unit / Contract --" />
           </div>
 
           <div class="form-group">
@@ -439,30 +453,17 @@ async function submitReading() {
               <label class="form-label"
                 >Paper Size <span class="text-danger">*</span></label
               >
-              <select v-model="form.paper_size_id" class="form-select">
-                <option :value="null">-- No specific size (optional) --</option>
-                <option v-for="p in paperSizes" :key="p.id" :value="p.id">
-                  {{ p.name }}
-                </option>
-              </select>
+              <CustomSelect v-model="form.paper_size_id" class="form-select" :options="paperSizeOptions" placeholder="-- No specific size (optional) --" />
             </div>
             <div class="form-group">
               <label class="form-label">Paper Kind (optional)</label>
-              <select v-model="form.paper_type_id" class="form-select">
-                <option :value="null">-- Select Paper Kind --</option>
-                <option v-for="p in paperTypes" :key="p.id" :value="p.id">
-                  {{ p.name }}
-                </option>
-              </select>
+              <CustomSelect v-model="form.paper_type_id" class="form-select" :options="paperTypeOptions" placeholder="-- Select Paper Kind --" />
             </div>
             <div class="form-group">
               <label class="form-label"
                 >Color Mode <span class="text-danger">*</span></label
               >
-              <select v-model="form.color_mode" class="form-select">
-                <option value="bw">BW</option>
-                <option value="color">Color</option>
-              </select>
+              <CustomSelect v-model="form.color_mode" class="form-select" :options="colorModeOptions" />
             </div>
             <div class="flex gap-md">
               <div class="form-group flex-1 mb-0">

@@ -82,6 +82,7 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.products', icon: 'box', route: '/master/products' },
       { label: 'sidebar.units', icon: 'printer', route: '/master/units' },
       { label: 'sidebar.warranties', icon: 'shield-check', route: '/master/warranties' },
+      { label: 'sidebar.excel_templates', icon: 'upload', route: '/master/excel-templates', roles: ['admin'] },
     ],
   },
   {
@@ -91,10 +92,10 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.service_requests', icon: 'alert-circle', route: '/customer-service/service-requests' },
       { label: 'sidebar.job_orders', icon: 'clipboard', route: '/customer-service/job-orders' },
       { label: 'sidebar.service_reports', icon: 'tool', route: '/customer-service/service-reports' },
+      { label: 'sidebar.copier_reports', icon: 'file-text', route: '/customer-service/copier-reports' },
       { label: 'sidebar.meter_readings', icon: 'activity', route: '/customer-service/monthly-meter-readings' },
       { label: 'sidebar.rentals', icon: 'box', route: '/customer-service/rentals' },
       { label: 'sidebar.sales', icon: 'shopping-cart', route: '/customer-service/sales' },
-      { label: 'sidebar.sparepart_requests', icon: 'box', route: '/accounting/sparepart-requests' },
       { label: 'sidebar.purchase_orders', icon: 'clipboard', route: '/accounting/purchase-orders' },
       { label: 'sidebar.delivery_orders', icon: 'truck', route: '/accounting/delivery-orders' },
       { label: 'sidebar.rental_invoices', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
@@ -238,6 +239,8 @@ const iconPaths: Record<string, string> = {
   'truck': 'M1 3h15v13H1z M16 8h4l3 3v5h-7z M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z M18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
   'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01',
   'bell': 'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0',
+  upload: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M17 8l-5-5-5 5 M12 3v12',
+  download: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M7 10l5 5 5-5 M12 15V3',
 }
 </script>
 

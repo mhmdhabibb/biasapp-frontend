@@ -118,6 +118,7 @@ export function buildRecapSheet(
   }
   sheetRows.push([
     { v: `Grand Total (${rows.length} invoice)`, mergeAcross: 3, style: 'grandTotalCell' },
+    {}, {}, {},
     { v: fmtRp(grandTotal), style: 'grandTotalCell' },
   ])
   return { name: 'Recap', columnWidths: [6, 32, 22, 22, 20], rows: sheetRows }
@@ -149,7 +150,11 @@ export function filterByYear<T = any>(
 
 export interface StyledCell {
   v?: string | number | null
-  /** number of columns merged to the right (0 = no merge) */
+  /**
+   * Merge N kolom ke kanan dari posisi entry ini.
+   * Konvensi: entry index i <-> kolom Excel i+1, jadi N entry
+   * setelahnya wajib placeholder kosong agar merge tepat sasaran.
+   */
   mergeAcross?: number
   /**
    * id style:
@@ -159,12 +164,31 @@ export interface StyledCell {
    */
   style?: string
   align?: 'Left' | 'Center' | 'Right'
+  /** excel number format (diterapkan apa adanya ke cell) */
+  numFmt?: string
 }
+
+/**
+ * Format angka akuntansi ala invoice manual:
+ * - Amount (Rp): nol tampil '-', negatif dalam kurung
+ * - Rate (Rp prefix): sama
+ * - Hitungan kopi: polos, nol '-', negatif dalam kurung
+ */
+export const NUMFMT_RP = '_([$Rp-421]* #,##0_);_([$Rp-421]* (#,##0);_([$Rp-421]* "-"_);_(@_)'
+export const NUMFMT_RP_RATE = '_("Rp"* #,##0_);_("Rp"* (#,##0);_("Rp"* "-"_);_(@_)'
+export const NUMFMT_COUNT = '_(* #,##0_);_(* (#,##0);_(* "-"??_);_(@_)'
 
 const THIN: Partial<ExcelJSType.Border> = { style: 'thin', color: { argb: 'FF000000' } }
 const ALL_BORDERS: Partial<ExcelJSType.Borders> = { top: THIN, bottom: THIN, left: THIN, right: THIN }
 
-function applyCellStyle(cell: ExcelJSType.Cell, styleId?: string): void {
+function applyCellStyle(cell: ExcelJSType.Cell, styleId?: string, numFmt?: string): void {
+  if (numFmt) {
+    try {
+      cell.numFmt = numFmt
+    } catch {
+      /* abaikan format tak dikenal */
+    }
+  }
   if (!styleId) return
   switch (styleId) {
     case 'border':
@@ -272,6 +296,20 @@ export async function downloadStyledExcel(
       ws.columns = sheet.columnWidths.map((w) => ({ width: w }))
     }
 
+    // Setup cetak ala invoice manual: A4 portrait, muat lebar 1 halaman,
+    // tanpa gridlines, rata tengah horizontal.
+    try {
+      ws.pageSetup.paperSize = 9
+      ws.pageSetup.orientation = 'portrait'
+      ws.pageSetup.fitToPage = true
+      ws.pageSetup.fitToWidth = 1
+      ws.pageSetup.fitToHeight = 0
+      ws.pageSetup.horizontalCentered = true
+      ws.views = [{ showGridLines: false }]
+    } catch {
+      /* abaikan bila versi exceljs tidak mendukung */
+    }
+
     let rowIndex = 0
     for (const row of sheet.rows) {
       rowIndex++
@@ -286,20 +324,17 @@ export async function downloadStyledExcel(
         if (cellDef.v !== undefined && cellDef.v !== null && cellDef.v !== '') {
           excelCell.value = cellDef.v as any
         }
-        applyCellStyle(excelCell, cellDef.style)
+        applyCellStyle(excelCell, cellDef.style, cellDef.numFmt)
       }
       excelRow.commit?.()
 
-      // merge cells (after all cells in the row are written)
-      let colIndex = 1
-      for (const cellDef of row) {
+      // merge cells (posisi berbasis index array: entry i <-> kolom i+1,
+      // sehingga beberapa merge dalam satu baris tetap tepat sasaran)
+      row.forEach((cellDef, i) => {
         if (cellDef?.mergeAcross && cellDef.mergeAcross > 0) {
-          ws.mergeCells(rowIndex, colIndex, rowIndex, colIndex + cellDef.mergeAcross)
-          colIndex += cellDef.mergeAcross + 1
-        } else {
-          colIndex++
+          ws.mergeCells(rowIndex, i + 1, rowIndex, i + 1 + cellDef.mergeAcross)
         }
-      }
+      })
     }
   }
 

@@ -5,6 +5,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useResourcesStore } from '@/stores/resources.store'
 import { usePermission } from '@/composables/usePermission'
@@ -59,6 +60,35 @@ const form = reactive({
 })
 
 const defaultForm = { ...form }
+
+const contractOptions = computed(() =>
+  (contractItems.value as any[]).map((ci: any) => ({
+    value: ci.id,
+    label: (ci as any).contract_no,
+  })),
+)
+const serviceReportOptions = computed(() =>
+  (serviceReports.value as any[]).map((sr: any) => ({
+    value: sr.id,
+    label: (sr as any).report_no || (sr as any).service_report_no,
+  })),
+)
+const unitOptions = computed(() =>
+  ((units.value as any) as any[]).map((u: any) => ({
+    value: u.id,
+    label: `${u.model}${u.serial_no ? ` (${u.serial_no})` : ''}`,
+  })),
+)
+const paperSizeOptions = computed(() =>
+  (paperSizes.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+)
+const colorModeOptions = [
+  { value: 'bw', label: 'B/W' },
+  { value: 'color', label: 'Colour' },
+]
 
 // ---- Pengelompokan: readings dengan service report yang sama digabung
 // jadi satu baris; tanpa service report dikelompokkan per kontrak + bulan.
@@ -328,38 +358,23 @@ function recordedBy(row: any): string {
     <FormModal :open="showModal" :title="editingItem ? 'Edit Meter Reading' : 'Add Meter Reading'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="mm-contract" class="form-label">Contract</label>
-        <select id="mm-contract" v-model="form.contract_item_id" class="form-select">
-          <option :value="null">-- Select Contract --</option>
-          <option v-for="ci in contractItems" :key="ci.id" :value="ci.id">{{ (ci as any).contract_no }}</option>
-        </select>
+        <CustomSelect id="mm-contract" v-model="form.contract_item_id" :options="contractOptions" placeholder="-- Select Contract --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="mm-sr" class="form-label">Service Report (Optional)</label>
-        <select id="mm-sr" v-model="form.service_report_id" class="form-select">
-          <option :value="null">-- Select Report --</option>
-          <option v-for="sr in serviceReports" :key="sr.id" :value="sr.id">{{ (sr as any).report_no || (sr as any).service_report_no }}</option>
-        </select>
+        <CustomSelect id="mm-sr" v-model="form.service_report_id" :options="serviceReportOptions" placeholder="-- Select Report --" class="form-select" />
       </div>
       <div class="form-group">
         <label class="form-label">Unit</label>
-        <select v-model="form.unit_id" class="form-select">
-          <option :value="null">-- Select Unit --</option>
-          <option v-for="u in (units as any)" :key="u.id" :value="u.id">{{ u.model }}{{ u.serial_no ? ` (${u.serial_no})` : '' }}</option>
-        </select>
+        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" class="form-select" />
       </div>
       <div class="form-group">
         <label class="form-label">Paper Size</label>
-        <select v-model="form.paper_size_id" class="form-select">
-          <option :value="null">-- Tanpa ukuran --</option>
-          <option v-for="p in (paperSizes as any[])" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
+        <CustomSelect v-model="form.paper_size_id" :options="paperSizeOptions" placeholder="-- Tanpa ukuran --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="mm-mode" class="form-label">Color Mode</label>
-        <select id="mm-mode" v-model="form.color_mode" class="form-select">
-          <option value="bw">B/W</option>
-          <option value="color">Colour</option>
-        </select>
+        <CustomSelect id="mm-mode" v-model="form.color_mode" :options="colorModeOptions" class="form-select" />
       </div>
       <div class="form-group">
         <label for="mm-date" class="form-label">Reading Date</label>

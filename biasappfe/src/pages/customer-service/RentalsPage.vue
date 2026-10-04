@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import DataTable from "@/components/ui/DataTable.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
+import { useAuth } from "@/composables/useAuth";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
@@ -20,10 +22,19 @@ import type { TableColumn } from "@/types";
 import type { PaymentReceiptData } from "@/utils/paymentReceipt";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { normalizeRole } from "@/router/role-access";
 
 const toast = useToast();
-const { can } = usePermission();
+const { can, isAdmin } = usePermission();
+const { currentUser } = useAuth();
 const { customers, units, products, payments, refreshInBackground } = useMasterStore();
+
+// CS (dan teknisi) tidak boleh melihat nominal: rate, total amount invoice items.
+const canSeeAmount = computed(() => {
+  if (isAdmin.value) return true;
+  const role = normalizeRole((currentUser.value as any)?.role);
+  return role === "accounting" || role === "admin";
+});
 const { t } = useI18n();
 
 const columns = computed<TableColumn[]>(() => [
@@ -45,7 +56,61 @@ const showInvoiceModal = ref(false);
 const isLoadingRentalInvoices = ref(false);
 const selectedRental = ref<any>(null);
 const selectedInvoice = ref<any>(null);
+const expandedInvoiceId = ref<string | null>(null);
+const selectedMeterDetail = ref<any>(null);
+const showMeterDetail = ref(false);
 const isSavingPayment = ref(false);
+
+function meterDetailsOf(invoice: any): any[] {
+  return invoice?.meter_details || invoice?.meterDetails || [];
+}
+function meterCount(invoice: any): number {
+  return meterDetailsOf(invoice).length;
+}
+function toggleInvoiceItems(invoice: any) {
+  const id = String(invoice.id);
+  expandedInvoiceId.value = expandedInvoiceId.value === id ? null : id;
+}
+function isExpanded(invoice: any): boolean {
+  return expandedInvoiceId.value === String(invoice.id);
+}
+function openMeterDetail(detail: any) {
+  selectedMeterDetail.value = detail;
+  showMeterDetail.value = true;
+}
+function closeMeterDetail() {
+  showMeterDetail.value = false;
+  selectedMeterDetail.value = null;
+}
+function meterPaperSizeName(detail: any): string {
+  return detail?.paper_size?.name || (paperSizes.value as any[]).find((p: any) => String(p.id) === String(detail?.paper_size_id))?.name || detail?.paper_size_id || '-';
+}
+function meterPaperTypeName(detail: any): string {
+  return detail?.paper_type?.name || (paperTypes.value as any[]).find((p: any) => String(p.id) === String(detail?.paper_type_id))?.name || '-';
+}
+function isColorDetail(detail: any): boolean {
+  return /colou?r/i.test(String(detail?.color_mode || ''));
+}
+function colorModeLabel(detail: any): string {
+  const raw = String(detail?.color_mode || '').toLowerCase();
+  if (/colou?r/.test(raw)) return 'COLOR';
+  if (/bw|b\/w|mono|black/.test(raw)) return 'BW';
+  return String(detail?.color_mode || '-').toUpperCase();
+}
+function invoiceItemsTotal(invoice: any): number {
+  return meterDetailsOf(invoice).reduce((sum: number, d: any) => sum + (Number(d.total_amount) || 0), 0);
+}
+function meterFormulaHint(detail: any): string {
+  const start = detail?.start_meter_reading || 0;
+  const last = detail?.last_meter_reading || 0;
+  const total = detail?.total_copies ?? (last - start);
+  const free = detail?.free_quota ?? 0;
+  const mode = colorModeLabel(detail);
+  const net = total - free;
+  const fmt = (n: number) => n.toLocaleString('id-ID');
+  const netStr = net < 0 ? `(${fmt(Math.abs(net))})` : fmt(net);
+  return `Pemakaian ${fmt(total)} (${fmt(start)}−${fmt(last)}) − Jatah ${mode} ${fmt(free)} = ${netStr}`;
+}
 const paymentForm = reactive({
   amount: 0,
   payment_date: new Date().toISOString().slice(0, 10),
@@ -141,6 +206,47 @@ const unavailableUnits = computed(() =>
     return s !== "available" && s !== "";
   }),
 );
+
+const rentPaymentMethodOptions = [
+  { value: "transfer", label: "Bank Transfer" },
+  { value: "cash", label: "Cash" },
+];
+const rentCustomerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label:
+      `${(c as any).company_name || (c as any).name}` +
+      `${(c as any).pic_name ? " - " + (c as any).pic_name : ""}`,
+  })),
+);
+const rentUnitOptions = computed(() => [
+  ...(availableUnits.value as any[]).map((u: any) => ({
+    value: "unit_" + u.id,
+    label: `${u.model} (${(u as any).brand?.name}) — S/N: ${u.serial_no || "N/A"}`,
+  })),
+  ...(unavailableUnits.value as any[]).map((u: any) => ({
+    value: "unit_" + u.id,
+    label: `${u.model} (${(u as any).brand?.name}) — S/N: ${u.serial_no || "N/A"} — ${unitStatusOf(u)}`,
+    disabled: true,
+  })),
+]);
+const rentPaperSizeOptions = computed(() => [
+  { value: "", label: "— Semua ukuran —" },
+  ...(paperSizes.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+]);
+const rentPaperTypeOptions = computed(() =>
+  (paperTypes.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+);
+const rentQuotaAppliesToOptions = [
+  { value: "color", label: "Warna (BW ditagih penuh)" },
+  { value: "bw", label: "BW (Warna ditagih penuh)" },
+];
 
 function addRentalItem() {
   rentalItems.value.push({
@@ -460,6 +566,8 @@ function formatRupiah(val: number): string {
 
 async function openRentalInvoices(rental: any) {
   selectedRental.value = rental;
+  expandedInvoiceId.value = null;
+  closeMeterDetail();
   showInvoiceModal.value = true;
   isLoadingRentalInvoices.value = true;
   try {
@@ -702,6 +810,7 @@ onMounted(async () => {
       @close="
         showInvoiceModal = false;
         selectedInvoice = null;
+        expandedInvoiceId = null;
       "
     >
       <div v-if="isLoadingRentalInvoices" class="text-muted text-center py-lg">
@@ -768,6 +877,15 @@ onMounted(async () => {
               Menunggu approval accounting
             </span>
             <button
+              v-if="meterCount(invoice) > 0"
+              type="button"
+              class="btn btn-sm btn-outline"
+              title="Lihat detail invoice items"
+              @click="toggleInvoiceItems(invoice)"
+            >
+              {{ isExpanded(invoice) ? 'Tutup Items' : `Detail Items (${meterCount(invoice)})` }}
+            </button>
+            <button
               v-for="payment in approvedPayments(invoice)"
               :key="payment.id"
               type="button"
@@ -795,6 +913,50 @@ onMounted(async () => {
               Payment
             </button>
           </div>
+          <div v-if="isExpanded(invoice)" class="rental-invoice-items">
+            <div style="overflow-x: auto;">
+              <table class="meter-table">
+                <thead>
+                  <tr>
+                    <th class="col-no">No</th>
+                    <th class="col-paper">Paper</th>
+                    <th class="col-meter">Meter</th>
+                    <th v-if="canSeeAmount" class="col-amount">Amount</th>
+                    <th class="col-aksi">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="meterCount(invoice) === 0">
+                    <td :colspan="canSeeAmount ? 5 : 4" class="empty-cell">Tidak ada detail items untuk invoice ini.</td>
+                  </tr>
+                  <tr v-for="(md, mdIdx) in meterDetailsOf(invoice)" :key="md.id || mdIdx" class="meter-row">
+                    <td class="cell-no">{{ mdIdx + 1 }}</td>
+                    <td class="cell-paper">
+                      <span class="paper-badge">{{ meterPaperSizeName(md) }}</span>
+                      <span class="color-pill" :class="isColorDetail(md) ? 'is-color' : 'is-bw'">{{ colorModeLabel(md) }}</span>
+                    </td>
+                    <td class="cell-meter">
+                      <div class="meter-range">{{ (md.start_meter_reading || 0).toLocaleString('id-ID') }} → {{ (md.last_meter_reading || 0).toLocaleString('id-ID') }}</div>
+                      <div class="meter-sub">Billable {{ (md.billable_copies ?? 0).toLocaleString('id-ID') }} · Free {{ (md.free_quota ?? 0) === 0 ? '-' : (md.free_quota ?? 0).toLocaleString('id-ID') }} ({{ colorModeLabel(md) }})</div>
+                    </td>
+                    <td v-if="canSeeAmount" class="cell-amount" :class="{ 'is-zero': !(md.total_amount > 0) }">{{ formatRupiah(md.total_amount || 0) }}</td>
+                    <td class="cell-aksi">
+                      <button type="button" class="action-btn action-btn--edit meter-eye" title="Lihat detail item" @click="openMeterDetail(md)">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot v-if="canSeeAmount && meterCount(invoice) > 0">
+                  <tr>
+                    <td colspan="3" class="total-label">Total ({{ meterCount(invoice) }} items)</td>
+                    <td class="total-value">{{ formatRupiah(invoiceItemsTotal(invoice)) }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
         </article>
         <div v-if="!visibleRentalInvoices.length" class="rental-invoice-empty">
           <strong>{{
@@ -821,10 +983,60 @@ onMounted(async () => {
           @click="
             showInvoiceModal = false;
             selectedInvoice = null;
+            expandedInvoiceId = null;
           "
         >
           Close
         </button>
+      </template>
+    </FormModal>
+
+    <FormModal
+      :open="showMeterDetail"
+      :title="selectedMeterDetail ? `Detail Item — ${meterPaperSizeName(selectedMeterDetail)} / ${selectedMeterDetail.color_mode || '-'}` : 'Detail Item'"
+      max-width="520px"
+      @close="closeMeterDetail"
+    >
+      <template v-if="selectedMeterDetail">
+        <div class="meter-detail-head">
+          <span class="paper-badge">{{ meterPaperSizeName(selectedMeterDetail) }}</span>
+          <span class="color-pill" :class="isColorDetail(selectedMeterDetail) ? 'is-color' : 'is-bw'">{{ colorModeLabel(selectedMeterDetail) }}</span>
+          <span v-if="meterPaperTypeName(selectedMeterDetail) !== '-'" class="paper-type-text">{{ meterPaperTypeName(selectedMeterDetail) }}</span>
+        </div>
+        <div class="meter-stat-grid">
+          <div class="meter-stat">
+            <span class="meter-stat-label">Start Meter</span>
+            <span class="meter-stat-value">{{ (selectedMeterDetail.start_meter_reading || 0).toLocaleString('id-ID') }}</span>
+          </div>
+          <div class="meter-stat">
+            <span class="meter-stat-label">Last Meter</span>
+            <span class="meter-stat-value">{{ (selectedMeterDetail.last_meter_reading || 0).toLocaleString('id-ID') }}</span>
+          </div>
+          <div class="meter-stat">
+            <span class="meter-stat-label">Total Copies</span>
+            <span class="meter-stat-value">{{ (selectedMeterDetail.total_copies ?? 0).toLocaleString('id-ID') }}</span>
+          </div>
+          <div class="meter-stat">
+            <span class="meter-stat-label">Free Quota ({{ colorModeLabel(selectedMeterDetail) }})</span>
+            <span class="meter-stat-value">{{ (selectedMeterDetail.free_quota ?? 0).toLocaleString('id-ID') }}</span>
+          </div>
+          <div class="meter-stat highlight">
+            <span class="meter-stat-label">Billable</span>
+            <span class="meter-stat-value">{{ (selectedMeterDetail.billable_copies ?? 0).toLocaleString('id-ID') }}</span>
+          </div>
+          <div v-if="canSeeAmount" class="meter-stat">
+            <span class="meter-stat-label">Rate / Page</span>
+            <span class="meter-stat-value">{{ formatRupiah(selectedMeterDetail.rate_per_page || 0) }}</span>
+          </div>
+        </div>
+        <div class="meter-formula-hint">{{ meterFormulaHint(selectedMeterDetail) }}</div>
+        <div v-if="canSeeAmount" class="meter-detail-total">
+          <span>Total Amount</span>
+          <strong>{{ formatRupiah(selectedMeterDetail.total_amount || 0) }}</strong>
+        </div>
+      </template>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="closeMeterDetail">Close</button>
       </template>
     </FormModal>
 
@@ -847,10 +1059,7 @@ onMounted(async () => {
       </div>
       <div class="form-group">
         <label class="form-label">Payment Method</label>
-        <select v-model="paymentForm.payment_method" class="form-select">
-          <option value="transfer">Bank Transfer</option>
-          <option value="cash">Cash</option>
-        </select>
+        <CustomSelect v-model="paymentForm.payment_method" :options="rentPaymentMethodOptions" class="form-select" />
       </div>
       <template v-if="paymentForm.payment_method === 'transfer'">
         <div class="form-group">
@@ -932,18 +1141,13 @@ onMounted(async () => {
         <label for="rent-customer" class="form-label">{{
           t("rentals.customer_label")
         }}</label>
-        <select
+        <CustomSelect
           id="rent-customer"
           v-model="form.customer_id"
+          :options="rentCustomerOptions"
+          :placeholder="t('rentals.customer_select')"
           class="form-select"
-          required
-        >
-          <option value="">{{ t("rentals.customer_select") }}</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">
-            {{ (c as any).company_name || (c as any).name
-            }}{{ (c as any).pic_name ? " - " + (c as any).pic_name : "" }}
-          </option>
-        </select>
+        />
       </div>
 
       <div class="form-row">
@@ -1073,31 +1277,13 @@ onMounted(async () => {
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
           <label class="form-label">Select Unit</label>
-          <select
+          <CustomSelect
             v-model="item.selected_item"
+            :options="rentUnitOptions"
+            placeholder="-- Select Unit --"
             class="form-select"
-            required
-            @change="onItemSelectChange(item)"
-          >
-            <option value="">-- Select Unit --</option>
-            <option
-              v-for="u in availableUnits"
-              :key="u.id"
-              :value="'unit_' + u.id"
-            >
-              {{ u.model }} ({{ (u as any).brand?.name }}) — S/N:
-              {{ u.serial_no || "N/A" }}
-            </option>
-            <option
-              v-for="u in unavailableUnits"
-              :key="u.id"
-              :value="'unit_' + u.id"
-              disabled
-            >
-              {{ u.model }} ({{ (u as any).brand?.name }}) — S/N:
-              {{ u.serial_no || "N/A" }} — {{ unitStatusOf(u) }}
-            </option>
-          </select>
+            @update:modelValue="onItemSelectChange(item)"
+          />
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
@@ -1258,32 +1444,25 @@ onMounted(async () => {
                     >Ukuran Kertas
                     <span class="text-muted">(opsional)</span></label
                   >
-                  <select
+                  <CustomSelect
                     v-model="rate.paper_size_id"
+                    :options="rentPaperSizeOptions"
                     class="form-select"
                     style="font-size: 0.8rem"
-                  >
-                    <option value="">&#8212; Semua ukuran &#8212;</option>
-                    <option v-for="p in paperSizes" :key="p.id" :value="p.id">
-                      {{ p.name }}
-                    </option>
-                  </select>
+                  />
                 </div>
                 <div class="form-group" style="margin: 0">
                   <label class="form-label"
                     >Jenis Kertas
                     <span class="text-muted">(opsional)</span></label
                   >
-                  <select
+                  <CustomSelect
                     v-model="rate.paper_type_id"
+                    :options="rentPaperTypeOptions"
+                    placeholder="— Semua jenis —"
                     class="form-select"
                     style="font-size: 0.8rem"
-                  >
-                    <option :value="null">&#8212; Semua jenis &#8212;</option>
-                    <option v-for="p in paperTypes" :key="p.id" :value="p.id">
-                      {{ p.name }}
-                    </option>
-                  </select>
+                  />
                 </div>
                 <div class="form-group" style="margin: 0">
                   <label class="form-label">Tarif BW per lembar (Rp)</label>
@@ -1335,15 +1514,13 @@ onMounted(async () => {
                 </div>
                 <div class="form-group" style="margin: 0">
                   <label class="form-label">Kuota gratis berlaku untuk</label>
-                  <select
+                  <CustomSelect
                     v-model="rate.quota_applies_to"
+                    :options="rentQuotaAppliesToOptions"
                     class="form-select"
                     style="font-size: 0.8rem"
                     title="Free quota applies to"
-                  >
-                    <option value="color">Warna (BW ditagih penuh)</option>
-                    <option value="bw">BW (Warna ditagih penuh)</option>
-                  </select>
+                  />
                 </div>
               </div>
               <div
@@ -1638,6 +1815,231 @@ onMounted(async () => {
 
 .rental-invoice-total {
   justify-items: end;
+}
+
+.rental-invoice-items {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.meter-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.meter-table thead {
+  background: var(--color-surface-raised);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.meter-table th {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.meter-table th.col-no { width: 44px; }
+.meter-table th.col-meter { text-align: right; }
+.meter-table th.col-amount { text-align: right; }
+.meter-table th.col-aksi { text-align: center; width: 60px; }
+
+.meter-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  vertical-align: middle;
+}
+
+.meter-row:hover td {
+  background: var(--color-surface-raised);
+}
+
+.cell-no {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-paper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.paper-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+  background: var(--color-surface);
+  white-space: nowrap;
+}
+
+.color-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.color-pill.is-bw {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.color-pill.is-color {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.cell-meter { text-align: right; }
+.meter-range {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.meter-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.cell-amount {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cell-amount.is-zero {
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.cell-aksi { text-align: center; }
+.meter-eye {
+  width: 32px;
+  height: 32px;
+  color: var(--color-text-muted);
+}
+.meter-eye:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.meter-table tfoot td {
+  padding: 10px 14px;
+  background: var(--color-surface-raised);
+  border-top: 1px solid var(--color-border);
+  font-weight: 700;
+}
+.total-label { text-align: right; color: var(--color-text-muted); }
+.total-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty-cell {
+  padding: 16px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.meter-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.paper-type-text {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.meter-formula-hint {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border: 1px dashed var(--color-border);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.meter-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.meter-stat.highlight {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.meter-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.meter-stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.meter-detail-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.meter-detail-total strong {
+  font-size: 15px;
+  color: var(--color-success);
+  font-variant-numeric: tabular-nums;
 }
 
 .rental-invoice-empty {

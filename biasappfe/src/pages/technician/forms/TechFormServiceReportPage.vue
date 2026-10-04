@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
@@ -33,6 +34,10 @@ const isLoading = ref(true)
 const isSaving = ref(false)
 const currentStep = ref(1)
 const removedSparepartIds = ref<string[]>([])
+
+const productOptions = computed(() =>
+  products.value.map((product: any) => ({ value: product.id, label: product.name })),
+)
 
 onMounted(async () => {
   try {
@@ -174,10 +179,7 @@ async function saveSignatures() {
             <div class="form-group sparepart-list">
               <label class="form-label">Direct Component Replacement <span class="text-muted">(Optional)</span></label>
               <div v-for="(sp, index) in form.spareparts" :key="sp.id || index" class="sparepart-row">
-                <select v-model="sp.product_id" class="form-select">
-                  <option value="" disabled>Select Component...</option>
-                  <option v-for="product in products" :key="product.id" :value="product.id">{{ product.name }}</option>
-                </select>
+                <CustomSelect v-model="sp.product_id" class="form-select" :options="productOptions" placeholder="Select Component..." />
                 <input v-model.number="sp.qty" type="number" class="form-input qty-input" min="1" placeholder="Qty">
                 <button type="button" class="btn btn-outline remove-sparepart" :aria-label="`Remove sparepart ${index + 1}`" @click="removeSparepart(index)">Delete</button>
               </div>

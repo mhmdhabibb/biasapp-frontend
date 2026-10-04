@@ -234,6 +234,7 @@ export function printPaymentReceipt(payment: PaymentReceiptData): boolean {
     date: escapeHtml(formattedDate),
     amount: escapeHtml(formattedAmount),
     amountInWords: escapeHtml(amountInWords),
+    csName: escapeHtml(payment.cs_name?.trim() || "-"),
   };
   const methodRow = safe.method
     ? `<div class="row"><div class="label">Metode</div><div class="value">${safe.method} (via CS)</div></div>`
@@ -267,6 +268,8 @@ export function printPaymentReceipt(payment: PaymentReceiptData): boolean {
           .notice { margin-top: 12px; font-size: 10px; color: #57534e; border-top: 1px dashed #a8a29e; padding-top: 8px; }
           .sign { min-width: 150px; text-align: center; }
           .sign-line { border-top: 1px solid #17212b; margin-top: 44px; padding-top: 5px; }
+          .sign-name { font-weight: 700; margin-top: 44px; border-bottom: 1px solid #17212b; padding-bottom: 5px; }
+          .sign-role { padding-top: 5px; font-size: 11px; color: #57534e; }
         </style>
       </head>
       <body>
@@ -284,7 +287,7 @@ export function printPaymentReceipt(payment: PaymentReceiptData): boolean {
             <div class="amount">${safe.amount}</div>
             ${payment.lunas ? `<div class="approval-stamp lunas">LUNAS<small>DANA DITERIMA</small></div>` : payment.partial ? `<div class="approval-stamp partial">CICILAN<small>BELUM LUNAS</small></div>` : ""}
             <div class="approval-stamp">DISETUJUI<small>ACCOUNTING</small></div>
-            <div class="sign"><div>Batam, ${safe.date}</div><div class="sign-line">Penerima</div></div>
+            <div class="sign"><div>Batam, ${safe.date}</div><div>Yang menerima,</div><div class="sign-name">(${safe.csName})</div><div class="sign-role">CS Penerima</div></div>
           </footer>
         </main>
       </body>
@@ -366,6 +369,7 @@ export function printPaymentStruk(
     date: escapeHtml(date),
     time: escapeHtml(time),
     amount: escapeHtml(formatMoney(payment.amount)),
+    cs: escapeHtml(payment.cs_name?.trim() || ""),
     qrDataUrl: payment.qr_data_url || "",
   };
   const rows: Array<[string, string]> = [
@@ -375,6 +379,7 @@ export function printPaymentStruk(
     ["Diterima dari", safe.receivedFrom],
     ["Metode", safe.method],
     ["Referensi", safe.referenceNo],
+    ...(safe.cs ? [["CS Penerima", safe.cs] as [string, string]] : []),
   ];
   const rowHtml = rows
     .map(

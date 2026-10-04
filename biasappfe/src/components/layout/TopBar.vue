@@ -34,7 +34,15 @@ async function openNotification(notification: Notification) {
     }
   }
   if (notification.type === "payment_approval") {
-    await router.push("/customer-service/payments");
+    const match = String(notification.message || "").match(/PAY-[A-Za-z0-9-]+/);
+    if (match) {
+      await router.push({
+        path: "/customer-service/payments",
+        query: { payment_no: match[0] },
+      });
+    } else {
+      await router.push("/customer-service/payments");
+    }
   }
 }
 </script>

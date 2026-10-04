@@ -105,9 +105,12 @@ const visiblePages = computed(() => {
           @input="currentPage = 1"
         />
       </div>
-      <span class="data-count" aria-live="polite">
-        {{ `${filteredData.length} items` }}
-      </span>
+      <div class="toolbar-right">
+        <slot name="toolbar"></slot>
+        <span class="data-count" aria-live="polite">
+          {{ `${filteredData.length} items` }}
+        </span>
+      </div>
     </div>
 
     <div v-if="data.length === 0" class="empty-state">
@@ -322,6 +325,13 @@ const visiblePages = computed(() => {
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
   white-space: nowrap;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .empty-state {

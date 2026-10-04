@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive } from 'vue'
+import { computed, ref, reactive } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -41,6 +42,32 @@ const form = reactive({
 })
 
 const defaultForm = { ...form }
+
+const warrantyOptions = computed(() =>
+  (warranties.value as any[]).map((w: any) => ({
+    value: w.id,
+    label: `${w.warranty_type} — ${w.status === 'active' ? 'Active' : w.status}`,
+  })),
+)
+
+const serviceReportOptions = computed(() =>
+  (serviceReports.value as any[]).map((sr: any) => ({
+    value: sr.id,
+    label: sr.service_report_no,
+  })),
+)
+
+const statusOptions = computed(() => {
+  const opts = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'in_review', label: 'In Review' },
+  ]
+  if (canApprove('warranty_claim')) {
+    opts.push({ value: 'approved', label: 'Approved' })
+    opts.push({ value: 'rejected', label: 'Rejected' })
+  }
+  return opts
+})
 
 function openAdd() {
   editingItem.value = null
@@ -103,17 +130,11 @@ function srLabel(id: any): string {
     <FormModal :open="showModal" :title="editingItem ? 'Edit Warranty Claim' : 'Add Warranty Claim'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="wc-warranty" class="form-label">Warranty</label>
-        <select id="wc-warranty" v-model="form.warranty_id" class="form-select">
-          <option :value="null">-- Select Warranty --</option>
-          <option v-for="w in warranties" :key="w.id" :value="w.id">{{ w.warranty_type }} — {{ w.status === 'active' ? 'Active' : w.status }}</option>
-        </select>
+        <CustomSelect id="wc-warranty" v-model="form.warranty_id" :options="warrantyOptions" placeholder="-- Select Warranty --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="wc-sr" class="form-label">Related Service Report</label>
-        <select id="wc-sr" v-model="form.service_report_id" class="form-select">
-          <option :value="null">-- Select Report --</option>
-          <option v-for="sr in serviceReports" :key="sr.id" :value="sr.id">{{ sr.service_report_no }}</option>
-        </select>
+        <CustomSelect id="wc-sr" v-model="form.service_report_id" :options="serviceReportOptions" placeholder="-- Select Report --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="wc-date" class="form-label">Claim Date</label>
@@ -125,12 +146,7 @@ function srLabel(id: any): string {
       </div>
       <div class="form-group">
         <label for="wc-status" class="form-label">Status</label>
-        <select id="wc-status" v-model="form.status" class="form-select">
-          <option value="pending">Pending</option>
-          <option value="in_review">In Review</option>
-          <option v-if="canApprove('warranty_claim')" value="approved">Approved</option>
-          <option v-if="canApprove('warranty_claim')" value="rejected">Rejected</option>
-        </select>
+        <CustomSelect id="wc-status" v-model="form.status" :options="statusOptions" class="form-select" />
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Warranty Claim" :message="`Are you sure you want to delete claim ID ${deletingItem?.id}?`" @close="showConfirm = false" @confirm="handleDelete" />

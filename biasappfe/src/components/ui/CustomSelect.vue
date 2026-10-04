@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 export interface SelectOption {
   value: number | string
   label: string
+  disabled?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -11,10 +12,12 @@ const props = withDefaults(defineProps<{
   options: SelectOption[]
   placeholder?: string
   searchable?: boolean
+  disabled?: boolean
   id?: string
 }>(), {
   placeholder: 'Select option',
   searchable: true,
+  disabled: false,
   id: '',
 })
 
@@ -42,10 +45,12 @@ const filteredOptions = computed(() => {
 })
 
 function toggle() {
+  if (props.disabled) return
   isOpen.value ? close() : open()
 }
 
 function open() {
+  if (props.disabled) return
   isOpen.value = true
   searchQuery.value = ''
   highlightedIndex.value = -1
@@ -61,6 +66,7 @@ function close() {
 }
 
 function select(option: SelectOption) {
+  if (option.disabled) return
   emit('update:modelValue', option.value)
   close()
 }
@@ -89,7 +95,7 @@ function handleKeydown(e: KeyboardEvent) {
       e.preventDefault()
       if (highlightedIndex.value >= 0 && highlightedIndex.value < filteredOptions.value.length) {
         const highlightedOption = filteredOptions.value[highlightedIndex.value]
-        if (highlightedOption) select(highlightedOption)
+        if (highlightedOption && !highlightedOption.disabled) select(highlightedOption)
       }
       break
     case 'Escape':
@@ -128,6 +134,7 @@ watch(() => searchQuery.value, () => {
       :id="id"
       role="combobox"
       :aria-expanded="isOpen"
+      :disabled="disabled"
       aria-haspopup="listbox"
       @click="toggle"
       @keydown="handleKeydown"
@@ -166,9 +173,11 @@ watch(() => searchQuery.value, () => {
             :class="{
               'is-selected': option.value === modelValue,
               'is-highlighted': idx === highlightedIndex,
+              'is-disabled': option.disabled,
             }"
             role="option"
             :aria-selected="option.value === modelValue"
+            :aria-disabled="option.disabled"
             @mouseenter="highlightedIndex = idx"
             @click="select(option)"
           >
@@ -216,6 +225,17 @@ watch(() => searchQuery.value, () => {
 
 .custom-select__trigger:hover {
   border-color: var(--color-text-muted);
+}
+
+.custom-select__trigger:disabled {
+  background: var(--color-surface-hover);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.custom-select__trigger:disabled:hover {
+  border-color: var(--color-border);
 }
 
 .custom-select.is-open .custom-select__trigger,
@@ -337,6 +357,12 @@ watch(() => searchQuery.value, () => {
 
 .custom-select__option.is-selected.is-highlighted {
   background: var(--color-primary-surface);
+}
+
+.custom-select__option.is-disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .custom-select__option:active {

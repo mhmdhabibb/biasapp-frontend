@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
@@ -90,7 +91,11 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Unit Types" button-label="Add Unit Type" permission="unit_type:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search unit types..." permission="unit_type" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search unit types..." permission="unit_type" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="unit_type" @imported="fetchData" />
+      </template>
+    </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Unit Type' : 'Add Unit Type'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="ut-name" class="form-label">Type Name</label>

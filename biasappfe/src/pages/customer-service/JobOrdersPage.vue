@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import FormModal from "@/components/ui/FormModal.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
+import { isCopierReport } from "@/utils/copierReport";
 import { computed, onMounted, ref } from "vue";
 
 const toast = useToast();
@@ -11,11 +13,14 @@ const { technicians, units, products } = useMasterStore();
 const jobOrders = ref<any[]>([]);
 const serviceRequests = ref<any[]>([]);
 const deliveryOrders = ref<any[]>([]);
+const serviceReports = ref<any[]>([]);
 const activeTab = ref("sr");
 const draggedTask = ref<any | null>(null);
 
 const searchUnassigned = ref("");
 const searchTech = ref("");
+const techStatusFilter = ref("All");
+const techStatusOptions = [{ value: "All", label: "All" }];
 const dragOverTechId = ref<string | number | null>(null);
 
 async function fetchJobOrders() {
@@ -68,10 +73,20 @@ async function fetchDeliveryOrders() {
   }
 }
 
+async function fetchServiceReports() {
+  try {
+    const data = await api.get<{ data: any[] }>("/service-reports");
+    serviceReports.value = data.data || [];
+  } catch (error) {
+    console.error("Failed to fetch data service reports", error);
+  }
+}
+
 onMounted(() => {
   fetchJobOrders();
   fetchServiceRequests();
   fetchDeliveryOrders();
+  fetchServiceReports();
 });
 
 const unassignedRequests = computed(() => {
@@ -113,8 +128,49 @@ const unassignedDeliveries = computed(() => {
   );
 });
 
+// Visit = copier service report yang belum ada teknisinya dan belum selesai.
+// Assign-nya terpisah dari service request: update technician_id report-nya
+// langsung, tanpa membuat/menyentuh job order service request.
+const VISIT_TERMINAL = ["completed", "done", "cancelled", "canceled"];
+
+const unassignedVisits = computed(() => {
+  const q = searchUnassigned.value.toLowerCase();
+  return serviceReports.value
+    .filter((r: any) => isCopierReport(r))
+    .filter(
+      (r: any) =>
+        !r.technician_id &&
+        !VISIT_TERMINAL.includes(String(r.status || "").toLowerCase()),
+    )
+    .map((r: any) => ({ ...r, taskType: "visit" }))
+    .filter(
+      (r: any) =>
+        String(r.report_no || "").toLowerCase().includes(q) ||
+        String(r.customer?.company_name || r.customer?.name || "")
+          .toLowerCase()
+          .includes(q),
+    );
+});
+
+function visitUnitLabel(visit: any): string {
+  const u = visit?.unit;
+  if (u) return `${u.model || "Unit"}${u.serial_no ? ` (${u.serial_no})` : ""}`;
+  return "-";
+}
+
+function visitDateOf(visit: any): string {
+  return visit?.service_date || visit?.created_at || "";
+}
+
+function isVisitJob(job: any): boolean {
+  return job?.taskType === "visit";
+}
+
 const displayedUnassigned = computed(() => {
-  return activeTab.value === 'sr' ? unassignedRequests.value : unassignedDeliveries.value;
+  if (activeTab.value === 'sr') return unassignedRequests.value;
+  if (activeTab.value === 'do') return unassignedDeliveries.value;
+  if (activeTab.value === 'visit') return unassignedVisits.value;
+  return [];
 });
 
 const filteredTechs = computed(() => {
@@ -150,7 +206,16 @@ function getJobsForTech(techId: string | number) {
         !assignedDeliveryIds.value.has(String(d.id)),
     )
     .map((d) => ({ ...d, taskType: "do" }));
-  return [...jobs, ...dos];
+  // Visit (copier report) yang sudah di-assign ke teknisi ini.
+  const visits = serviceReports.value
+    .filter(
+      (r: any) =>
+        isCopierReport(r) &&
+        String(r.technician_id || "") === String(techId) &&
+        !VISIT_TERMINAL.includes(String(r.status || "").toLowerCase()),
+    )
+    .map((r: any) => ({ ...r, taskType: "visit" }));
+  return [...jobs, ...dos, ...visits];
 }
 
 function statusBadgeClass(status: string) {
@@ -247,6 +312,7 @@ const detailCustomer = computed(() => {
   const sr = selectedJob.value?.service_request || selectedRequest.value;
   if (sr?.customer) return sr.customer;
   return (
+    selectedJob.value?.customer ||
     selectedJob.value?.delivery_order?.customer ||
     selectedRequest.value?.customer ||
     null
@@ -275,7 +341,7 @@ function isTerminalStatus(status: string | undefined) {
 
 function isTechnicianBusy(technicianId: string | number) {
   const targetDate = dateKey(
-    draggedTask.value?.delivery_date || draggedTask.value?.scheduled_date || new Date(),
+    draggedTask.value?.delivery_date || draggedTask.value?.scheduled_date || draggedTask.value?.service_date || new Date(),
   );
   if (!targetDate) return false;
 
@@ -289,7 +355,12 @@ function isTechnicianBusy(technicianId: string | number) {
     dateKey(delivery.delivery_date) === targetDate &&
     !isTerminalStatus(delivery.status),
   );
-  return hasSameDayJob || hasSameDayDelivery;
+  const hasSameDayVisit = serviceReports.value.some((report: any) =>
+    String(report.technician_id || "") === String(technicianId) &&
+    dateKey(report.service_date) === targetDate &&
+    !VISIT_TERMINAL.includes(String(report.status || "").toLowerCase()),
+  );
+  return hasSameDayJob || hasSameDayDelivery || hasSameDayVisit;
 }
 
 function deliveryTypeLabel(type: string | undefined) {
@@ -352,6 +423,7 @@ const showAssignModal = ref(false);
 const assignTarget = ref<{ task: any; techId: string | number } | null>(null);
 const assignDeliveryDate = ref("");
 const assignScheduledDate = ref("");
+const assignVisitDate = ref("");
 const isAssigning = ref(false);
 
 function toLocalDatetimeStr(d?: string | Date) {
@@ -375,6 +447,11 @@ async function onDrop(techId: string | number) {
     assignDeliveryDate.value = toLocalDatetimeStr(
       draggedRequest.delivery_date || new Date().toISOString(),
     );
+  } else if (draggedRequest.taskType === "visit") {
+    // Visit: default tanggal kunjungan yang sudah ada (atau hari ini)
+    assignVisitDate.value = toLocalDatetimeStr(
+      draggedRequest.service_date || new Date().toISOString(),
+    );
   } else {
     // SR: default scheduled_date to now
     assignScheduledDate.value = toLocalDatetimeStr(new Date().toISOString());
@@ -395,7 +472,20 @@ async function confirmAssign() {
 
   const { task, techId } = assignTarget.value;
 
-  if (task.taskType === "do") {
+  if (task.taskType === "visit") {
+    // Assign visit = update technician_id copier report langsung.
+    // Tidak membuat job order dan tidak menyentuh service request.
+    try {
+      await api.put(`/service-reports/${task.id}`, {
+        technician_id: techId,
+        service_date: new Date(assignVisitDate.value).toISOString(),
+      });
+      await fetchServiceReports();
+      toast.success("Visit successfully assigned to technician.");
+    } catch (error) {
+      toast.error("Failed to assign visit");
+    }
+  } else if (task.taskType === "do") {
     // Buat baris job_orders bertipe delivery; backend ikut update
     // delivery_orders.technician_id + status jadi issued.
     const payload = {
@@ -474,7 +564,7 @@ async function confirmAssign() {
       <div>
         <h1 class="jo-title">Job Orders</h1>
         <p class="jo-subtitle">
-          Drag a service request onto a technician lane to create a job order
+          Drag a service request, delivery, or visit onto a technician lane to assign it
         </p>
       </div>
       <div class="jo-summary">
@@ -499,11 +589,14 @@ async function confirmAssign() {
         </div>
 
         <div class="sidebar-tabs" style="display: flex; gap: 8px; margin-top: -8px;">
-          <button class="btn btn-sm" :class="activeTab === 'sr' ? 'btn-primary' : 'btn-outline'" style="flex: 1" @click="activeTab = 'sr'">
+          <button class="btn btn-sm" :class="activeTab === 'sr' ? 'btn-primary' : 'btn-outline'" style="flex: 1; padding: 4px;" @click="activeTab = 'sr'">
             Requests ({{ unassignedRequests.length }})
           </button>
-          <button class="btn btn-sm" :class="activeTab === 'do' ? 'btn-primary' : 'btn-outline'" style="flex: 1" @click="activeTab = 'do'">
+          <button class="btn btn-sm" :class="activeTab === 'do' ? 'btn-primary' : 'btn-outline'" style="flex: 1; padding: 4px;" @click="activeTab = 'do'">
             Deliveries ({{ unassignedDeliveries.length }})
+          </button>
+          <button class="btn btn-sm" :class="activeTab === 'visit' ? 'btn-primary' : 'btn-outline'" style="flex: 1; padding: 4px;" @click="activeTab = 'visit'">
+            Visits ({{ unassignedVisits.length }})
           </button>
         </div>
 
@@ -517,7 +610,7 @@ async function confirmAssign() {
           <button
             class="btn-icon refresh-btn"
             title="Refresh"
-            @click="activeTab === 'sr' ? fetchServiceRequests() : fetchDeliveryOrders()"
+            @click="activeTab === 'sr' ? fetchServiceRequests() : (activeTab === 'do' ? fetchDeliveryOrders() : fetchServiceReports())"
           >
             <svg
               width="16"
@@ -575,7 +668,7 @@ async function confirmAssign() {
             </div>
             <div class="card-main">
               <div class="card-header">
-                <span class="ref-no">{{ req.request_no || req.do_number }}</span>
+                <span class="ref-no">{{ req.request_no || req.do_number || req.report_no }}</span>
                 <span class="date-tag">{{
                   formatDateDisplay(req.created_at)
                 }}</span>
@@ -605,7 +698,7 @@ async function confirmAssign() {
                     <span style="font-weight: 500; color: var(--color-primary);">{{ deliveryTypeLabel(req.do_type) }}</span>
                   </div>
                 </template>
-                <template v-else>
+                <template v-else-if="req.taskType === 'sr'">
                   <div class="card-customer" v-if="req.customer">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -627,6 +720,31 @@ async function confirmAssign() {
                     <span style="font-weight: 500; color: var(--color-primary);">Service Request</span>
                   </div>
                   <div class="problem-text" style="margin-top: 6px;">{{ req.problem_description || 'No description' }}</div>
+                </template>
+                <template v-else-if="req.taskType === 'visit'">
+                  <div class="card-customer" v-if="req.customer">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span>{{ req.customer.company_name || req.customer.name }}</span>
+                  </div>
+                  <div class="card-address" v-if="req.unit">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                      <line x1="12" y1="17" x2="12" y2="21" />
+                    </svg>
+                    <span>{{ req.unit.model || 'Unit' }}{{ req.unit.serial_no ? ` (${req.unit.serial_no})` : '' }}</span>
+                  </div>
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="4" width="18" height="17" rx="2" />
+                      <path d="M8 2v4M16 2v4M3 10h18" />
+                    </svg>
+                    <span style="font-weight: 500; color: var(--color-primary);">Visit · Copier Report</span>
+                  </div>
+                  <div class="problem-text" style="margin-top: 6px;">Visit {{ formatFullDate(req.service_date) }} · {{ String(req.status || '-').replace('_', ' ') }}</div>
                 </template>
               </div>
             </div>
@@ -658,9 +776,7 @@ async function confirmAssign() {
               class="form-input search-input"
             />
           </div>
-          <select class="form-select filter-select">
-            <option>All</option>
-          </select>
+          <CustomSelect v-model="techStatusFilter" :options="techStatusOptions" class="form-select filter-select" />
           <button class="btn btn-primary btn-sm filter-btn">ALL</button>
         </div>
 
@@ -723,7 +839,7 @@ async function confirmAssign() {
               >
                 <div class="ac-row">
                   <span class="ref-no">{{
-                    job.service_request_no || job.job_order_no || job.do_number
+                    job.service_request_no || job.job_order_no || job.do_number || job.report_no
                   }}</span>
                   <span class="badge" :class="statusBadgeClass(job.status)">
                     {{ String(job.status || "new").replace("_", " ") }}
@@ -744,6 +860,7 @@ async function confirmAssign() {
                     <path d="M8 2v4M16 2v4M3 10h18" />
                   </svg>
                   <span v-if="isDeliveryJob(job)">🚚 Delivery {{ formatFullDate(jobDeliveryDate(job)) }}</span>
+                  <span v-else-if="isVisitJob(job)">🔧 Visit {{ formatFullDate(visitDateOf(job)) }}</span>
                   <span v-else>🗓 Scheduled {{ formatFullDate(job.scheduled_date) }}</span>
                   <span class="ac-dot">·</span>
                   <svg
@@ -767,7 +884,7 @@ async function confirmAssign() {
                     <path v-if="isDeliveryJob(job)" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
                     <path v-if="!isDeliveryJob(job)" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
                   </svg>
-                  <span>{{ isDeliveryJob(job) ? deliveryTypeLabel(jobDoType(job)) : 'Service Request' }}</span>
+                  <span>{{ isDeliveryJob(job) ? deliveryTypeLabel(jobDoType(job)) : (isVisitJob(job) ? 'Visit · Copier Report' : 'Service Request') }}</span>
                   <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0" class="ac-dot">·</span>
                   <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0">{{ doItemsCount(job) }} item{{ doItemsCount(job) > 1 ? "s" : "" }}</span>
                 </div>
@@ -784,7 +901,7 @@ async function confirmAssign() {
                     <path v-if="job.taskType === 'do'" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
                     <path v-if="job.taskType === 'sr'" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
                   </svg>
-                  <span>{{ job.taskType === 'do' ? deliveryTypeLabel(job.do_type) : 'Service Request' }}</span>
+                  <span>{{ job.taskType === 'do' ? deliveryTypeLabel(job.do_type) : (job.taskType === 'visit' ? 'Visit · Copier Report' : 'Service Request') }}</span>
                 </div>
               </div>
             </div>
@@ -803,13 +920,14 @@ async function confirmAssign() {
       <template v-if="selectedJob">
         <div class="detail-hero">
           <div class="detail-hero-main">
-            <span class="detail-hero-id">{{ selectedJob.job_order_no || selectedJob.do_number }}</span>
+            <span class="detail-hero-id">{{ selectedJob.job_order_no || selectedJob.do_number || selectedJob.report_no }}</span>
             <span class="badge" :class="statusBadgeClass(selectedJob.status)">
               {{ String(selectedJob.status || "new").replace("_", " ") }}
             </span>
           </div>
           <span class="detail-hero-scheduled">
             <template v-if="isDeliveryJob(selectedJob)">🚚 Delivery {{ formatFullDate(jobDeliveryDate(selectedJob)) }}</template>
+            <template v-else-if="isVisitJob(selectedJob)">🔧 Visit {{ formatFullDate(visitDateOf(selectedJob)) }}</template>
             <template v-else>🗓 Scheduled {{ formatFullDate(selectedJob.scheduled_date) }}</template>
           </span>
         </div>
@@ -822,9 +940,9 @@ async function confirmAssign() {
             }}</span>
           </div>
           <div class="detail-item">
-            <span class="detail-label">{{ isDeliveryJob(selectedJob) ? "Delivery Date" : "Scheduled Date" }}</span>
+            <span class="detail-label">{{ isDeliveryJob(selectedJob) ? "Delivery Date" : (isVisitJob(selectedJob) ? "Visit Date" : "Scheduled Date") }}</span>
             <span class="detail-value">{{
-              isDeliveryJob(selectedJob) ? formatFullDate(jobDeliveryDate(selectedJob)) : formatFullDate(selectedJob.scheduled_date)
+              isDeliveryJob(selectedJob) ? formatFullDate(jobDeliveryDate(selectedJob)) : (isVisitJob(selectedJob) ? formatFullDate(visitDateOf(selectedJob)) : formatFullDate(selectedJob.scheduled_date))
             }}</span>
           </div>
           <div class="detail-item">
@@ -838,6 +956,28 @@ async function confirmAssign() {
             <span class="detail-value">{{
               formatFullDate(selectedJob.service_request.request_date)
             }}</span>
+          </div>
+        </div>
+
+        <div class="detail-section" v-if="isVisitJob(selectedJob)">
+          <div class="detail-section-title">Visit (Copier Report)</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Report No</span>
+              <span class="detail-value detail-link">{{
+                selectedJob.report_no
+              }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Unit</span>
+              <span class="detail-value">{{ visitUnitLabel(selectedJob) }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Report Status</span>
+              <span class="detail-value">{{
+                String(selectedJob.status || "-").replace("_", " ")
+              }}</span>
+            </div>
           </div>
         </div>
 
@@ -952,7 +1092,7 @@ async function confirmAssign() {
         <div class="detail-section">
           <div class="detail-section-title">Problem / Notes</div>
           <p class="detail-text">
-            {{ selectedJob.service_request?.problem_description || selectedJob.notes || selectedJob.problem || "-" }}
+            {{ selectedJob.service_request?.problem_description || selectedJob.notes || selectedJob.problem || selectedJob.machine_problem || "-" }}
           </p>
         </div>
 
@@ -965,7 +1105,7 @@ async function confirmAssign() {
       <template v-else-if="selectedRequest">
         <div class="detail-hero">
           <div class="detail-hero-main">
-            <span class="detail-hero-id">{{ selectedRequest.request_no || selectedRequest.do_number }}</span>
+            <span class="detail-hero-id">{{ selectedRequest.request_no || selectedRequest.do_number || selectedRequest.report_no }}</span>
             <span class="badge badge-neutral">{{
               String(selectedRequest.status || "-").replace("_", " ")
             }}</span>
@@ -979,7 +1119,7 @@ async function confirmAssign() {
           <div class="detail-item">
             <span class="detail-label">Date</span>
             <span class="detail-value">{{
-              formatFullDate(selectedRequest.request_date || selectedRequest.delivery_date)
+              formatFullDate(selectedRequest.request_date || selectedRequest.delivery_date || selectedRequest.service_date)
             }}</span>
           </div>
           <div class="detail-item">
@@ -1016,10 +1156,17 @@ async function confirmAssign() {
           </div>
         </div>
 
+        <div class="detail-section" v-if="selectedRequest.taskType === 'visit' && selectedRequest.unit">
+          <div class="detail-section-title">Unit</div>
+          <p class="detail-text">
+            {{ selectedRequest.unit.model || 'Unit' }}{{ selectedRequest.unit.serial_no ? ` (${selectedRequest.unit.serial_no})` : '' }}
+          </p>
+        </div>
+
         <div class="detail-section">
           <div class="detail-section-title">Problem / Notes</div>
           <p class="detail-text">
-            {{ selectedRequest.problem_description || selectedRequest.notes || selectedRequest.problem || "-" }}
+            {{ selectedRequest.problem_description || selectedRequest.notes || selectedRequest.problem || selectedRequest.machine_problem || "-" }}
           </p>
         </div>
       </template>
@@ -1032,7 +1179,7 @@ async function confirmAssign() {
     <!-- Assign Confirmation Modal -->
     <FormModal
       :open="showAssignModal"
-      :title="assignTarget?.task?.taskType === 'do' ? 'Assign Delivery Order' : 'Assign Service Request'"
+      :title="assignTarget?.task?.taskType === 'do' ? 'Assign Delivery Order' : (assignTarget?.task?.taskType === 'visit' ? 'Assign Visit' : 'Assign Service Request')"
       max-width="480px"
       @close="cancelAssign"
     >
@@ -1040,7 +1187,7 @@ async function confirmAssign() {
         <div class="assign-info">
           <div class="assign-info-row">
             <span class="assign-label">Task</span>
-            <span class="assign-value font-bold">{{ assignTarget.task.request_no || assignTarget.task.do_number }}</span>
+            <span class="assign-value font-bold">{{ assignTarget.task.request_no || assignTarget.task.do_number || assignTarget.task.report_no }}</span>
           </div>
           <div class="assign-info-row">
             <span class="assign-label">Technician</span>
@@ -1060,6 +1207,16 @@ async function confirmAssign() {
             class="form-input"
           />
           <p class="assign-hint">Atur tanggal dan waktu pengantaran. Default: tanggal DO yang sudah ada.</p>
+        </div>
+
+        <div class="form-group mt-lg" v-else-if="assignTarget.task.taskType === 'visit'">
+          <label class="form-label">Visit Date <span class="text-danger">*</span></label>
+          <input
+            type="datetime-local"
+            v-model="assignVisitDate"
+            class="form-input"
+          />
+          <p class="assign-hint">Atur tanggal kunjungan teknisi untuk pengisian copier report. Assign visit tidak mengubah service request.</p>
         </div>
 
         <div class="form-group mt-lg" v-else>

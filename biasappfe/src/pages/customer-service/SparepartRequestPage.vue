@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
@@ -32,6 +33,20 @@ const form = reactive({
   qty: 1
 })
 const defaultForm = { ...form }
+
+const serviceReportOptions = computed(() =>
+  (serviceReports.value as any[]).map((sr: any) => ({
+    value: sr.id,
+    label: String(sr.report_no || sr.service_report_no || sr.id),
+  })),
+)
+
+const productOptions = computed(() =>
+  (products.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+)
 
 function openAdd() {
   Object.assign(form, defaultForm)
@@ -121,19 +136,11 @@ function getTechnician(row: any) {
     <FormModal title="New Sparepart Request" :open="showModal" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label class="form-label" for="sr">Service Report</label>
-        <select id="sr" v-model="form.service_report_id" class="form-select">
-          <option value="" disabled>Select service report</option>
-          <option v-for="sr in serviceReports" :key="sr.id" :value="sr.id">
-            {{ sr.report_no || sr.service_report_no || sr.id }}
-          </option>
-        </select>
+        <CustomSelect id="sr" v-model="form.service_report_id" :options="serviceReportOptions" placeholder="Select service report" class="form-select" />
       </div>
       <div class="form-group">
         <label class="form-label" for="sp">Sparepart</label>
-        <select id="sp" v-model="form.product_id" class="form-select">
-          <option value="" disabled>Select product</option>
-          <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
+        <CustomSelect id="sp" v-model="form.product_id" :options="productOptions" placeholder="Select product" class="form-select" />
       </div>
       <div class="form-group">
         <label class="form-label" for="qty">Qty</label>

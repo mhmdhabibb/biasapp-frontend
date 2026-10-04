@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import DataTable from "@/components/ui/DataTable.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
+import { isCopierReport } from "@/utils/copierReport";
 import type { TableColumn } from "@/types";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
@@ -31,6 +33,20 @@ const rentalsData = ref<any[]>([]);
 const warrantiesData = ref<any[]>([]);
 
 const { jobOrders, serviceReports, technicians } = useMasterStore();
+
+const customerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: `${c.company_name || c.name}${c.pic_name ? " - PIC: " + c.pic_name : ""}`,
+  })),
+);
+
+const technicianOptions = computed(() =>
+  (technicians.value as any[]).map((t: any) => ({
+    value: t.id,
+    label: t.name,
+  })),
+);
 
 // Check if a unit, product, or sale item is still under warranty for a given customer
 function getWarrantyStatus(
@@ -431,8 +447,10 @@ const relatedReports = computed(() => {
     (j) => j.service_request_id === selectedRequest.value.id,
   );
   const jobIds = requestJobs.map((j) => String(j.id));
-  return serviceReports.value.filter((sr) =>
-    jobIds.includes(String(sr.job_order_id)),
+  // Copier report punya list tersendiri — tidak ditampilkan di sini.
+  return serviceReports.value.filter(
+    (sr) =>
+      jobIds.includes(String(sr.job_order_id)) && !isCopierReport(sr),
   );
 });
 
@@ -658,13 +676,7 @@ onMounted(() => {
 
       <div class="form-group mt-3">
         <label class="form-label">Customer</label>
-        <select v-model="form.customer_id" class="form-select" required>
-          <option value="">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">
-            {{ (c as any).company_name || (c as any).name
-            }}{{ (c as any).pic_name ? " - PIC: " + (c as any).pic_name : "" }}
-          </option>
-        </select>
+        <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
 
       <div class="form-group mt-3">
@@ -796,12 +808,7 @@ onMounted(() => {
     >
       <div class="form-group mt-3">
         <label class="form-label">Select Technician</label>
-        <select v-model="assignForm.technician_id" class="form-select" required>
-          <option value="">-- Select Technician --</option>
-          <option v-for="t in technicians" :key="t.id" :value="t.id">
-            {{ t.name }}
-          </option>
-        </select>
+        <CustomSelect v-model="assignForm.technician_id" :options="technicianOptions" placeholder="-- Select Technician --" class="form-select" />
       </div>
       <div class="form-group mt-3">
         <label class="form-label">Assignment Date</label>

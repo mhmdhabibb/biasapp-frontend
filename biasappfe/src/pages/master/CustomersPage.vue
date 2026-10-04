@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
@@ -61,6 +63,11 @@ const countryCodes = [
   { name: 'Netherlands', code: '+31' },
 ]
 const form = reactive({ category: 'Corporate' as string, company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '' })
+const categoryOptions = [
+  { value: 'Corporate', label: 'Corporate' },
+  { value: 'Government', label: 'Government' },
+]
+const countryCodeOptions = countryCodes.map(c => ({ value: c.code, label: `${c.name} (${c.code})` }))
 
 function openAdd() {
   editingItem.value = null
@@ -137,7 +144,11 @@ async function handleDelete() {
     <PageHeader title="Customers" :button-label="isTechnician ? undefined : 'Add Customer'" permission="customer:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search customers..."
                permission="customer"
-               @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
+               @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="customer" @imported="fetchData" />
+      </template>
+    </DataTable>
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Customer' : 'Add Customer'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="cust-company" class="form-label">Customer Name</label>
@@ -145,10 +156,7 @@ async function handleDelete() {
       </div>
       <div class="form-group">
         <label for="cust-category" class="form-label">Customer Type</label>
-        <select id="cust-category" v-model="form.category" class="form-select" required>
-          <option value="Corporate">Corporate</option>
-          <option value="Government">Government</option>
-        </select>
+        <CustomSelect id="cust-category" v-model="form.category" :options="categoryOptions" placeholder="Select customer type" />
       </div>
       <div class="form-group">
         <label for="cust-name" class="form-label">PIC Name</label>
@@ -176,11 +184,7 @@ async function handleDelete() {
       <div class="form-group">
         <label for="cust-phone" class="form-label">Phone Number <span class="text-danger">*</span></label>
         <div style="display: grid; grid-template-columns: minmax(145px, 0.8fr) 1.2fr; gap: 8px;">
-          <select v-model="phoneCountryCode" class="form-select" aria-label="Country calling code" required>
-            <option v-for="country in countryCodes" :key="country.code" :value="country.code">
-              {{ country.name }} ({{ country.code }})
-            </option>
-          </select>
+          <CustomSelect v-model="phoneCountryCode" :options="countryCodeOptions" placeholder="Select country code" />
           <input id="cust-phone" v-model="form.phone" type="tel" inputmode="numeric" pattern="[0-9]*" class="form-input" placeholder="8123456789" :maxlength="15 - phoneCountryCode.length + 1" required @input="form.phone = form.phone.replace(/[^0-9]/g, '').replace(/^0+/, '')">
         </div>
         <p class="form-hint">Saved as {{ phoneCountryCode }}{{ form.phone || '...' }}</p>

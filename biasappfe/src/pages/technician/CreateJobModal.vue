@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
 import { usePermission } from '@/composables/usePermission'
@@ -64,6 +65,22 @@ const selectedContract = computed(() => {
   if (!form.contract_item_id) return null
   return contractItems.value.find(c => c.id == form.contract_item_id) || null
 })
+
+const contractOptions = computed(() =>
+  activeContracts.value.map((c: any) => ({ value: c.id, label: c.contract_no })),
+)
+
+const customerOptions = computed(() =>
+  customers.value.map((c: any) => ({ value: c.id, label: c.company_name || c.name })),
+)
+
+const unitOptions = computed(() =>
+  customerMachines.value.map((u: any) => ({ value: u.id, label: `${u.serial_no} - ${u.name}` })),
+)
+
+const technicianOptions = computed(() =>
+  activeTechnicians.value.map((t: any) => ({ value: t.id, label: techLabel(t) })),
+)
 
 watch(() => form.job_type, (newType) => {
   if (newType !== 'maintenance_visit') {
@@ -153,43 +170,24 @@ async function submitJob() {
           
           <div class="form-group full-width">
             <label>Job Type</label>
-            <select v-model="form.job_type" class="form-control" required>
-              <option v-for="type in jobTypes" :key="type.value" :value="type.value">
-                {{ type.label }}
-              </option>
-            </select>
+            <CustomSelect v-model="form.job_type" class="form-control" :options="jobTypes" />
           </div>
 
           <template v-if="form.job_type === 'maintenance_visit'">
             <div class="form-group full-width">
               <label>Select Active Contract</label>
-              <select v-model="form.contract_item_id" class="form-control" required>
-                <option :value="null">-- Select Contract --</option>
-                <option v-for="c in activeContracts" :key="c.id" :value="c.id">
-                  {{ c.contract_no }} 
-                </option>
-              </select>
+              <CustomSelect v-model="form.contract_item_id" class="form-control" :options="contractOptions" placeholder="-- Select Contract --" />
             </div>
           </template>
 
           <div class="form-group">
             <label>Customer</label>
-            <select v-model="form.customer_id" class="form-control" required :disabled="form.job_type === 'maintenance_visit'">
-              <option :value="null">-- Select Customer --</option>
-              <option v-for="c in customers" :key="c.id" :value="c.id">
-                {{ c.company_name || c.name }}
-              </option>
-            </select>
+            <CustomSelect v-model="form.customer_id" class="form-control" :options="customerOptions" placeholder="-- Select Customer --" :disabled="form.job_type === 'maintenance_visit'" />
           </div>
 
           <div class="form-group">
             <label>Machine / Unit</label>
-            <select v-model="form.unit_id" class="form-control" required :disabled="!form.customer_id || form.job_type === 'maintenance_visit'">
-              <option :value="null">-- Select Machine --</option>
-              <option v-for="u in customerMachines" :key="u.id" :value="u.id">
-                {{ u.serial_no }} - {{ u.name }}
-              </option>
-            </select>
+            <CustomSelect v-model="form.unit_id" class="form-control" :options="unitOptions" placeholder="-- Select Machine --" :disabled="!form.customer_id || form.job_type === 'maintenance_visit'" />
           </div>
 
           <div class="form-group full-width" v-if="selectedUnit">
@@ -203,12 +201,7 @@ async function submitJob() {
 
           <div class="form-group">
             <label>Assign Technician (Optional - For direct dispatch)</label>
-            <select v-model="form.technician_id" class="form-control">
-              <option :value="null">-- Leave Unassigned --</option>
-              <option v-for="t in activeTechnicians" :key="t.id" :value="t.id">
-                {{ techLabel(t) }}
-              </option>
-            </select>
+            <CustomSelect v-model="form.technician_id" class="form-control" :options="technicianOptions" placeholder="-- Leave Unassigned --" />
           </div>
 
           <div class="form-group">

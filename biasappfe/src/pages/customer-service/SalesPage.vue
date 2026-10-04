@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
@@ -12,9 +14,17 @@ import type { Sale, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { buildPaymentTimestamp } from '@/utils/paymentReceipt'
+import { normalizeRole } from '@/router/role-access'
 
 const toast = useToast()
-const { can, canApprove } = usePermission()
+const { can, canApprove, isAdmin } = usePermission()
+const { currentUser } = useAuth()
+// CS tidak boleh melihat nominal pada detail item.
+const canSeeAmount = computed(() => {
+  if (isAdmin.value) return true
+  const role = normalizeRole(currentUser.value?.role)
+  return role === 'accounting' || role === 'admin'
+})
 const {
   sales: data,
   customers,
@@ -26,6 +36,38 @@ const {
 } = useMasterStore()
 
 const resources = useResourcesStore()
+
+const customerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: `${c.company_name || c.name}${c.pic_name ? ' - ' + c.pic_name : ''}`,
+  })),
+)
+
+const productOptions = computed(() =>
+  (products.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+)
+
+const storageTypeOptions = [
+  { value: 'SSD', label: 'SSD' },
+  { value: 'HDD', label: 'HDD' },
+  { value: 'NVMe', label: 'NVMe' },
+]
+
+const warrantyTypeOptions = [
+  { value: 'machine', label: 'Machine' },
+  { value: 'sparepart', label: 'Sparepart' },
+  { value: 'service', label: 'Service' },
+]
+
+const paymentMethodOptions = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'TRANSFER', label: 'Bank Transfer' },
+  { value: 'CREDIT_CARD', label: 'Credit / Debit Card' },
+]
 
 const columns: TableColumn[] = [
   { key: 'date', label: 'Transaction Date' },
@@ -44,6 +86,17 @@ const showDetail = ref(false)
 const editingItem = ref<Sale | null>(null)
 const deletingItem = ref<Sale | null>(null)
 const viewingItem = ref<Sale | null>(null)
+const selectedSaleItem = ref<any>(null)
+const showItemDetail = ref(false)
+
+function openSaleItemDetail(si: any) {
+  selectedSaleItem.value = si
+  showItemDetail.value = true
+}
+function closeSaleItemDetail() {
+  showItemDetail.value = false
+  selectedSaleItem.value = null
+}
 
 const showPaymentModal = ref(false)
 const paymentData = reactive({
@@ -125,6 +178,7 @@ function generateSingleInvoiceHtml(item: any) {
   if (gender === 'L') prefix = 'Bapak '
   if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
+  const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
 
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
@@ -276,7 +330,7 @@ function generateSingleInvoiceHtml(item: any) {
         </div>
         <div class="sig-box">
           Sincerely,
-          <div class="sig-line">Grace</div>
+          <div class="sig-line">${signer}</div>
         </div>
       </div>
     </div>
@@ -873,10 +927,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
       </div>
       <div class="form-group">
         <label for="sale-customer" class="form-label">Customer</label>
-        <select id="sale-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ (c as any).company_name || (c as any).name }}{{ (c as any).pic_name ? ' - ' + (c as any).pic_name : '' }}</option>
-        </select>
+        <CustomSelect id="sale-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="sale-date" class="form-label">Date</label>
@@ -895,10 +946,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
       <div class="form-section-title">Sale Items</div>
       <div v-for="(item, idx) in saleItems" :key="idx" class="sale-item-row">
         <div class="form-group sale-item-product">
-          <select v-model="item.product_id" class="form-select" @change="onProductChange(idx)">
-            <option :value="null">-- Product --</option>
-            <option v-for="p in products" :key="p.id" :value="p.id">{{ (p as any).name }}</option>
-          </select>
+          <CustomSelect v-model="item.product_id" :options="productOptions" placeholder="-- Product --" class="form-select" @update:modelValue="onProductChange(idx)" />
         </div>
         <div class="form-group sale-item-qty">
           <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
@@ -927,12 +975,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
-              <select v-model="item.specs.storage_type" class="form-select">
-                <option value="">Select</option>
-                <option value="SSD">SSD</option>
-                <option value="HDD">HDD</option>
-                <option value="NVMe">NVMe</option>
-              </select>
+              <CustomSelect v-model="item.specs.storage_type" :options="storageTypeOptions" placeholder="Select" class="form-select" />
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>
@@ -965,11 +1008,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
           <div class="form-group">
             <label class="form-label">Warranty Type</label>
-            <select v-model="form.warranty.warranty_type" class="form-select">
-              <option value="machine">Machine</option>
-              <option value="sparepart">Sparepart</option>
-              <option value="service">Service</option>
-            </select>
+            <CustomSelect v-model="form.warranty.warranty_type" :options="warrantyTypeOptions" class="form-select" />
           </div>
           <div style="display: flex; gap: 0.5rem;">
             <div class="form-group" style="flex: 1;">
@@ -1047,17 +1086,23 @@ function printReceipt(item: any, existingWindow?: Window | null) {
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center;">Qty</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Unit Price</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Total</th>
+                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center; width: 64px;">Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!viewingItem.sale_items || viewingItem.sale_items.length === 0">
-                  <td colspan="4" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
+                  <td colspan="5" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
                 </tr>
                 <tr v-for="(si, idx) in viewingItem.sale_items" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
                   <td style="padding: 12px;">{{ findProduct(si.product_id)?.name || 'Product ID: ' + si.product_id }}</td>
                   <td style="padding: 12px; text-align: center;">{{ si.qty }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah(si.unit_price || (si as any).price || 0) }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah((si.unit_price || (si as any).price || 0) * (si.qty || 1)) }}</td>
+                  <td style="padding: 12px; text-align: center;">
+                    <button type="button" class="action-btn action-btn--edit" title="Lihat detail item" @click="openSaleItemDetail(si)" style="width: 32px; height: 32px; color: var(--color-text-muted);">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1168,6 +1213,40 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <span style="display:none;"></span>
       </template>
     </FormModal>
+    <FormModal :open="showItemDetail" :title="selectedSaleItem ? `Detail Item — ${findProduct(selectedSaleItem.product_id)?.name || 'Item'}` : 'Detail Item'" @close="closeSaleItemDetail" max-width="480px">
+      <template v-if="selectedSaleItem">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Product</label>
+            <div style="font-weight: 600;">{{ findProduct(selectedSaleItem.product_id)?.name || 'Product ID: ' + selectedSaleItem.product_id }}</div>
+            <div style="font-size: 12px; color: var(--color-text-muted);">SKU: {{ findProduct(selectedSaleItem.product_id)?.sku || '-' }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">UOM</label>
+            <div>{{ (findProduct(selectedSaleItem.product_id) as any)?.uom?.name || '-' }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Qty</label>
+            <div>{{ selectedSaleItem.qty || 0 }}</div>
+          </div>
+          <div v-if="canSeeAmount" class="form-group">
+            <label class="form-label">Unit Price</label>
+            <div>{{ formatRupiah(selectedSaleItem.unit_price || (selectedSaleItem as any).price || 0) }}</div>
+          </div>
+          <div v-if="canSeeAmount" class="form-group" style="grid-column: span 2;">
+            <label class="form-label">Total</label>
+            <div style="font-weight: 700; color: var(--color-success);">{{ formatRupiah((selectedSaleItem.unit_price || (selectedSaleItem as any).price || 0) * (selectedSaleItem.qty || 1)) }}</div>
+          </div>
+          <div v-if="(selectedSaleItem as any).description" class="form-group" style="grid-column: span 2;">
+            <label class="form-label">Description</label>
+            <div style="white-space: pre-line; background: var(--color-surface-raised); padding: 10px; border-radius: 8px; border: 1px solid var(--color-border-light);">{{ (selectedSaleItem as any).description }}</div>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="closeSaleItemDetail">Close</button>
+      </template>
+    </FormModal>
     <FormModal :open="showPaymentModal" title="Process Payment" @close="showPaymentModal = false" @submit="handlePayment">
       <div style="display: flex; flex-direction: column; gap: var(--space-md);">
         <div>
@@ -1176,11 +1255,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         </div>
         <div>
           <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Method</label>
-          <select class="form-input" v-model="paymentData.method_type" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;">
-            <option value="CASH">Cash</option>
-            <option value="TRANSFER">Bank Transfer</option>
-            <option value="CREDIT_CARD">Credit / Debit Card</option>
-          </select>
+          <CustomSelect v-model="paymentData.method_type" :options="paymentMethodOptions" class="form-input" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" />
         </div>
         
         <template v-if="paymentData.method_type === 'TRANSFER'">

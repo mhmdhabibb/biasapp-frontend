@@ -1,5 +1,5 @@
 import { useMasterStore } from "@/composables/useMasterStore";
-import { groupMeterReadingsBySize } from "@/utils/meterReading";
+
 
 interface ReportCtx {
   masterStore: any;
@@ -102,40 +102,6 @@ function sparepartsListHtml(item: any, ctx: ReportCtx): string {
     .join("");
 }
 
-/** List of paper types/sizes on the copier service report.
- *  Primary source: monthly meter readings linked to this report
- *  (paper_size preloaded by backend). Fallback: contract rates. */
-function paperTypesHtml(item: any, ctx: ReportCtx): string {
-  const labels: string[] = [];
-  const seen = new Set<string>();
-  const push = (raw: any) => {
-    const label = String(raw || "").trim();
-    if (label && !seen.has(label)) {
-      seen.add(label);
-      labels.push(label);
-    }
-  };
-
-  const readings: any[] =
-    item.monthly_meter_readings || item.monthlyMeterReadings || [];
-  for (const r of readings) {
-    const name =
-      r.paper_size?.name || r.paper_size_name || r.paper_size_id || "";
-    const mode = r.color_mode ? ` (${r.color_mode})` : "";
-    push(`${name}${mode}`.trim());
-  }
-
-  // Fallback: paper sizes from contract rates when no readings exist.
-  const rates: any[] =
-    ctx.contract?.rates || item.contract_item?.rates || item.contract?.rates || [];
-  for (const rate of rates) {
-    push(rate.paper_size?.name || rate.paper_size_name || rate.paper_size_id || "");
-  }
-
-  if (labels.length === 0) return "-";
-  return labels.map((n, i) => "<div>" + (i + 1) + ". " + n + "</div>").join("");
-}
-
 function componentsGridHtml(item: any, ctx: ReportCtx): string {
   return Array.from({ length: 8 })
     .map((_, i) => {
@@ -216,10 +182,27 @@ function resolveMeterAfter(item: any): string {
 
 /** Blok METER READING form cetak copier: rincian per ukuran kertas bila
  *  readings terhubung sudah ada, else ringkasan BEFORE/AFTER tunggal (legacy). */
+/** Blok METER READING form cetak copier: tanpa rincian paper size — selalu
+ *  total Before dan After. Bila readings terhubung ada, nilainya penjumlahan
+ *  semua baris (1 ukuran = nilainya sendiri); bila tidak ada, fallback ke
+ *  resolveMeterBefore/After (simpanan -> unit -> kontrak). */
 function copierMeterBlockHtml(item: any, ctx: ReportCtx): string {
-  const detail = copierMeterTableHtml(item);
-  if (detail) {
-    return `<tr><td colspan="2" class="bg-black">METER READING</td></tr>${detail}`;
+  const readings: any[] =
+    item.monthly_meter_readings || item.monthlyMeterReadings || [];
+  let before = "";
+  let after = "";
+  if (readings.length > 0) {
+    let totalBefore = 0;
+    let totalAfter = 0;
+    for (const r of readings) {
+      totalBefore += Number(r.start_meter || 0);
+      totalAfter += Number(r.last_meter ?? r.end_meter ?? 0);
+    }
+    before = totalBefore.toLocaleString("id-ID");
+    after = totalAfter.toLocaleString("id-ID");
+  } else {
+    before = resolveMeterBefore(item, ctx);
+    after = resolveMeterAfter(item);
   }
   return `
         <tr><td colspan="2" class="bg-black">METER READING</td></tr>
@@ -228,34 +211,9 @@ function copierMeterBlockHtml(item: any, ctx: ReportCtx): string {
           <td class="text-center">AFTER</td>
         </tr>
         <tr>
-          <td class="text-center">${resolveMeterBefore(item, ctx)}</td>
-          <td class="text-center">${resolveMeterAfter(item)}</td>
+          <td class="text-center">${before}</td>
+          <td class="text-center">${after}</td>
         </tr>`;
-}
-function copierMeterTableHtml(item: any): string {
-  const sections = groupMeterReadingsBySize(
-    item.monthly_meter_readings || item.monthlyMeterReadings || [],
-  );
-  if (sections.length === 0) return "";
-  const rows = sections
-    .map((sec) => {
-      const cells = (mode: "bw" | "color", label: string) => {
-        const m = sec[mode];
-        if (!m) return "";
-        return `<tr><td>${sec.paper_size_name} — ${label}</td><td style="text-align:center;">${m.before}</td><td style="text-align:center;">${m.after}</td></tr>`;
-      };
-      return cells("bw", "B/W") + cells("color", "Colour");
-    })
-    .join("");
-  if (!rows) return "";
-  return `
-    <tr><td colspan="2" style="padding:0;">
-      <table style="width:100%; border-collapse:collapse; font-size:11px;">
-        <tr><td colspan="3" style="background:#000; color:#fff; font-weight:bold; padding:3px 6px;">METER READING PER PAPER SIZE</td></tr>
-        <tr style="font-weight:bold;"><td style="padding:3px 6px;">PAPER SIZE</td><td style="padding:3px 6px; text-align:center;">BEFORE</td><td style="padding:3px 6px; text-align:center;">AFTER</td></tr>
-        ${rows}
-      </table>
-    </td></tr>`;
 }
 
 function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
@@ -473,10 +431,6 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
           <td class="text-center">${ctx.u.serial_no || "-"}</td>
         </tr>
         ${copierMeterBlockHtml(item, ctx)}
-        <tr><td colspan="2" class="bg-black">PAPER SIZE</td></tr>
-        <tr>
-          <td colspan="2" style="vertical-align: top; font-weight: normal;">${paperTypesHtml(item, ctx)}</td>
-        </tr>
         <tr><td colspan="2" class="bg-black">CHANGE SPAREPART</td></tr>
         <tr>
           <td colspan="2" style="height: 60px; vertical-align: top; font-weight: normal;">${sparepartsListHtml(item, ctx)}</td>
