@@ -99,6 +99,7 @@ export const resources = {
   salesInvoiceItems: createResourceService<ResourceRecord>(
     "sales-invoice-items",
   ),
+  excelTemplates: createResourceService<ResourceRecord>("excel-templates"),
   purchaseOrders: createResourceService<ResourceRecord>("purchase-orders"),
   purchaseOrderItems: createResourceService<ResourceRecord>(
     "purchase-order-items",

@@ -110,8 +110,13 @@ export function useAuthStore() {
     if (!currentUser.value) return false;
     // Superadmin has all permissions
     if (currentUser.value.role === "admin" || currentUser.value.role === "superadmin") return true;
-    
-    return currentUser.value.permissions.includes(permissionName);
+
+    // Case-insensitive: nama permission di DB bisa tertulis beda kapital
+    // (tampilan RolesPage selalu huruf besar).
+    const want = String(permissionName || "").toLowerCase();
+    return (currentUser.value.permissions || []).some(
+      (p) => String(p).toLowerCase() === want,
+    );
   }
 
   return {

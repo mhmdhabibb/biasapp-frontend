@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, reactive } from "vue";
+import { computed, ref, reactive, watch, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import FormModal from "@/components/ui/FormModal.vue";
@@ -24,6 +25,46 @@ import type { PaymentReceiptData } from "@/utils/paymentReceipt";
 const toast = useToast();
 const { can, canApprove } = usePermission();
 const { currentUser } = useAuth();
+const route = useRoute();
+const pageRouter = useRouter();
+
+// Deep-link dari notifikasi: ?payment_no=PAY-... langsung buka modal
+// transaksinya begitu data payments termuat.
+const deepLinkDone = ref(false);
+function tryDeepLink() {
+  if (deepLinkDone.value) return;
+  const no = String(route.query.payment_no || "").trim();
+  if (!no) return;
+  const list = (data.value || []) as any[];
+  if (list.length === 0) return; // tunggu data termuat
+  deepLinkDone.value = true;
+  const found = list.find((p) => String(p.payment_no) === no);
+  if (found) {
+    openPaymentDetails(found);
+  } else {
+    toast.warning(`Payment ${no} tidak ditemukan.`);
+  }
+  pageRouter.replace({ query: {} });
+}
+onMounted(() => {
+  tryDeepLink();
+  // Batas aman: bila data tak kunjung ada, beri pesan lalu bersihkan query.
+  setTimeout(() => {
+    const no = String(route.query.payment_no || "").trim();
+    if (no && !deepLinkDone.value) {
+      deepLinkDone.value = true;
+      toast.warning(`Payment ${no} tidak ditemukan.`);
+      pageRouter.replace({ query: {} });
+    }
+  }, 8000);
+});
+watch(
+  [() => route.query.payment_no, () => (data.value || []).length],
+  () => {
+    deepLinkDone.value = false;
+    tryDeepLink();
+  },
+);
 const canManageApprovals = computed(
   () =>
     canApprove("payment") ||

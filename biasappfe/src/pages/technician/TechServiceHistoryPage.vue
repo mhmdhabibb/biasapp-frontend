@@ -1,15 +1,37 @@
 <script setup lang="ts">
 // @ts-nocheck
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { isCopierReport } from '@/utils/copierReport'
 import PageHeader from '@/components/ui/PageHeader.vue'
 
+const router = useRouter()
+const { currentUser } = useAuth()
 const {
   serviceReports,
   findCustomer,
   findUnit,
-  findTechnician
+  findTechnician,
+  getTechnicianIdByUser,
 } = useMasterStore()
+
+// Draft copier yang di-assign ke teknisi login saja — teknisi lain tidak
+// bisa melihat. Yang belum di-assign hanya terlihat di CS/superadmin.
+const copierDrafts = computed(() => {
+  const myTechId = getTechnicianIdByUser(currentUser.value?.id || null)
+  if (!myTechId) return []
+  return serviceReports.value.filter((r: any) =>
+    isCopierReport(r) &&
+    String(r.status || '').toLowerCase() !== 'completed' &&
+    String(r.technician_id || '') === String(myTechId),
+  ).sort((a: any, b: any) =>
+    String(b.service_date || b.created_at || '').localeCompare(
+      String(a.service_date || a.created_at || ''),
+    ),
+  )
+})
 
 // Service History shows all COMPLETED service reports, maybe filtered by this tech or all history
 // The goal: so Technicians can see unit problem history before servicing.
@@ -97,6 +119,40 @@ function getTechName(id: number | null) {
             <option value="meter_reading">Meter Reading</option>
           </select>
         </div>
+      </div>
+    </div>
+
+    <div v-if="copierDrafts.length > 0" class="card mb-lg p-lg">
+      <h3 style="margin: 0 0 12px 0; font-size: 15px;">Draft Copier Bulan Ini ({{ copierDrafts.length }})</h3>
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Report No.</th>
+              <th>Customer</th>
+              <th>Unit & SN</th>
+              <th>Before Meter</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="d in copierDrafts" :key="d.id">
+              <td>{{ d.report_no || '-' }}</td>
+              <td>{{ getCustomerName(d.customer_id) }}</td>
+              <td>{{ getUnitName(d.unit_id) }}</td>
+              <td>{{ d.meter_reading_before ?? '-' }}</td>
+              <td>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-primary"
+                  @click="router.push(`/technician/call-services/${d.id}/copier-report`)"
+                >
+                  Isi Form
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

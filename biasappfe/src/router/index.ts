@@ -92,6 +92,11 @@ const router = createRouter({
       component: () => import("@/pages/master/WarrantiesPage.vue"),
     },
     {
+      path: "/master/excel-templates",
+      name: "excelTemplates",
+      component: () => import("@/pages/master/ExcelTemplatesPage.vue"),
+    },
+    {
       path: "/master/suppliers",
       name: "suppliers",
       component: () => import("@/pages/master/SuppliersPage.vue"),
@@ -121,6 +126,12 @@ const router = createRouter({
       name: "serviceReports",
       component: () =>
         import("@/pages/customer-service/ServiceReportsPage.vue"),
+    },
+    {
+      path: "/customer-service/copier-reports",
+      name: "copierReports",
+      component: () =>
+        import("@/pages/customer-service/CopierReportsPage.vue"),
     },
     {
       path: "/customer-service/service-requests",

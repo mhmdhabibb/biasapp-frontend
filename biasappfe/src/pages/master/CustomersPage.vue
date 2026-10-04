@@ -2,6 +2,7 @@
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
@@ -137,7 +138,11 @@ async function handleDelete() {
     <PageHeader title="Customers" :button-label="isTechnician ? undefined : 'Add Customer'" permission="customer:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search customers..."
                permission="customer"
-               @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
+               @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="customer" @imported="fetchData" />
+      </template>
+    </DataTable>
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Customer' : 'Add Customer'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="cust-company" class="form-label">Customer Name</label>

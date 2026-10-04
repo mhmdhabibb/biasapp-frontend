@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
@@ -128,6 +129,9 @@ async function handleDelete() {
   <div>
     <PageHeader title="Technicians" button-label="Add Technician" permission="technician:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search technician..." permission="technician" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="technician" @imported="fetchData" />
+      </template>
       <template #cell-status="{ value }">
         <span
           class="badge"

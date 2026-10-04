@@ -6,6 +6,7 @@ import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
+import { isCopierReport } from "@/utils/copierReport";
 import type { TableColumn } from "@/types";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
@@ -431,8 +432,10 @@ const relatedReports = computed(() => {
     (j) => j.service_request_id === selectedRequest.value.id,
   );
   const jobIds = requestJobs.map((j) => String(j.id));
-  return serviceReports.value.filter((sr) =>
-    jobIds.includes(String(sr.job_order_id)),
+  // Copier report punya list tersendiri — tidak ditampilkan di sini.
+  return serviceReports.value.filter(
+    (sr) =>
+      jobIds.includes(String(sr.job_order_id)) && !isCopierReport(sr),
   );
 });
 

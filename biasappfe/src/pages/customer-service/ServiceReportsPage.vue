@@ -68,6 +68,14 @@ const columns: TableColumn[] = [
   { key: 'status', label: 'Status' },
 ]
 
+// Copier report punya list tersendiri (CopierReportsPage) — disembunyikan
+// dari list Service Reports.
+const serviceOnlyReports = computed(() =>
+  ((data as any)?.value || data as any[]).filter(
+    (item: any) => !isCopierReport(item),
+  ),
+)
+
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<ServiceReport | null>(null)
@@ -189,6 +197,7 @@ function technicianName(id: any): string {
 }
 
 import { printServiceReport, printMultipleServiceReports, type ReportType } from '@/utils/printReport'
+import { isCopierReport } from '@/utils/copierReport'
 
 const printModalOpen = ref(false)
 const printType = ref<ReportType>('technical')
@@ -204,14 +213,14 @@ function handleConfirmPrint() {
   if (printTarget.value) {
     printServiceReport(printTarget.value, printType.value)
   } else {
-    printMultipleServiceReports(data.value, printType.value)
+    printMultipleServiceReports(serviceOnlyReports.value, printType.value)
   }
   printModalOpen.value = false
 }
 
 function exportToExcel() {
   const rows = [['Report No.', 'Customer', 'Contract', 'Service Type', 'Technician', 'Visit Date', 'Status']]
-  for (const item of data.value) {
+  for (const item of serviceOnlyReports.value) {
     rows.push([
       item.report_no || item.service_report_no || '-',
       customerName(item.customer_id),
@@ -253,13 +262,13 @@ function printTable() {
     </PageHeader>
     <div style="display: flex; gap: 8px; margin-bottom: 12px;">
       <button class="btn btn-sm" :class="activeTab === 'service' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'service'">
-        Service Reports ({{ (data as any[]).length }})
+        Service Reports ({{ serviceOnlyReports.length }})
       </button>
       <button class="btn btn-sm" :class="activeTab === 'delivery' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'delivery'">
         Delivery History ({{ deliveryHistories.length }})
       </button>
     </div>
-    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="data" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
+    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="serviceOnlyReports" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>

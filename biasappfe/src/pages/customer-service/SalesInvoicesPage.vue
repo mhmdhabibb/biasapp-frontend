@@ -11,7 +11,7 @@ import { useResourcesStore } from '@/stores/resources.store'
 import { api } from '@/services/api'
 import type { SalesInvoice, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
-import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
+import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_RP, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { printPaymentStruk, paymentMethodOf, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
 
@@ -213,8 +213,9 @@ async function exportInvoicesToExcel(
   const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
   // Sheet names must be unique (two customers may share the same company name).
   const usedSheetNames = new Set<string>()
-  // Column widths in Excel character units (not pixels) to prevent overflow
-  const columnWidths = [6, 40, 8, 10, 7, 16]
+  // Layout 5 kolom ala invoice manual (tanpa kolom Rp terpisah, Rp via number
+  // format): A=No(4.2), B=Description(39.2), C=Qty(7.8), D=UOM(13), E=Amount(31.2)
+  const columnWidths = [4.2, 39.2, 7.8, 13, 31.2]
 
   for (const [customerId, groupItems] of groups) {
     const sortedItems = [...groupItems].sort((a, b) => {
@@ -240,26 +241,65 @@ async function exportInvoicesToExcel(
         : '-'
       const poNo = item.sale?.po_no || item.po_no || '-'
 
-      // Header blok
-      addRow([{ v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 2, style: 'plainBold' }, {}, {}, { v: 'Inv No. :', style: 'border' }, { v: item.invoice_no || '-', mergeAcross: 1, style: 'border' }])
-      addRow([{ v: 'Ruko Purimas Blok A No.47 Kota Batam', mergeAcross: 2 }, {}, {}, { v: 'Date :', style: 'border' }, { v: dateLabel, mergeAcross: 1, style: 'border' }])
-      addRow([{ v: 'Kepulauan Riau - Indonesia', mergeAcross: 2 }, {}, {}, { v: 'PO No. :', style: 'border' }, { v: poNo, mergeAcross: 1, style: 'border' }])
-      addRow([{ v: 'Phone : +62811 704 5657', mergeAcross: 2 }, {}, {}, { v: 'To:', style: 'headerCell', mergeAcross: 2 }])
-      addRow([{ v: 'Email : admin@biasbst.com', mergeAcross: 2 }, {}, {}, { v: custName, style: 'borderBold', mergeAcross: 2 }])
-      addRow([{}, {}, {}, { v: customer?.address || '-', mergeAcross: 2, style: 'border' }])
-      addRow([{}, {}, {}, { v: 'Attn: ' + (customer?.pic_name || '-'), mergeAcross: 2, style: 'border' }])
+      // Header blok (5 kolom, konsisten dengan export rental)
+      addRow([
+        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
+        {},
+        { v: 'Inv No. :', style: 'borderBoldRight' },
+        { v: item.invoice_no || '-', style: 'border' },
+      ])
+      addRow([
+        { v: 'Greenland Housing Blok E6 No. 11', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Date :', style: 'borderBoldRight' },
+        { v: dateLabel, style: 'border' },
+      ])
+      addRow([
+        { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'PO No. :', style: 'borderBoldRight' },
+        { v: poNo, style: 'border' },
+      ])
+      addRow([
+        { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Kepada Yth. ', style: 'borderBoldRight' },
+        { style: 'border' },
+      ])
+      addRow([
+        { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: custName, style: 'borderBold' },
+        { style: 'border' },
+      ])
+      addRow([
+        { v: 'www.biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: customer?.address || '-', mergeAcross: 1, style: 'border' }, {},
+      ])
+      addRow([
+        { style: 'border' }, { style: 'border' },
+        {},
+        { v: 'Up :', style: 'borderBoldRight' },
+        { v: customer?.pic_name || '-', style: 'borderBold' },
+      ])
+      // Spacer bergaris ala invoice manual
+      addRow([
+        { style: 'border' }, { style: 'border' },
+        {},
+        { style: 'border' }, { style: 'border' },
+      ])
 
-      addRow([{ v: 'INVOICE', mergeAcross: 5, style: 'titleCell' }])
+      addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
       addRow([])
 
       // Header tabel items
       addRow([
-        { v: 'No', style: 'headerCell' },
-        { v: 'Description', style: 'headerCell' },
-        { v: 'Qty', style: 'headerCell' },
-        { v: 'UOM', style: 'headerCell' },
-        { v: 'Rp', style: 'headerCell' },
-        { v: 'Amount', style: 'headerCell' },
+        { v: 'No', style: 'borderBoldCenter' },
+        { v: 'Description', style: 'borderBold' },
+        { v: 'Qty', style: 'borderBoldCenter' },
+        { v: 'UOM', style: 'borderBoldCenter' },
+        { v: 'Amount', style: 'borderBold' },
       ])
 
       const sale = findSale(item.sale_id)
@@ -276,31 +316,29 @@ async function exportInvoicesToExcel(
             { v: pName, style: 'border' },
             { v: qty, style: 'borderCenter' },
             { v: 'unit', style: 'borderCenter' },
-            { v: 'Rp', style: 'border' },
-            { v: amount, style: 'borderRight' },
+            { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
           ])
         })
       } else {
         addRow([
           { v: 1, style: 'borderCenter' },
           { v: 'No item data available', style: 'border' },
-          { v: '', style: 'border' },
-          { v: '', style: 'border' },
-          { v: 'Rp', style: 'border' },
-          { v: 0, style: 'borderRight' },
+          { style: 'border' },
+          { style: 'border' },
+          { v: 0, style: 'borderBoldRight', numFmt: NUMFMT_RP },
         ])
       }
 
       const subTotal = item.subtotal || item.total_amount || item.total || 0
       const grandTotal = item.total_amount || item.total || 0
-      addRow([{}, {}, {}, { v: 'Sub Total', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: subTotal, style: 'totalCell' }])
-      addRow([{}, {}, {}, { v: 'Discount', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: item.discount || 0, style: 'totalCell' }])
-      addRow([{}, {}, {}, { v: 'Amount', style: 'grandTotalCell' }, { v: 'Rp', style: 'grandTotalCell' }, { v: grandTotal, style: 'grandTotalCell' }])
+      addRow([{}, {}, {}, { v: 'Sub Total', style: 'borderBoldRight' }, { v: subTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+      addRow([{}, {}, {}, { v: 'Discount', style: 'borderBoldRight' }, { v: item.discount || 0, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+      addRow([{}, {}, {}, { v: 'Amount', style: 'borderBoldRight' }, { v: grandTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
 
       addRow([])
-      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 2 }, {}, {}, { v: 'Received By,' }, {}, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
-      addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Account No. 106-08-85757', mergeAcross: 2 }, {}, {}, {}, {}, {}])
-      addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 2 }, {}, {}, {}, {}, { v: 'Grace', style: 'plainBold' }])
+      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {}, {}, { v: 'Received By,' }, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
+      addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Account No. 106-08-85757', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { v: 'Grace', style: 'plainBold' }])
       addRow([])
     }
 

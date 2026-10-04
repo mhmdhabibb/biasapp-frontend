@@ -10,7 +10,7 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { RentalInvoice, TableColumn } from '@/types'
-import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
+import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_COUNT, NUMFMT_RP, NUMFMT_RP_RATE, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { printPaymentSlip, printPaymentStruk, paymentMethodOf, buildPaymentTimestamp, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
 import { computed, reactive, ref } from 'vue'
 
@@ -168,10 +168,10 @@ async function exportInvoicesToExcel(
   const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
   // Sheet names must be unique (two customers may share the same company name).
   const usedSheetNames = new Set<string>()
-  // Column widths: A=No(5), B=Description(30), C=MeterValues(12), D=Operator/Rate(8), E=Rp(4), F=Amount(16)
-  const columnWidths = [5, 30, 12, 8, 4, 16]
-
-  const fmtRp = (n: number) => n > 0 ? n.toLocaleString('id-ID') : (n === 0 ? '0' : String(n))
+  // Layout 5 kolom ala invoice manual (tanpa kolom Rp terpisah):
+  // A=No(4.2), B=Description(39.2), C=MeterValues(7.8), D=Operator/Rate(13), E=Amount(31.2).
+  // Rp ditampilkan via number format; nol tampil '-', negatif dalam kurung.
+  const columnWidths = [4.2, 39.2, 7.8, 13, 31.2]
 
   for (const [customerId, groupItems] of groups) {
     const sortedItems = [...groupItems].sort((a, b) => {
@@ -212,90 +212,109 @@ async function exportInvoicesToExcel(
       const brandName = unit?.brand?.name || unit?.brand_name || ''
       const modelDesc = unit?.model || ci?.description || ''
       const serialNo = unit?.serial_no || ''
-      // Format: "Rental Charges Photocopy Machine <Customer> <Brand> <Model> S/N : <Serial>  1 Unit"
-      const machineType = isCopier ? 'Photocopy Machine' : 'Printer'
-      const descParts = [`Rental Charges ${machineType} ${custName}`]
-      if (brandName) descParts.push(brandName)
-      if (modelDesc) descParts.push(modelDesc)
-      if (serialNo) descParts.push(`S/N : ${serialNo}`)
-      descParts.push(' 1 Unit')
-      const unitLine = descParts.join(' ').replace(/\s+/g, ' ').trim()
 
-      // ===== COMPANY HEADER (left) + INVOICE INFO (right) =====
+      // ===== COMPANY HEADER (left) + INVOICE INFO (right), 5 kolom ala invoice manual =====
       // Row 1: Company name + Inv No.
       addRow([
-        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 2, style: 'borderBold' }, {}, {},
+        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
+        {},
         { v: 'Inv No. :', style: 'borderBoldRight' },
-        { v: item.invoice_no || '-', mergeAcross: 1, style: 'border' }, {},
+        { v: item.invoice_no || '-', style: 'border' },
       ])
       // Row 2: Address line 1 + Date
       addRow([
-        { v: 'Greenland Housing Blok E6 No. 11', mergeAcross: 2, style: 'borderCenter' }, {}, {},
+        { v: 'Greenland Housing Blok E6 No. 11', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
         { v: 'Date :', style: 'borderBoldRight' },
-        { v: dateLabel, mergeAcross: 1, style: 'border' }, {},
+        { v: dateLabel, style: 'border' },
       ])
-      // Row 3: Address line 2 + Bill-to
+      // Row 3: Address line 2 + Kepada Yth.
       addRow([
-        { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 2, style: 'borderCenter' }, {}, {},
-        { v: 'To:', style: 'borderBoldRight' },
-        { v: custName, mergeAcross: 1, style: 'borderBold' }, {},
+        { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Kepada Yth. ', style: 'borderBoldRight' },
+        { style: 'border' },
       ])
-      // Row 4: Phone + Customer address
+      // Row 4: Phone + Customer name
       addRow([
-        { v: 'Telp : +62 811 7045 657', mergeAcross: 2, style: 'borderCenter' }, {}, {},
+        { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: custName, style: 'borderBold' },
+        { style: 'border' },
+      ])
+      // Row 5: Email + Customer address
+      addRow([
+        { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
         { v: custAddress, mergeAcross: 1, style: 'border' }, {},
       ])
-      // Row 5: Email + (continued address)
+      // Row 6: Website + PIC
       addRow([
-        { v: 'Email : admin@biasbst.com', mergeAcross: 2, style: 'borderCenter' }, {}, {},
-        {}, {},
+        { v: 'www.biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Up :', style: 'borderBoldRight' },
+        { v: picDisplay, style: 'borderBold' },
       ])
-      // Row 6: Website + PIC / Attn
+      // Row 7: spacer bergaris ala invoice manual
       addRow([
-        { v: 'www.biasbst.com', mergeAcross: 2, style: 'borderCenter' }, {}, {},
-        { v: 'Attn :', style: 'borderBoldRight' },
-        { v: picDisplay, mergeAcross: 1, style: 'borderBold' }, {},
+        { style: 'border' }, { style: 'border' },
+        {},
+        { style: 'border' }, { style: 'border' },
       ])
 
       // ===== INVOICE TITLE + PERIOD =====
-      addRow([{ v: 'INVOICE', mergeAcross: 5, style: 'titleCell' }])
-      addRow([{ v: 'Period: ' + periodLabel, mergeAcross: 2, style: 'borderCenter' }])
+      addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
+      addRow([{ v: 'Periode : ' + periodLabel, mergeAcross: 1, style: 'borderBold' }, {}])
 
       // ===== TABLE HEADER =====
       addRow([
-        { v: 'No', style: 'headerCell' },
-        { v: 'Description', mergeAcross: 2, style: 'headerCell' }, {}, {},
-        {}, // operator/rate column (empty in header)
-        { v: 'Amount', style: 'headerCell' },
+        { v: 'No', style: 'borderBoldCenter' },
+        { v: 'Description', style: 'borderBold' },
+        { style: 'border' },
+        { style: 'border' },
+        { v: 'Amount', style: 'borderBold' },
       ])
 
-      // ===== ROW 1: Rental Charge =====
+      // ===== ROW 1: Rental Charge (2 baris ala invoice manual) =====
+      // Baris 1: jenis mesin + customer + amount. Baris 2: unit + S/N.
+      const machineLine = `Rental Charges ${isCopier ? 'Mesin Fotocopy' : 'Printer'} ${custName}`
+      const unitLine2 = [brandName, modelDesc, serialNo ? `S/N : ${serialNo}` : '', '1 Unit'].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
       addRow([
         { v: 1, style: 'borderCenter' },
-        { v: unitLine, mergeAcross: 2, style: 'borderBold' }, {}, {},
-        { v: 'Rp', style: 'borderBoldRight' },
-        { v: fmtRp(baseRentalFee), style: 'borderBoldRight' },
+        { v: machineLine, style: 'borderBold' },
+        {}, {},
+        { v: baseRentalFee, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      ])
+      addRow([
+        {},
+        { v: unitLine2 || '-', style: 'borderBold' },
+        { style: 'border' }, { style: 'border' },
+        { style: 'border' },
       ])
 
       const meterDetails: any[] = item.meter_details || []
       let rowNum = 2
 
       // --- Helper: render meter section ---
+      // Format ikut invoice Excel manual: angka tetap numerik, Rp via number
+      // format, 0 tampil '-', net negatif tampil dalam kurung.
+      // Nominal uang tidak berubah (billable tetap clamp >= 0).
       const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number) => {
         const total = last - start
-        const billable = Math.max(0, total - free)
+        const net = total - free
+        const billable = Math.max(0, net)
         // Section label (e.g. "B/W A4", "Colour A4") — bold
-        addRow([{}, { v: sectionLabel, mergeAcross: 2, style: 'borderBoldCenter' }, {}, {}, {}, {}])
+        addRow([{ style: 'border' }, { v: sectionLabel, style: 'borderBold' }, { style: 'border' }, { style: 'border' }, { style: 'border' }])
         // Start Meter Reading
-        addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight' }, {}, {}, {}])
+        addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
         // Last Meter Reading + (-)
-        addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight' }, { v: '(-)', style: 'border' }, {}, {}])
+        addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
         // Total Copies
-        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight' }, {}, {}, {}])
+        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
         // Free Copies + (-)
-        addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight' }, { v: '(-)', style: 'border' }, {}, {}])
-        // Total Copies (billable)
-        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: billable, style: 'borderBoldRight' }, {}, {}, {}])
+        addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
+        // Total Copies (net)
+        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
         return { total, billable }
       }
 
@@ -305,9 +324,8 @@ async function exportInvoicesToExcel(
           { v: rowNum++, style: 'borderCenter' },
           { v: desc, style: 'border' },
           { v: '(x)', style: 'borderCenter' },
-          { v: 'Rp', style: 'borderRight' },
-          { v: fmtRp(rate), style: 'borderRight' },
-          { v: fmtRp(amount), style: 'borderBoldRight' },
+          { v: rate, style: 'borderRight', numFmt: NUMFMT_RP_RATE },
+          { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
         ])
       }
 
@@ -331,7 +349,6 @@ async function exportInvoicesToExcel(
             const start = detail.start_meter_reading || 0
             const last = detail.last_meter_reading || 0
             const free = detail.free_quota ?? 0
-            const billable = detail.billable_copies ?? Math.max(0, (last - start) - free)
             pushMeterSection(`B/W ${paperSize}`, start, last, free)
             chargeRow(`Copies Charges B/W ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
           }
@@ -341,7 +358,6 @@ async function exportInvoicesToExcel(
             const start = detail.start_meter_reading || 0
             const last = detail.last_meter_reading || 0
             const free = detail.free_quota ?? 0
-            const billable = detail.billable_copies ?? Math.max(0, (last - start) - free)
             pushMeterSection(`Colour ${paperSize}`, start, last, free)
             chargeRow(`Copies Charges Colour ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
           }
@@ -370,14 +386,24 @@ async function exportInvoicesToExcel(
       const tax = item.tax || 0
       const totalPay = item.total_pay ?? subtotal + tax
 
-      addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: 'Rp', style: 'borderBoldRight' }, { v: fmtRp(subtotal), style: 'borderBoldRight' }])
-      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {}, { v: 'TAX', style: 'borderBoldRight' }, {}, { v: tax || '-', style: 'borderBoldRight' }])
-      addRow([{ v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {}, { v: 'TOTAL PAY', style: 'borderBoldRight' }, { v: 'Rp', style: 'borderBoldRight' }, { v: fmtRp(totalPay), style: 'borderBoldRight' }])
-      addRow([{ v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }])
-      addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }])
-      addRow([{ v: 'Account No. 1060885757', mergeAcross: 1, style: 'borderBold' }])
-      addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }])
-      addRow([{ v: 'Account No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }])
+      addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: subtotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+      addRow([
+        { v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {},
+        { style: 'border' },
+        { v: 'TAX', style: 'borderBoldRight' },
+        { v: tax, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      ])
+      addRow([
+        { v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {},
+        { style: 'border' },
+        { v: 'TOTAL PAY', style: 'borderBoldRight' },
+        { v: totalPay, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      ])
+      addRow([{ v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'Account No. 1060885757', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'Account No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
 
       // ===== SIGNATURES =====
       addRow([])
@@ -385,7 +411,7 @@ async function exportInvoicesToExcel(
       addRow([])
       addRow([{ v: '_______________________', mergeAcross: 1, style: 'plainCenter' }, {}, {}, { v: '_______________________', mergeAcross: 1, style: 'plainCenter' }])
       addRow([{ v: '', mergeAcross: 1 }, {}, {}, { v: 'Grace Hutapea', mergeAcross: 1, style: 'plainBoldCenter' }])
-      addRow([{}, {}, {}, { v: 'Admin Finance', style: 'plainCenter' }])
+      addRow([{}, {}, { v: 'Admin Finance', mergeAcross: 2, style: 'plainCenter' }])
       addRow([])
     }
 
@@ -772,22 +798,28 @@ function invoiceHtml(item: any): string {
   const legacyFree = item.free_copies || ci?.free_copy_quota || 2000
   const legacyRateBw = item.rate_per_page || 150
 
+  // Format cetak ala invoice manual: 0 tampil '-', net negatif dalam kurung.
+  const fmtPcsPrint = (n: number) => n === 0 ? '-' : n.toLocaleString('id-ID')
+  const fmtNetPrint = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : n === 0 ? '-' : n.toLocaleString('id-ID')
+
   function meterDetailRows(details: any[], label: string): string {
     if (details.length === 0) return ''
     return details.map(d => {
-      const total = d.total_copies ?? Math.max(0, (d.last_meter_reading || 0) - (d.start_meter_reading || 0))
+      const start = d.start_meter_reading || 0
+      const last = d.last_meter_reading || 0
+      const total = d.total_copies ?? (last - start)
       const free = d.free_quota ?? 0
-      const net = d.billable_copies ?? Math.max(0, total - free)
+      const net = total - free
       const sizeLabel = d.paper_size?.name || d.color_mode || label
       return `
         <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
           <b>${sizeLabel}</b><br>
           <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
-            <span>Start Meter Reading</span><span style="text-align:right;">${(d.start_meter_reading || 0).toLocaleString('id-ID')}</span><span></span>
-            <span>Last Meter Reading</span><span style="text-align:right;">${(d.last_meter_reading || 0).toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-            <span>Total Copies</span><span style="text-align:right;"><b>${total.toLocaleString('id-ID')}</b></span><span></span>
-            ${free > 0 ? `<span>Free Copies</span><span style="text-align:right;">${free.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>` : ''}
-            ${free > 0 ? `<span>Total Copies</span><span style="text-align:right;"><b>${net.toLocaleString('id-ID')}</b></span><span></span>` : ''}
+            <span>Start Meter Reading</span><span style="text-align:right;">${start.toLocaleString('id-ID')}</span><span></span>
+            <span>Last Meter Reading</span><span style="text-align:right;">${last.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
+            <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(total)}</b></span><span></span>
+            <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(free)}</span><span style="padding-left:4px;">(-)</span>
+            <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(net)}</b></span><span></span>
           </div>
         </td></tr>`
     }).join('')
@@ -803,7 +835,7 @@ function invoiceHtml(item: any): string {
         <td class="no-col">${rowNum + i}</td>
         <td>${sizeLabel}</td>
         <td style="text-align:center;">(x)</td>
-        <td style="text-align:right;">Rp&nbsp;${rate.toLocaleString('id-ID')}</td>
+        <td style="text-align:right;">${rate > 0 ? `Rp&nbsp;${rate.toLocaleString('id-ID')}` : '-'}</td>
         <td class="rp-col">Rp</td>
         <td class="val-col">${amount > 0 ? amount.toLocaleString('id-ID') : '-'}</td>
       </tr>`
@@ -812,14 +844,15 @@ function invoiceHtml(item: any): string {
 
   // Legacy (no meter_details) rows
   const legacyBwTotal = Math.max(0, legacyBwEnd - legacyBwStart)
-  const legacyBwBillable = Math.max(0, legacyBwTotal - legacyFree)
+  const legacyBwNet = legacyBwTotal - legacyFree
+  const legacyBwBillable = Math.max(0, legacyBwNet)
   const legacyBwAmount = legacyBwBillable * legacyRateBw
 
   const legacyColStart = ci?.start_meter_color || 0
   const legacyColEnd = legacyColStart
   const legacyColFree = ci?.free_quota_color || 0
   const legacyColTotal = Math.max(0, legacyColEnd - legacyColStart)
-  const legacyColBillable = Math.max(0, legacyColTotal - legacyColFree)
+  const legacyColNet = legacyColTotal - legacyColFree
 
   const legacyBodyRows = (meterDetails.length === 0 && isCopier) ? `
     <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
@@ -827,33 +860,36 @@ function invoiceHtml(item: any): string {
       <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
         <span>Start Meter Reading</span><span style="text-align:right;">${legacyBwStart.toLocaleString('id-ID')}</span><span></span>
         <span>Last Meter Reading</span><span style="text-align:right;">${legacyBwEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${legacyBwTotal.toLocaleString('id-ID')}</b></span><span></span>
-        <span>Free Copies</span><span style="text-align:right;">${legacyFree.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${legacyBwBillable.toLocaleString('id-ID')}</b></span><span></span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyBwTotal)}</b></span><span></span>
+        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyFree)}</span><span style="padding-left:4px;">(-)</span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyBwNet)}</b></span><span></span>
       </div>
-      
+
       ${legacyColStart > 0 || legacyColFree > 0 ? `
       <br><b>Color</b><br>
       <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
         <span>Start Meter Reading</span><span style="text-align:right;">${legacyColStart.toLocaleString('id-ID')}</span><span></span>
         <span>Last Meter Reading</span><span style="text-align:right;">${legacyColEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${legacyColTotal.toLocaleString('id-ID')}</b></span><span></span>
-        <span>Free Copies</span><span style="text-align:right;">${legacyColFree.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${legacyColBillable.toLocaleString('id-ID')}</b></span><span></span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyColTotal)}</b></span><span></span>
+        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyColFree)}</span><span style="padding-left:4px;">(-)</span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyColNet)}</b></span><span></span>
       </div>
       ` : ''}
     </td></tr>
     <tr>
       <td class="no-col">2</td><td>Copies Charges B/W</td>
       <td style="text-align:center;">(x)</td>
-      <td style="text-align:right;">Rp&nbsp;${legacyRateBw.toLocaleString('id-ID')}</td>
+      <td style="text-align:right;">${legacyRateBw > 0 ? `Rp&nbsp;${legacyRateBw.toLocaleString('id-ID')}` : '-'}</td>
       <td class="rp-col">Rp</td>
       <td class="val-col">${legacyBwAmount > 0 ? legacyBwAmount.toLocaleString('id-ID') : '-'}</td>
     </tr>` : ''
 
-  const total = (item.subtotal || baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0)).toLocaleString('id-ID')
-  const tax = (item.tax || 0).toLocaleString('id-ID')
-  const totalPay = (item.total_pay || 0).toLocaleString('id-ID')
+  const totalNum = item.subtotal || baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0)
+  const taxNum = item.tax || 0
+  const totalPayNum = item.total_pay || 0
+  const total = totalNum === 0 ? '-' : totalNum.toLocaleString('id-ID')
+  const tax = taxNum === 0 ? '-' : taxNum.toLocaleString('id-ID')
+  const totalPay = totalPayNum === 0 ? '-' : totalPayNum.toLocaleString('id-ID')
 
   // Stempel pelunasan: hanya bila invoice sudah di-approve accounting.
   const payStatus = String(item.payment_status || '').toLowerCase()

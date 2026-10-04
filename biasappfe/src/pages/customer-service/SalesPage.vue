@@ -4,6 +4,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
@@ -12,9 +13,17 @@ import type { Sale, TableColumn } from '@/types'
 import { computed, reactive, ref } from 'vue'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { buildPaymentTimestamp } from '@/utils/paymentReceipt'
+import { normalizeRole } from '@/router/role-access'
 
 const toast = useToast()
-const { can, canApprove } = usePermission()
+const { can, canApprove, isAdmin } = usePermission()
+const { currentUser } = useAuth()
+// CS tidak boleh melihat nominal pada detail item.
+const canSeeAmount = computed(() => {
+  if (isAdmin.value) return true
+  const role = normalizeRole(currentUser.value?.role)
+  return role === 'accounting' || role === 'admin'
+})
 const {
   sales: data,
   customers,
@@ -44,6 +53,17 @@ const showDetail = ref(false)
 const editingItem = ref<Sale | null>(null)
 const deletingItem = ref<Sale | null>(null)
 const viewingItem = ref<Sale | null>(null)
+const selectedSaleItem = ref<any>(null)
+const showItemDetail = ref(false)
+
+function openSaleItemDetail(si: any) {
+  selectedSaleItem.value = si
+  showItemDetail.value = true
+}
+function closeSaleItemDetail() {
+  showItemDetail.value = false
+  selectedSaleItem.value = null
+}
 
 const showPaymentModal = ref(false)
 const paymentData = reactive({
@@ -1047,17 +1067,23 @@ function printReceipt(item: any, existingWindow?: Window | null) {
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center;">Qty</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Unit Price</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Total</th>
+                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center; width: 64px;">Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!viewingItem.sale_items || viewingItem.sale_items.length === 0">
-                  <td colspan="4" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
+                  <td colspan="5" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
                 </tr>
                 <tr v-for="(si, idx) in viewingItem.sale_items" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
                   <td style="padding: 12px;">{{ findProduct(si.product_id)?.name || 'Product ID: ' + si.product_id }}</td>
                   <td style="padding: 12px; text-align: center;">{{ si.qty }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah(si.unit_price || (si as any).price || 0) }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah((si.unit_price || (si as any).price || 0) * (si.qty || 1)) }}</td>
+                  <td style="padding: 12px; text-align: center;">
+                    <button type="button" class="action-btn action-btn--edit" title="Lihat detail item" @click="openSaleItemDetail(si)" style="width: 32px; height: 32px; color: var(--color-text-muted);">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1166,6 +1192,40 @@ function printReceipt(item: any, existingWindow?: Window | null) {
       </template>
       <template #footer>
         <span style="display:none;"></span>
+      </template>
+    </FormModal>
+    <FormModal :open="showItemDetail" :title="selectedSaleItem ? `Detail Item — ${findProduct(selectedSaleItem.product_id)?.name || 'Item'}` : 'Detail Item'" @close="closeSaleItemDetail" max-width="480px">
+      <template v-if="selectedSaleItem">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Product</label>
+            <div style="font-weight: 600;">{{ findProduct(selectedSaleItem.product_id)?.name || 'Product ID: ' + selectedSaleItem.product_id }}</div>
+            <div style="font-size: 12px; color: var(--color-text-muted);">SKU: {{ findProduct(selectedSaleItem.product_id)?.sku || '-' }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">UOM</label>
+            <div>{{ (findProduct(selectedSaleItem.product_id) as any)?.uom?.name || '-' }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Qty</label>
+            <div>{{ selectedSaleItem.qty || 0 }}</div>
+          </div>
+          <div v-if="canSeeAmount" class="form-group">
+            <label class="form-label">Unit Price</label>
+            <div>{{ formatRupiah(selectedSaleItem.unit_price || (selectedSaleItem as any).price || 0) }}</div>
+          </div>
+          <div v-if="canSeeAmount" class="form-group" style="grid-column: span 2;">
+            <label class="form-label">Total</label>
+            <div style="font-weight: 700; color: var(--color-success);">{{ formatRupiah((selectedSaleItem.unit_price || (selectedSaleItem as any).price || 0) * (selectedSaleItem.qty || 1)) }}</div>
+          </div>
+          <div v-if="(selectedSaleItem as any).description" class="form-group" style="grid-column: span 2;">
+            <label class="form-label">Description</label>
+            <div style="white-space: pre-line; background: var(--color-surface-raised); padding: 10px; border-radius: 8px; border: 1px solid var(--color-border-light);">{{ (selectedSaleItem as any).description }}</div>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="closeSaleItemDetail">Close</button>
       </template>
     </FormModal>
     <FormModal :open="showPaymentModal" title="Process Payment" @close="showPaymentModal = false" @submit="handlePayment">

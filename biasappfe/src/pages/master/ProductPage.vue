@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onUnmounted, watch } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
+import ExcelImportButtons from "@/components/ui/ExcelImportButtons.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
@@ -259,6 +260,9 @@ function formatRupiah(val: number): string {
       @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open"
     >
+      <template #toolbar>
+        <ExcelImportButtons master-key="product" @imported="fetchData" />
+      </template>
       <template #cell-price="{ value }">{{
         formatRupiah(value || 0)
       }}</template>

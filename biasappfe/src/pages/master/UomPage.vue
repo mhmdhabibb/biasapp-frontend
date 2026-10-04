@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
@@ -88,7 +89,11 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="UOM" button-label="Add UOM" permission="uom:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search UOMs..." permission="uom" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search UOMs..." permission="uom" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="uom" @imported="fetchData" />
+      </template>
+    </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit UOM' : 'Add UOM'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="uom-name" class="form-label">Unit Name (UOM)</label>
