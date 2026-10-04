@@ -224,9 +224,7 @@ const router = createRouter({
     },
     {
       path: "/accounting/sparepart-requests",
-      name: "accSparepartRequests",
-      component: () =>
-        import("@/pages/accounting/AccSparepartRequestsPage.vue"),
+      redirect: "/customer-service/service-reports",
     },
     {
       path: "/accounting/purchase-orders",
