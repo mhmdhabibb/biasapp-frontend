@@ -56,6 +56,13 @@ const showConfirm = ref(false);
 const editingItem = ref<Payment | null>(null);
 const deletingItem = ref<Payment | null>(null);
 const selectedPayment = ref<Payment | null>(null);
+
+// Approval confirm modal state
+const approvalConfirm = ref<{
+  open: boolean;
+  item: Payment | null;
+  status: 'approved' | 'rejected';
+}>({ open: false, item: null, status: 'approved' });
 const form = reactive({
   payment_no: "",
   invoice_type: "rental" as "rental" | "sales",
@@ -188,24 +195,14 @@ async function handleDelete() {
   showConfirm.value = false;
 }
 
-async function updateApprovalStatus(
-  item: Payment,
-  status: "approved" | "rejected",
-) {
-  if (
-    status === "rejected" &&
-    !window.confirm(`Reject payment ${item.payment_no}?`)
-  ) {
-    return;
-  }
-  if (
-    status === "approved" &&
-    !window.confirm(
-      `Setujui pembayaran ${item.payment_no}?\n\nTunai: pastikan uang SUDAH DITERIMA dari CS.\nTransfer: cek mutasi bank / bukti transfer.\n\nApprove = kwitansi LUNAS terbit. Jika dana belum masuk, pilih Reject.`,
-    )
-  ) {
-    return;
-  }
+function openApprovalConfirm(item: Payment, status: 'approved' | 'rejected') {
+  approvalConfirm.value = { open: true, item, status };
+}
+
+async function handleApprovalConfirm() {
+  const { item, status } = approvalConfirm.value;
+  approvalConfirm.value.open = false;
+  if (!item) return;
   try {
     await resources.update("payments", String(item.id), { status });
     await useMasterStore().refreshInBackground();
@@ -410,183 +407,121 @@ function printSlip(item: any) {
       </template>
 
       <template #actions="{ row }">
-        <button
-          v-if="can('payment:read')"
-          class="action-btn"
-          title="View payment transaction"
-          aria-label="View payment transaction"
-          @click="openPaymentDetails(row)"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+        <div class="pay-actions">
+          <!-- View -->
+          <button
+            v-if="can('payment:read')"
+            class="icon-btn icon-btn--view"
+            title="Lihat detail pembayaran"
+            aria-label="View payment transaction"
+            @click="openPaymentDetails(row)"
           >
-            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path>
-            <circle cx="12" cy="12" r="3"></circle>
-          </svg>
-        </button>
-        <button
-          v-if="canManageApprovals && row.status === 'pending'"
-          class="action-btn action-btn--edit"
-          title="Approve payment"
-          aria-label="Approve payment"
-          style="width: 36px; height: 36px"
-          @click="updateApprovalStatus(row, 'approved')"
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+
+          <!-- Approve -->
+          <button
+            v-if="canManageApprovals && row.status === 'pending'"
+            class="icon-btn icon-btn--approve"
+            title="Approve payment"
+            aria-label="Approve payment"
+            @click="openApprovalConfirm(row, 'approved')"
           >
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-        </button>
-        <button
-          v-if="canManageApprovals && row.status === 'pending'"
-          class="action-btn action-btn--delete"
-          title="Reject payment"
-          aria-label="Reject payment"
-          style="width: 36px; height: 36px"
-          @click="updateApprovalStatus(row, 'rejected')"
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </button>
+
+          <!-- Reject -->
+          <button
+            v-if="canManageApprovals && row.status === 'pending'"
+            class="icon-btn icon-btn--reject"
+            title="Reject payment"
+            aria-label="Reject payment"
+            @click="openApprovalConfirm(row, 'rejected')"
           >
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-        <button
-          v-if="can('payment:read') && row.status === 'pending'"
-          class="action-btn"
-          title="Print Tanda Terima (Menunggu Verifikasi)"
-          aria-label="Print payment slip"
-          @click="printSlip(row)"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+
+          <!-- Print Slip (pending) -->
+          <button
+            v-if="can('payment:read') && row.status === 'pending'"
+            class="icon-btn icon-btn--print"
+            title="Print Tanda Terima (Menunggu Verifikasi)"
+            aria-label="Print payment slip"
+            @click="printSlip(row)"
           >
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="9" y1="13" x2="15" y2="13"></line>
-            <line x1="9" y1="17" x2="13" y2="17"></line>
-          </svg>
-        </button>
-        <button
-          v-if="can('payment:read') && row.status === 'approved'"
-          class="action-btn"
-          title="Print Struk (Approved)"
-          @click="printReceipt(row)"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="9" y1="13" x2="15" y2="13"/>
+              <line x1="9" y1="17" x2="13" y2="17"/>
+            </svg>
+          </button>
+
+          <!-- Print Receipt (approved) -->
+          <button
+            v-if="can('payment:read') && row.status === 'approved'"
+            class="icon-btn icon-btn--receipt"
+            title="Print Struk (Approved)"
+            @click="printReceipt(row)"
           >
-            <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z M8 10h8 M8 14h8 M8 18h5"></path>
-          </svg>
-        </button>
-        <button
-          v-if="can('payment:read') && row.status === 'approved'"
-          class="action-btn"
-          title="Print Kwitansi A5 (Approved)"
-          @click="printReceiptA5(row)"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"/>
+              <line x1="8" y1="10" x2="16" y2="10"/>
+              <line x1="8" y1="14" x2="16" y2="14"/>
+              <line x1="8" y1="18" x2="13" y2="18"/>
+            </svg>
+          </button>
+
+          <!-- Print A5 (approved) -->
+          <button
+            v-if="can('payment:read') && row.status === 'approved'"
+            class="icon-btn icon-btn--print-a5"
+            title="Print Kwitansi A5 (Approved)"
+            @click="printReceiptA5(row)"
           >
-            <polyline points="6 9 6 2 18 2 18 9"></polyline>
-            <path
-              d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"
-            ></path>
-            <rect x="6" y="14" width="12" height="8"></rect>
-          </svg>
-        </button>
-        <button
-          v-if="can('payment:update')"
-          class="action-btn action-btn--edit"
-          title="Edit"
-          @click="openEdit(row)"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
+              <rect x="6" y="14" width="12" height="8"/>
+            </svg>
+          </button>
+
+          <!-- Edit -->
+          <button
+            v-if="can('payment:update')"
+            class="icon-btn icon-btn--edit"
+            title="Edit"
+            @click="openEdit(row)"
           >
-            <path
-              d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
-            ></path>
-            <path
-              d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
-            ></path>
-          </svg>
-        </button>
-        <button
-          v-if="can('payment:delete')"
-          class="action-btn action-btn--delete"
-          title="Delete"
-          @click="openDelete(row)"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+
+          <!-- Delete -->
+          <button
+            v-if="can('payment:delete')"
+            class="icon-btn icon-btn--delete"
+            title="Delete"
+            @click="openDelete(row)"
           >
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path
-              d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
-            ></path>
-            <line x1="10" y1="11" x2="10" y2="17"></line>
-            <line x1="14" y1="11" x2="14" y2="17"></line>
-          </svg>
-        </button>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+              <line x1="10" y1="11" x2="10" y2="17"/>
+              <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+          </button>
+        </div>
       </template>
     </DataTable>
     <FormModal
@@ -799,6 +734,33 @@ function printSlip(item: any) {
       @close="showConfirm = false"
       @confirm="handleDelete"
     />
+    <!-- Approve confirmation -->
+    <ConfirmDialog
+      v-if="approvalConfirm.status === 'approved'"
+      :open="approvalConfirm.open"
+      variant="success"
+      title="Setujui Pembayaran?"
+      :message="`Konfirmasi persetujuan untuk ${approvalConfirm.item?.payment_no}.`"
+      :details="[
+        'Tunai: pastikan uang SUDAH DITERIMA dari CS.',
+        'Transfer: cek mutasi bank / bukti transfer.',
+        'Approve = kwitansi LUNAS terbit. Jika dana belum masuk, pilih Reject.',
+      ]"
+      confirm-label="Approve"
+      @close="approvalConfirm.open = false"
+      @confirm="handleApprovalConfirm"
+    />
+    <!-- Reject confirmation -->
+    <ConfirmDialog
+      v-if="approvalConfirm.status === 'rejected'"
+      :open="approvalConfirm.open"
+      variant="danger"
+      title="Tolak Pembayaran?"
+      :message="`Reject pembayaran ${approvalConfirm.item?.payment_no}?`"
+      confirm-label="Ya, Reject"
+      @close="approvalConfirm.open = false"
+      @confirm="handleApprovalConfirm"
+    />
   </div>
 </template>
 
@@ -838,5 +800,112 @@ function printSlip(item: any) {
   .payment-detail-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Colorful Action Buttons ───────────────────────── */
+.pay-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.icon-btn:hover  { transform: translateY(-2px) scale(1.08); }
+.icon-btn:active { transform: scale(0.94); }
+
+/* View — indigo */
+.icon-btn--view {
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
+}
+.icon-btn--view:hover {
+  background: rgba(99, 102, 241, 0.22);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+/* Approve — emerald */
+.icon-btn--approve {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+.icon-btn--approve:hover {
+  background: rgba(16, 185, 129, 0.22);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+/* Reject — rose */
+.icon-btn--reject {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+.icon-btn--reject:hover {
+  background: rgba(239, 68, 68, 0.2);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+/* Print slip — amber */
+.icon-btn--print {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+.icon-btn--print:hover {
+  background: rgba(245, 158, 11, 0.22);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);
+}
+
+/* Print receipt — teal */
+.icon-btn--receipt {
+  background: rgba(20, 184, 166, 0.12);
+  color: #14b8a6;
+}
+.icon-btn--receipt:hover {
+  background: rgba(20, 184, 166, 0.22);
+  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.25);
+}
+
+/* Print A5 — violet */
+.icon-btn--print-a5 {
+  background: rgba(139, 92, 246, 0.12);
+  color: #8b5cf6;
+}
+.icon-btn--print-a5:hover {
+  background: rgba(139, 92, 246, 0.22);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
+}
+
+/* Edit — blue */
+.icon-btn--edit {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
+.icon-btn--edit:hover {
+  background: rgba(59, 130, 246, 0.22);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+
+/* Delete — red */
+.icon-btn--delete {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+.icon-btn--delete:hover {
+  background: rgba(220, 38, 38, 0.2);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
 }
 </style>
