@@ -2,7 +2,9 @@
 // @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { useAuthStore } from '@/stores/auth.store'
@@ -149,6 +151,11 @@ function openDeleteRole(role: Role) {
   deletingRole.value = role
   showConfirm.value = true
 }
+
+const hardDelete = useHardDelete(async (id: string) => {
+  await resources.roles.hardRemove(id)
+  if (selectedRoleId.value === id) selectedRoleId.value = null
+}, fetchData)
 
 async function handleSaveRole() {
   if (!roleForm.value.name.trim()) return
@@ -304,6 +311,9 @@ async function savePermissions() {
             <button v-if="authStore.hasPermission('role:delete')" class="btn-icon text-danger" @click.stop="openDeleteRole(role)" title="Delete">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path></svg>
             </button>
+            <button v-if="hardDelete.isSuperadmin" class="btn-icon btn-hard-delete" @click.stop="hardDelete.open(role)" title="Hapus permanen dari database (superadmin)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><line x1="12" y1="11" x2="12" y2="17"></line></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -410,6 +420,9 @@ async function savePermissions() {
     </FormModal>
     
     <ConfirmDialog :open="showConfirm" title="Delete Role" :message="`Are you sure you want to delete role '${deletingRole?.name}'?`" @close="showConfirm = false" @confirm="handleDeleteRole" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Role" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
 
@@ -610,6 +623,16 @@ async function savePermissions() {
 }
 .btn-icon.text-danger:hover {
   color: #ef4444;
+}
+.btn-icon.btn-hard-delete {
+  color: #991b1b;
+  border: 1px dashed currentColor;
+  border-radius: 6px;
+}
+.btn-icon.btn-hard-delete:hover {
+  background: #991b1b;
+  border-style: solid;
+  color: #fff;
 }
 
 /* Right Panel */

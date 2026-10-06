@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
+import FormModal from '@/components/ui/FormModal.vue'
 import type { MenuGroup } from '@/types'
-import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
+import { dashboardRouteByRole, dashboardRouteNames, normalizeRole } from '@/router/role-access'
 import { canView, permissionKeysFor } from '@/router/permission-map'
 
 const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
@@ -19,7 +21,46 @@ const router = useRouter()
 const { currentUser, logout } = useAuth()
 const { modules } = useModules()
 const { t } = useI18n()
-const { success: toastSuccess } = useToast()
+const { success: toastSuccess, error: toastError } = useToast()
+
+const showPwdModal = ref(false)
+const pwdForm = reactive({ old_password: '', new_password: '', confirm_password: '' })
+const isSavingPwd = ref(false)
+
+function openPwdModal() {
+  pwdForm.old_password = ''
+  pwdForm.new_password = ''
+  pwdForm.confirm_password = ''
+  showPwdModal.value = true
+}
+
+async function submitPwdChange() {
+  if (!pwdForm.old_password || !pwdForm.new_password) {
+    toastError('Complete Current Password and New Password!.')
+    return
+  }
+  if (pwdForm.new_password.length < 6) {
+    toastError('New Password must be more than 6 characters!.')
+    return
+  }
+  if (pwdForm.new_password !== pwdForm.confirm_password) {
+    toastError('Confirm Password not matching!.')
+    return
+  }
+  isSavingPwd.value = true
+  try {
+    await api.post('/auth/change-password', {
+      old_password: pwdForm.old_password,
+      new_password: pwdForm.new_password,
+    })
+    showPwdModal.value = false
+    toastSuccess('Password has been changed!.')
+  } catch (err: any) {
+    toastError(err?.message || 'Failed to change password!.')
+  } finally {
+    isSavingPwd.value = false
+  }
+}
 
 const allMenuGroups: MenuGroup[] = [
   {
@@ -53,7 +94,6 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.meter_readings', icon: 'activity', route: '/customer-service/monthly-meter-readings' },
       { label: 'sidebar.rentals', icon: 'box', route: '/customer-service/rentals' },
       { label: 'sidebar.sales', icon: 'shopping-cart', route: '/customer-service/sales' },
-      { label: 'sidebar.sparepart_requests', icon: 'box', route: '/accounting/sparepart-requests' },
       { label: 'sidebar.purchase_orders', icon: 'clipboard', route: '/accounting/purchase-orders' },
       { label: 'sidebar.delivery_orders', icon: 'truck', route: '/accounting/delivery-orders' },
       { label: 'sidebar.rental_invoices', icon: 'file-invoice', route: '/customer-service/rental-invoices' },
@@ -98,29 +138,25 @@ const menuGroups = computed(() => {
       // 2. Role-restricted items (technician menu): role decides, no module/permission checks
       if (item.roles) return item.roles.includes(role)
 
-      // 3. Mirror the router guard: only show routes this role may actually open
-      //    (fixes wrong dashboards / bouncing menus for built-in roles)
-      const allowedNames = allowedRouteNamesByRole[role]
-      if (allowedNames) {
-        const itemName = router.resolve(item.route).name
-        if (!itemName || !allowedNames.includes(String(itemName))) return false
-      }
-
-      // 4. Visibility is driven by the `<key>:view` permission of the route
-      //    (see router/permission-map.ts). `read` alone never opens a menu.
       const routeName = String(router.resolve(item.route).name || '')
-      const permKeys = permissionKeysFor(routeName)
+      const permissions = currentUser.value?.permissions || []
 
-      if (!permKeys) {
-        // No permission key mapped (dashboards, shared pages) -> visible
-        return true
+      // 3. Dashboards are pinned: each built-in role keeps its own dashboard.
+      //    Custom roles (no pin) keep seeing dashboards, as before.
+      if (dashboardRouteNames.includes(routeName)) {
+        const own = dashboardRouteByRole[role]
+        return own ? routeName === own : true
       }
 
-      if (!canView(routeName, currentUser.value?.permissions || [])) return false
+      // 4. Everything else is dynamic: visibility follows the role's live
+      //    `<key>:view` permissions (see router/permission-map.ts).
+      //    `read` alone never opens a menu.
+      if (!canView(routeName, permissions)) return false
 
       // Respect a deactivated module that owns this permission key.
       // Module names are display names ("Job Order") while permission keys use
       // snake_case ("job_order"), so normalize before comparing.
+      const permKeys = permissionKeysFor(routeName) || []
       const matches = modules.value.filter(m => permKeys.includes(moduleKey(String(m.name))))
       if (matches.length > 0 && !matches.some(m => m.is_active)) return false
 
@@ -199,18 +235,14 @@ const iconPaths: Record<string, string> = {
   'credit-card': 'M1 4h22v16H1z M1 10h22',
   'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z M12 8v4 M12 16h.01',
   'truck': 'M1 3h15v13H1z M16 8h4l3 3v5h-7z M5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z M18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
-  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01', 
+  'settings': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z M12 8v4 M12 16h.01',
   'bell': 'M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0',
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      v-if="open"
-      class="sidebar-backdrop"
-      @click="emit('close')"
-    />
+    <div v-if="open" class="sidebar-backdrop" @click="emit('close')" />
   </Teleport>
 
   <aside class="sidebar" :class="{ 'sidebar-open': open }">
@@ -221,44 +253,21 @@ const iconPaths: Record<string, string> = {
 
     <nav class="sidebar-nav" aria-label="Main navigation menu">
       <div v-for="group in menuGroups" :key="group.title" class="menu-group">
-        <button
-          class="menu-group-toggle"
-          :aria-expanded="expandedGroups.has(group.title)"
-          @click="toggleGroup(group.title)"
-        >
+        <button class="menu-group-toggle" :aria-expanded="expandedGroups.has(group.title)"
+          @click="toggleGroup(group.title)">
           <span class="menu-group-title">{{ group.title }}</span>
-          <svg
-            class="menu-group-chevron"
-            :class="{ 'chevron-open': expandedGroups.has(group.title) }"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <polyline points="6 9 12 15 18 9"/>
+          <svg class="menu-group-chevron" :class="{ 'chevron-open': expandedGroups.has(group.title) }" width="14"
+            height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
 
         <ul v-show="expandedGroups.has(group.title)" class="menu-list">
           <li v-for="item in group.items" :key="item.route">
-            <button
-              class="menu-item"
-              :class="{ 'menu-item-active': isActive(item.route) }"
-              @click="navigate(item.route)"
-            >
-              <svg
-                class="menu-icon"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
+            <button class="menu-item" :class="{ 'menu-item-active': isActive(item.route) }"
+              @click="navigate(item.route)">
+              <svg class="menu-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path :d="iconPaths[item.icon] || iconPaths.grid" />
               </svg>
               <span>{{ item.label }}</span>
@@ -276,17 +285,45 @@ const iconPaths: Record<string, string> = {
         <div class="sidebar-user-info">
           <span class="sidebar-user-name">{{ currentUser?.name || 'Admin' }}</span>
           <span class="sidebar-user-role">{{
-            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Superadmin'
+            currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c =>
+              c.toUpperCase()) : 'Superadmin'
           }}</span>
         </div>
       </div>
+      <button class="btn-logout" title="Ubah Password" @click="openPwdModal">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0110 0v4"></path>
+        </svg>
+      </button>
       <button class="btn-logout" title="Logout" @click="handleLogout">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
         </svg>
       </button>
     </div>
   </aside>
+
+  <FormModal :open="showPwdModal" title="Ubah Password" max-width="420px" @close="showPwdModal = false"
+    @submit="submitPwdChange">
+    <div class="form-group">
+      <label class="form-label">Password Lama</label>
+      <input v-model="pwdForm.old_password" type="password" class="form-input" placeholder="Password saat ini"
+        autocomplete="current-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password Baru (min. 6 karakter)</label>
+      <input v-model="pwdForm.new_password" type="password" class="form-input" placeholder="Password baru"
+        autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Konfirmasi Password Baru</label>
+      <input v-model="pwdForm.confirm_password" type="password" class="form-input" placeholder="Ulangi password baru"
+        autocomplete="new-password">
+    </div>
+  </FormModal>
 </template>
 
 <style scoped>
@@ -321,6 +358,7 @@ const iconPaths: Record<string, string> = {
   .sidebar-backdrop {
     display: none;
   }
+
   .sidebar {
     transform: translateX(0);
   }

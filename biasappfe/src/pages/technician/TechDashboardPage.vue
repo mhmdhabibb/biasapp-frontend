@@ -1,95 +1,118 @@
 <script setup lang="ts">
-import PageHeader from '@/components/ui/PageHeader.vue'
-import { useAuth } from '@/composables/useAuth'
-import { useMasterStore } from '@/composables/useMasterStore'
-import { usePermission } from '@/composables/usePermission'
-import CreateJobModal from './CreateJobModal.vue'
-import { useRouter } from 'vue-router'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import PageHeader from "@/components/ui/PageHeader.vue";
+import { useAuth } from "@/composables/useAuth";
+import { useAutoRefresh } from "@/composables/useAutoRefresh";
+import { useMasterStore } from "@/composables/useMasterStore";
+import { usePermission } from "@/composables/usePermission";
+import CreateJobModal from "./CreateJobModal.vue";
+import { useRouter } from "vue-router";
+import { computed, ref } from "vue";
 
-const router = useRouter()
-const { currentUser } = useAuth()
-const { canAny } = usePermission()
+useAutoRefresh(15000, [
+  "jobOrders",
+  "serviceReports",
+  "technicians",
+  "customers",
+  "units",
+]);
+
+const router = useRouter();
+const { currentUser } = useAuth();
+const { canAny } = usePermission();
 const {
   jobOrders,
   serviceReports,
   technicians,
   findCustomer,
   findUnit,
-  refresh
-} = useMasterStore()
-
-let intervalId: any = null
-
-onMounted(() => {
-  // Auto-reload data every 30 seconds
-  intervalId = setInterval(() => {
-    refresh(true)
-  }, 30000)
-})
-
-onUnmounted(() => {
-  if (intervalId) clearInterval(intervalId)
-})
+  refresh,
+} = useMasterStore();
 
 // Find the technician record that belongs to the current logged-in user
 const myTechnician = computed(() => {
-  if (!currentUser.value?.id) return null
-  return technicians.value.find((t: any) => t.user_id === currentUser.value?.id || t.user_id == currentUser.value?.id)
-})
+  if (!currentUser.value?.id) return null;
+  return technicians.value.find(
+    (t: any) =>
+      t.user_id === currentUser.value?.id || t.user_id == currentUser.value?.id,
+  );
+});
 
 const myJobs = computed(() => {
-  const techId = myTechnician.value?.id
-  if (!techId) return []
-  return jobOrders.value.filter(j => j.technician_id === techId)
-})
+  const techId = myTechnician.value?.id;
+  if (!techId) return [];
+  return jobOrders.value.filter((j) => j.technician_id === techId);
+});
 
 const isToday = (dateStr: string) => {
-  if (!dateStr) return false
-  const d = new Date(dateStr)
-  const today = new Date()
-  return d.getDate() === today.getDate() &&
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  const today = new Date();
+  return (
+    d.getDate() === today.getDate() &&
     d.getMonth() === today.getMonth() &&
     d.getFullYear() === today.getFullYear()
-}
+  );
+};
 
 const getSlaHours = (createdStr: string) => {
-  if (!createdStr) return 0
-  const created = new Date(createdStr).getTime()
-  const now = new Date().getTime()
-  return (now - created) / (1000 * 60 * 60)
-}
+  if (!createdStr) return 0;
+  const created = new Date(createdStr).getTime();
+  const now = new Date().getTime();
+  return (now - created) / (1000 * 60 * 60);
+};
 
-const newJobs = computed(() => myJobs.value.filter(j => j.status === 'scheduled' || j.status === 'assigned').length)
-const inProgressJobs = computed(() => myJobs.value.filter(j => j.status === 'in_progress').length)
-const completedToday = computed(() => myJobs.value.filter(j => j.status === 'completed' && isToday(j.updated_at)).length)
-const slaBreached = computed(() => myJobs.value.filter(j => j.status !== 'completed' && j.status !== 'cancelled' && getSlaHours(j.created_at) > 2).length)
+const newJobs = computed(
+  () =>
+    myJobs.value.filter(
+      (j) => j.status === "scheduled" || j.status === "assigned",
+    ).length,
+);
+const inProgressJobs = computed(
+  () => myJobs.value.filter((j) => j.status === "in_progress").length,
+);
+const completedToday = computed(
+  () =>
+    myJobs.value.filter(
+      (j) => j.status === "completed" && isToday(j.updated_at),
+    ).length,
+);
+const slaBreached = computed(
+  () =>
+    myJobs.value.filter(
+      (j) =>
+        j.status !== "completed" &&
+        j.status !== "cancelled" &&
+        getSlaHours(j.created_at) > 2,
+    ).length,
+);
 
-const activeJobs = computed(() => myJobs.value.filter(j => j.status !== 'completed' && j.status !== 'cancelled'))
+const activeJobs = computed(() =>
+  myJobs.value.filter(
+    (j) => j.status !== "completed" && j.status !== "cancelled",
+  ),
+);
 
 const formatSla = (createdStr: string) => {
-  if (!createdStr) return '-'
-  const hours = getSlaHours(createdStr)
-  if (hours > 2) return `Breached (${hours.toFixed(1)}h)`
-  return `${hours.toFixed(1)}h / 2.0h`
-}
+  if (!createdStr) return "-";
+  const hours = getSlaHours(createdStr);
+  if (hours > 2) return `Breached (${hours.toFixed(1)}h)`;
+  return `${hours.toFixed(1)}h / 2.0h`;
+};
 
-const showModal = ref(false)
-
-
+const showModal = ref(false);
 
 function getCustomerName(id: number | null) {
-  return findCustomer(id as any)?.company_name || '-'
+  return findCustomer(id as any)?.company_name || "-";
 }
 
 function getUnitName(unitId: string | null) {
-  if (!unitId) return '-'
-  const u = findUnit(unitId as any)
-  return u ? u.model : '-'
+  if (!unitId) return "-";
+  const u = findUnit(unitId as any);
+  return u ? u.model : "-";
 }
 
 function goToDetail(id: number) {
-  router.push(`/technician/call-services/${id}`)
+  router.push(`/technician/call-services/${id}`);
 }
 </script>
 
@@ -97,10 +120,11 @@ function goToDetail(id: number) {
   <div class="tech-dashboard">
     <div class="welcome-header">
       <div class="user-greeting">
-        <h1 class="greeting-title">Hello, {{ currentUser?.name || 'Technician' }}! 👋</h1>
+        <h1 class="greeting-title">
+          Hello, {{ currentUser?.name || "Technician" }}! 👋
+        </h1>
         <p class="greeting-subtitle">Here is your job summary for today.</p>
       </div>
-
     </div>
 
     <!-- Summary Grid -->
@@ -109,12 +133,36 @@ function goToDetail(id: number) {
         <div class="card-header">
           <span>New Jobs</span>
           <span class="icon-wrapper">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
           </span>
         </div>
         <div class="card-value">{{ newJobs }}</div>
         <div class="card-footer">
-          <span class="icon-up"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg></span>
+          <span class="icon-up"
+            ><svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="18 15 12 9 6 15"></polyline></svg
+          ></span>
           Waiting for assignment
         </div>
       </div>
@@ -123,12 +171,36 @@ function goToDetail(id: number) {
         <div class="card-header">
           <span>In Progress</span>
           <span class="icon-wrapper">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
           </span>
         </div>
         <div class="card-value">{{ inProgressJobs }}</div>
         <div class="card-footer">
-          <span class="icon-up text-success-color"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg></span>
+          <span class="icon-up text-success-color"
+            ><svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="18 15 12 9 6 15"></polyline></svg
+          ></span>
           Assigned and working
         </div>
       </div>
@@ -137,12 +209,36 @@ function goToDetail(id: number) {
         <div class="card-header">
           <span>Completed Today</span>
           <span class="icon-wrapper">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
           </span>
         </div>
         <div class="card-value">{{ completedToday }}</div>
         <div class="card-footer">
-          <span class="icon-up text-success-color"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg></span>
+          <span class="icon-up text-success-color"
+            ><svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="18 15 12 9 6 15"></polyline></svg
+          ></span>
           Successfully resolved
         </div>
       </div>
@@ -151,12 +247,38 @@ function goToDetail(id: number) {
         <div class="card-header">
           <span>Breached SLA</span>
           <span class="icon-wrapper">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
           </span>
         </div>
         <div class="card-value text-danger-color">{{ slaBreached }}</div>
         <div class="card-footer">
-          <span class="icon-up text-danger-color" style="background: rgba(239, 68, 68, 0.1);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>
+          <span
+            class="icon-up text-danger-color"
+            style="background: rgba(239, 68, 68, 0.1)"
+            ><svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline></svg
+          ></span>
           Action required immediately
         </div>
       </div>
@@ -170,27 +292,64 @@ function goToDetail(id: number) {
       </div>
 
       <div class="jobs-list" v-if="activeJobs.length > 0">
-        <div v-for="job in activeJobs" :key="job.id" class="job-card" @click="goToDetail(job.id)">
+        <div
+          v-for="job in activeJobs"
+          :key="job.id"
+          class="job-card"
+          @click="goToDetail(job.id)"
+        >
           <div class="job-card-header">
             <span class="job-number">{{ job.job_order_no }}</span>
-            <span class="badge"
-              :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'scheduled' || job.status === 'assigned' ? 'warning' : 'danger')">
-              {{ job.status.toUpperCase().replace('_', ' ') }}
+            <span
+              class="badge"
+              :class="
+                'badge-' +
+                (job.status === 'in_progress'
+                  ? 'info'
+                  : job.status === 'scheduled' || job.status === 'assigned'
+                    ? 'warning'
+                    : 'danger')
+              "
+            >
+              {{ job.status.toUpperCase().replace("_", " ") }}
             </span>
           </div>
 
           <div class="job-details">
             <div class="detail-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                 <polyline points="9 22 9 12 15 12 15 22"></polyline>
               </svg>
-              <span>{{ getCustomerName(job.service_request?.customer_id || null) }}</span>
+              <span>{{
+                getCustomerName(
+                  job.service_request?.customer_id ||
+                    job.delivery_order?.customer_id ||
+                    job.delivery_order?.customer?.id ||
+                    null,
+                )
+              }}</span>
             </div>
             <div class="detail-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
                 <rect x="9" y="9" width="6" height="6"></rect>
                 <line x1="9" y1="1" x2="9" y2="4"></line>
@@ -202,31 +361,70 @@ function goToDetail(id: number) {
                 <line x1="1" y1="9" x2="4" y2="9"></line>
                 <line x1="1" y1="14" x2="4" y2="14"></line>
               </svg>
-              <span>{{ findUnit(job.service_request?.unit_id || null)?.model || '-' }}</span>
+              <span v-if="job.delivery_order || job.job_type === 'delivery'">{{
+                (job.delivery_order?.do_number || job.job_order_no || "Delivery") +
+                ((job.delivery_order?.delivery_order_items || []).length > 0
+                  ? ` • ${(job.delivery_order?.delivery_order_items || []).length} item${(job.delivery_order?.delivery_order_items || []).length > 1 ? "s" : ""}`
+                  : "")
+              }}</span>
+              <span v-else>{{
+                findUnit(job.service_request?.unit_id || null)?.model || "-"
+              }}</span>
             </div>
             <div class="detail-row problem-desc">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="8" x2="12" y2="12"></line>
                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
               </svg>
-              <span class="truncate">{{ job.instructions || job.service_request?.problem_description || `No description` }}</span>
+              <span class="truncate">{{
+                job.instructions ||
+                job.service_request?.problem_description ||
+                `No description`
+              }}</span>
             </div>
           </div>
 
           <div class="job-card-footer">
-            <div class="sla-indicator" :class="{ 'breached': getSlaHours(job.created_at) > 2 }">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+            <div
+              class="sla-indicator"
+              :class="{ breached: getSlaHours(job.created_at) > 2 }"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <circle cx="12" cy="12" r="10"></circle>
                 <polyline points="12 6 12 12 16 14"></polyline>
               </svg>
               <span>SLA: {{ formatSla(job.created_at) }}</span>
             </div>
             <div class="action-arrow">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <polyline points="9 18 15 12 9 6"></polyline>
               </svg>
             </div>
@@ -241,7 +439,11 @@ function goToDetail(id: number) {
       </div>
     </div>
     <!-- Create Job Modal -->
-    <CreateJobModal :open="showModal" @close="showModal = false" @refresh="refresh(true)" />
+    <CreateJobModal
+      :open="showModal"
+      @close="showModal = false"
+      @refresh="refresh()"
+    />
   </div>
 </template>
 
@@ -286,7 +488,7 @@ function goToDetail(id: number) {
   background: var(--color-surface, #fff);
   border-radius: 20px;
   padding: 24px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -360,8 +562,12 @@ function goToDetail(id: number) {
   color: white;
 }
 
-.text-success-color { color: #10b981; }
-.text-danger-color { color: #ef4444; }
+.text-success-color {
+  color: #10b981;
+}
+.text-danger-color {
+  color: #ef4444;
+}
 
 /* Jobs Section */
 .jobs-section {

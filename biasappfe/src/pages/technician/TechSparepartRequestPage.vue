@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useToast } from '@/composables/useToast'
 import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -18,9 +18,7 @@ const { currentUser } = useAuth()
 const {
   products,
   serviceReports,
-  getTechnicianIdByUser,
-  refresh
-} = useMasterStore()
+  getTechnicianIdByUser, refreshInBackground } = useMasterStore()
 
 const serviceId = String(route.query.service_id || '') || null
 
@@ -51,10 +49,11 @@ async function submitRequest() {
     try {
       await api.post('/service-spareparts/', {
         service_report_id: form.value.service_report_id,
+        technician_id: myTechId.value,
         product_id: form.value.product_id,
         qty: Number(form.value.qty)
       })
-      await refresh(true)
+      await refreshInBackground()
       toast.success('Sparepart request successfully sent to Admin/CS/Inventory.')
       router.push(`/technician/call-services/${form.value.service_report_id}`)
     } catch (err: any) {

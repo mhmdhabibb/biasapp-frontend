@@ -35,5 +35,10 @@ export function useSystemSettingsStore() {
     await fetchAll();
   }
 
-  return { systemSettings, isLoading, error, fetchAll, create, update, remove };
+  async function hardRemove(id: string) {
+    await systemSettingService.hardRemove(id);
+    await fetchAll();
+  }
+
+  return { systemSettings, isLoading, error, fetchAll, create, update, remove, hardRemove };
 }

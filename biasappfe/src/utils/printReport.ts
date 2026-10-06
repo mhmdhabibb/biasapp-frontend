@@ -1,4 +1,5 @@
 import { useMasterStore } from "@/composables/useMasterStore";
+import { groupMeterReadingsBySize } from "@/utils/meterReading";
 
 interface ReportCtx {
   masterStore: any;
@@ -10,6 +11,7 @@ interface ReportCtx {
   custPhone: string;
   picName: string;
   custAddress: string;
+  custCategory: string;
   dateStr: string;
   contract: any;
   isCopier: boolean;
@@ -58,6 +60,7 @@ function buildCtx(item: any): ReportCtx {
     custPhone: customer.phone || "-",
     picName: customer.pic_name || "-",
     custAddress: customer.address || "-",
+    custCategory: item.customer_category || customer.category || "Corporate",
     dateStr: item.service_date
       ? new Date(item.service_date).toLocaleDateString("en-GB")
       : "-",
@@ -211,23 +214,69 @@ function resolveMeterAfter(item: any): string {
   return item.meter_reading_after ?? item.reading_counter ?? ""
 }
 
+/** Blok METER READING form cetak copier: rincian per ukuran kertas bila
+ *  readings terhubung sudah ada, else ringkasan BEFORE/AFTER tunggal (legacy). */
+function copierMeterBlockHtml(item: any, ctx: ReportCtx): string {
+  const detail = copierMeterTableHtml(item);
+  if (detail) {
+    return `<tr><td colspan="2" class="bg-black">METER READING</td></tr>${detail}`;
+  }
+  return `
+        <tr><td colspan="2" class="bg-black">METER READING</td></tr>
+        <tr>
+          <td class="text-center">BEFORE</td>
+          <td class="text-center">AFTER</td>
+        </tr>
+        <tr>
+          <td class="text-center">${resolveMeterBefore(item, ctx)}</td>
+          <td class="text-center">${resolveMeterAfter(item)}</td>
+        </tr>`;
+}
+function copierMeterTableHtml(item: any): string {
+  const sections = groupMeterReadingsBySize(
+    item.monthly_meter_readings || item.monthlyMeterReadings || [],
+  );
+  if (sections.length === 0) return "";
+  const rows = sections
+    .map((sec) => {
+      const cells = (mode: "bw" | "color", label: string) => {
+        const m = sec[mode];
+        if (!m) return "";
+        return `<tr><td>${sec.paper_size_name} — ${label}</td><td style="text-align:center;">${m.before}</td><td style="text-align:center;">${m.after}</td></tr>`;
+      };
+      return cells("bw", "B/W") + cells("color", "Colour");
+    })
+    .join("");
+  if (!rows) return "";
+  return `
+    <tr><td colspan="2" style="padding:0;">
+      <table style="width:100%; border-collapse:collapse; font-size:11px;">
+        <tr><td colspan="3" style="background:#000; color:#fff; font-weight:bold; padding:3px 6px;">METER READING PER PAPER SIZE</td></tr>
+        <tr style="font-weight:bold;"><td style="padding:3px 6px;">PAPER SIZE</td><td style="padding:3px 6px; text-align:center;">BEFORE</td><td style="padding:3px 6px; text-align:center;">AFTER</td></tr>
+        ${rows}
+      </table>
+    </td></tr>`;
+}
+
 function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
+  const techName = item.technician_name_copier || item.technician_name || ctx.tech.name || ctx.tech.full_name || ctx.tech.user?.name || "";
+  const custName = item.customer_name_copier || item.customer_name || ctx.picName || "";
   return `
     <table class="grid-table" style="border-top: none;">
       <tr>
         <td style="width: 50%; text-align: center; border-top: none;">
           TESTED YES / NO<br><br><br>
-          ${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : "<br><br>"}
+          ${item.technician_signature_copier ? '<img src="' + item.technician_signature_copier + '" style="max-height: 50px;" />' : "<br><br>"}
         </td>
         <td style="width: 50%; text-align: center; border-top: none;">
           COMPLETE YES / NO<br><br><br>
-          ${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : "<br><br>"}
+          ${item.customer_signature_copier ? '<img src="' + item.customer_signature_copier + '" style="max-height: 50px;" />' : "<br><br>"}
         </td>
       </tr>
       <tr>
-          <td style="text-align: center;">TECHNICIAN<br>${ctx.tech.name || ctx.tech.full_name || ""}</td>
+          <td style="text-align: center;">TECHNICIAN<br>${techName}</td>
         <td style="padding: 0; vertical-align: bottom;">
-          <div style="text-align: center; margin-bottom: 2px;">CUSTOMER</div>
+          <div style="text-align: center; margin-bottom: 2px;">CUSTOMER<br>${custName}</div>
           <div class="bg-black" style="font-size: 9px; padding: 2px;">Signature & Company Stamp</div>
         </td>
       </tr>
@@ -235,17 +284,26 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
   `;
 }
 
-function signatureBlockHtml(item: any, ctx: ReportCtx): string {
+function signatureBlockHtml(item: any, ctx: ReportCtx, type: 'technical' | 'history' = 'history'): string {
+  const techSig = type === 'technical' ? item.technician_signature_technical : item.technician_signature;
+  const custSig = type === 'technical' ? item.customer_signature_technical : item.customer_signature;
+  const techName = type === 'technical'
+    ? item.technician_name_technical || item.technician_name || ctx.tech.user?.name || ctx.tech.name || ctx.tech.full_name || ""
+    : item.technician_name || ctx.tech.user?.name || ctx.tech.name || ctx.tech.full_name || "";
+  const custName = type === 'technical'
+    ? item.customer_name_technical || item.customer_name || ctx.picName
+    : item.customer_name || ctx.picName;
   return `
     <div class="signature-block">
       <div class="sig-side">
         <div>TECHNICIAN</div>
-        <div class="sig-line">${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
-        <div class="sig-name">${ctx.tech.name || ctx.tech.full_name || ""}</div>
+        <div class="sig-line">${techSig ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
+        <div class="sig-name">${techName}</div>
       </div>
       <div class="sig-side sig-customer">
         <div class="sig-cust">CUSTOMER<br>
-          ${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : ""}
+          ${custSig ? '<img src="' + custSig + '" style="max-height: 50px;" />' : ""}
+          <div class="sig-name">${custName}</div>
         </div>
         <div class="sig-stamp">Signature & Company Stamp</div>
       </div>
@@ -271,7 +329,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
       <div class="section-title">CUSTOMER DETAIL</div>
       <table class="data-table">
         <tr><td class="label-col">Company Name</td><td class="val-col"> ${ctx.custName}</td></tr>
-        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.customer.category || "-"}</td></tr>
+        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.custCategory}</td></tr>
         <tr><td class="label-col">Project Name</td><td class="val-col"> ${item.project_name || "-"}</td></tr>
         <tr><td class="label-col">Address</td><td class="val-col"> ${ctx.custAddress}</td></tr>
         <tr><td class="label-col">Phone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
@@ -309,7 +367,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
           </td>
         </tr>
       </table>
-      ${signatureBlockHtml(item, ctx)}
+      ${signatureBlockHtml(item, ctx, 'technical')}
     </div>
   `;
 }
@@ -326,14 +384,14 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
        
        
         <tr>
-          <td>Date In : ${ctx.dateStr}</td>
+          <td>Date In ${ctx.dateStr}</td>
        
         </tr>
       </table>
       <div class="section-title">CUSTOMER DETAIL</div>
       <table class="data-table">
         <tr><td class="label-col">Company Name</td><td class="val-col"> ${ctx.custName}</td></tr>
-        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.customer.category || "-"}</td></tr>
+        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.custCategory}</td></tr>
         <tr><td class="label-col">Project Name</td><td class="val-col"> ${item.project_name || "-"}</td></tr>
         <tr><td class="label-col">Address</td><td class="val-col"> ${ctx.custAddress}</td></tr>
         <tr><td class="label-col">Phone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
@@ -351,20 +409,20 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col"> ${item.remarks || "-"}</td></tr>
       </table>
  
-       <table class="bottom-table">
+      <table class="bottom-table">
         <tr>
           <td style="width: 50%; border-right: 2px solid #000;">
             <div style="margin-bottom: 20px;">TESTED YES / NO</div>
           </td>
           <td>
-            <div class="kv"><div class="kv-k">Tested</div><div>: ${item.is_tested ? "YES" : "NO"}</div></div>
-            <div class="kv"><div class="kv-k">Complete</div><div>: ${item.is_completed ? "YES" : "NO"}</div></div>
-            <div class="kv"><div class="kv-k">Time in</div><div>: ${fmtTime(item.time_in)}</div></div>
-            <div class="kv"><div class="kv-k">Time Out</div><div>: ${fmtTime(item.time_out)}</div></div>
+            <div class="kv"><div class="kv-k">Tested</div><div>${item.is_tested ? "YES" : "NO"}</div></div>
+            <div class="kv"><div class="kv-k">Complete</div><div>${item.is_completed ? "YES" : "NO"}</div></div>
+            <div class="kv"><div class="kv-k">Time in</div><div>${fmtTime(item.time_in)}</div></div>
+            <div class="kv"><div class="kv-k">Time Out</div><div>${fmtTime(item.time_out)}</div></div>
           </td>
         </tr>
       </table>
-      ${signatureBlockHtml(item, ctx)}
+      ${signatureBlockHtml(item, ctx, 'history')}
   `;
 }
 
@@ -414,15 +472,7 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
           <td class="text-center">${ctx.u.model || "-"}</td>
           <td class="text-center">${ctx.u.serial_no || "-"}</td>
         </tr>
-        <tr><td colspan="2" class="bg-black">METER READING</td></tr>
-        <tr>
-          <td class="text-center">BEFORE</td>
-          <td class="text-center">AFTER</td>
-        </tr>
-        <tr>
-          <td class="text-center">${resolveMeterBefore(item, ctx)}</td>
-          <td class="text-center">${resolveMeterAfter(item)}</td>
-        </tr>
+        ${copierMeterBlockHtml(item, ctx)}
         <tr><td colspan="2" class="bg-black">PAPER SIZE</td></tr>
         <tr>
           <td colspan="2" style="vertical-align: top; font-weight: normal;">${paperTypesHtml(item, ctx)}</td>

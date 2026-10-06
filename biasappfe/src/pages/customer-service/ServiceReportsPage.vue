@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// @ts-nocheck
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -8,19 +7,127 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
-import type { TableColumn, ServiceReport } from '@/types'
+import { useToast } from '@/composables/useToast'
+import { useResourcesStore } from '@/stores/resources.store'
+import { useRouter } from 'vue-router'
+import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
+import type { TableColumn, ServiceReport, SparepartRequest } from '@/types'
 
 const { can } = usePermission()
+const router = useRouter()
+const toast = useToast()
+const resources = useResourcesStore()
 
 const {
   serviceReports: data,
+  deliveryOrders,
   contractItems,
   customers,
   technicians,
+  sparepartRequests,
   findContractItem,
   findCustomer,
   findTechnician,
+  findProduct,
+  findServiceReport,
 } = useMasterStore()
+
+// Tab: service reports | delivery history | sparepart requests
+const activeTab = ref<'service' | 'delivery' | 'sparepart'>('service')
+
+// ── Sparepart Requests (Procurement) ───────────────────────────────────────
+const sprColumns: TableColumn[] = [
+  { key: 'request_no', label: 'Request No' },
+  { key: 'service_report_id', label: 'Service No' },
+  { key: 'technician_id', label: 'Requested By' },
+  { key: 'product_id', label: 'Sparepart' },
+  { key: 'qty', label: 'Qty' },
+  { key: 'status', label: 'Status' },
+  { key: 'created_at', label: 'Date' },
+  { key: 'actions', label: 'Action' },
+]
+
+const creatingId = ref<string | number | null>(null)
+
+function getProduct(row: any) {
+  const id = row?.product_id ?? row
+  return (
+    (row as any)?.product?.name ||
+    findProduct(id as any)?.name ||
+    '-'
+  )
+}
+
+function getSR(row: any) {
+  const id = row?.service_report_id ?? row
+  const sr = (row as any)?.service_report || findServiceReport(id as any)
+  return sr ? sr.report_no || (sr as any).service_report_no || '-' : '-'
+}
+
+function sprTechName(row: any): string {
+  const direct =
+    row?.technician ||
+    (row?.technician_id ? findTechnician(row.technician_id as any) : null)
+  const name = (t: any) => t?.user?.name || t?.user?.username || t?.name || ''
+  if (name(direct)) return name(direct)
+  const srTechId = row?.service_report?.technician_id
+  const srTech =
+    row?.service_report?.technician ||
+    (srTechId ? findTechnician(srTechId as any) : null)
+  return name(srTech) || '-'
+}
+
+async function handleCreatePO(request: SparepartRequest) {
+  if (creatingId.value !== null) return
+  creatingId.value = request.id
+  try {
+    await resources.create('purchaseOrders', {
+      sparepart_request_id: request.id,
+      order_date: new Date().toISOString(),
+      status: 'draft',
+    })
+    await useMasterStore().refreshInBackground()
+    toast.success(`Purchase order created for ${request.request_no}`)
+    router.push('/accounting/purchase-orders')
+  } catch (err) {
+    toast.error(toast.fromError(err, 'Failed to create purchase order'))
+  } finally {
+    creatingId.value = null
+  }
+}
+// ───────────────────────────────────────────────────────────────────────────
+
+const doColumns: TableColumn[] = [
+  { key: 'do_number', label: 'DO No.' },
+  { key: 'customer_id', label: 'Customer' },
+  { key: 'do_type', label: 'Type' },
+  { key: 'technician_id', label: 'Technician' },
+  { key: 'delivery_date', label: 'Delivery Date' },
+  { key: 'status', label: 'Status' },
+]
+
+const deliveryHistories = computed(() =>
+  (deliveryOrders.value as any[]).filter(
+    (d: any) =>
+      hasDeliveryHistory(d) &&
+      String(d.do_type || '').toLowerCase() !== 'inbound',
+  ),
+)
+
+function doTypeLabel(type: string | undefined): string {
+  switch (String(type || '').toLowerCase()) {
+    case 'inbound': return 'Sparepart'
+    case 'sale': return 'Sales'
+    case 'service': return 'Service'
+    case 'replacement': return 'Replacement'
+    case 'return': return 'Return'
+    default: return 'Rental'
+  }
+}
+
+function printDO(item: any) {
+  printDeliveryServiceHistory(item)
+}
 
 const columns: TableColumn[] = [
   { key: 'report_no', label: 'Report No.' },
@@ -204,17 +311,28 @@ function printTable() {
   <div>
     <PageHeader title="Service Reports" button-label="Add Service Report" permission="service_report:create" @add="openAdd">
       <template #actions>
-        <button class="btn btn-outline" @click="exportToExcel">
+        <button v-if="activeTab === 'service'" class="btn btn-outline" @click="exportToExcel">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           Export Excel
         </button>
-        <button class="btn btn-outline" @click="openPrintModal(null)">
+        <button v-if="activeTab === 'service'" class="btn btn-outline" @click="openPrintModal(null)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
           Print / PDF
         </button>
       </template>
     </PageHeader>
-    <DataTable :columns="columns" :data="data" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <button class="btn btn-sm" :class="activeTab === 'service' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'service'">
+        Service Reports ({{ (data as any[]).length }})
+      </button>
+      <button class="btn btn-sm" :class="activeTab === 'delivery' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'delivery'">
+        Delivery History ({{ deliveryHistories.length }})
+      </button>
+      <button class="btn btn-sm" :class="activeTab === 'sparepart' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'sparepart'">
+        Sparepart Requests ({{ (sparepartRequests as any[]).length }})
+      </button>
+    </div>
+    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="data" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
@@ -252,6 +370,51 @@ function printTable() {
             <line x1="14" y1="11" x2="14" y2="17"></line>
           </svg>
         </button>
+      </template>
+    </DataTable>
+    <DataTable v-if="activeTab === 'delivery'" :columns="doColumns" :data="deliveryHistories" search-placeholder="Search delivery history...">
+      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
+      <template #cell-do_type="{ value }">{{ doTypeLabel(value) }}</template>
+      <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
+      <template #cell-delivery_date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
+      <template #cell-status="{ value }">
+        <span :class="value === 'delivered' ? 'badge badge-success' : value === 'in_transit' ? 'badge badge-info' : 'badge badge-neutral'">
+          {{ String(value || '-').replace('_', ' ') }}
+        </span>
+      </template>
+      <template #actions="{ row }">
+        <button v-if="can('delivery_order:read')" class="action-btn" title="Print Service History" @click="printDO(row)" style="color: var(--color-primary); border-color: transparent;">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+        </button>
+      </template>
+    </DataTable>
+    <!-- Sparepart Requests Tab -->
+    <DataTable v-if="activeTab === 'sparepart'" :columns="sprColumns" :data="sparepartRequests" permission="service_sparepart" search-placeholder="Search requests...">
+      <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
+      <template #cell-service_report_id="{ row }">{{ getSR(row) }}</template>
+      <template #cell-technician_id="{ row }">{{ sprTechName(row) }}</template>
+      <template #cell-status="{ value }">
+        <span class="badge" :class="{
+          'badge-warning': value === 'pending',
+          'badge-success': value === 'po_created' || value === 'completed',
+          'badge-danger': value === 'rejected'
+        }">
+          {{ value || 'pending' }}
+        </span>
+      </template>
+      <template #cell-created_at="{ value }">
+        {{ new Date(value).toLocaleDateString() }}
+      </template>
+      <template #cell-actions="{ row }">
+        <button v-if="row.status === 'pending' && can('purchase_order:create')" class="btn btn-sm btn-primary"
+          :disabled="creatingId !== null" @click="handleCreatePO(row)">
+          {{ creatingId === row.id ? 'Creating...' : 'Create PO' }}
+        </button>
+        <span v-else class="text-muted text-sm">Processed</span>
       </template>
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Service Report' : 'Add Service Report'" @close="showModal = false" @submit="handleSubmit">

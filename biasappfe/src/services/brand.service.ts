@@ -14,4 +14,7 @@ export const brandService = {
   remove(id: string) {
     return api.delete<ApiResponse<null>>(`/brands/${id}`);
   },
+  hardRemove(id: string) {
+    return api.delete<ApiResponse<null>>(`/brands/${id}?permanent=true`);
+  },
 };

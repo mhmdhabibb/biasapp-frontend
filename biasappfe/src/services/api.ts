@@ -31,8 +31,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const tracksLoading = !options.method || options.method === "GET";
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  tracksLoading = !options.method || options.method === "GET",
+): Promise<T> {
   if (tracksLoading) activeApiRequests.value++;
   try {
     const headers = new Headers(options.headers);
@@ -62,7 +65,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, tracksLoading = true) =>
+    request<T>(path, {}, tracksLoading),
   post: <T>(path: string, data: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(data) }),
   put: <T>(path: string, data: unknown) =>
@@ -72,7 +76,10 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
-export async function downloadFile(path: string, filename: string): Promise<void> {
+export async function downloadFile(
+  path: string,
+  filename: string,
+): Promise<void> {
   const headers = new Headers();
   const token = sessionStorage.getItem("bias_token");
   if (token) headers.set("Authorization", `Bearer ${token}`);

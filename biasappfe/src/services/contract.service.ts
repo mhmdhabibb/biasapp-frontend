@@ -14,4 +14,10 @@ export const contractService = {
   remove(id: string) {
     return api.delete<ApiResponse<null>>(`/contracts/${id}`);
   },
+  hardRemove(id: string) {
+    return api.delete<ApiResponse<null>>(`/contracts/${id}?permanent=true`);
+  },
+  renew(id: string, data: { end_date: string }) {
+    return api.post<ApiResponse<null>>(`/contracts/${id}/renew`, data);
+  },
 };

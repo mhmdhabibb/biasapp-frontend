@@ -14,7 +14,8 @@ export function useNotificationsStore() {
     try {
       notifications.value = (await notificationService.list()).data;
     } catch (reason) {
-      error.value = reason instanceof ApiError ? reason.message : "Failed to load data";
+      error.value =
+        reason instanceof ApiError ? reason.message : "Failed to load data";
     } finally {
       isLoading.value = false;
     }
@@ -30,10 +31,33 @@ export function useNotificationsStore() {
     await fetchAll();
   }
 
+  async function markRead(id: string) {
+    await notificationService.markRead(id);
+    const notification = notifications.value.find(
+      (item) => String(item.id) === id,
+    );
+    if (notification) notification.is_read = true;
+  }
+
   async function remove(id: string) {
     await notificationService.remove(id);
     await fetchAll();
   }
 
-  return { notifications, isLoading, error, fetchAll, create, update, remove };
+  async function hardRemove(id: string) {
+    await notificationService.hardRemove(id);
+    await fetchAll();
+  }
+
+  return {
+    notifications,
+    isLoading,
+    error,
+    fetchAll,
+    create,
+    update,
+    remove,
+    hardRemove,
+    markRead,
+  };
 }

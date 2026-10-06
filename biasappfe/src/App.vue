@@ -7,7 +7,7 @@ import { useAuth } from './composables/useAuth'
 
 const route = useRoute()
 const { isAuthenticated, refreshPermissions } = useAuth()
-const isLoginPage = computed(() => route.name === 'login')
+const isPublicPage = computed(() => route.name === 'login' || route.name === 'verifyPayment')
 
 let permissionRefreshInterval: ReturnType<typeof setInterval> | undefined
 
@@ -31,7 +31,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <AdminLayout v-if="!isLoginPage">
+  <AdminLayout v-if="!isPublicPage">
     <router-view />
   </AdminLayout>
   <router-view v-else />

@@ -37,6 +37,7 @@ export interface Module {
 
 export interface Customer {
   id: string | number;
+  category: string;
   company_name: string;
   pic_name: string;
   pic_gender?: string;
@@ -138,6 +139,7 @@ export interface Unit {
   uom?: UOM | null;
   model: string;
   serial_no: string;
+  status?: string;
   is_copier?: boolean;
   current_meter_bw?: number;
   current_meter_color?: number;
@@ -227,6 +229,9 @@ export interface JobOrder {
   job_order_no: string;
   job_type: string;
   service_request_id?: string | null;
+  delivery_order_id?: string | null;
+  delivery_order?: any;
+  service_request?: any;
   customer_id?: string | null;
   unit_id?: string | null;
   technician_id: string;
@@ -271,6 +276,16 @@ export interface ServiceReport {
   testing_confirmed?: boolean;
   customer_signature?: string | null;
   technician_signature?: string | null;
+  customer_name?: string | null;
+  technician_name?: string | null;
+  customer_signature_copier?: string | null;
+  technician_signature_copier?: string | null;
+  customer_name_copier?: string | null;
+  technician_name_copier?: string | null;
+  customer_signature_technical?: string | null;
+  technician_signature_technical?: string | null;
+  customer_name_technical?: string | null;
+  technician_name_technical?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -308,6 +323,7 @@ export interface Sale {
   subtotal?: number;
   service_charge?: number;
   tax?: number;
+  discount?: number;
   total?: number;
   sale_items?: SaleItem[];
   created_at: string;
@@ -367,6 +383,7 @@ export interface SalesInvoice {
   subtotal: number;
   service_charge: number;
   tax: number;
+  discount?: number;
   total: number;
   status: string;
   payment_status: string;
@@ -390,12 +407,19 @@ export interface Payment {
   id: string | number;
   payment_no: string;
   rental_invoice_id: string | number | null;
+  sales_invoice_id?: string | number | null;
   customer_id: string | number | null;
   payment_date: string;
   amount: number;
   tax_deduction: number;
   balance: number;
+  bank_name: string;
   reference_no: string;
+  sender_name?: string;
+  notes?: string;
+  status: string;
+  user_id?: string | null;
+  user?: { id?: string; name?: string; username?: string } | null;
   created_at: string;
   updated_at: string;
 }
@@ -436,6 +460,8 @@ export interface SparepartRequest {
   id: string | number;
   request_no: string;
   service_report_id: string | number | null;
+  technician_id?: string | number | null;
+  technician?: Technician | null;
   product_id: string | number | null;
   qty: number;
   status: string;
@@ -536,6 +562,7 @@ export interface Supplier {
 
 export interface Contract {
   id: string | number;
+  end_date?: string;
   created_at: string;
   updated_at: string;
 }
@@ -548,6 +575,10 @@ export interface SystemSetting {
 
 export interface Notification {
   id: string | number;
+  title: string;
+  message: string;
+  type?: string;
+  is_read: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -5,15 +5,18 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useAuth } from '@/composables/useAuth'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { RentalInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
+import { printPaymentSlip, printPaymentStruk, paymentMethodOf, buildPaymentTimestamp, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
 import { computed, reactive, ref } from 'vue'
 
 const toast = useToast()
 const { can } = usePermission()
+const { currentUser } = useAuth()
 const {
   rentalInvoices: data,
   contractItems,
@@ -33,7 +36,7 @@ const columns: TableColumn[] = [
   { key: 'period_end', label: 'Period End' },
   { key: 'due_date', label: 'Due Date' },
   { key: 'total_pay', label: 'Total' },
-  { key: 'approval_status', label: 'Approval Status' },
+  { key: 'status', label: 'Approval Status' },
   { key: 'payment_status', label: 'Status' },
 ]
 
@@ -203,7 +206,7 @@ async function exportInvoicesToExcel(
       const pic = customer?.pic_name || ''
       const picGender = customer?.pic_gender
       const picPhone = customer?.phone || ''
-      const picPrefix = picGender === 'L' ? 'Mr.' : picGender === 'P' ? 'Mrs.' : ''
+      const picPrefix = picGender === 'L' ? 'Bapak' : picGender === 'P' ? 'Ibu' : 'Bapak/Ibu'
       const picDisplay = pic ? ('PIC ' + (picPrefix ? picPrefix + ' ' : '') + pic + (picPhone ? ' - ' + picPhone : '')) : 'PIC Finance'
 
       const brandName = unit?.brand?.name || unit?.brand_name || ''
@@ -309,12 +312,14 @@ async function exportInvoicesToExcel(
       }
 
       if (meterDetails.length > 0) {
-        // Group meter details by paper_size
+        // Group meter details by paper size + kind
         const byPaperSize = new Map<string, any[]>()
         for (const detail of meterDetails) {
-          const psName = detail.paper_size?.name || 'A4'
-          if (!byPaperSize.has(psName)) byPaperSize.set(psName, [])
-          byPaperSize.get(psName)!.push(detail)
+          const psName = detail.paper_size?.name || 'Tanpa ukuran'
+          const ptName = detail.paper_type?.name || ''
+          const key = ptName ? `${psName}/${ptName}` : psName
+          if (!byPaperSize.has(key)) byPaperSize.set(key, [])
+          byPaperSize.get(key)!.push(detail)
         }
 
         for (const [paperSize, details] of byPaperSize) {
@@ -547,6 +552,9 @@ async function exportAnnualPdf() {
     .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
     .sig-name { font-weight: 700; font-size: 11px; }
     .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
+    .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin-top: 10px; }
+    .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
+    .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
   </style>
 </head>
 <body>
@@ -614,7 +622,7 @@ function openEdit(item: RentalInvoice) {
 async function handleUpdateStatus(item: any, newStatus: string) {
   try {
     await api.patch(`/rental-invoices/${item.id}`, { status: newStatus })
-    await refresh()
+    await refreshInBackground()
     toast.success(`Invoice status updated to ${newStatus}`)
   } catch (error: any) {
     toast.error('Failed to update status: ' + (error.message || 'Error'))
@@ -658,18 +666,38 @@ async function submitPayment() {
       finalBankName = `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`
     }
 
+    const payNo = `PAY-${Date.now()}`
+    const paymentTs = buildPaymentTimestamp(paymentForm.payment_date)
     await api.post(`/payments`, {
+      payment_no: payNo,
       rental_invoice_id: paymentInvoiceId.value,
-      payment_date: paymentForm.payment_date + "T00:00:00Z",
+      payment_date: paymentTs,
       amount: paymentForm.amount,
       payment_method: paymentForm.payment_method,
       bank_name: paymentForm.payment_method === 'cash' ? 'CASH' : finalBankName,
+      sender_name: paymentForm.sender_name,
       reference_no: paymentForm.reference || '-',
       notes: paymentForm.notes
     })
     toast.success('Payment recorded successfully')
+    const inv = data.value.find((d: any) => String(d.id) === String(paymentInvoiceId.value))
+    const opened = printPaymentSlip({
+      payment_no: payNo,
+      invoice_no: inv?.invoice_no || '-',
+      customer_name: customerName(inv?.customer_id),
+      payment_date: paymentTs,
+      amount: Number(paymentForm.amount || 0),
+      reference_no: paymentForm.reference || '-',
+      sender_name: paymentForm.sender_name,
+      notes: paymentForm.notes,
+      bank_name: finalBankName,
+      status: 'pending',
+      method: paymentForm.payment_method === 'cash' ? 'Tunai' : 'Transfer',
+      cs_name: currentUser.value?.name?.trim() || '-',
+    })
+    if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak tanda terima.')
     showPaymentModal.value = false
-    refresh()
+    refreshInBackground()
   } catch (error: any) {
     toast.error('Failed to record payment: ' + (error.message || 'Error'))
   }
@@ -713,9 +741,9 @@ function invoiceHtml(item: any): string {
   const custAddress = customer?.address || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
-  let prefix = 'Mr./Mrs. '
-  if (gender === 'L') prefix = 'Mr. '
-  if (gender === 'P') prefix = 'Mrs. '
+  let prefix = 'Bapak/Ibu '
+  if (gender === 'L') prefix = 'Bapak '
+  if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
 
   const dateStr = item.invoice_date
@@ -827,6 +855,15 @@ function invoiceHtml(item: any): string {
   const tax = (item.tax || 0).toLocaleString('id-ID')
   const totalPay = (item.total_pay || 0).toLocaleString('id-ID')
 
+  // Stempel pelunasan: hanya bila invoice sudah di-approve accounting.
+  const payStatus = String(item.payment_status || '').toLowerCase()
+  const isApprovedInv = String(item.status || '').toLowerCase() === 'approved'
+  const stampHtml = !isApprovedInv ? '' : payStatus === 'paid'
+    ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp">LUNAS</span></div>`
+    : (payStatus === 'partially_paid' || payStatus === 'partial')
+    ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
+    : `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -889,6 +926,9 @@ function invoiceHtml(item: any): string {
     .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
     .sig-name { font-weight: 700; font-size: 11px; }
     .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
+    .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin-top: 10px; }
+    .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
+    .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
   </style>
 </head>
 <body>
@@ -967,6 +1007,7 @@ function invoiceHtml(item: any): string {
     </tbody>
   </table>
 
+  ${stampHtml}
   <!-- Footer -->
   <div class="bottom-wrap">
     <div class="bank-box">
@@ -982,7 +1023,7 @@ function invoiceHtml(item: any): string {
       <div class="sig-col">
         <span class="sig-label">Received By,</span>
         <div class="sig-line"></div>
-        <div class="sig-name">&nbsp;</div>
+        <div class="sig-name">${picDisplay}</div>
       </div>
       <div class="sig-col">
         <span class="sig-label">PT. BiAS SURYA TEKNOLOGI</span>
@@ -997,6 +1038,41 @@ function invoiceHtml(item: any): string {
 </html>`
 
   return html
+}
+
+function printReceipt(item: any) {
+  const approved = invoicePayments(item).find((payment: any) => payment.status === 'approved')
+  if (!approved) {
+    toast.warning('Bukti bayar tersedia setelah pembayaran disetujui Accounting.')
+    return
+  }
+  printReceiptAsync(item, approved)
+}
+
+async function printReceiptAsync(item: any, approved: any) {
+  const payload = {
+    payment_no: approved.payment_no,
+    invoice_no: item.invoice_no,
+    customer_name: customerName(item.customer_id),
+    payment_date: approved.payment_date,
+    amount: Number(approved.amount || 0),
+    reference_no: approved.reference_no || '-',
+    sender_name: approved.sender_name,
+    bank_name: approved.bank_name,
+    notes: approved.notes,
+    status: approved.status,
+    lunas: true,
+    method: paymentMethodOf(approved.bank_name) || (approved.bank_name ? 'Transfer' : undefined),
+    cs_name: approved.user?.name || approved.user?.username || currentUser.value?.name?.trim() || '-',
+  }
+  const win = window.open('', '_blank')
+  if (!win) {
+    toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
+    return
+  }
+  payload.qr_data_url = await generatePaymentQrDataUrl(buildPaymentVerifyUrl(payload))
+  const opened = printPaymentStruk(payload, win)
+  if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
 }
 
 function printInvoice(item: any) {
@@ -1104,7 +1180,7 @@ function printInvoice(item: any) {
       <template #cell-period_end="{ value }">{{ formatDate(value) }}</template>
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-total_pay="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-approval_status="{ value }">
+      <template #cell-status="{ value }">
         <span
           :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
           {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' :
@@ -1120,7 +1196,7 @@ function printInvoice(item: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft') && can('rental_invoice:update')"
+          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
             class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')"
             style="color: var(--color-success); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1128,7 +1204,7 @@ function printInvoice(item: any) {
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
           </button>
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft') && can('rental_invoice:update')"
+          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
             class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')"
             style="width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1163,6 +1239,18 @@ function printInvoice(item: any) {
               <polyline points="6 9 6 2 18 2 18 9"></polyline>
               <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
               <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+          </button>
+          <button v-if="row.status === 'approved' && row.payment_status === 'paid' && can('rental_invoice:read')"
+            class="action-btn action-btn--edit" title="Bukti Bayar" @click="printReceipt(row)"
+            style="color: #0e7490; width: 36px; height: 36px;">
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
           </button>
           <button v-if="can('rental_invoice:update')" class="action-btn action-btn--edit" title="Edit"
@@ -1414,7 +1502,7 @@ function printInvoice(item: any) {
 
       <div class="form-group">
         <label class="form-label">Payment Amount (Rp)</label>
-        <input v-model.number="paymentForm.amount" type="number" class="form-input" min="0" required>
+        <input :value="Number(paymentForm.amount || 0).toLocaleString('id-ID')" type="text" class="form-input" readonly title="Otomatis dari total invoice" style="background: var(--color-surface-raised); cursor: not-allowed;">
       </div>
       <div class="form-group">
         <label class="form-label">Reference No. / Receipt (Optional)</label>

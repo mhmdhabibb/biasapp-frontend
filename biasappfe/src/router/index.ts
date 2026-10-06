@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { allowedRouteNamesByRole, homeRouteNameByRole, normalizeRole } from '@/router/role-access'
+import { dashboardRouteByRole, dashboardRouteNames, homeRouteNameByRole, normalizeRole, technicianOnlyRouteNames } from '@/router/role-access'
 import { canView, routeNamesByMenuOrder } from '@/router/permission-map'
 
 const router = createRouter({
@@ -213,9 +213,7 @@ const router = createRouter({
     },
     {
       path: "/accounting/sparepart-requests",
-      name: "accSparepartRequests",
-      component: () =>
-        import("@/pages/accounting/AccSparepartRequestsPage.vue"),
+      redirect: "/customer-service/service-reports",
     },
     {
       path: "/accounting/purchase-orders",
@@ -289,6 +287,13 @@ const router = createRouter({
       name: "sharedServiceReportView",
       component: () => import("@/pages/shared/ServiceReportViewPage.vue"),
     },
+    // Verifikasi publik bukti pembayaran via QR struk (tanpa login)
+    {
+      path: "/verify-payment",
+      name: "verifyPayment",
+      component: () => import("@/pages/public/VerifyPaymentPage.vue"),
+      meta: { requiresAuth: false, allowAuthenticated: true },
+    },
   ],
 });
 
@@ -297,7 +302,7 @@ router.beforeEach((to) => {
   const role = normalizeRole(currentUser.value?.role)
 
   if (to.meta.requiresAuth === false) {
-    if (isAuthenticated.value) {
+    if (isAuthenticated.value && !to.meta.allowAuthenticated) {
       const home = homeRouteNameByRole[role]
       return { name: home || 'users' }
     }
@@ -308,10 +313,19 @@ router.beforeEach((to) => {
     return { name: "login" };
   }
 
-  // Role route allowlists (see role-access.ts). Admin/custom roles are unrestricted here.
-  const allowed = allowedRouteNamesByRole[role]
-  if (allowed && to.name && !allowed.includes(to.name as string)) {
-    return { name: homeRouteNameByRole[role] }
+  // Dashboards are pinned to their own role; technician operational pages
+  // are role-locked. Everything else is dynamic via the `view` gate below.
+  if (role !== "admin" && to.name) {
+    const target = String(to.name)
+    const ownDashboard = dashboardRouteByRole[role]
+    if (ownDashboard && dashboardRouteNames.includes(target) && target !== ownDashboard) {
+      return { name: homeRouteNameByRole[role] }
+    }
+    if (role !== "technician" && technicianOnlyRouteNames.includes(target)) {
+      const home = homeRouteNameByRole[role]
+      // Custom roles without a home keep the previous behavior (no bounce).
+      if (home) return { name: home }
+    }
   }
 
   // `view` gate: a page is only reachable when the role holds `<key>:view`

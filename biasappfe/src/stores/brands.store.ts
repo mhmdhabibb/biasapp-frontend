@@ -36,5 +36,10 @@ export function useBrandsStore() {
     await fetchAll();
   }
 
-  return { brands, isLoading, error, fetchAll, create, update, remove };
+  async function hardRemove(id: string) {
+    await brandService.hardRemove(id);
+    await fetchAll();
+  }
+
+  return { brands, isLoading, error, fetchAll, create, update, remove, hardRemove };
 }

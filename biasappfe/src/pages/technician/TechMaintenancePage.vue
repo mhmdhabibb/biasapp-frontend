@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useToast } from '@/composables/useToast'
 import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import { findPreviousServiceReportMeter } from '@/utils/meterReading'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -15,13 +16,12 @@ const router = useRouter()
 const { currentUser } = useAuth()
 const {
   getServiceReportsByTechnician,
+  serviceReports,
   getTechnicianIdByUser,
   findCustomer,
   findUnit,
   contractItems,
-  monthlyMeterReadings,
-  refresh
-} = useMasterStore()
+  monthlyMeterReadings, refreshInBackground } = useMasterStore()
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
@@ -77,6 +77,8 @@ function resolvePreviousMeter(job: any): number {
   let lastEnd = 0
   for (const r of readings) lastEnd = Math.max(lastEnd, numVal(r.end_meter) || numVal(r.start_meter))
   if (lastEnd > 0) return lastEnd
+  const previousVisit = findPreviousServiceReportMeter(job, serviceReports.value, contractItems.value)
+  if (previousVisit !== null) return previousVisit
   // latest reading of this unit from the store (previous period)
   const unitId = String(job?.unit_id || '')
   if (unitId) {
@@ -168,7 +170,7 @@ async function completeMaintenance() {
 
       showDetailModal.value = false
       toast.success('Maintenance Completed!')
-      refresh(true)
+      refreshInBackground()
     } catch (err: any) {
       toast.error(err.message || 'Failed to complete maintenance')
     }
