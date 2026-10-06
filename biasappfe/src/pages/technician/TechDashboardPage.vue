@@ -1,4 +1,21 @@
 <script setup lang="ts">
+<<<<<<< HEAD
+import PageHeader from '@/components/ui/PageHeader.vue'
+import { useAuth } from '@/composables/useAuth'
+import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
+<<<<<<< HEAD
+import { computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
+=======
+import PageHeader from '@/components/ui/PageHeader.vue'
+import CreateJobModal from './CreateJobModal.vue'
+
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+const router = useRouter()
+const { currentUser } = useAuth()
+const { canAny } = usePermission()
+=======
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAuth } from "@/composables/useAuth";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
@@ -19,6 +36,7 @@ useAutoRefresh(15000, [
 const router = useRouter();
 const { currentUser } = useAuth();
 const { canAny } = usePermission();
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 const {
   jobOrders,
   serviceReports,
@@ -99,8 +117,18 @@ const formatSla = (createdStr: string) => {
   return `${hours.toFixed(1)}h / 2.0h`;
 };
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+const showModal = ref(false)
+
+
+
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
 const showModal = ref(false);
 
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 function getCustomerName(id: number | null) {
   return findCustomer(id as any)?.company_name || "-";
 }
@@ -117,6 +145,12 @@ function goToDetail(id: number) {
 </script>
 
 <template>
+<<<<<<< HEAD
+<<<<<<< HEAD
+  <div class="dashboard-container">
+    <PageHeader title="Dashboard" />
+    <p class="subtitle">Ringkasan pekerjaan Anda hari ini.</p>
+=======
   <div class="tech-dashboard">
     <div class="welcome-header">
       <div class="user-greeting">
@@ -126,6 +160,7 @@ function goToDetail(id: number) {
         <p class="greeting-subtitle">Here is your job summary for today.</p>
       </div>
     </div>
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 
     <!-- Summary Grid -->
     <div class="top-cards">
@@ -185,6 +220,31 @@ function goToDetail(id: number) {
               <polyline points="7 7 17 7 17 17"></polyline>
             </svg>
           </span>
+<<<<<<< HEAD
+=======
+  <div class="tech-dashboard">
+    <div class="welcome-header">
+      <div class="user-greeting">
+        <h1 class="greeting-title">Halo, {{ currentUser?.name || 'Teknisi' }}! 👋</h1>
+        <p class="greeting-subtitle">Berikut adalah ringkasan pekerjaan Anda hari ini.</p>
+      </div>
+
+    </div>
+
+    <!-- Summary Grid -->
+    <div class="stats-grid">
+      <div class="stat-box primary">
+        <div class="stat-icon-wrapper">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
         </div>
         <div class="card-value">{{ inProgressJobs }}</div>
         <div class="card-footer">
@@ -205,6 +265,39 @@ function goToDetail(id: number) {
         </div>
       </div>
 
+<<<<<<< HEAD
+      <div class="stat-box info">
+        <div class="stat-icon-wrapper">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        </div>
+        <div class="stat-content">
+          <span class="stat-value">{{ inProgressJobs }}</span>
+          <span class="stat-label">Berjalan</span>
+        </div>
+      </div>
+
+      <div class="stat-box success">
+        <div class="stat-icon-wrapper">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+        </div>
+        <div class="stat-content">
+          <span class="stat-value">{{ completedToday }}</span>
+          <span class="stat-label">Selesai</span>
+        </div>
+      </div>
+
+<<<<<<< HEAD
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
       <div class="card">
         <div class="card-header">
           <span>Completed Today</span>
@@ -223,6 +316,19 @@ function goToDetail(id: number) {
               <polyline points="7 7 17 7 17 17"></polyline>
             </svg>
           </span>
+<<<<<<< HEAD
+=======
+      <div class="stat-box danger">
+        <div class="stat-icon-wrapper">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
         </div>
         <div class="card-value">{{ completedToday }}</div>
         <div class="card-footer">
@@ -291,6 +397,26 @@ function goToDetail(id: number) {
         <span class="badge badge-primary">{{ activeJobs.length }} Total</span>
       </div>
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+        <template v-if="activeJobs.length > 0">
+          <div v-for="job in activeJobs" :key="job.id" class="list-item clickable" @click="goToDetail(job.id)">
+            <div class="list-icon" :style="{
+              background: job.status === 'in_progress' ? 'rgba(14, 165, 233, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+              color: job.status === 'in_progress' ? '#0ea5e9' : '#f59e0b'
+            }">
+              <svg v-if="job.status === 'in_progress'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            </div>
+            <div class="list-content">
+              <div class="list-title">{{ job.job_order_no }}</div>
+              <div class="list-desc">{{ getCustomerName(job.service_request?.customer_id || null) }} · SLA: {{ formatSla(job.created_at) }}</div>
+            </div>
+            <div class="list-arrow">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+=======
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
       <div class="jobs-list" v-if="activeJobs.length > 0">
         <div
           v-for="job in activeJobs"
@@ -427,16 +553,29 @@ function goToDetail(id: number) {
               >
                 <polyline points="9 18 15 12 9 6"></polyline>
               </svg>
+<<<<<<< HEAD
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
             </div>
           </div>
         </div>
       </div>
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 
       <div v-else class="empty-state">
         <div class="empty-icon">🎉</div>
         <h3>All Caught Up!</h3>
         <p>You have no active jobs at the moment.</p>
       </div>
+<<<<<<< HEAD
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
     </div>
     <!-- Create Job Modal -->
     <CreateJobModal
@@ -471,6 +610,9 @@ function goToDetail(id: number) {
   margin: 0 0 4px 0;
 }
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
 .greeting-subtitle {
   font-size: 14px;
   color: var(--color-text-muted);
@@ -536,6 +678,7 @@ function goToDetail(id: number) {
   margin: 8px 0;
 }
 
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 .card-footer {
   font-size: 13px;
   display: flex;
@@ -544,6 +687,43 @@ function goToDetail(id: number) {
 }
 .card:not(.card-primary) .card-footer {
   color: var(--color-text-muted);
+<<<<<<< HEAD
+=======
+.greeting-subtitle {
+  font-size: 14px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+/* 2x2 Grid for Mobile */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.stat-box {
+  background: var(--color-surface, #fff);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s, box-shadow 0.2s;
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+}
+
+.stat-box:active {
+  transform: scale(0.98);
+}
+
+.stat-icon-wrapper {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+=======
 }
 
 .icon-up {
@@ -552,14 +732,26 @@ function goToDetail(id: number) {
   background: rgba(16, 185, 129, 0.1);
   color: #10b981;
   border-radius: 4px;
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+<<<<<<< HEAD
+<<<<<<< HEAD
 .card-primary .icon-up {
   background: rgba(255, 255, 255, 0.2);
   color: white;
+=======
+.primary .stat-icon-wrapper {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+=======
+.card-primary .icon-up {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 }
 
 .text-success-color {
@@ -569,6 +761,29 @@ function goToDetail(id: number) {
   color: #ef4444;
 }
 
+<<<<<<< HEAD
+.stat-content {
+  display: flex;
+  flex-direction: column;
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--color-text);
+  margin-bottom: 2px;
+}
+
+.stat-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 /* Jobs Section */
 .jobs-section {
   display: flex;
@@ -596,6 +811,12 @@ function goToDetail(id: number) {
   gap: 12px;
 }
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+.list-item.clickable {
+=======
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
 /* Mobile App Job Card */
 .job-card {
   background: var(--color-surface, #fff);
@@ -606,6 +827,10 @@ function goToDetail(id: number) {
   display: flex;
   flex-direction: column;
   gap: 14px;
+<<<<<<< HEAD
+>>>>>>> 00e1fed6140254ec55582557c6aa0a22dde427a2
+=======
+>>>>>>> c0a965b4de7c189a605fbafde3272ac5a9097d38
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.2s;

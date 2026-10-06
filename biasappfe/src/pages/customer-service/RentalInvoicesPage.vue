@@ -861,8 +861,8 @@ function invoiceHtml(item: any): string {
   const stampHtml = !isApprovedInv ? '' : payStatus === 'paid'
     ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp">LUNAS</span></div>`
     : (payStatus === 'partially_paid' || payStatus === 'partial')
-    ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
-    : `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
+      ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
+      : `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
 
   const html = `<!DOCTYPE html>
 <html>
@@ -1184,7 +1184,7 @@ function printInvoice(item: any) {
         <span
           :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
           {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' :
-          'Pending' }}
+            'Pending' }}
         </span>
       </template>
       <template #cell-payment_status="{ value }">
@@ -1196,7 +1196,8 @@ function printInvoice(item: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
+          <button
+            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
             class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')"
             style="color: var(--color-success); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1204,7 +1205,8 @@ function printInvoice(item: any) {
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
           </button>
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
+          <button
+            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
             class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')"
             style="width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1408,7 +1410,8 @@ function printInvoice(item: any) {
             <label class="form-label">Payment Status</label>
             <span
               :class="detailItem.payment_status === 'paid' ? 'badge badge-success' : detailItem.payment_status === 'overdue' ? 'badge badge-danger' : detailItem.payment_status === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-              {{ detailItem.payment_status === 'paid' ? 'Paid' : detailItem.payment_status === 'overdue' ? 'Overdue' : detailItem.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
+              {{ detailItem.payment_status === 'paid' ? 'Paid' : detailItem.payment_status === 'overdue' ? 'Overdue' :
+                detailItem.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
             </span>
           </div>
         </div>
@@ -1472,8 +1475,8 @@ function printInvoice(item: any) {
         </div>
         <div class="form-group">
           <label class="form-label">Account Number</label>
-          <input type="text" class="form-input" v-model="paymentForm.account_number"
-            placeholder="Sender account number" required />
+          <input type="text" class="form-input" v-model="paymentForm.account_number" placeholder="Sender account number"
+            required />
         </div>
         <div class="form-group">
           <label class="form-label">Sender Name</label>
@@ -1485,8 +1488,8 @@ function printInvoice(item: any) {
       <template v-if="paymentForm.payment_method === 'credit_card'">
         <div class="form-group">
           <label class="form-label">Card Provider / Bank</label>
-          <input type="text" class="form-input" v-model="paymentForm.bank_name"
-            placeholder="E.g. Visa, Mastercard, BCA" required />
+          <input type="text" class="form-input" v-model="paymentForm.bank_name" placeholder="E.g. Visa, Mastercard, BCA"
+            required />
         </div>
         <div class="form-group">
           <label class="form-label">Card Number (Last 4 Digits)</label>
@@ -1495,8 +1498,8 @@ function printInvoice(item: any) {
         </div>
         <div class="form-group">
           <label class="form-label">Cardholder Name</label>
-          <input type="text" class="form-input" v-model="paymentForm.sender_name"
-            placeholder="Name as shown on card" required />
+          <input type="text" class="form-input" v-model="paymentForm.sender_name" placeholder="Name as shown on card"
+            required />
         </div>
       </template>
 
@@ -1510,8 +1513,7 @@ function printInvoice(item: any) {
       </div>
       <div class="form-group">
         <label class="form-label">Notes (Optional)</label>
-        <textarea v-model="paymentForm.notes" class="form-input" rows="2"
-          placeholder="Add payment notes..."></textarea>
+        <textarea v-model="paymentForm.notes" class="form-input" rows="2" placeholder="Add payment notes..."></textarea>
       </div>
     </FormModal>
   </div>

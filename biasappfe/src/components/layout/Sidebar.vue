@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import FormModal from '@/components/ui/FormModal.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useModules } from '@/composables/useModules'
-import { useI18n } from 'vue-i18n'
 import { useToast } from '@/composables/useToast'
-import { api } from '@/services/api'
-import FormModal from '@/components/ui/FormModal.vue'
-import type { MenuGroup } from '@/types'
-import { dashboardRouteByRole, dashboardRouteNames, normalizeRole } from '@/router/role-access'
 import { canView, permissionKeysFor } from '@/router/permission-map'
+import { dashboardRouteByRole, dashboardRouteNames, normalizeRole } from '@/router/role-access'
+import { api } from '@/services/api'
+import type { MenuGroup } from '@/types'
+import { computed, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 
 const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
 
@@ -287,7 +287,7 @@ const iconPaths: Record<string, string> = {
           <span class="sidebar-user-role">{{
             currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c =>
               c.toUpperCase()) : 'Superadmin'
-          }}</span>
+            }}</span>
         </div>
       </div>
       <button class="btn-logout" title="Ubah Password" @click="openPwdModal">
