@@ -18,27 +18,40 @@ const searchUnassigned = ref("");
 const searchTech = ref("");
 const dragOverTechId = ref<string | number | null>(null);
 
+// ── Job type filter for technician lanes (Requests / Deliveries / Visits) ──
+const jobTypeFilter = ref<"all" | "sr" | "do" | "visit">("all");
+const VISIT_JOB_TYPES = ["visit", "maintenance_visit", "meter_reading"];
+
 async function fetchJobOrders() {
   try {
     const data = await api.get<{ data: any[] }>("/job-orders");
     jobOrders.value = data.data.map((j: any) => {
       const isDelivery =
         j.job_type === "delivery" || !!j.delivery_order_id || !!j.delivery_order;
+      const isVisit =
+        j.job_type === "visit" || VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase());
+      const sr = j.service_request || null;
+      const srpt = j.service_report || null;
       const customer =
-        j.service_request?.customer || j.delivery_order?.customer || null;
+        sr?.customer || j.delivery_order?.customer || srpt?.customer || null;
+      let taskType = "sr";
+      if (isDelivery) taskType = "do";
+      else if (isVisit) taskType = "visit";
       return {
         ...j,
-        taskType: isDelivery ? "do" : "sr",
+        taskType,
         service_request_no:
-          j.service_request?.request_no ||
+          sr?.request_no ||
           j.delivery_order?.do_number ||
+          srpt?.report_no ||
           j.job_order_no ||
           "-",
         customer_name:
           customer?.company_name || customer?.name || "-",
         problem:
-          j.service_request?.problem_description ||
+          sr?.problem_description ||
           j.delivery_order?.notes ||
+          srpt?.machine_problem ||
           j.instructions ||
           "-",
       };
@@ -113,9 +126,36 @@ const unassignedDeliveries = computed(() => {
   );
 });
 
-// Placeholder for Visit tasks (frontend only as requested)
+// Visit copier yang belum di-assign teknisi (job_type=visit, technician_id kosong).
 const unassignedVisits = computed(() => {
-  return []; // Currently empty, add logic here if data is available
+  return jobOrders.value
+    .filter((j) => j.taskType === "visit" && !j.technician_id)
+    .map((j) => ({
+      ...j,
+      taskType: "visit",
+      service_request_no:
+        j.service_request_no ||
+        j.service_report?.report_no ||
+        j.job_order_no ||
+        "-",
+      customer_name:
+        j.customer_name ||
+        j.service_report?.customer?.company_name ||
+        j.service_report?.customer?.name ||
+        "-",
+      problem:
+        j.service_report?.machine_problem ||
+        j.instructions ||
+        "Scheduled copier meter visit",
+    }))
+    .filter((v) =>
+      (v.service_request_no || "")
+        .toLowerCase()
+        .includes(searchUnassigned.value.toLowerCase()) ||
+      (v.customer_name || "")
+        .toLowerCase()
+        .includes(searchUnassigned.value.toLowerCase()),
+    );
 });
 
 const displayedUnassigned = computed(() => {
@@ -160,6 +200,48 @@ function getJobsForTech(techId: string | number) {
     .map((d) => ({ ...d, taskType: "do" }));
   return [...jobs, ...dos];
 }
+
+function getJobKind(job: any): "sr" | "do" | "visit" {
+  const jt = String(job?.job_type || "").toLowerCase();
+  if (VISIT_JOB_TYPES.includes(jt)) return "visit";
+  if (job?.taskType === "visit") return "visit";
+  return isDeliveryJob(job) ? "do" : "sr";
+}
+
+function getFilteredJobsForTech(techId: string | number) {
+  const jobs = getJobsForTech(techId);
+  if (jobTypeFilter.value === "all") return jobs;
+  return jobs.filter((j) => getJobKind(j) === jobTypeFilter.value);
+}
+
+function jobTypeLabel(kind: string) {
+  switch (kind) {
+    case "sr":
+      return "Requests";
+    case "do":
+      return "Deliveries";
+    case "visit":
+      return "Visits";
+    default:
+      return "jobs";
+  }
+}
+
+const jobTypeCounts = computed(() => {
+  const counts = { all: 0, sr: 0, do: 0, visit: 0 };
+  const seen = new Set<string>();
+  for (const t of technicians.value as any[]) {
+    if (!t?.id) continue;
+    for (const j of getJobsForTech(t.id)) {
+      const key = String(j.id ?? `${j.job_order_no || j.do_number}-${t.id}`);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      counts.all += 1;
+      counts[getJobKind(j)] += 1;
+    }
+  }
+  return counts;
+});
 
 function statusBadgeClass(status: string) {
   switch ((status || "").toLowerCase()) {
@@ -256,6 +338,7 @@ const detailCustomer = computed(() => {
   if (sr?.customer) return sr.customer;
   return (
     selectedJob.value?.delivery_order?.customer ||
+    selectedJob.value?.service_report?.customer ||
     selectedRequest.value?.customer ||
     null
   );
@@ -383,6 +466,11 @@ async function onDrop(techId: string | number) {
     assignDeliveryDate.value = toLocalDatetimeStr(
       draggedRequest.delivery_date || new Date().toISOString(),
     );
+  } else if (draggedRequest.taskType === "visit") {
+    // Visit copier: default keep scheduled date dari generate.
+    assignScheduledDate.value = toLocalDatetimeStr(
+      draggedRequest.scheduled_date || new Date().toISOString(),
+    );
   } else {
     // SR: default scheduled_date to now
     assignScheduledDate.value = toLocalDatetimeStr(new Date().toISOString());
@@ -403,7 +491,36 @@ async function confirmAssign() {
 
   const { task, techId } = assignTarget.value;
 
-  if (task.taskType === "do") {
+  if (task.taskType === "visit") {
+    // Visit copier: update JobOrder yang sudah ada (assign teknisi).
+    const payload = {
+      technician_id: techId,
+      scheduled_date: new Date(assignScheduledDate.value).toISOString(),
+      status: "scheduled",
+    };
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/job-orders/${task.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+      if (res.ok) {
+        fetchJobOrders();
+        toast.success("Visit assigned to technician.");
+      } else {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.message || "Failed to assign visit");
+      }
+    } catch (error) {
+      toast.error("Something went wrong");
+    }
+  } else if (task.taskType === "do") {
     // Buat baris job_orders bertipe delivery; backend ikut update
     // delivery_orders.technician_id + status jadi issued.
     const payload = {
@@ -528,7 +645,7 @@ async function confirmAssign() {
           <button
             class="btn-icon refresh-btn"
             title="Refresh"
-            @click="activeTab === 'sr' ? fetchServiceRequests() : (activeTab === 'do' ? fetchDeliveryOrders() : null)"
+            @click="activeTab === 'sr' ? fetchServiceRequests() : (activeTab === 'do' ? fetchDeliveryOrders() : (activeTab === 'visit' ? fetchJobOrders() : null))"
           >
             <svg
               width="16"
@@ -586,7 +703,7 @@ async function confirmAssign() {
             </div>
             <div class="card-main">
               <div class="card-header">
-                <span class="ref-no">{{ req.request_no || req.do_number }}</span>
+                <span class="ref-no">{{ req.request_no || req.do_number || req.service_request_no || req.job_order_no }}</span>
                 <span class="date-tag">{{
                   formatDateDisplay(req.created_at)
                 }}</span>
@@ -615,6 +732,30 @@ async function confirmAssign() {
                     </svg>
                     <span style="font-weight: 500; color: var(--color-primary);">{{ deliveryTypeLabel(req.do_type) }}</span>
                   </div>
+                </template>
+                <template v-else-if="req.taskType === 'visit'">
+                  <div class="card-customer" v-if="req.customer_name">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span>{{ req.customer_name }}</span>
+                  </div>
+                  <div class="card-address" v-if="req.service_report?.unit">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                      <line x1="12" y1="17" x2="12" y2="21" />
+                    </svg>
+                    <span>{{ req.service_report.unit.model }}{{ req.service_report.unit.serial_no ? ` (${req.service_report.unit.serial_no})` : '' }}</span>
+                  </div>
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z" />
+                    </svg>
+                    <span style="font-weight: 500; color: var(--color-primary);">Copier Visit</span>
+                  </div>
+                  <div class="problem-text" style="margin-top: 6px;">{{ req.problem }}</div>
                 </template>
                 <template v-else>
                   <div class="card-customer" v-if="req.customer">
@@ -669,10 +810,36 @@ async function confirmAssign() {
               class="form-input search-input"
             />
           </div>
-          <select class="form-select filter-select">
-            <option>All</option>
-          </select>
-          <button class="btn btn-primary btn-sm filter-btn">ALL</button>
+          <div class="filter-pills" role="tablist" aria-label="Filter job type">
+            <button
+              class="btn btn-sm"
+              :class="jobTypeFilter === 'all' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'all'"
+            >
+              All ({{ jobTypeCounts.all }})
+            </button>
+            <button
+              class="btn btn-sm"
+              :class="jobTypeFilter === 'sr' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'sr'"
+            >
+              Requests ({{ jobTypeCounts.sr }})
+            </button>
+            <button
+              class="btn btn-sm"
+              :class="jobTypeFilter === 'do' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'do'"
+            >
+              Deliveries ({{ jobTypeCounts.do }})
+            </button>
+            <button
+              class="btn btn-sm"
+              :class="jobTypeFilter === 'visit' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'visit'"
+            >
+              Visits ({{ jobTypeCounts.visit }})
+            </button>
+          </div>
         </div>
 
         <div class="tech-lanes">
@@ -692,8 +859,8 @@ async function confirmAssign() {
                 {{ isTechnicianBusy(t.id) ? "BUSY" : (t as any).status || "AVAILABLE" }}
               </span>
               <span class="tech-count"
-                >{{ getJobsForTech(t.id).length }}
-                {{ getJobsForTech(t.id).length === 1 ? "job" : "jobs" }}</span
+                >{{ getFilteredJobsForTech(t.id).length }}<template v-if="jobTypeFilter !== 'all'">/{{ getJobsForTech(t.id).length }}</template>
+                {{ getFilteredJobsForTech(t.id).length === 1 ? "job" : "jobs" }}</span
               >
             </div>
 
@@ -704,7 +871,7 @@ async function confirmAssign() {
               @dragleave="onDragLeave"
               @drop="onDrop(t.id)"
             >
-              <div class="lane-empty" v-if="getJobsForTech(t.id).length === 0">
+              <div class="lane-empty" v-if="getFilteredJobsForTech(t.id).length === 0">
                 <svg
                   width="20"
                   height="20"
@@ -719,12 +886,14 @@ async function confirmAssign() {
                 <span>{{
                   dragOverTechId === t.id
                     ? "Drop here"
-                    : "Drag a request here to assign to this technician"
+                    : jobTypeFilter !== "all"
+                      ? `No ${jobTypeLabel(jobTypeFilter)} jobs for this technician`
+                      : "Drag a request here to assign to this technician"
                 }}</span>
               </div>
 
               <div
-                v-for="job in getJobsForTech(t.id)"
+                v-for="job in getFilteredJobsForTech(t.id)"
                 :key="job.id"
                 class="job-card assigned"
                 role="button"
@@ -869,6 +1038,36 @@ async function confirmAssign() {
                   " ",
                 )
               }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section" v-if="selectedJob.service_report">
+          <div class="detail-section-title">Copier Visit</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="detail-label">Report No</span>
+              <span class="detail-value detail-link">{{
+                selectedJob.service_report.report_no
+              }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Service Type</span>
+              <span class="detail-value">{{
+                String(selectedJob.service_report.service_type || "-").replace("_", " ")
+              }}</span>
+            </div>
+            <div class="detail-item" v-if="selectedJob.service_report.unit">
+              <span class="detail-label">Unit</span>
+              <span class="detail-value">{{
+                selectedJob.service_report.unit.model
+                  ? `${selectedJob.service_report.unit.model} (${selectedJob.service_report.unit.serial_no || '-'})`
+                  : '-'
+              }}</span>
+            </div>
+            <div class="detail-item" v-if="selectedJob.service_report.service_date">
+              <span class="detail-label">Visit Date</span>
+              <span class="detail-value">{{ formatFullDate(selectedJob.service_report.service_date) }}</span>
             </div>
           </div>
         </div>
@@ -1295,6 +1494,7 @@ async function confirmAssign() {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+  flex-wrap: wrap;
   background: var(--color-surface);
 }
 
@@ -1318,16 +1518,15 @@ async function confirmAssign() {
   padding-left: 34px;
 }
 
-.filter-select {
-  min-height: 38px;
-  padding: 8px 12px;
-  font-size: var(--font-size-sm);
-  border-radius: var(--radius-md);
-  min-width: 100px;
+.filter-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
-.filter-btn {
-  min-height: 38px;
+.filter-pills .btn {
+  white-space: nowrap;
 }
 
 .tech-lanes {

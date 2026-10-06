@@ -610,10 +610,21 @@ async function confirmCompleteJob() {
               <span class="font-bold"><span v-if="serviceReport?.remarks && serviceReport?.is_tested">✅</span><span v-else>📝</span> 1. Technical Report</span>
               <span>></span>
             </button>
-            <button v-if="unit?.is_copier || unit?.model?.toLowerCase().includes('copier')" class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md" @click="router.push(`/technician/call-services/${serviceReport?.id}/copier-report`)">
+            <button
+              v-if="(unit?.is_copier || unit?.model?.toLowerCase().includes('copier')) && serviceReport?.status !== 'draft'"
+              class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md"
+              @click="router.push(`/technician/call-services/${serviceReport?.id}/copier-report`)"
+            >
               <span class="font-bold"><span v-if="serviceReport?.meter_reading_after || serviceReport?.reading_counter">✅</span><span v-else>📝</span> 2. Copier Service Report</span>
               <span>></span>
             </button>
+            <div
+              v-else-if="unit?.is_copier || unit?.model?.toLowerCase().includes('copier')"
+              class="p-md text-sm text-muted"
+              style="background: var(--color-surface-sunken); border-radius: var(--radius-md); margin-bottom: 8px;"
+            >
+              📋 Copier visit is <b>draft</b> (not assigned yet). Visit akan muncul setelah di-assign oleh CS.
+            </div>
           </div>
 
        

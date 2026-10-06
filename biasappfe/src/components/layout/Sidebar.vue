@@ -91,6 +91,7 @@ const allMenuGroups: MenuGroup[] = [
       { label: 'sidebar.service_requests', icon: 'alert-circle', route: '/customer-service/service-requests' },
       { label: 'sidebar.job_orders', icon: 'clipboard', route: '/customer-service/job-orders' },
       { label: 'sidebar.service_reports', icon: 'tool', route: '/customer-service/service-reports' },
+      { label: 'Copier Reports', icon: 'file-text', route: '/customer-service/copier-reports' },
       { label: 'sidebar.meter_readings', icon: 'activity', route: '/customer-service/monthly-meter-readings' },
       { label: 'sidebar.rentals', icon: 'box', route: '/customer-service/rentals' },
       { label: 'sidebar.sales', icon: 'shopping-cart', route: '/customer-service/sales' },

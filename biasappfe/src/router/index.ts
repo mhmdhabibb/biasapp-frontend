@@ -165,6 +165,11 @@ const router = createRouter({
       component: () => import("@/pages/customer-service/SalesInvoicesPage.vue"),
     },
     {
+      path: "/customer-service/copier-reports",
+      name: "Copier Reports",
+      component: () => import("@/pages/customer-service/CopierReportsPage.vue"),
+    },
+    {
       path: "/customer-service/payments",
       name: "payments",
       component: () => import("@/pages/customer-service/PaymentsPage.vue"),
