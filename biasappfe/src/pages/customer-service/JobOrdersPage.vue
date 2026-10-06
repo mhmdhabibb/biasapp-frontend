@@ -113,8 +113,16 @@ const unassignedDeliveries = computed(() => {
   );
 });
 
+// Placeholder for Visit tasks (frontend only as requested)
+const unassignedVisits = computed(() => {
+  return []; // Currently empty, add logic here if data is available
+});
+
 const displayedUnassigned = computed(() => {
-  return activeTab.value === 'sr' ? unassignedRequests.value : unassignedDeliveries.value;
+  if (activeTab.value === 'sr') return unassignedRequests.value;
+  if (activeTab.value === 'do') return unassignedDeliveries.value;
+  if (activeTab.value === 'visit') return unassignedVisits.value;
+  return [];
 });
 
 const filteredTechs = computed(() => {
@@ -499,11 +507,14 @@ async function confirmAssign() {
         </div>
 
         <div class="sidebar-tabs" style="display: flex; gap: 8px; margin-top: -8px;">
-          <button class="btn btn-sm" :class="activeTab === 'sr' ? 'btn-primary' : 'btn-outline'" style="flex: 1" @click="activeTab = 'sr'">
+          <button class="btn btn-sm" :class="activeTab === 'sr' ? 'btn-primary' : 'btn-outline'" style="flex: 1; padding: 4px;" @click="activeTab = 'sr'">
             Requests ({{ unassignedRequests.length }})
           </button>
-          <button class="btn btn-sm" :class="activeTab === 'do' ? 'btn-primary' : 'btn-outline'" style="flex: 1" @click="activeTab = 'do'">
+          <button class="btn btn-sm" :class="activeTab === 'do' ? 'btn-primary' : 'btn-outline'" style="flex: 1; padding: 4px;" @click="activeTab = 'do'">
             Deliveries ({{ unassignedDeliveries.length }})
+          </button>
+          <button class="btn btn-sm" :class="activeTab === 'visit' ? 'btn-primary' : 'btn-outline'" style="flex: 1; padding: 4px;" @click="activeTab = 'visit'">
+            Visits ({{ unassignedVisits.length }})
           </button>
         </div>
 
@@ -517,7 +528,7 @@ async function confirmAssign() {
           <button
             class="btn-icon refresh-btn"
             title="Refresh"
-            @click="activeTab === 'sr' ? fetchServiceRequests() : fetchDeliveryOrders()"
+            @click="activeTab === 'sr' ? fetchServiceRequests() : (activeTab === 'do' ? fetchDeliveryOrders() : null)"
           >
             <svg
               width="16"

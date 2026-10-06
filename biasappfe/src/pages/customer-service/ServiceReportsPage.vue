@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// @ts-nocheck
 import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
@@ -8,10 +7,16 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
+import { useResourcesStore } from '@/stores/resources.store'
+import { useRouter } from 'vue-router'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
-import type { TableColumn, ServiceReport } from '@/types'
+import type { TableColumn, ServiceReport, SparepartRequest } from '@/types'
 
 const { can } = usePermission()
+const router = useRouter()
+const toast = useToast()
+const resources = useResourcesStore()
 
 const {
   serviceReports: data,
@@ -19,13 +24,78 @@ const {
   contractItems,
   customers,
   technicians,
+  sparepartRequests,
   findContractItem,
   findCustomer,
   findTechnician,
+  findProduct,
+  findServiceReport,
 } = useMasterStore()
 
-// Tab: laporan service (dari service request) vs service history delivery (dari DO).
-const activeTab = ref<'service' | 'delivery'>('service')
+// Tab: service reports | delivery history | sparepart requests
+const activeTab = ref<'service' | 'delivery' | 'sparepart'>('service')
+
+// ── Sparepart Requests (Procurement) ───────────────────────────────────────
+const sprColumns: TableColumn[] = [
+  { key: 'request_no', label: 'Request No' },
+  { key: 'service_report_id', label: 'Service No' },
+  { key: 'technician_id', label: 'Requested By' },
+  { key: 'product_id', label: 'Sparepart' },
+  { key: 'qty', label: 'Qty' },
+  { key: 'status', label: 'Status' },
+  { key: 'created_at', label: 'Date' },
+  { key: 'actions', label: 'Action' },
+]
+
+const creatingId = ref<string | number | null>(null)
+
+function getProduct(row: any) {
+  const id = row?.product_id ?? row
+  return (
+    (row as any)?.product?.name ||
+    findProduct(id as any)?.name ||
+    '-'
+  )
+}
+
+function getSR(row: any) {
+  const id = row?.service_report_id ?? row
+  const sr = (row as any)?.service_report || findServiceReport(id as any)
+  return sr ? sr.report_no || (sr as any).service_report_no || '-' : '-'
+}
+
+function sprTechName(row: any): string {
+  const direct =
+    row?.technician ||
+    (row?.technician_id ? findTechnician(row.technician_id as any) : null)
+  const name = (t: any) => t?.user?.name || t?.user?.username || t?.name || ''
+  if (name(direct)) return name(direct)
+  const srTechId = row?.service_report?.technician_id
+  const srTech =
+    row?.service_report?.technician ||
+    (srTechId ? findTechnician(srTechId as any) : null)
+  return name(srTech) || '-'
+}
+
+async function handleCreatePO(request: SparepartRequest) {
+  if (creatingId.value !== null) return
+  creatingId.value = request.id
+  try {
+    await resources.create('purchaseOrders', {
+      sparepart_request_id: request.id,
+      order_date: new Date().toISOString(),
+      status: 'draft',
+    })
+    await useMasterStore().refreshInBackground()
+    toast.success(`Purchase order created for ${request.request_no}`)
+    router.push('/accounting/purchase-orders')
+  } catch (err) {
+    toast.error(toast.fromError(err, 'Failed to create purchase order'))
+  } finally {
+    creatingId.value = null
+  }
+}
+// ───────────────────────────────────────────────────────────────────────────
 
 const doColumns: TableColumn[] = [
   { key: 'do_number', label: 'DO No.' },
@@ -258,6 +328,9 @@ function printTable() {
       <button class="btn btn-sm" :class="activeTab === 'delivery' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'delivery'">
         Delivery History ({{ deliveryHistories.length }})
       </button>
+      <button class="btn btn-sm" :class="activeTab === 'sparepart' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'sparepart'">
+        Sparepart Requests ({{ (sparepartRequests as any[]).length }})
+      </button>
     </div>
     <DataTable v-if="activeTab === 'service'" :columns="columns" :data="data" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
@@ -317,6 +390,31 @@ function printTable() {
             <rect x="6" y="14" width="12" height="8"></rect>
           </svg>
         </button>
+      </template>
+    </DataTable>
+    <!-- Sparepart Requests Tab -->
+    <DataTable v-if="activeTab === 'sparepart'" :columns="sprColumns" :data="sparepartRequests" permission="service_sparepart" search-placeholder="Search requests...">
+      <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
+      <template #cell-service_report_id="{ row }">{{ getSR(row) }}</template>
+      <template #cell-technician_id="{ row }">{{ sprTechName(row) }}</template>
+      <template #cell-status="{ value }">
+        <span class="badge" :class="{
+          'badge-warning': value === 'pending',
+          'badge-success': value === 'po_created' || value === 'completed',
+          'badge-danger': value === 'rejected'
+        }">
+          {{ value || 'pending' }}
+        </span>
+      </template>
+      <template #cell-created_at="{ value }">
+        {{ new Date(value).toLocaleDateString() }}
+      </template>
+      <template #cell-actions="{ row }">
+        <button v-if="row.status === 'pending' && can('purchase_order:create')" class="btn btn-sm btn-primary"
+          :disabled="creatingId !== null" @click="handleCreatePO(row)">
+          {{ creatingId === row.id ? 'Creating...' : 'Create PO' }}
+        </button>
+        <span v-else class="text-muted text-sm">Processed</span>
       </template>
     </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Service Report' : 'Add Service Report'" @close="showModal = false" @submit="handleSubmit">
