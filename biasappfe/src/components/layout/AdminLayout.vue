@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useAuth } from "@/composables/useAuth";
+import { useMasterStore } from "@/composables/useMasterStore";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
+import BottomNav from "./BottomNav.vue";
 import Sidebar from "./Sidebar.vue";
 import TopBar from "./TopBar.vue";
-import BottomNav from "./BottomNav.vue";
-import { useMasterStore } from "@/composables/useMasterStore";
-import { useAuth } from "@/composables/useAuth";
 
 const route = useRoute();
 const sidebarOpen = ref(false);
@@ -72,6 +72,7 @@ const pageTitle = computed(() => {
     "/customer-service/sales": "Sales",
     "/customer-service/rental-invoices": "Rental Invoices",
     "/customer-service/sales-invoices": "Sales Invoices",
+    "/customer-service/copier-reports" : "Copier Reports",
     "/customer-service/payments": "Payments",
     "/customer-service/warranty-claims": "Warranty Claims",
     "/accounting/dashboard": "Accounting Dashboard",

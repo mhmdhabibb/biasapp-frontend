@@ -41,9 +41,15 @@ watchEffect(() => {
   }
 })
 
-const customer = computed(() => findCustomer(job.value?.customer_id || job.value?.service_request?.customer_id || null))
-const contract = computed(() => contractItems.value.find(ci => String(ci.unit_id) === String(job.value?.unit_id || job.value?.service_request?.unit_id)) || null)
-const unit = computed(() => findUnit(job.value?.unit_id || job.value?.service_request?.unit_id || null))
+const customer = computed(() => findCustomer(job.value?.customer_id || job.value?.service_request?.customer_id || (serviceReport.value as any)?.customer_id || null))
+// Job order visit (copier) tidak punya unit_id sendiri — unit ada di service report
+// yang terhubung via service_report_id, jadi sertakan sebagai fallback.
+const unit = computed(() => findUnit(job.value?.unit_id || job.value?.service_request?.unit_id || (serviceReport.value as any)?.unit_id || null) || (serviceReport.value as any)?.unit || null)
+const contract = computed(() => {
+  const uid = job.value?.unit_id || job.value?.service_request?.unit_id || (serviceReport.value as any)?.unit_id || (unit.value as any)?.id || null
+  if (!uid) return null
+  return contractItems.value.find(ci => String(ci.unit_id) === String(uid)) || null
+})
 
 // ── Delivery jobs (JO dari delivery order) ──
 // Hanya job yang benar-benar terhubung ke delivery order (bukan sekadar
@@ -55,6 +61,17 @@ function hasDeliveryOrder(j: any): boolean {
   return !!d && (!!d.id || !!d.do_number)
 }
 const isDeliveryJob = computed(() => hasDeliveryOrder(job.value))
+// Visit copier: hanya form Copier Service Report yang ditampilkan,
+// Technical Report disembunyikan.
+const isVisitJob = computed(() => {
+  const j: any = job.value
+  const sr: any = serviceReport.value
+  return (
+    String(j?.job_type || '').toLowerCase() === 'visit' ||
+    String(j?.taskType || '').toLowerCase() === 'visit' ||
+    String(sr?.service_type || '').toLowerCase() === 'copier'
+  )
+})
 const deliveryOrder = computed(() => (job.value as any)?.delivery_order || null)
 const doCustomer = computed(() => deliveryOrder.value?.customer || findCustomer(deliveryOrder.value?.customer_id || null) || null)
 const doItems = computed(() => deliveryOrder.value?.delivery_order_items || [])
@@ -236,16 +253,25 @@ const isAllFormsCompleted = computed(() => {
 
   let copierOk = true
   let copierSigOk = true
-  if (unit.value?.is_copier || unit.value?.model?.toLowerCase().includes('copier')) {
+  if (isVisitJob.value || unit.value?.is_copier || unit.value?.model?.toLowerCase().includes('copier')) {
     copierOk = (numVal(sr.meter_reading_after) || numVal(sr.reading_counter)) > 0
     copierSigOk = !!sr?.customer_signature_copier && !!sr?.technician_signature_copier
   }
+
+  // Visit copier: cukup form copier (meter + tanda tangan copier),
+  // Technical Report tidak wajib.
+  if (isVisitJob.value) return copierOk && copierSigOk
 
   const signaturesOk = techSigOk && copierSigOk
   return techOk && signaturesOk && copierOk
 })
 
 onMounted(() => refreshInBackground())
+
+// --- Custom confirmation modal state ---
+const showAcceptModal = ref(false)
+const showCompleteModal = ref(false)
+const isCompletingJob = ref(false)
 
 async function ensureServiceReport(now: string) {
   await refreshInBackground()
@@ -298,10 +324,13 @@ async function acceptJob() {
     }
     return
   }
-  if (!confirm('Are you sure you want to accept this job now? Start time (time_in) will be recorded.')) {
-    isPreparingForm.value = false
-    return
-  }
+  showAcceptModal.value = true
+  isPreparingForm.value = false
+}
+
+async function confirmAcceptJob() {
+  showAcceptModal.value = false
+  isPreparingForm.value = true
   try {
     const now = new Date().toISOString()
     const report = await ensureServiceReport(now)
@@ -330,28 +359,32 @@ async function completeJob() {
     toast.warning('Please complete all forms first!')
     return
   }
-  if (confirm('Are you sure you want to complete this job? Finish time (time_out) will be recorded.')) {
-    try {
-      const now = new Date().toISOString()
+  showCompleteModal.value = true
+}
 
-      await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: now })
-      
-      if (serviceReport.value) {
-        await api.patch(`/service-reports/${serviceReport.value.id}`, {
-          status: 'completed',
-          is_completed: true,
-          time_out: now,
-        })
-      }
+async function confirmCompleteJob() {
+  showCompleteModal.value = false
+  isCompletingJob.value = true
+  try {
+    const now = new Date().toISOString()
 
-
-
-      toast.success('Job completed! Sparepart replacement data queued for Procurement.')
-      await refreshInBackground()
-      router.push('/technician/call-services')
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to complete job')
+    await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: now })
+    
+    if (serviceReport.value) {
+      await api.patch(`/service-reports/${serviceReport.value.id}`, {
+        status: 'completed',
+        is_completed: true,
+        time_out: now,
+      })
     }
+
+    toast.success('Job completed! Sparepart replacement data queued for Procurement.')
+    await refresh(true)
+    router.push('/technician/call-services')
+  } catch (err: any) {
+    toast.error(err.message || 'Failed to complete job')
+  } finally {
+    isCompletingJob.value = false
   }
 }
 </script>
@@ -443,7 +476,7 @@ async function completeJob() {
           </div>
           <div class="form-group">
             <label class="form-label">Customer Type</label>
-            <CustomSelect v-model="doForm.customer_category" class="form-select" :options="customerCategoryOptions" />
+            <CustomSelect v-model="doForm.customer_category" class="form-select" :options="customerCategoryOptions" disabled title="Customer type follows the delivery order data" />
           </div>
           <div class="form-group">
             <label class="form-label">Action / Repair <span class="text-danger">*</span></label>
@@ -597,14 +630,25 @@ async function completeJob() {
           </div>
 
           <div class="form-list" v-if="serviceReport">
-            <button class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md" @click="router.push(`/technician/call-services/${serviceReport?.id}/technical-report`)">
+            <button v-if="!isVisitJob" class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md" @click="router.push(`/technician/call-services/${serviceReport?.id}/technical-report`)">
               <span class="font-bold"><span v-if="serviceReport?.remarks && serviceReport?.is_tested">✅</span><span v-else>📝</span> 1. Technical Report</span>
               <span>></span>
             </button>
-            <button v-if="unit?.is_copier || unit?.model?.toLowerCase().includes('copier')" class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md" @click="router.push(`/technician/call-services/${serviceReport?.id}/copier-report`)">
-              <span class="font-bold"><span v-if="serviceReport?.meter_reading_after || serviceReport?.reading_counter">✅</span><span v-else>📝</span> 2. Copier Service Report</span>
+            <button
+              v-if="(unit?.is_copier || unit?.model?.toLowerCase().includes('copier')) && serviceReport?.status !== 'draft'"
+              class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md"
+              @click="router.push(`/technician/call-services/${serviceReport?.id}/copier-report`)"
+            >
+              <span class="font-bold"><span v-if="serviceReport?.meter_reading_after || serviceReport?.reading_counter">✅</span><span v-else>📝</span> {{ isVisitJob ? '1' : '2' }}. Copier Service Report</span>
               <span>></span>
             </button>
+            <div
+              v-else-if="unit?.is_copier || unit?.model?.toLowerCase().includes('copier')"
+              class="p-md text-sm text-muted"
+              style="background: var(--color-surface-sunken); border-radius: var(--radius-md); margin-bottom: 8px;"
+            >
+              📋 Copier visit is <b>draft</b> (not assigned yet). Visit akan muncul setelah di-assign oleh CS.
+            </div>
           </div>
 
        
@@ -650,6 +694,93 @@ async function completeJob() {
 
       </div>
     </div>
+
+    <!-- ========== ACCEPT JOB MODAL ========== -->
+    <Teleport to="body">
+      <Transition name="confirm-modal">
+        <div v-if="showAcceptModal" class="confirm-overlay" @click.self="showAcceptModal = false">
+          <div class="confirm-dialog">
+            <div class="confirm-ribbon confirm-ribbon--blue"></div>
+            <div class="confirm-body">
+              <div class="confirm-icon-circle confirm-icon--blue">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+              </div>
+              <h3 class="confirm-heading">Accept This Job?</h3>
+              <p class="confirm-text">
+                Start time <strong>(time_in)</strong> will be recorded once you accept.
+                Make sure you are ready to begin the service.
+              </p>
+              <div class="confirm-info-card">
+                <div class="confirm-info-row">
+                  <span class="confirm-info-label">Job Order</span>
+                  <span class="confirm-info-value">{{ job?.job_order_no }}</span>
+                </div>
+                <div class="confirm-info-row">
+                  <span class="confirm-info-label">Customer</span>
+                  <span class="confirm-info-value">{{ customer?.company_name || '-' }}</span>
+                </div>
+              </div>
+              <div class="confirm-buttons">
+                <button class="confirm-btn-cancel" @click="showAcceptModal = false">Cancel</button>
+                <button class="confirm-btn-primary confirm-btn--blue" @click="confirmAcceptJob">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Accept &amp; Start
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- ========== COMPLETE JOB MODAL ========== -->
+    <Teleport to="body">
+      <Transition name="confirm-modal">
+        <div v-if="showCompleteModal" class="confirm-overlay" @click.self="showCompleteModal = false">
+          <div class="confirm-dialog">
+            <div class="confirm-ribbon confirm-ribbon--green"></div>
+            <div class="confirm-body">
+              <div class="confirm-icon-circle confirm-icon--green">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+              </div>
+              <h3 class="confirm-heading">Complete This Job?</h3>
+              <p class="confirm-text">
+                Finish time <strong>(time_out)</strong> will be recorded and the job
+                will be marked as <strong>completed</strong>. This action cannot be undone.
+              </p>
+              <div class="confirm-info-card">
+                <div class="confirm-info-row">
+                  <span class="confirm-info-label">Job Order</span>
+                  <span class="confirm-info-value">{{ job?.job_order_no }}</span>
+                </div>
+                <div class="confirm-info-row">
+                  <span class="confirm-info-label">Customer</span>
+                  <span class="confirm-info-value">{{ customer?.company_name || '-' }}</span>
+                </div>
+                <div class="confirm-info-row">
+                  <span class="confirm-info-label">Duration</span>
+                  <span class="confirm-info-value">{{ slaDurationStr }}</span>
+                </div>
+              </div>
+              <div class="confirm-buttons">
+                <button class="confirm-btn-cancel" @click="showCompleteModal = false">Cancel</button>
+                <button class="confirm-btn-primary confirm-btn--green" :disabled="isCompletingJob" @click="confirmCompleteJob">
+                  <svg v-if="!isCompletingJob" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span v-if="isCompletingJob" class="confirm-loading-spinner"></span>
+                  {{ isCompletingJob ? 'Completing...' : 'Yes, Complete Job' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
   </div>
 </template>
 
@@ -684,3 +815,221 @@ async function completeJob() {
 }
 </style>
 
+<!-- Non-scoped: modal is Teleported to body -->
+<style>
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.confirm-dialog {
+  background: var(--color-surface, #fff);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow:
+    0 24px 48px -12px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.confirm-ribbon {
+  height: 5px;
+  width: 100%;
+}
+.confirm-ribbon--blue {
+  background: linear-gradient(90deg, #3b82f6, #6366f1, #8b5cf6);
+}
+.confirm-ribbon--green {
+  background: linear-gradient(90deg, #10b981, #059669, #047857);
+}
+
+.confirm-body {
+  padding: 28px 24px 24px;
+  text-align: center;
+}
+
+.confirm-icon-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  animation: confirmBounceIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.confirm-icon--blue {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  color: #3b82f6;
+  box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.08);
+}
+.confirm-icon--green {
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  color: #059669;
+  box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.08);
+}
+
+@keyframes confirmBounceIn {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.confirm-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text, #111827);
+  margin: 0 0 8px;
+  letter-spacing: -0.2px;
+}
+
+.confirm-text {
+  font-size: 13.5px;
+  color: var(--color-text-secondary, #6b7280);
+  margin: 0 0 20px;
+  line-height: 1.55;
+}
+
+.confirm-info-card {
+  background: var(--color-surface-sunken, #f8fafc);
+  border: 1px solid var(--color-border-light, #f1f5f9);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+
+.confirm-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+}
+.confirm-info-row + .confirm-info-row {
+  border-top: 1px solid var(--color-border-light, #f1f5f9);
+}
+
+.confirm-info-label {
+  font-size: 11.5px;
+  color: var(--color-text-muted, #9ca3af);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+
+.confirm-info-value {
+  font-size: 13px;
+  color: var(--color-text, #111827);
+  font-weight: 600;
+  max-width: 55%;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirm-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.confirm-btn-cancel,
+.confirm-btn-primary {
+  flex: 1;
+  padding: 11px 16px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  min-height: 44px;
+}
+
+.confirm-btn-cancel {
+  background: var(--color-surface-sunken, #f1f5f9);
+  color: var(--color-text-secondary, #64748b);
+}
+.confirm-btn-cancel:hover {
+  background: #e2e8f0;
+  color: var(--color-text, #111827);
+}
+
+.confirm-btn--blue {
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+.confirm-btn--blue:hover {
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.confirm-btn--green {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+.confirm-btn--green:hover {
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+  transform: translateY(-1px);
+}
+.confirm-btn--green:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.confirm-loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: confirmSpin 0.65s linear infinite;
+}
+
+@keyframes confirmSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Transition */
+.confirm-modal-enter-active {
+  transition: opacity 0.25s ease;
+}
+.confirm-modal-enter-active .confirm-dialog {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+}
+.confirm-modal-leave-active {
+  transition: opacity 0.2s ease;
+}
+.confirm-modal-leave-active .confirm-dialog {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.confirm-modal-enter-from {
+  opacity: 0;
+}
+.confirm-modal-enter-from .confirm-dialog {
+  transform: scale(0.92) translateY(12px);
+  opacity: 0;
+}
+.confirm-modal-leave-to {
+  opacity: 0;
+}
+.confirm-modal-leave-to .confirm-dialog {
+  transform: scale(0.96) translateY(6px);
+  opacity: 0;
+}
+</style>

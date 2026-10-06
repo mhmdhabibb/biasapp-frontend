@@ -1,19 +1,19 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
-import { useResourcesStore } from '@/stores/resources.store'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
+import { useResourcesStore } from '@/stores/resources.store'
+import type { TableColumn } from '@/types'
 import { isCopierReport } from '@/utils/copierReport'
 import { printServiceReport } from '@/utils/printReport'
-import type { TableColumn } from '@/types'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const toast = useToast()
 const router = useRouter()
@@ -38,6 +38,18 @@ const copierReports = computed(() =>
     ),
   ),
 )
+
+// Filter status untuk hide draft (visit belum di-assign teknisi).
+const statusFilter = ref<'all' | 'active' | 'draft'>('all')
+const filteredCopierReports = computed(() => {
+  if (statusFilter.value === 'active') {
+    return copierReports.value.filter((r: any) => r.status !== 'draft')
+  }
+  if (statusFilter.value === 'draft') {
+    return copierReports.value.filter((r: any) => r.status === 'draft')
+  }
+  return copierReports.value
+})
 
 const columns: TableColumn[] = [
   { key: 'report_no', label: 'Report No.' },
@@ -134,20 +146,85 @@ function openDetail(item: any) {
 
 // ---- Generate manual (retry/backfill) ----
 const genMonth = ref(new Date().toISOString().slice(0, 7))
+const genIntervalDays = ref(30)
+const genIntervalHours = ref(0)
+const genIntervalMode = ref<'days' | 'hours'>('days')
+const genServiceDate = ref(new Date().toISOString().slice(0, 10))
+const genServiceTime = ref('09:00')
+const copierIntervalSettingId = ref<string | null>(null)
 const isGenerating = ref(false)
 const showResult = ref(false)
-const genResult = ref<{ period?: string; created?: number; skipped?: number; errors?: string[] } | null>(null)
+const genResult = ref<{ period?: string; interval_days?: number; interval_hours?: number; service_date?: string; created?: number; skipped?: number; errors?: string[] } | null>(null)
+
+const COPIER_INTERVAL_SETTING_KEY = 'copier_visit_interval_days'
+
+async function fetchCopierIntervalSetting() {
+  try {
+    const res: any = await api.get('/system-settings/?page=1&limit=100')
+    const list: any[] = res?.data?.data || res?.data || []
+    const found = (Array.isArray(list) ? list : []).find((s: any) => s?.key === COPIER_INTERVAL_SETTING_KEY)
+    if (found) {
+      copierIntervalSettingId.value = String(found.id)
+      const n = Number(found.value)
+      if (Number.isFinite(n) && n >= 1 && n <= 365) genIntervalDays.value = n
+    }
+  } catch {
+    // Biarkan default 30 bila gagal dimuat
+  }
+}
+
+async function saveCopierIntervalSetting() {
+  const value = String(Math.min(365, Math.max(1, Number(genIntervalDays.value) || 30)))
+  try {
+    if (copierIntervalSettingId.value) {
+      await api.put(`/system-settings/${copierIntervalSettingId.value}`, { value })
+    } else {
+      const res: any = await api.post('/system-settings/', {
+        key: COPIER_INTERVAL_SETTING_KEY,
+        value,
+        description: 'Interval hari visit copier (uji coba: isi kecil mis. 2-3, produksi: 30)',
+      })
+      const id = res?.data?.id || res?.data?.data?.id
+      if (id) copierIntervalSettingId.value = String(id)
+    }
+  } catch {
+    // Setting gagal disimpan tidak menggagalkan generate
+  }
+}
+
+onMounted(() => {
+  fetchCopierIntervalSetting()
+})
 
 async function handleGenerate() {
   if (!genMonth.value) {
     toast.warning('Pilih bulan dulu!')
     return
   }
+  const params = new URLSearchParams({ month: genMonth.value })
+  if (genIntervalMode.value === 'hours') {
+    const hours = Math.min(8760, Math.max(1, Number(genIntervalHours.value) || 1))
+    genIntervalHours.value = hours
+    params.set('interval_hours', String(hours))
+    if (genServiceDate.value) {
+      params.set('service_date', `${genServiceDate.value}T${genServiceTime.value || '00:00'}`)
+    }
+  } else {
+    const interval = Math.min(365, Math.max(1, Number(genIntervalDays.value) || 30))
+    genIntervalDays.value = interval
+    params.set('interval_days', String(interval))
+    if (genServiceDate.value) params.set('service_date', genServiceDate.value)
+  }
   isGenerating.value = true
   try {
-    const res: any = await api.post(`/service-reports/generate-monthly-copier?month=${genMonth.value}`, {})
+    const res: any = await api.post(`/service-reports/generate-monthly-copier?${params.toString()}`, {})
     genResult.value = res?.data || null
     showResult.value = true
+    // Simpan interval ke system setting hanya mode hari (produksi);
+    // mode jam murni untuk uji coba agar tidak menimpa setting.
+    if (genIntervalMode.value === 'days') {
+      await saveCopierIntervalSetting()
+    }
     await refreshInBackground()
     toast.success(res?.message || 'Generate selesai!')
   } catch (err: any) {
@@ -182,21 +259,68 @@ async function handleDelete() {
   <div>
     <PageHeader title="Copier Reports" permission="service_report:read">
       <template #actions>
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <input
             v-if="can('service_report:create')"
             v-model="genMonth"
             type="month"
             class="form-input"
             style="width: auto;"
-            title="Bulan periode"
+            title="Bulan periode (reading period)"
+          />
+          <label
+            v-if="can('service_report:create')"
+            style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--color-text-muted);"
+          >
+            <select v-model="genIntervalMode" class="form-input" style="width: auto; padding: 4px 8px; font-size: 13px;">
+              <option value="days">hari</option>
+              <option value="hours">jam</option>
+            </select>
+            Tiap
+            <input
+              v-if="genIntervalMode === 'days'"
+              v-model.number="genIntervalDays"
+              type="number"
+              min="1"
+              max="365"
+              class="form-input"
+              style="width: 76px;"
+              title="Interval hari visit — untuk uji coba isi kecil (mis. 2-3 hari), produksi 30 hari"
+            />
+            <input
+              v-else
+              v-model.number="genIntervalHours"
+              type="number"
+              min="1"
+              max="8760"
+              class="form-input"
+              style="width: 76px;"
+              title="Interval jam visit — untuk uji coba (mis. 1-2 jam), produksi kembali ke mode hari"
+            />
+            {{ genIntervalMode === 'days' ? 'hari' : 'jam' }}
+          </label>
+          <input
+            v-if="can('service_report:create')"
+            v-model="genServiceDate"
+            type="date"
+            class="form-input"
+            style="width: auto;"
+            title="Tanggal visit (uji coba) — default hari ini"
+          />
+          <input
+            v-if="can('service_report:create') && genIntervalMode === 'hours'"
+            v-model="genServiceTime"
+            type="time"
+            class="form-input"
+            style="width: auto;"
+            title="Waktu visit — hanya mode jam"
           />
           <button
             v-if="can('service_report:create')"
             type="button"
             class="btn btn-outline"
             :disabled="isGenerating"
-            title="Generate report copier bulan berjalan (retry/backfill)"
+            title="Generate visit copier (idempoten, lewati yang masih dalam interval)"
             @click="handleGenerate"
           >
             {{ isGenerating ? 'Generating...' : 'Generate Bulan Ini' }}
@@ -211,12 +335,18 @@ async function handleDelete() {
         <line x1="12" y1="16" x2="12" y2="12" />
         <line x1="12" y1="8" x2="12.01" y2="8" />
       </svg>
-      <span>Assign teknisi untuk visit dilakukan di <b>Job Orders → tab Visits</b>. Halaman ini untuk monitoring, generate, dan print copier report.</span>
+      <span>Visit copier di-generate otomatis saat rental pertama kali dibuat (status <b>draft</b>) dan muncul di <b>Job Orders → tab Visits</b> untuk di-assign teknisi. Setelah teknisi isi &amp; submit, otomatis di-generate draft visit bulan berikutnya. Halaman ini untuk monitoring &amp; print laporan copier.</span>
+    </div>
+
+    <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+      <button class="btn btn-sm" :class="statusFilter === 'all' ? 'btn-primary' : 'btn-outline'" @click="statusFilter = 'all'">All ({{ copierReports.length }})</button>
+      <button class="btn btn-sm" :class="statusFilter === 'active' ? 'btn-primary' : 'btn-outline'" @click="statusFilter = 'active'">Active ({{ copierReports.filter((r: any) => r.status !== 'draft').length }})</button>
+      <button class="btn btn-sm" :class="statusFilter === 'draft' ? 'btn-primary' : 'btn-outline'" @click="statusFilter = 'draft'">Draft ({{ copierReports.filter((r: any) => r.status === 'draft').length }})</button>
     </div>
 
     <DataTable
       :columns="columns"
-      :data="copierReports"
+      :data="filteredCopierReports"
       search-placeholder="Search copier reports..."
       permission="service_report"
       @delete="openDelete"
@@ -226,7 +356,7 @@ async function handleDelete() {
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
       <template #cell-service_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-status="{ value }">
-        <span :class="value === 'completed' ? 'badge badge-success' : value === 'pending' ? 'badge badge-warning' : 'badge badge-info'">
+        <span :class="value === 'completed' ? 'badge badge-success' : value === 'pending' ? 'badge badge-warning' : value === 'draft' ? 'badge badge-neutral' : 'badge badge-info'">
           {{ value || '-' }}
         </span>
       </template>
@@ -372,6 +502,10 @@ async function handleDelete() {
           <span class="badge badge-warning">Dilewati: {{ genResult.skipped ?? '-' }}</span>
           <span v-if="(genResult.errors || []).length" class="badge badge-danger">Error: {{ (genResult.errors || []).length }}</span>
         </div>
+        <p style="color: var(--color-text-muted); font-size: 13px; margin: 0 0 12px;">
+          Periode {{ genResult.period || genMonth }} · tiap {{ genResult.interval_days ?? genIntervalDays }} hari
+          <template v-if="genResult.service_date"> · visit {{ String(genResult.service_date).slice(0, 10) }}</template>
+        </p>
         <ul v-if="(genResult.errors || []).length" style="margin: 0; padding-left: 18px; font-size: 13px;">
           <li v-for="(e, idx) in (genResult.errors || [])" :key="idx">{{ e }}</li>
         </ul>

@@ -12,32 +12,40 @@
 //     for them): only the technician role may open them.
 // Keep in sync when adding routes.
 export const dashboardRouteNames: string[] = [
-  'csDashboard',
-  'techDashboard',
-  'accDashboard',
+  "csDashboard",
+  "techDashboard",
+  "accDashboard",
 ];
 
 // Each built-in role always keeps its own dashboard in the sidebar
 // (and may only open that dashboard). Admin is unrestricted (see callers).
 export const dashboardRouteByRole: Record<string, string> = {
-  customer_service: 'csDashboard',
-  accounting: 'accDashboard',
-  technician: 'techDashboard',
+  customer_service: "csDashboard",
+  accounting: "accDashboard",
+  technician: "techDashboard",
 };
 
 // Technician operational pages (dashboards excluded - see above, shared pages
 // excluded - open to every authenticated role). Only `technician` may open these.
 export const technicianOnlyRouteNames: string[] = [
-  'techCallServices',
-  'techCallServiceDetail',
-  'techMaintenance',
-  'techSparepartRequest',
-  'techMeterReadings',
-  'techServiceHistory',
-  'techFormServiceReport',
-  'techFormTechnicalReport',
-  'techFormCopierReport',
+  "techCallServices",
+  "techCallServiceDetail",
+  "techMaintenance",
+  "techSparepartRequest",
+  "techMeterReadings",
+  "techServiceHistory",
+  "techFormServiceReport",
+  "techFormTechnicalReport",
+  "techFormCopierReport",
 ];
+
+export const allowedRouteNamesByRole: Record<string, string[]> = {
+  technician: [
+    ...technicianOnlyRouteNames,
+    "techDashboard",
+    "sharedServiceReportView",
+  ],
+};
 
 // Role home routes used when a role hits a page it cannot access (or the login page while authed).
 export const homeRouteNameByRole: Record<string, string> = {

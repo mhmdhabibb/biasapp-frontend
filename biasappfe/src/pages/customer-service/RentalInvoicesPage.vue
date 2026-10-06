@@ -49,9 +49,26 @@ function formatDate(value: any): string {
 }
 
 function approvalStatus(status: string): string {
+  if (status === 'pending_meter_reading') return 'pending_meter_reading'
   if (status === 'approved') return 'approved'
   if (status === 'rejected') return 'rejected'
   return 'pending'
+}
+
+function meterReadingStatusLabel(status: string): string {
+  if (status === 'pending_meter_reading') return 'Awaiting Meter Reading'
+  return approvalStatusLabel(status)
+}
+
+function approvalStatusLabel(status: string): string {
+  if (status === 'approved') return 'Approved'
+  if (status === 'rejected') return 'Rejected'
+  if (status === 'pending_meter_reading') return 'Awaiting Meter Reading'
+  return 'Pending'
+}
+
+function isPaymentBlocked(item: any): boolean {
+  return item?.status === 'pending_meter_reading'
 }
 
 function isCopierUnit(unit: any): boolean {
@@ -700,6 +717,10 @@ const paymentForm = reactive({
 })
 
 function openPaymentModal(item: any) {
+  if (item?.status === 'pending_meter_reading') {
+    toast.warning('Payment blocked: technician has not submitted the meter reading for this period yet.')
+    return
+  }
   paymentInvoiceId.value = item.id
   paymentForm.amount = item.total_pay || item.subtotal || 0
   paymentForm.payment_date = new Date().toISOString().split('T')[0]
@@ -929,8 +950,8 @@ function invoiceHtml(item: any): string {
   const stampHtml = !isApprovedInv ? '' : payStatus === 'paid'
     ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp">LUNAS</span></div>`
     : (payStatus === 'partially_paid' || payStatus === 'partial')
-    ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
-    : `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
+      ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
+      : `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
 
   const html = `<!DOCTYPE html>
 <html>
@@ -1244,11 +1265,11 @@ function printInvoice(item: any) {
       <template #cell-period_end="{ value }">{{ formatDate(value) }}</template>
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-total_pay="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-status="{ value }">
+      <template #cell-status="{ row }">
         <span
-          :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' :
-          'Pending' }}
+          :class="row.status === 'approved' ? 'badge badge-info' : row.status === 'rejected' ? 'badge badge-danger' : row.status === 'pending_meter_reading' ? 'badge badge-warning' : 'badge badge-warning'"
+          :title="row.status === 'pending_meter_reading' ? 'Payment blocked until technician submits meter reading' : ''">
+          {{ approvalStatusLabel(row.status) }}
         </span>
       </template>
       <template #cell-payment_status="{ value }">
@@ -1260,7 +1281,8 @@ function printInvoice(item: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
+          <button
+            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
             class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')"
             style="color: var(--color-success); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1268,7 +1290,8 @@ function printInvoice(item: any) {
               <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
           </button>
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
+          <button
+            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
             class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')"
             style="width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1285,6 +1308,18 @@ function printInvoice(item: any) {
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="5" width="20" height="14" rx="2"></rect>
               <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+          </button>
+          <button
+            v-if="row.status === 'pending_meter_reading' && can('rental_invoice:read')"
+            class="action-btn" disabled
+            title="Payment blocked: technician has not submitted the meter reading for this period"
+            style="color: var(--color-text-muted); width: 36px; height: 36px; opacity: 0.5; cursor: not-allowed;">
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+              <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2"></line>
             </svg>
           </button>
           <button v-if="can('rental_invoice:read')" class="action-btn action-btn--edit" title="Detail"
@@ -1462,7 +1497,8 @@ function printInvoice(item: any) {
             <label class="form-label">Payment Status</label>
             <span
               :class="detailItem.payment_status === 'paid' ? 'badge badge-success' : detailItem.payment_status === 'overdue' ? 'badge badge-danger' : detailItem.payment_status === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-              {{ detailItem.payment_status === 'paid' ? 'Paid' : detailItem.payment_status === 'overdue' ? 'Overdue' : detailItem.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
+              {{ detailItem.payment_status === 'paid' ? 'Paid' : detailItem.payment_status === 'overdue' ? 'Overdue' :
+                detailItem.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
             </span>
           </div>
         </div>
@@ -1522,8 +1558,8 @@ function printInvoice(item: any) {
         </div>
         <div class="form-group">
           <label class="form-label">Account Number</label>
-          <input type="text" class="form-input" v-model="paymentForm.account_number"
-            placeholder="Sender account number" required />
+          <input type="text" class="form-input" v-model="paymentForm.account_number" placeholder="Sender account number"
+            required />
         </div>
         <div class="form-group">
           <label class="form-label">Sender Name</label>
@@ -1535,8 +1571,8 @@ function printInvoice(item: any) {
       <template v-if="paymentForm.payment_method === 'credit_card'">
         <div class="form-group">
           <label class="form-label">Card Provider / Bank</label>
-          <input type="text" class="form-input" v-model="paymentForm.bank_name"
-            placeholder="E.g. Visa, Mastercard, BCA" required />
+          <input type="text" class="form-input" v-model="paymentForm.bank_name" placeholder="E.g. Visa, Mastercard, BCA"
+            required />
         </div>
         <div class="form-group">
           <label class="form-label">Card Number (Last 4 Digits)</label>
@@ -1545,8 +1581,8 @@ function printInvoice(item: any) {
         </div>
         <div class="form-group">
           <label class="form-label">Cardholder Name</label>
-          <input type="text" class="form-input" v-model="paymentForm.sender_name"
-            placeholder="Name as shown on card" required />
+          <input type="text" class="form-input" v-model="paymentForm.sender_name" placeholder="Name as shown on card"
+            required />
         </div>
       </template>
 
@@ -1560,8 +1596,7 @@ function printInvoice(item: any) {
       </div>
       <div class="form-group">
         <label class="form-label">Notes (Optional)</label>
-        <textarea v-model="paymentForm.notes" class="form-input" rows="2"
-          placeholder="Add payment notes..."></textarea>
+        <textarea v-model="paymentForm.notes" class="form-input" rows="2" placeholder="Add payment notes..."></textarea>
       </div>
     </FormModal>
   </div>

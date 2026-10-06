@@ -13,12 +13,13 @@
  * - ada monthly meter readings terhubung.
  */
 export function isCopierReport(item: any): boolean {
-  if (!item) return false
-  if (String(item.service_type || '').toLowerCase() === 'copier') return true
-  if (Number(item.meter_reading_before || 0) > 0) return true
-  if (Number(item.meter_reading_after || 0) > 0) return true
-  if (item.customer_signature_copier || item.technician_signature_copier) return true
-  const readings = item.monthly_meter_readings || item.monthlyMeterReadings
-  if (Array.isArray(readings) && readings.length > 0) return true
-  return false
+  if (!item) return false;
+  if (String(item.service_type || "").toLowerCase() === "copier") return true;
+  if (Number(item.meter_reading_before || 0) > 0) return true;
+  if (Number(item.meter_reading_after || 0) > 0) return true;
+  if (item.customer_signature_copier || item.technician_signature_copier)
+    return true;
+  const readings = item.monthly_meter_readings || item.monthlyMeterReadings;
+  if (Array.isArray(readings) && readings.length > 0) return true;
+  return false;
 }

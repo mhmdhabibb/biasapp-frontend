@@ -667,6 +667,21 @@ function hasPendingPaymentApproval(invoice: any): boolean {
   );
 }
 
+// Rental ini punya unit copier (dari rental_items yang ter-preload).
+function rentalHasCopier(): boolean {
+  const items = (selectedRental.value as any)?.rental_items || [];
+  return items.some((item: any) => item?.unit?.is_copier);
+}
+
+// Invoice rental unit copier yang meter report-nya belum diisi teknisi
+// belum boleh dibayar: status masih pending_meter_reading, atau rental
+// copier tapi invoice belum difinalisasi report (data lama / status drift).
+function isWaitingMeterReport(invoice: any): boolean {
+  if (String(invoice?.status || "").toLowerCase() === "pending_meter_reading")
+    return true;
+  return rentalHasCopier() && !invoice?.is_finalized;
+}
+
 function invoicePayments(invoice: any): any[] {
   const currentPayments = payments.value.filter(
     (payment: any) => String(payment.rental_invoice_id) === String(invoice.id),
@@ -876,6 +891,13 @@ onMounted(async () => {
             >
               Menunggu approval accounting
             </span>
+            <span
+              v-if="isWaitingMeterReport(invoice)"
+              class="badge badge-warning"
+              title="Tombol Payment muncul setelah teknisi mengisi copier service report"
+            >
+              Menunggu teknisi isi copier report
+            </span>
             <button
               v-if="meterCount(invoice) > 0"
               type="button"
@@ -904,7 +926,11 @@ onMounted(async () => {
               Kwitansi A5
             </button>
             <button
-              v-if="invoice.payment_status !== 'paid' && can('payment:create')"
+              v-if="
+                invoice.payment_status !== 'paid' &&
+                !isWaitingMeterReport(invoice) &&
+                can('payment:create')
+              "
               type="button"
               class="btn btn-sm btn-primary"
               :disabled="isSavingPayment"
