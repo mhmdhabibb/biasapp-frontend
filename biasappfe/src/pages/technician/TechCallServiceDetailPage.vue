@@ -2,12 +2,14 @@
 // @ts-nocheck
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
+import FormModal from '@/components/ui/FormModal.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
+import { resources } from '@/services/resource.service'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { computed, onMounted, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -273,6 +275,76 @@ const showAcceptModal = ref(false)
 const showCompleteModal = ref(false)
 const isCompletingJob = ref(false)
 
+// --- Add Unit Form ---
+const showAddUnitModal = ref(false)
+const isSavingUnit = ref(false)
+const unitForm = ref({
+  serial_no: '',
+  brand_id: null,
+  model: '',
+})
+
+async function submitUnitForm() {
+  if (!unitForm.value.serial_no || !unitForm.value.model || !unitForm.value.brand_id) {
+    toast.warning('Silakan isi Serial Number, Brand, dan Model.')
+    return
+  }
+  isSavingUnit.value = true
+  try {
+    const { brands } = useMasterStore()
+    const b: any = brands.find((x: any) => x.id === unitForm.value.brand_id)
+    const brandName = b ? b.name : ''
+    
+    const payload = {
+      ...unitForm.value,
+      name: `${brandName} ${unitForm.value.model}`,
+      is_copier: true,
+      is_computer: false,
+    }
+    await resources.units.create(payload)
+    toast.success('Unit berhasil didaftarkan.')
+    showAddUnitModal.value = false
+    await refreshInBackground()
+  } catch (e: any) {
+    toast.error('Gagal mendaftarkan unit: ' + e.message)
+  } finally {
+    isSavingUnit.value = false
+  }
+}
+
+// --- Edit SN Form ---
+const showEditSnModal = ref(false)
+const isSavingSn = ref(false)
+const editSnForm = ref({
+  id: '',
+  serial_no: ''
+})
+
+function openEditSn(unitObj: any) {
+  editSnForm.value.id = String(unitObj.unit_id || unitObj.id)
+  editSnForm.value.serial_no = unitObj.unit?.serial_no || unitObj.serial_no || ''
+  showEditSnModal.value = true
+}
+
+async function submitEditSn() {
+  if (!editSnForm.value.serial_no) {
+    toast.warning('Silakan isi Serial Number.')
+    return
+  }
+  isSavingSn.value = true
+  try {
+    await resources.units.update(editSnForm.value.id, { serial_no: editSnForm.value.serial_no })
+    toast.success('Serial Number berhasil diupdate.')
+    showEditSnModal.value = false
+    await refreshInBackground()
+  } catch (e: any) {
+    toast.error('Gagal update SN: ' + e.message)
+  } finally {
+    isSavingSn.value = false
+  }
+}
+// --------------------
+
 async function ensureServiceReport(now: string) {
   await refreshInBackground()
   if (serviceReport.value) return serviceReport.value
@@ -443,11 +515,17 @@ async function confirmCompleteJob() {
         <div class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
           <h3 class="text-md font-bold mb-sm">Items ({{ doItems.length }})</h3>
           <div v-if="doItems.length > 0">
-            <div v-for="(it, idx) in doItems" :key="idx" class="text-sm p-md mb-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
-              {{ idx + 1 }}. {{ doItemLabel(it) }}
+            <div v-for="(it, idx) in doItems" :key="idx" class="text-sm p-md mb-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
+              <span>{{ idx + 1 }}. {{ doItemLabel(it) }}</span>
+              <button v-if="it.unit_id && job.status === 'in_progress'" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.7rem;" @click="openEditSn(it)">Edit SN</button>
             </div>
           </div>
           <p v-else class="text-sm text-muted">No items.</p>
+          <div class="mt-md" v-if="job.status === 'in_progress'">
+            <button class="btn btn-outline btn-sm w-full" @click="showAddUnitModal = true">
+              ➕ Tambah / Daftarkan Unit Baru
+            </button>
+          </div>
         </div>
 
         <div class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
@@ -578,7 +656,10 @@ async function confirmCompleteJob() {
           </div>
           <div class="info-item">
             <span class="info-label">Serial Number</span>
-            <span class="info-value">{{ unit?.serial_no || '-' }}</span>
+            <span class="info-value">
+              {{ unit?.serial_no || '-' }}
+              <button v-if="unit?.id && job.status === 'in_progress'" class="btn btn-outline btn-sm" style="margin-left: 8px; padding: 2px 8px; font-size: 0.7rem;" @click="openEditSn(unit)">Edit</button>
+            </span>
           </div>
           <div class="info-item">
             <span class="info-label">Contract</span>
@@ -780,6 +861,42 @@ async function confirmCompleteJob() {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- ========== ADD UNIT MODAL ========== -->
+    <FormModal :open="showAddUnitModal" title="Daftarkan Unit Baru (DO)" @close="showAddUnitModal = false" @submit="submitUnitForm">
+      <div class="form-group">
+        <label class="form-label">Serial Number <span class="text-danger">*</span></label>
+        <input v-model="unitForm.serial_no" type="text" class="form-input" placeholder="Masukkan Serial Number">
+      </div>
+      <div class="form-group mt-sm">
+        <label class="form-label">Brand <span class="text-danger">*</span></label>
+        <CustomSelect v-model="unitForm.brand_id" :options="useMasterStore().brands.map((b: any) => ({ value: b.id, label: b.name }))" placeholder="-- Pilih Brand --" />
+      </div>
+      <div class="form-group mt-sm">
+        <label class="form-label">Model <span class="text-danger">*</span></label>
+        <input v-model="unitForm.model" type="text" class="form-input" placeholder="Masukkan Model Mesin">
+      </div>
+      <template #footer>
+        <button class="btn btn-outline" @click="showAddUnitModal = false">Batal</button>
+        <button class="btn btn-primary" :disabled="isSavingUnit" @click="submitUnitForm">
+          {{ isSavingUnit ? 'Menyimpan...' : 'Simpan Unit' }}
+        </button>
+      </template>
+    </FormModal>
+
+    <!-- ========== EDIT SN MODAL ========== -->
+    <FormModal :open="showEditSnModal" title="Edit Serial Number Unit" @close="showEditSnModal = false" @submit="submitEditSn">
+      <div class="form-group">
+        <label class="form-label">Serial Number Baru <span class="text-danger">*</span></label>
+        <input v-model="editSnForm.serial_no" type="text" class="form-input" placeholder="Masukkan Serial Number">
+      </div>
+      <template #footer>
+        <button class="btn btn-outline" @click="showEditSnModal = false">Batal</button>
+        <button class="btn btn-primary" :disabled="isSavingSn" @click="submitEditSn">
+          {{ isSavingSn ? 'Menyimpan...' : 'Update SN' }}
+        </button>
+      </template>
+    </FormModal>
 
   </div>
 </template>

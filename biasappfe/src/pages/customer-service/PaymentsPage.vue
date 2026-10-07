@@ -24,7 +24,7 @@ import type { TableColumn, Payment } from "@/types";
 import type { PaymentReceiptData } from "@/utils/paymentReceipt";
 
 const toast = useToast();
-const { can, canApprove } = usePermission();
+const { can } = usePermission();
 const { currentUser } = useAuth();
 const route = useRoute();
 const pageRouter = useRouter();
@@ -41,11 +41,9 @@ const {
 
 const resources = useResourcesStore();
 
-const canManageApprovals = computed(
-  () =>
-    canApprove("payment") ||
-    currentUser.value?.role?.trim().toLowerCase() === "accounting",
-);
+// Approval dimatikan: semua payment dianggap approved, guard lama dipertahankan
+// sebagai no-op agar template lama tidak error bila masih mereferensikannya.
+const canManageApprovals = computed(() => false);
 
 // Deep-link dari notifikasi: ?payment_no=PAY-... langsung buka modal
 // transaksinya begitu data payments termuat.
@@ -499,34 +497,9 @@ function printSlip(item: any) {
             </svg>
           </button>
 
-          <!-- Approve -->
-          <button
-            v-if="canManageApprovals && row.status === 'pending'"
-            class="icon-btn icon-btn--approve"
-            title="Approve payment"
-            aria-label="Approve payment"
-            @click="openApprovalConfirm(row, 'approved')"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-          </button>
+          <!-- Approval dimatikan: payment langsung approved, tombol Approve/Reject dihapus. -->
 
-          <!-- Reject -->
-          <button
-            v-if="canManageApprovals && row.status === 'pending'"
-            class="icon-btn icon-btn--reject"
-            title="Reject payment"
-            aria-label="Reject payment"
-            @click="openApprovalConfirm(row, 'rejected')"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-
-          <!-- Print Slip (pending) -->
+          <!-- Print Slip (pending legacy) -->
           <button
             v-if="can('payment:read') && row.status === 'pending'"
             class="icon-btn icon-btn--print"

@@ -17,7 +17,7 @@ import { buildPaymentTimestamp } from '@/utils/paymentReceipt'
 import { normalizeRole } from '@/router/role-access'
 
 const toast = useToast()
-const { can, canApprove, isAdmin } = usePermission()
+const { can, isAdmin } = usePermission()
 const { currentUser } = useAuth()
 // CS tidak boleh melihat nominal pada detail item.
 const canSeeAmount = computed(() => {
@@ -512,7 +512,7 @@ const form = reactive({
   installation_address: '',
   total_amount: 0,
   discount: 0,
-  status: 'pending',
+  status: 'approved',
   has_warranty: true,
   warranty: {
     warranty_type: 'machine',
@@ -547,7 +547,7 @@ function onProductChange(idx: number) {
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, discount: 0, status: 'pending', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
+  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, discount: 0, status: 'approved', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
   saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
   showModal.value = true
 }
@@ -567,7 +567,7 @@ function openEdit(item: any) {
     sale_date: item.sale_date ? item.sale_date.slice(0, 10) : '',
     total_amount: item.total_amount || item.total,
     discount: item.discount || 0,
-    status: item.status || 'pending',
+    status: item.status || 'approved',
     has_warranty: item.has_warranty || (item.warranties && item.warranties.length > 0) || false,
     warranty: item.warranties && item.warranties.length > 0 ? {
       warranty_type: item.warranties[0].warranty_type || 'machine',
@@ -858,8 +858,8 @@ function printReceipt(item: any, existingWindow?: Window | null) {
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-status="{ value }">
         <span
-          :class="(!value || value === 'pending') ? 'badge badge-warning' : value === 'approved' ? 'badge badge-success' : value === 'paid' ? 'badge badge-success' : 'badge badge-danger'">
-          {{ (!value || value === 'pending') ? 'Pending' : value === 'approved' ? 'Approved' : value === 'paid' ? 'Paid'
+          :class="(!value || value === 'pending') ? 'badge badge-info' : value === 'approved' ? 'badge badge-success' : value === 'paid' ? 'badge badge-success' : 'badge badge-danger'">
+          {{ (!value || value === 'pending') ? 'Approved' : value === 'approved' ? 'Approved' : value === 'paid' ? 'Paid'
             : 'Cancelled' }}
         </span>
       </template>

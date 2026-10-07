@@ -1,10 +1,9 @@
 <script setup lang="ts">
 // @ts-nocheck
-import html2pdf from "html2pdf.js";
-import PageHeader from "@/components/ui/PageHeader.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import FormModal from "@/components/ui/FormModal.vue";
-import CustomSelect from "@/components/ui/CustomSelect.vue";
+import PageHeader from "@/components/ui/PageHeader.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { resources } from "@/services/resource.service";
@@ -541,7 +540,7 @@ function generateContractHTML(item: any): string {
             }
           }
           body { font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.45; color: #000; margin: 0; padding: 0; text-align: justify; orphans: 3; widows: 3; }
-          
+
           /* Header */
           .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
           .header-left { display: flex; align-items: center; gap: 15px; }
@@ -550,22 +549,22 @@ function generateContractHTML(item: any): string {
           .header-title-company h1 { margin: 0; font-size: 15pt; color: #002b5e; font-weight: 900; letter-spacing: 0.5px; }
           .header-title-company h2 { margin: 0; font-size: 10.5pt; color: #333; font-weight: bold; font-style: italic; }
           .header-right { font-family: Arial, sans-serif; font-size: 8pt; text-align: right; line-height: 1.25; font-weight: bold; }
-          
+
           .doc-title { text-align: center; margin-top: 15px; margin-bottom: 20px; }
           .doc-title h3 { margin: 0; font-size: 13.5pt; text-decoration: underline; font-weight: bold; letter-spacing: 0.5px; }
           .doc-title p { margin: 3px 0 0 0; font-size: 10pt; font-weight: bold; }
 
           .content-block { margin-bottom: 12px; }
           .indent { padding-left: 25px; }
-          
+
           .party-info { display: grid; grid-template-columns: 25px 140px 10px 1fr; margin-bottom: 4px; }
-          
+
           /* Pasal boleh mengalir lintas halaman agar tidak ada ruang kosong
              besar di bawah halaman; judul pasal selalu menempel dengan
              ayat pertamanya, tiap ayat diusahakan tidak terpotong. */
           .pasal-block { margin-top: 15px; }
           .pasal-title { text-align: center; font-weight: bold; margin-top: 16px; margin-bottom: 8px; page-break-after: avoid; }
-          
+
           .list-item { display: flex; margin-bottom: 6px; page-break-inside: avoid; }
           .list-item .bullet { width: 35px; flex-shrink: 0; text-align: right; padding-right: 12px; }
           .list-item .text { flex-grow: 1; }
@@ -601,7 +600,7 @@ function generateContractHTML(item: any): string {
               </div>
             </div>
             <div class="header-right">
-              Greenland Housing Blok E6 No.11<br>
+             Ruko Puri Mas I Blok A No.40 teluk tering<br>
               Batam Centre<br>
               Phone +62 778 468017<br>
               Fax +62 778 468017<br>
@@ -649,11 +648,11 @@ function generateContractHTML(item: any): string {
           <div class="content-block">
             Pihak Pertama dan Pihak Kedua selanjutnya secara bersama-sama disebut sebagai "Para Pihak" dalam Perjanjian ini.
           </div>
-          
+
           <div class="content-block">
             Para Pihak dengan ini menyatakan hal-hal sebagai berikut:
           </div>
-          
+
           <div class="list-item">
             <div class="bullet">a.</div>
             <div class="text">Bahwa Pihak Pertama adalah perusahaan yang berpengalaman dalam bidang penyewaan ${machineWord} <i>(service)</i>;</div>
@@ -733,7 +732,7 @@ function generateContractHTML(item: any): string {
               })
               .join("")}
           </div>
-          
+
           <div class="content-block">
             untuk digunakan sebagai fasilitas operasional Pihak Kedua dengan syarat dan ketentuan sebagai berikut:
           </div>
@@ -955,7 +954,7 @@ function generateContractHTML(item: any): string {
                 Fax : -<br>
                 Untuk Penerima : Linda Hoega<br>
                 E-mail : bias.bst@gmail.com<br><br>
-                
+
                 <b>${custName.toUpperCase()}</b><br>
                 ${custAddress}<br>
                 Telepon : ${custPhone}<br>
@@ -985,7 +984,7 @@ function generateContractHTML(item: any): string {
               <div class="text">Para Pihak sepakat untuk melaksanakan Perjanjian ini dengan itikad baik dan penuh tanggung jawab.</div>
             </div>
           </div>
-          
+
           <div class="content-block" style="margin-top: 25px; page-break-inside: avoid;">
             Demikianlah Perjanjian ini dibuat dan ditandatangani pada hari dan tanggal tersebut di atas, dalam rangkap 2 (dua), masing-masing bermeterai Rp.10.000,- dan mempunyai kekuatan hukum yang sama bagi Para Pihak.
           </div>

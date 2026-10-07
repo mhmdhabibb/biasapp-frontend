@@ -13,7 +13,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 
 const toast = useToast();
 const { can } = usePermission();
-const { customers, units, sales, findProduct, getUnitsByCustomer, getContractsByCustomer, deliveryOrders } =
+const { customers, units, sales, brands, findProduct, getUnitsByCustomer, getContractsByCustomer, deliveryOrders } =
   useMasterStore();
 
 const columns: TableColumn[] = [
@@ -24,8 +24,22 @@ const columns: TableColumn[] = [
   { key: "status", label: "Status" },
 ];
 
+const externalColumns: TableColumn[] = [
+  { key: "request_no", label: "Request No" },
+  { key: "_company_name", label: "Company" },
+  { key: "_external_unit", label: "Unit Luar" },
+  { key: "request_date", label: "Request Date" },
+  { key: "status", label: "Status" },
+];
+
 const serviceRequests = ref<any[]>([]);
 const showModal = ref(false);
+const listTab = ref<"internal" | "external">("internal");
+const formTab = ref<"internal" | "external">("internal");
+
+const tableColumns = computed(() =>
+  listTab.value === "internal" ? columns : externalColumns,
+);
 const showRequestDetailModal = ref(false);
 const selectedRequest = ref<any>(null);
 const isLoading = ref(false);
@@ -39,6 +53,29 @@ const customerOptions = computed(() =>
     value: c.id,
     label: `${c.company_name || c.name}${c.pic_name ? " - PIC: " + c.pic_name : ""}`,
   })),
+);
+
+const EXTERNAL_BRAND_OTHER = "__other__";
+
+const brandOptions = computed(() =>
+  (brands.value as any[]).map((b: any) => ({
+    value: b.name,
+    label: b.name,
+  })),
+);
+
+const brandSelectOptions = computed(() => [
+  ...brandOptions.value,
+  {
+    value: EXTERNAL_BRAND_OTHER,
+    label: "Lainnya — brand di luar daftar",
+  },
+]);
+
+const externalBrandSelect = ref<string | null>(null);
+
+const isExternalBrandOther = computed(
+  () => externalBrandSelect.value === EXTERNAL_BRAND_OTHER,
 );
 
 const technicianOptions = computed(() =>
@@ -87,7 +124,125 @@ const form = reactive({
   unit_ids: [] as string[],
   problem_description: "",
   request_date: new Date().toISOString().slice(0, 10),
+  external_brand: "",
+  external_model: "",
+  external_serial_no: "",
+  external_note: "",
 });
+
+watch(externalBrandSelect, (val) => {
+  if (!val) {
+    form.external_brand = "";
+    return;
+  }
+  if (val !== EXTERNAL_BRAND_OTHER) {
+    form.external_brand = String(val);
+  } else {
+    form.external_brand = "";
+  }
+});
+
+const internalRequests = computed(() =>
+  serviceRequests.value.filter((r: any) => !r.is_external),
+);
+const externalRequests = computed(() =>
+  serviceRequests.value.filter((r: any) => r.is_external),
+);
+const displayedRequests = computed(() =>
+  listTab.value === "internal" ? internalRequests.value : externalRequests.value,
+);
+
+function newRequestNo(tab: "internal" | "external") {
+  const suffix = Date.now().toString().slice(-6);
+  return tab === "external" ? `REQ-EXT-${suffix}` : `REQ-${suffix}`;
+}
+
+function resetCreateForm(tab: "internal" | "external" = listTab.value) {
+  formTab.value = tab;
+  Object.assign(form, {
+    request_no: newRequestNo(tab),
+    customer_id: "",
+    unit_ids: [],
+    problem_description: "",
+    request_date: new Date().toISOString().slice(0, 10),
+    external_brand: "",
+    external_model: "",
+    external_serial_no: "",
+    external_note: "",
+  });
+  externalBrandSelect.value = null;
+}
+
+watch(formTab, (tab) => {
+  form.request_no = newRequestNo(tab);
+  form.unit_ids = [];
+});
+
+function externalUnitLabel(row: any): string {
+  if (!row?.is_external) return "-";
+  const parts = [row.external_brand, row.external_model].filter(Boolean);
+  const base = parts.length > 0 ? parts.join(" ") : "External Unit";
+  return row.external_serial_no ? `${base} (SN: ${row.external_serial_no})` : base;
+}
+
+async function submitExternalRequest() {
+  if (!form.customer_id || !form.problem_description) return;
+  if (
+    !form.external_brand &&
+    !form.external_model &&
+    !form.external_serial_no
+  ) {
+    toast.error("Isi minimal brand, model, atau serial number unit luar.");
+    return;
+  }
+  isLoading.value = true;
+  const payload = {
+    request_no: form.request_no,
+    customer_id: form.customer_id,
+    unit_id: null,
+    is_external: true,
+    external_brand: form.external_brand,
+    external_model: form.external_model,
+    external_serial_no: form.external_serial_no,
+    external_note: form.external_note,
+    problem_description: form.problem_description,
+    request_date: new Date(form.request_date).toISOString(),
+  };
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/service-requests`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (res.ok) {
+      toast.success("Service request (unit luar) berhasil dibuat!");
+      showModal.value = false;
+      listTab.value = "external";
+      fetchRequests();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error("Failed: " + ((err as any)?.message || JSON.stringify(err)));
+    }
+  } catch {
+    toast.error("A network error occurred.");
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+function handleModalSubmit() {
+  if (formTab.value === "external") {
+    submitExternalRequest();
+  } else {
+    handleSubmit();
+  }
+}
 
 // Fetch all rentals to know which units are rented by which customer
 async function fetchRentals() {
@@ -305,25 +460,25 @@ const hasDeliveredUnit = computed(() =>
 );
 
 function openAdd() {
-  Object.assign(form, {
-    request_no: `REQ-${Date.now().toString().slice(-6)}`,
-    customer_id: "",
-    unit_ids: [],
-    problem_description: "",
-    request_date: new Date().toISOString().slice(0, 10),
-  });
+  resetCreateForm(listTab.value);
   showModal.value = true;
 }
 
 async function fetchRequests() {
   try {
     const data = await api.get<{ data: any[] }>("/service-requests");
-    serviceRequests.value = data.data.map((r: any) => ({
-      ...r,
-      customer: r.customer?.name || "-",
-      _company_name: r.customer?.company_name || r.customer?.name || "-",
-      _pic_name: r.customer?.pic_name || "-",
-    }));
+    serviceRequests.value = data.data.map((r: any) => {
+      const row = {
+        ...r,
+        customer: r.customer?.name || "-",
+        _company_name: r.customer?.company_name || r.customer?.name || "-",
+        _pic_name: r.customer?.pic_name || "-",
+      };
+      return {
+        ...row,
+        _external_unit: externalUnitLabel(row),
+      };
+    });
   } catch (error) {
     console.error("Failed to fetch data", error);
   }
@@ -369,6 +524,7 @@ async function handleSubmit() {
     if (res.ok) {
       toast.success("Service request created successfully!");
       showModal.value = false;
+      listTab.value = "internal";
       fetchRequests();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -470,19 +626,46 @@ onMounted(() => {
   <div>
     <PageHeader
       title="Service Request Management"
-      button-label="Create New Request"
+      button-label="Log Complaint"
       permission="service_request:create"
-      @add="openAdd"
+      @add="openAdd()"
     />
 
+    <div class="sr-tabs sr-tabs--page" role="tablist" aria-label="Filter daftar service request">
+      <button
+        type="button"
+        role="tab"
+        class="sr-tab"
+        :class="{ 'sr-tab--active': listTab === 'internal' }"
+        :aria-selected="listTab === 'internal'"
+        @click="listTab = 'internal'"
+      >
+        Unit Internal ({{ internalRequests.length }})
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="sr-tab"
+        :class="{ 'sr-tab--active': listTab === 'external' }"
+        :aria-selected="listTab === 'external'"
+        @click="listTab = 'external'"
+      >
+        Unit Luar / Eksternal ({{ externalRequests.length }})
+      </button>
+    </div>
+
     <DataTable
-      :columns="columns"
-      :data="serviceRequests"
-      search-placeholder="Search complaints..."
+      :columns="tableColumns"
+      :data="displayedRequests"
+      :search-placeholder="listTab === 'internal' ? 'Search complaints...' : 'Search external complaints...'"
     >
       <template #cell-request_date="{ value }">{{
         new Date(value).toLocaleDateString("en-GB")
       }}</template>
+      <template #cell-request_no="{ value, row }">
+        <span class="mono">{{ value }}</span>
+        <span v-if="row?.is_external" class="unit-source-badge badge-external" title="Unit di luar milik perusahaan">Eksternal</span>
+      </template>
       <template #cell-status="{ value }">
         <span
           class="badge"
@@ -556,6 +739,15 @@ onMounted(() => {
                 : "-"
             }}</span>
           </div>
+        </div>
+
+        <!-- Problem Description -->
+        <div v-if="selectedRequest.is_external" class="detail-problem-box" style="border-left-color: var(--color-warning, #d97706)">
+          <span class="detail-info-label" style="display: block; margin-bottom: 6px">Unit Luar / Eksternal</span>
+          <p class="detail-problem-text">
+            {{ externalUnitLabel(selectedRequest) }}
+            <span v-if="selectedRequest.external_note"> — {{ selectedRequest.external_note }}</span>
+          </p>
         </div>
 
         <!-- Problem Description -->
@@ -650,9 +842,44 @@ onMounted(() => {
     <FormModal
       :open="showModal"
       title="Log Complaint (Service Request)"
+      max-width="580px"
       @close="showModal = false"
-      @submit="handleSubmit"
+      @submit="handleModalSubmit"
     >
+      <div
+        class="sr-tabs sr-tabs--modal"
+        role="tablist"
+        aria-label="Jenis unit service request"
+      >
+        <button
+          type="button"
+          role="tab"
+          class="sr-tab sr-tab--segment"
+          :class="{ 'sr-tab--segment-active': formTab === 'internal' }"
+          :aria-selected="formTab === 'internal'"
+          @click="formTab = 'internal'"
+        >
+          Unit Internal
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="sr-tab sr-tab--segment"
+          :class="{ 'sr-tab--segment-active': formTab === 'external' }"
+          :aria-selected="formTab === 'external'"
+          @click="formTab = 'external'"
+        >
+          Unit Luar / Eksternal
+        </button>
+      </div>
+
+      <p v-if="formTab === 'external'" class="form-tab-hint">
+        Unit milik customer / di luar inventori perusahaan — tanpa validasi DO.
+      </p>
+      <p v-else class="form-tab-hint">
+        Pilih unit rental, penjualan, atau kontrak yang sudah delivered (DO).
+      </p>
+
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Request Number</label>
@@ -676,110 +903,150 @@ onMounted(() => {
 
       <div class="form-group mt-3">
         <label class="form-label">Customer</label>
-        <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
+        <CustomSelect
+          v-model="form.customer_id"
+          :options="customerOptions"
+          placeholder="-- Select Customer --"
+        />
       </div>
 
-      <div class="form-group mt-3">
+      <div v-show="formTab === 'internal'" class="form-group mt-3">
         <label class="form-label">Faulty Machine</label>
-        <div
-          v-if="!form.customer_id"
-          style="
-            padding: 12px;
-            background: var(--color-surface-raised);
-            border-radius: var(--radius-sm);
-            color: var(--color-text-muted);
-            font-size: var(--font-size-sm);
-          "
-        >
+        <div v-if="!form.customer_id" class="field-placeholder">
           Select a customer first
         </div>
-        <div
-          v-else-if="customerRentalUnits.length === 0"
-          style="
-            padding: 12px;
-            background: var(--color-surface-raised);
-            border-radius: var(--radius-sm);
-            color: var(--color-text-muted);
-            font-size: var(--font-size-sm);
-          "
-        >
+        <div v-else-if="customerRentalUnits.length === 0" class="field-placeholder">
           Belum ada unit/barang tercatat untuk customer ini.
         </div>
         <div v-else>
-          <div
-            v-if="!hasDeliveredUnit"
-            style="
-              padding: 12px;
-              margin-bottom: 8px;
-              background: var(--color-surface-raised);
-              border-radius: var(--radius-sm);
-              color: var(--color-text-muted);
-              font-size: var(--font-size-sm);
-            "
-          >
+          <div v-if="!hasDeliveredUnit" class="field-placeholder field-placeholder--warn">
             Belum ada barang yang dikirim (delivered) untuk customer ini —
             service request baru bisa dibuat setelah barang/DO diterima customer.
           </div>
           <div class="unit-checkbox-list">
-          <label
-            v-for="u in customerRentalUnits"
-            :key="u.id"
-            class="unit-checkbox-item"
-            :class="{ 'unit-disabled': !u.delivered }"
-          >
-            <input
-              type="checkbox"
-              :value="u.id"
-              v-model="form.unit_ids"
-              :disabled="!u.delivered"
-            />
-            <span class="unit-checkbox-label">{{ u.label }}</span>
-            <span
-              v-if="!u.delivered"
-              class="delivery-badge delivery-pending"
-              :title="
-                u.doStatus
-                  ? `Status DO: ${u.doStatus}`
-                  : 'Belum ada DO untuk barang ini'
-              "
+            <label
+              v-for="u in customerRentalUnits"
+              :key="u.id"
+              class="unit-checkbox-item"
+              :class="{ 'unit-disabled': !u.delivered }"
             >
-              Belum Dikirim{{
-                u.doStatus ? ` (DO ${u.doStatus})` : ""
-              }}
-            </span>
+              <input
+                type="checkbox"
+                :value="u.id"
+                v-model="form.unit_ids"
+                :disabled="!u.delivered"
+              />
+              <span class="unit-checkbox-label">{{ u.label }}</span>
+              <span
+                v-if="!u.delivered"
+                class="delivery-badge delivery-pending"
+                :title="
+                  u.doStatus
+                    ? `Status DO: ${u.doStatus}`
+                    : 'Belum ada DO untuk barang ini'
+                "
+              >
+                Belum Dikirim{{ u.doStatus ? ` (DO ${u.doStatus})` : "" }}
+              </span>
+              <span
+                class="unit-source-badge"
+                :class="
+                  u.source === 'rental'
+                    ? 'badge-rental'
+                    : u.source === 'sale'
+                      ? 'badge-sale'
+                      : 'badge-contract'
+                "
+              >
+                {{
+                  u.source === "rental"
+                    ? "Rental"
+                    : u.source === "sale"
+                      ? "Purchase"
+                      : "Contract"
+                }}
+              </span>
+              <span
+                v-if="u.warranty?.active"
+                class="warranty-badge warranty-active"
+                :title="`Warranty until ${u.warranty.endDate}`"
+              >
+                ✓ Warranty
+              </span>
+              <span
+                v-else
+                class="warranty-badge warranty-none"
+                title="No active warranty — charges will apply"
+              >
+                Billable
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div v-show="formTab === 'external'" class="form-group mt-3">
+        <label class="form-label">Faulty Machine (Unit Luar)</label>
+        <div v-if="!form.customer_id" class="field-placeholder">
+          Select a customer first
+        </div>
+        <div v-else class="external-unit-panel">
+          <div class="form-row external-unit-fields">
+            <div class="form-group external-brand-field">
+              <label class="form-label form-label-sm">Brand / Merek</label>
+              <CustomSelect
+                v-model="externalBrandSelect"
+                :options="brandSelectOptions"
+                placeholder="-- Pilih Brand --"
+              />
+              <input
+                v-if="isExternalBrandOther"
+                v-model="form.external_brand"
+                type="text"
+                class="form-input external-brand-custom"
+                placeholder="Ketik nama brand (cth. Kyocera)"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label form-label-sm">Model / Tipe</label>
+              <input
+                v-model="form.external_model"
+                type="text"
+                class="form-input"
+                placeholder="cth. imageRUNNER 2525"
+              />
+            </div>
+          </div>
+          <div class="form-row external-unit-fields">
+            <div class="form-group">
+              <label class="form-label form-label-sm">Serial Number</label>
+              <input
+                v-model="form.external_serial_no"
+                type="text"
+                class="form-input"
+                placeholder="Opsional — auto-generate bila kosong"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label form-label-sm">Lokasi / Keterangan</label>
+              <input
+                v-model="form.external_note"
+                type="text"
+                class="form-input"
+                placeholder="cth. lantai 2, ruang arsip"
+              />
+            </div>
+          </div>
+          <div class="external-unit-meta">
             <span
-              class="unit-source-badge"
-              :class="
-                u.source === 'rental'
-                  ? 'badge-rental'
-                  : u.source === 'sale'
-                    ? 'badge-sale'
-                    : 'badge-contract'
-              "
-            >
-              {{
-                u.source === "rental"
-                  ? "Rental"
-                  : u.source === "sale"
-                    ? "Purchase"
-                    : "Contract"
-              }}
-            </span>
-            <span
-              v-if="u.warranty?.active"
-              class="warranty-badge warranty-active"
-              :title="`Warranty until ${u.warranty.endDate}`"
-            >
-              ✓ Warranty
-            </span>
-            <span
-              v-else
               class="warranty-badge warranty-none"
-              title="No active warranty — charges will apply"
+              title="Unit luar tidak ter-cover warranty internal"
             >
               Billable
             </span>
-          </label>
+            <span class="external-unit-meta-text">
+              Job Order &amp; Service Report mengikuti alur standar.
+            </span>
           </div>
         </div>
       </div>
@@ -808,7 +1075,7 @@ onMounted(() => {
     >
       <div class="form-group mt-3">
         <label class="form-label">Select Technician</label>
-        <CustomSelect v-model="assignForm.technician_id" :options="technicianOptions" placeholder="-- Select Technician --" class="form-select" />
+        <CustomSelect v-model="assignForm.technician_id" :options="technicianOptions" placeholder="-- Select Technician --" />
       </div>
       <div class="form-group mt-3">
         <label class="form-label">Assignment Date</label>
@@ -832,10 +1099,130 @@ onMounted(() => {
         Saving data...
       </div>
     </FormModal>
+
   </div>
 </template>
 
 <style scoped>
+.sr-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sr-tab {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sr-tab--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.sr-tabs--modal {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 4px;
+  margin-bottom: 12px;
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.sr-tab--segment {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  padding: 10px 12px;
+  border-radius: calc(var(--radius-md) - 2px);
+  font-size: 0.8rem;
+}
+
+.sr-tab--segment-active {
+  background: #fff;
+  color: var(--color-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-weight: 700;
+}
+
+.form-tab-hint {
+  margin: 0 0 14px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+
+.field-placeholder {
+  padding: 12px;
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.field-placeholder--warn {
+  margin-bottom: 8px;
+}
+
+.badge-external {
+  background: #fef3c7;
+  color: #92400e;
+  margin-left: 8px;
+}
+
+.external-unit-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: var(--color-surface-raised);
+}
+
+.external-brand-custom {
+  margin-top: 8px;
+}
+
+.external-brand-field :deep(.custom-select__dropdown) {
+  z-index: 60;
+}
+
+.external-unit-fields {
+  gap: 10px;
+}
+
+.external-unit-fields + .external-unit-fields {
+  margin-top: 10px;
+}
+
+.form-label-sm {
+  font-size: 0.72rem;
+  margin-bottom: 4px;
+}
+
+.external-unit-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border);
+}
+
+.external-unit-meta-text {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

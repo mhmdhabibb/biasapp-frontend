@@ -220,6 +220,11 @@ export interface ServiceRequest {
   problem_description: string;
   status: string;
   request_date: string;
+  is_external?: boolean;
+  external_brand?: string;
+  external_model?: string;
+  external_serial_no?: string;
+  external_note?: string;
   created_at: string;
   updated_at: string;
 }

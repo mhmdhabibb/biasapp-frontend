@@ -885,12 +885,7 @@ onMounted(async () => {
             </span>
           </div>
           <div class="rental-invoice-actions">
-            <span
-              v-if="hasPendingPaymentApproval(invoice)"
-              class="badge badge-warning"
-            >
-              Menunggu approval accounting
-            </span>
+            <!-- Approval dimatikan: badge menunggu approval dihapus, payment langsung approved. -->
             <span
               v-if="isWaitingMeterReport(invoice)"
               class="badge badge-warning"

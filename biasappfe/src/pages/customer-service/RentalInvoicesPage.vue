@@ -64,7 +64,7 @@ function approvalStatusLabel(status: string): string {
   if (status === 'approved') return 'Approved'
   if (status === 'rejected') return 'Rejected'
   if (status === 'pending_meter_reading') return 'Awaiting Meter Reading'
-  return 'Pending'
+  return 'Unpaid'
 }
 
 function isPaymentBlocked(item: any): boolean {
@@ -1281,25 +1281,7 @@ function printInvoice(item: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button
-            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
-            class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')"
-            style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-          </button>
-          <button
-            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
-            class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')"
-            style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+          <!-- Approval dimatikan: invoice auto-approved via payment, tombol Approve/Reject dihapus. -->
           <button
             v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'partially_paid') && (can('payment:create') || can('rental_invoice:update'))"
             class="action-btn action-btn--edit" title="Payment" @click="openPaymentModal(row)"
