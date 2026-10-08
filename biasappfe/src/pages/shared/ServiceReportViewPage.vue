@@ -259,6 +259,28 @@ function statusColor(s: string) {
           </div>
         </div>
 
+        <!-- Service Photos -->
+        <div class="report-card" v-if="sr.photo_before || sr.photo_after">
+          <div class="report-card-header">
+            <div class="report-card-icon" style="background: linear-gradient(135deg, rgba(236,72,153,0.15), rgba(236,72,153,0.05)); color: #ec4899;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <h3 class="report-card-title">Service Photos</h3>
+          </div>
+          <div class="report-card-body">
+            <div class="photo-grid">
+              <div v-if="sr.photo_before" class="photo-item">
+                <span class="field-label">Before Service</span>
+                <img :src="sr.photo_before" alt="Photo Before" class="photo-img" />
+              </div>
+              <div v-if="sr.photo_after" class="photo-item">
+                <span class="field-label">After Service</span>
+                <img :src="sr.photo_after" alt="Photo After" class="photo-img" />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Service Report -->
         <div class="report-card">
           <div class="report-card-header">
@@ -753,6 +775,26 @@ function statusColor(s: string) {
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   white-space: pre-wrap;
+}
+
+/* Service Photos */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+.photo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.photo-img {
+  width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  background: #f8fafc;
 }
 
 /* Empty State */
