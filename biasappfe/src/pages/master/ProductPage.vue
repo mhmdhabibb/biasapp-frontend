@@ -26,6 +26,7 @@ const columns: TableColumn[] = [
   { key: "stock", label: "Stock" },
   { key: "category.name", label: "Category" },
   { key: "uom.name", label: "UOM" },
+  { key: "is_sparepart", label: "Sparepart?" },
 ];
 
 const data = ref<Product[]>([]);
@@ -86,6 +87,7 @@ const form = reactive({
   price: 0,
   stock: 0,
   is_computer: false,
+  is_sparepart: false,
   specsData: {
     cpu: "",
     ram: "",
@@ -142,6 +144,7 @@ function openAdd() {
     price: 0,
     stock: 0,
     is_computer: false,
+    is_sparepart: false,
     specsData: {
       cpu: "",
       ram: "",
@@ -166,6 +169,7 @@ function openEdit(item: Product) {
     price: item.price,
     stock: item.stock,
     is_computer: !!(item as any).is_computer,
+    is_sparepart: !!(item as any).is_sparepart,
     specsData: (item as any).specs
       ? typeof (item as any).specs === "string"
         ? JSON.parse((item as any).specs || "{}")
@@ -273,6 +277,11 @@ function formatRupiah(val: number): string {
         row.category?.name ?? "-"
       }}</template>
       <template #cell-uom.name="{ row }">{{ row.uom?.name ?? "-" }}</template>
+      <template #cell-is_sparepart="{ value }">
+        <span :style="{ color: value ? 'var(--color-primary, #10b981)' : 'var(--color-text-muted, #94a3b8)', fontWeight: value ? '600' : 'normal' }">
+          {{ value ? 'Yes' : 'No' }}
+        </span>
+      </template>
     </DataTable>
     <FormModal
       :open="showModal"
@@ -378,6 +387,24 @@ function formatRupiah(val: number): string {
             style="width: 1rem; height: 1rem"
           />
           Is a Computer / PC / Laptop
+        </label>
+      </div>
+      <div class="form-group" style="margin-top: 1rem">
+        <label
+          class="form-label"
+          style="
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+          "
+        >
+          <input
+            type="checkbox"
+            v-model="form.is_sparepart"
+            style="width: 1rem; height: 1rem"
+          />
+          Is a Sparepart
         </label>
       </div>
       <div

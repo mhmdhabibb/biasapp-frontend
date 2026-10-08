@@ -5,17 +5,17 @@ import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
-import { useAuth } from '@/composables/useAuth'
-import { useResourcesStore } from '@/stores/resources.store'
 import { api } from '@/services/api'
+import { useResourcesStore } from '@/stores/resources.store'
 import type { SalesInvoice, TableColumn } from '@/types'
-import { computed, reactive, ref } from 'vue'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_RP, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
-import { printPaymentStruk, paymentMethodOf, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
+import { buildPaymentVerifyUrl, generatePaymentQrDataUrl, paymentMethodOf, printPaymentStruk } from '@/utils/paymentReceipt'
+import { computed, reactive, ref } from 'vue'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -125,11 +125,11 @@ function onMonthFilterChange() {
   const [yearStr, monthStr] = monthFilter.value.split('-')
   const year = parseInt(yearStr)
   const month = parseInt(monthStr)
-  
+
   const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
   const lastDayNum = new Date(year, month, 0).getDate()
   const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
-  
+
   startDateFilter.value = firstDay
   endDateFilter.value = lastDay
 }
@@ -276,7 +276,7 @@ async function exportInvoicesToExcel(
         { v: item.invoice_no || '-', style: 'border' },
       ])
       addRow([
-        { v: 'Greenland Housing Blok E6 No. 11', mergeAcross: 1, style: 'borderCenter' }, {},
+        { v: 'Ruko Puri Mas I Blok A No.40 teluk tering', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
         { v: 'Date :', style: 'borderBoldRight' },
         { v: dateLabel, style: 'border' },
@@ -545,10 +545,10 @@ function invoiceHtml(item: any): string {
   if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
   const signer = signerName(item)
-  
+
   const invoiceNo = item.invoice_no || '-'
   const invoiceDate = item.created_at || item.due_date
-  
+
   const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
   let itemsHtml = ''
@@ -599,39 +599,39 @@ function invoiceHtml(item: any): string {
           }
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; color: #000; font-size: 12px; margin: 0; }
           .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-          
+
           .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
           .header-table td { vertical-align: top; padding: 0; }
-          
+
           .logo-col { width: 50%; padding-right: 20px; }
           .info-col { width: 50%; }
-          
+
           .logo-container { display: flex; align-items: center; margin-bottom: 10px; }
           .logo { width: 80px; height: 80px; margin-right: 15px; flex-shrink: 0; }
-          
+
           .company-details h1 { margin: 0; font-size: 22px; font-weight: bold; }
           .company-details h2 { margin: 0; font-size: 14px; font-style: italic; font-weight: normal; margin-bottom: 10px; color: #333; }
           .company-details p { margin: 0; font-size: 11px; line-height: 1.4; }
-          
+
           .invoice-text { font-size: 28px; font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 10px; letter-spacing: 1px; }
-          
+
           .meta-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #7ea8ce; }
           .meta-table td, .meta-table th { border: 1px solid #7ea8ce; padding: 4px 8px; }
           .meta-table .bg-blue { background-color: #003366; color: white; font-weight: bold; }
           .meta-table .label { width: 90px; font-weight: bold; }
-          
+
           .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
           .items-table th { background-color: #003366; color: white; border: 1px solid #7ea8ce; padding: 8px; text-align: center; font-size: 12px; }
           .items-table td { border: 1px solid #7ea8ce; padding: 8px; vertical-align: top; }
           .items-table .rp-col { border-right: none; width: 20px; padding-right: 2px; }
           .items-table .val-col { border-left: none; text-align: right; }
-          
+
           .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 0; margin-bottom: 20px; }
           .summary-table td { border: 1px solid #7ea8ce; padding: 6px; background-color: #dbeaf4; font-weight: bold; }
           .summary-table .label { text-align: right; padding-right: 10px; }
-          
+
           .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
-          
+
           .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
           .sig-box { width: 250px; }
           .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
@@ -883,7 +883,7 @@ async function printReceiptAsync(item: any, approved: any) {
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-status="{ value }">
         <span :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' : 'Pending' }}
+          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' : 'Unpaid' }}
         </span>
       </template>
       <template #cell-payment_status="{ value }">
@@ -893,12 +893,7 @@ async function printReceiptAsync(item: any, approved: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('sales_invoice:update')" class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')" style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          </button>
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('sales_invoice:update')" class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')" style="color: var(--color-danger); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
+          <!-- Approval dimatikan: invoice auto-approved via payment, tombol Approve/Reject dihapus. -->
           <button v-if="row.status === 'approved' && can('sales_invoice:read')" class="action-btn action-btn--edit" title="Print Receipt" @click="printInvoice(row)" style="color: var(--color-primary); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 9V2h12v7"></path>

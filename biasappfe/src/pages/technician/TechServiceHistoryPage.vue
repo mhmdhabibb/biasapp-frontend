@@ -7,8 +7,12 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { isCopierReport } from '@/utils/copierReport'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
+import { useToast } from '@/composables/useToast'
+import html2pdf from 'html2pdf.js'
+import * as XLSX from 'xlsx'
 
 const router = useRouter()
+const toast = useToast()
 const { currentUser } = useAuth()
 const {
   serviceReports,
@@ -102,11 +106,82 @@ function getTechName(id: number | null) {
   const t: any = findTechnician(id)
   return t?.user?.name || t?.name || '-'
 }
+
+function exportToPdf() {
+  if (!filteredHistory.value.length) {
+    toast.error('No data to export')
+    return
+  }
+
+  let html = '<h2 style="font-family: sans-serif;">Service History Report</h2><table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">'
+  html += '<thead><tr>'
+  const keys = ['Completion Date', 'Customer', 'Unit & SN', 'Service Type', 'Problem', 'Repair Action', 'Technician']
+  keys.forEach(k => html += `<th style="background-color: #f4f4f4; text-align: left;">${k}</th>`)
+  html += '</tr></thead><tbody>'
+  
+  filteredHistory.value.forEach((job: any) => {
+    html += '<tr>'
+    html += `<td>${job.time_out ? new Date(job.time_out).toLocaleString('en-GB') : '-'}</td>`
+    html += `<td>${getCustomerName(job.customer_id)}</td>`
+    html += `<td>${getUnitName(job.unit_id)}</td>`
+    html += `<td>${getServiceTypeLabel(job.service_type)}</td>`
+    html += `<td>${job.machine_problem || '-'}</td>`
+    html += `<td>${job.repair_action || '-'}</td>`
+    html += `<td>${getTechName(job.technician_id)}</td>`
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+
+  const wrapper = document.createElement('div')
+  wrapper.innerHTML = html
+
+  const opt = {
+    margin: 0.5,
+    filename: `Service_History_Report_${Date.now()}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' }
+  }
+  html2pdf().set(opt).from(wrapper).save()
+}
+
+function exportToExcel() {
+  if (!filteredHistory.value.length) {
+    toast.error('No data to export')
+    return
+  }
+
+  const data = filteredHistory.value.map((job: any) => ({
+    'Completion Date': job.time_out ? new Date(job.time_out).toLocaleString('en-GB') : '-',
+    'Customer': getCustomerName(job.customer_id),
+    'Unit & SN': getUnitName(job.unit_id),
+    'Service Type': getServiceTypeLabel(job.service_type),
+    'Problem': job.machine_problem || '-',
+    'Repair Action': job.repair_action || '-',
+    'Technician': getTechName(job.technician_id)
+  }))
+
+  const ws = XLSX.utils.json_to_sheet(data)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Service History")
+  XLSX.writeFile(wb, `Service_History_Report_${Date.now()}.xlsx`)
+}
 </script>
 
 <template>
   <div class="tech-history">
-    <PageHeader title="Service History" />
+    <PageHeader title="Service History">
+      <template #actions>
+        <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Export PDF
+        </button>
+        <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="17"></line><line x1="16" y1="13" x2="8" y2="17"></line></svg>
+          Export Excel
+        </button>
+      </template>
+    </PageHeader>
 
     <div class="card mb-lg p-lg">
       <div class="filters-grid">

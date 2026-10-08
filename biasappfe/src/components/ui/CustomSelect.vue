@@ -272,7 +272,10 @@ watch(() => searchQuery.value, () => {
 }
 
 .custom-select__dropdown {
-  position: relative;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
   margin-top: 6px;
   z-index: 50;
   background: var(--color-surface);

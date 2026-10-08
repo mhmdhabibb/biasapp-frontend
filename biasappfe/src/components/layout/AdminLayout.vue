@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useAuth } from "@/composables/useAuth";
+import { useMasterStore } from "@/composables/useMasterStore";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
+import BottomNav from "./BottomNav.vue";
 import Sidebar from "./Sidebar.vue";
 import TopBar from "./TopBar.vue";
-import BottomNav from "./BottomNav.vue";
-import { useMasterStore } from "@/composables/useMasterStore";
-import { useAuth } from "@/composables/useAuth";
 
 const route = useRoute();
 const sidebarOpen = ref(false);
 
-const { refreshInBackground } = useMasterStore();
+const { refreshInBackground, refreshIfStale } = useMasterStore();
 const { currentUser } = useAuth();
 
 let adminInterval: any = null;
@@ -32,12 +32,22 @@ onMounted(() => {
   adminInterval = setInterval(() => {
     refreshInBackground();
   }, 30000);
+  // Kembali dari tab browser lain / minimize: refresh silent bila data basi,
+  // jadi tidak perlu reload manual agar angka & tabel muncul terbaru.
+  document.addEventListener("visibilitychange", onVisibleTab);
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", handleResize);
+  document.removeEventListener("visibilitychange", onVisibleTab);
   if (adminInterval) clearInterval(adminInterval);
 });
+
+function onVisibleTab() {
+  if (document.visibilityState === "visible") {
+    void refreshIfStale();
+  }
+}
 
 const pageTitle = computed(() => {
   const titles: Record<string, string> = {
@@ -62,6 +72,7 @@ const pageTitle = computed(() => {
     "/customer-service/sales": "Sales",
     "/customer-service/rental-invoices": "Rental Invoices",
     "/customer-service/sales-invoices": "Sales Invoices",
+    "/customer-service/copier-reports" : "Copier Reports",
     "/customer-service/payments": "Payments",
     "/customer-service/warranty-claims": "Warranty Claims",
     "/accounting/dashboard": "Accounting Dashboard",

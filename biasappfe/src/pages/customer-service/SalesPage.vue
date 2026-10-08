@@ -15,9 +15,11 @@ import { computed, reactive, ref } from 'vue'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { buildPaymentTimestamp } from '@/utils/paymentReceipt'
 import { normalizeRole } from '@/router/role-access'
+import html2pdf from 'html2pdf.js'
+import * as XLSX from 'xlsx'
 
 const toast = useToast()
-const { can, canApprove, isAdmin } = usePermission()
+const { can, isAdmin } = usePermission()
 const { currentUser } = useAuth()
 // CS tidak boleh melihat nominal pada detail item.
 const canSeeAmount = computed(() => {
@@ -37,12 +39,19 @@ const {
 
 const resources = useResourcesStore()
 
-const customerOptions = computed(() =>
-  (customers.value as any[]).map((c: any) => ({
+const customerOptions = computed(() => [
+  { value: null, label: 'All Customers' },
+  ...(customers.value as any[]).map((c: any) => ({
     value: c.id,
     label: `${c.company_name || c.name}${c.pic_name ? ' - ' + c.pic_name : ''}`,
-  })),
-)
+  }))
+])
+
+const filterCustomer = ref<string | null>(null)
+const filteredSales = computed(() => {
+  if (!filterCustomer.value) return data.value
+  return data.value.filter((s: any) => String(s.customer_id) === String(filterCustomer.value))
+})
 
 const productOptions = computed(() =>
   (products.value as any[]).map((p: any) => ({
@@ -512,7 +521,7 @@ const form = reactive({
   installation_address: '',
   total_amount: 0,
   discount: 0,
-  status: 'pending',
+  status: 'approved',
   has_warranty: true,
   warranty: {
     warranty_type: 'machine',
@@ -547,7 +556,7 @@ function onProductChange(idx: number) {
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, discount: 0, status: 'pending', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
+  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, discount: 0, status: 'approved', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
   saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
   showModal.value = true
 }
@@ -567,7 +576,7 @@ function openEdit(item: any) {
     sale_date: item.sale_date ? item.sale_date.slice(0, 10) : '',
     total_amount: item.total_amount || item.total,
     discount: item.discount || 0,
-    status: item.status || 'pending',
+    status: item.status || 'approved',
     has_warranty: item.has_warranty || (item.warranties && item.warranties.length > 0) || false,
     warranty: item.warranties && item.warranties.length > 0 ? {
       warranty_type: item.warranties[0].warranty_type || 'machine',
@@ -809,6 +818,64 @@ function generateSingleReceiptHtml(item: any) {
   `
 }
 
+function exportToExcel() {
+  const exportData = filteredSales.value.map((j: any) => ({
+    'Transaction Date': j.date ? new Date(j.date).toLocaleDateString('en-GB') : '-',
+    'Code': j.sale_no || '-',
+    'Customer': findCustomer(j.customer_id)?.company_name || findCustomer(j.customer_id)?.name || '-',
+    'PIC Name': findCustomer(j.customer_id)?.pic_name || '-',
+    'Total': j.total || 0,
+    'Status': j.status || '-'
+  }))
+  if (!exportData.length) {
+    toast.error('No data to export')
+    return
+  }
+  const ws = XLSX.utils.json_to_sheet(exportData)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Sales")
+  XLSX.writeFile(wb, `Sales_${Date.now()}.xlsx`)
+}
+
+function exportToPdf() {
+  const exportData = filteredSales.value.map((j: any) => ({
+    'Transaction Date': j.date ? new Date(j.date).toLocaleDateString('en-GB') : '-',
+    'Code': j.sale_no || '-',
+    'Customer': findCustomer(j.customer_id)?.company_name || findCustomer(j.customer_id)?.name || '-',
+    'PIC Name': findCustomer(j.customer_id)?.pic_name || '-',
+    'Total': (j.total || 0).toLocaleString('id-ID'),
+    'Status': String(j.status || '-').toUpperCase()
+  }))
+  if (!exportData.length) {
+    toast.error('No data to export')
+    return
+  }
+  
+  let html = '<h2 style="font-family: sans-serif; text-align: center;">Sales Report</h2><table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px; text-align: center;">'
+  html += '<thead><tr style="background-color: #5b9bd5; color: white;">'
+  const keys = Object.keys(exportData[0]!)
+  keys.forEach(k => html += `<th>${k}</th>`)
+  html += '</tr></thead><tbody>'
+  exportData.forEach(row => {
+    html += '<tr>'
+    keys.forEach(k => html += `<td>${(row as any)[k]}</td>`)
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+
+  const wrapper = document.createElement('div')
+  wrapper.innerHTML = html
+
+  const opt = {
+    margin: 0.5,
+    filename: `Sales_Report_${Date.now()}.pdf`,
+    image: { type: 'jpeg' as const, quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' as const }
+  }
+  html2pdf().set(opt).from(wrapper).save()
+}
+
 function printReceipt(item: any, existingWindow?: Window | null) {
   const receiptContentHtml = generateSingleReceiptHtml(item)
   const html = `
@@ -845,9 +912,21 @@ function printReceipt(item: any, existingWindow?: Window | null) {
 
 <template>
   <div>
-    <PageHeader title="Sales" button-label="Add Sale" permission="sale:create" @add="openAdd" />
+    <PageHeader title="Sales" button-label="Add Sale" permission="sale:create" @add="openAdd">
+      <template #actions>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <CustomSelect v-model="filterCustomer" :options="customerOptions" placeholder="Filter by Customer" style="min-width: 200px;" />
+          <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
+            Export PDF
+          </button>
+          <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
+            Export Excel
+          </button>
+        </div>
+      </template>
+    </PageHeader>
     
-    <DataTable :columns="columns" :data="data" search-placeholder="Search sales..." @edit="openEdit"
+    <DataTable :columns="columns" :data="filteredSales" search-placeholder="Search sales..." @edit="openEdit"
       @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-pic_name="{ row }">{{ picName(row.customer_id) }}</template>
@@ -858,8 +937,8 @@ function printReceipt(item: any, existingWindow?: Window | null) {
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-status="{ value }">
         <span
-          :class="(!value || value === 'pending') ? 'badge badge-warning' : value === 'approved' ? 'badge badge-success' : value === 'paid' ? 'badge badge-success' : 'badge badge-danger'">
-          {{ (!value || value === 'pending') ? 'Pending' : value === 'approved' ? 'Approved' : value === 'paid' ? 'Paid'
+          :class="(!value || value === 'pending') ? 'badge badge-info' : value === 'approved' ? 'badge badge-success' : value === 'paid' ? 'badge badge-success' : 'badge badge-danger'">
+          {{ (!value || value === 'pending') ? 'Approved' : value === 'approved' ? 'Approved' : value === 'paid' ? 'Paid'
             : 'Cancelled' }}
         </span>
       </template>

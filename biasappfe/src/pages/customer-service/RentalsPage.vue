@@ -23,6 +23,8 @@ import type { PaymentReceiptData } from "@/utils/paymentReceipt";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { normalizeRole } from "@/router/role-access";
+import html2pdf from "html2pdf.js";
+import * as XLSX from "xlsx";
 
 const toast = useToast();
 const { can, isAdmin } = usePermission();
@@ -50,6 +52,20 @@ const columns = computed<TableColumn[]>(() => [
 
 const rentals = ref<any[]>([]);
 
+const customerOptions = computed(() => [
+  { value: null, label: 'All Customers' },
+  ...(customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: `${c.company_name || c.name}${c.pic_name ? ' - ' + c.pic_name : ''}`,
+  }))
+]);
+
+const filterCustomer = ref<string | null>(null);
+const filteredRentals = computed(() => {
+  if (!filterCustomer.value) return rentals.value;
+  return rentals.value.filter((r: any) => String(r.customer_id) === String(filterCustomer.value));
+});
+
 const showModal = ref(false);
 const isLoading = ref(false);
 const showInvoiceModal = ref(false);
@@ -60,6 +76,13 @@ const expandedInvoiceId = ref<string | null>(null);
 const selectedMeterDetail = ref<any>(null);
 const showMeterDetail = ref(false);
 const isSavingPayment = ref(false);
+const showDetailModal = ref(false);
+const detailRental = ref<any>(null);
+
+function openRentalDetail(rental: any) {
+  detailRental.value = rental;
+  showDetailModal.value = true;
+}
 
 function meterDetailsOf(invoice: any): any[] {
   return invoice?.meter_details || invoice?.meterDetails || [];
@@ -667,6 +690,21 @@ function hasPendingPaymentApproval(invoice: any): boolean {
   );
 }
 
+// Rental ini punya unit copier (dari rental_items yang ter-preload).
+function rentalHasCopier(): boolean {
+  const items = (selectedRental.value as any)?.rental_items || [];
+  return items.some((item: any) => item?.unit?.is_copier);
+}
+
+// Invoice rental unit copier yang meter report-nya belum diisi teknisi
+// belum boleh dibayar: status masih pending_meter_reading, atau rental
+// copier tapi invoice belum difinalisasi report (data lama / status drift).
+function isWaitingMeterReport(invoice: any): boolean {
+  if (String(invoice?.status || "").toLowerCase() === "pending_meter_reading")
+    return true;
+  return rentalHasCopier() && !invoice?.is_finalized;
+}
+
 function invoicePayments(invoice: any): any[] {
   const currentPayments = payments.value.filter(
     (payment: any) => String(payment.rental_invoice_id) === String(invoice.id),
@@ -740,6 +778,67 @@ onMounted(async () => {
     console.error("Failed to fetch paper sizes:", e);
   }
 });
+function exportToExcel() {
+  const exportData = filteredRentals.value.map((j: any, index: number) => ({
+    'No': index + 1,
+    'Rental No': j.rental_no || '-',
+    'Company': j.customer?.company_name || j.customer?.name || '-',
+    'PIC Name': j.customer?.pic_name || '-',
+    'Start Date': j.start_date ? new Date(j.start_date).toLocaleDateString('en-GB') : '-',
+    'End Date': j.end_date ? new Date(j.end_date).toLocaleDateString('en-GB') : '-',
+    'Total': j.total || 0,
+    'Status': j.status || '-'
+  }))
+  if (!exportData.length) {
+    toast.error('No data to export')
+    return
+  }
+  const ws = XLSX.utils.json_to_sheet(exportData)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Rentals")
+  XLSX.writeFile(wb, `Rentals_${Date.now()}.xlsx`)
+}
+
+function exportToPdf() {
+  const exportData = filteredRentals.value.map((j: any, index: number) => ({
+    'No': index + 1,
+    'Rental No': j.rental_no || '-',
+    'Company': j.customer?.company_name || j.customer?.name || '-',
+    'PIC Name': j.customer?.pic_name || '-',
+    'Start Date': j.start_date ? new Date(j.start_date).toLocaleDateString('en-GB') : '-',
+    'End Date': j.end_date ? new Date(j.end_date).toLocaleDateString('en-GB') : '-',
+    'Total': (j.total || 0).toLocaleString('id-ID'),
+    'Status': String(j.status || '-').toUpperCase()
+  }))
+  if (!exportData.length) {
+    toast.error('No data to export')
+    return
+  }
+  
+  let html = '<h2 style="font-family: sans-serif; text-align: center;">Rentals Report</h2><table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px; text-align: center;">'
+  html += '<thead><tr style="background-color: #5b9bd5; color: white;">'
+  const keys = Object.keys(exportData[0]!)
+  keys.forEach(k => html += `<th>${k}</th>`)
+  html += '</tr></thead><tbody>'
+  exportData.forEach(row => {
+    html += '<tr>'
+    keys.forEach(k => html += `<td>${(row as any)[k]}</td>`)
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+
+  const wrapper = document.createElement('div')
+  wrapper.innerHTML = html
+
+  const opt = {
+    margin: 0.5,
+    filename: `Rentals_Report_${Date.now()}.pdf`,
+    image: { type: 'jpeg' as const, quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' as const }
+  }
+  html2pdf().set(opt).from(wrapper).save()
+}
 </script>
 
 <template>
@@ -749,14 +848,35 @@ onMounted(async () => {
       :button-label="t('rentals.create_new')"
       permission="rental:create"
       @add="openAdd"
-    />
+    >
+      <template #actions>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <CustomSelect v-model="filterCustomer" :options="customerOptions" placeholder="Filter by Customer" style="min-width: 200px;" />
+          <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
+            Export PDF
+          </button>
+          <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
+            Export Excel
+          </button>
+        </div>
+      </template>
+    </PageHeader>
 
     <DataTable
       :columns="columns"
-      :data="rentals"
+      :data="filteredRentals"
       permission="rental"
       :search-placeholder="t('rentals.search')"
     >
+      <template #cell-rental_no="{ row, value }">
+        <a
+          href="#"
+          @click.prevent="openRentalDetail(row)"
+          style="color: var(--color-primary); text-decoration: underline; font-weight: 500;"
+        >
+          {{ value || '-' }}
+        </a>
+      </template>
       <template #cell-company="{ row }">
         {{
           customers.find((c: any) => c.id === row.customer_id)?.company_name ||
@@ -798,6 +918,136 @@ onMounted(async () => {
         </button>
       </template>
     </DataTable>
+
+    <!-- Modal Detail Rental Items -->
+    <FormModal
+      :open="showDetailModal"
+      :title="`Rental Detail - ${detailRental?.rental_no || ''}`"
+      max-width="800px"
+      @close="showDetailModal = false; detailRental = null;"
+    >
+      <div v-if="detailRental">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 1rem; padding: 12px; background: var(--color-surface-hover); border-radius: 8px;">
+          <div>
+            <p style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Customer:</p>
+            <p style="margin: 0 0 10px 0; font-weight: 500;">
+              {{
+                customers.find((c: any) => c.id === detailRental.customer_id)?.company_name ||
+                customers.find((c: any) => c.id === detailRental.customer_id)?.name ||
+                detailRental.customer?.company_name ||
+                detailRental.customer?.name ||
+                "-"
+              }}
+            </p>
+            <p style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Period:</p>
+            <p style="margin: 0 0 10px 0; font-weight: 500;">
+              {{ detailRental.start_date ? new Date(detailRental.start_date).toLocaleDateString("en-GB") : '-' }} - 
+              {{ detailRental.end_date ? new Date(detailRental.end_date).toLocaleDateString("en-GB") : '-' }}
+              ({{ detailRental.duration_months }} months)
+            </p>
+            <p style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Status:</p>
+            <p style="margin: 0; font-weight: 500;">
+              <span class="status-badge" :class="'status-' + (detailRental.status || 'unknown').toLowerCase()">
+                {{ detailRental.status || "-" }}
+              </span>
+            </p>
+          </div>
+          <div>
+            <p v-if="detailRental.po_no" style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">PO No:</p>
+            <p v-if="detailRental.po_no" style="margin: 0 0 10px 0; font-weight: 500;">{{ detailRental.po_no }}</p>
+            
+            <p v-if="detailRental.installation_address" style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Installation Address:</p>
+            <p v-if="detailRental.installation_address" style="margin: 0 0 10px 0; font-weight: 500; font-size: 0.95em;">{{ detailRental.installation_address }}</p>
+            
+            <p v-if="detailRental.notes" style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Notes:</p>
+            <p v-if="detailRental.notes" style="margin: 0; font-weight: 500; font-size: 0.95em; white-space: pre-wrap;">{{ detailRental.notes }}</p>
+          </div>
+        </div>
+        
+        <h4 style="margin: 1rem 0 0.5rem; font-size: 1rem; color: var(--color-primary);">Rented Items</h4>
+        <div v-if="!detailRental.rental_items || detailRental.rental_items.length === 0" style="padding: 1rem; text-align: center; color: var(--color-text-secondary); background: var(--color-surface-sunken); border-radius: 8px;">
+          No items found.
+        </div>
+        <div v-else style="display: grid; gap: 10px;">
+          <div v-for="(item, idx) in detailRental.rental_items" :key="idx" style="padding: 12px; background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+              <div>
+                <strong style="font-size: 1.05em; display: block; color: var(--color-text);">
+                  <span v-if="item.unit">Unit: {{ item.unit.model }} (S/N: {{ item.unit.serial_no || '-' }})</span>
+                  <span v-else-if="item.product">Product: {{ item.product.name }}</span>
+                  <span v-else>Item (Unknown)</span>
+                </strong>
+                <span v-if="item.placement_location" style="font-size: 0.85em; color: var(--color-text-secondary); display: inline-block; margin-top: 4px; padding: 2px 6px; background: var(--color-surface); border-radius: 4px; border: 1px solid var(--color-border-light);">
+                  📍 {{ item.placement_location }}
+                </span>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-weight: 500; color: var(--color-primary);">Qty: {{ item.qty }}</div>
+                <div v-if="canSeeAmount" style="font-size: 0.9em; color: var(--color-text-secondary);">{{ formatRupiah(item.monthly_rent) }} / mo</div>
+              </div>
+            </div>
+            
+            <div style="display: flex; gap: 24px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border-light);">
+              <div v-if="item.start_meter_bw > 0 || item.start_meter_color > 0">
+                <span style="font-size: 0.85em; color: var(--color-text-secondary); display: block; margin-bottom: 2px;">Starting Meter</span>
+                <div style="font-size: 0.9em; font-weight: 500;">
+                  <span v-if="item.start_meter_bw > 0">BW: {{ item.start_meter_bw.toLocaleString('id-ID') }}</span>
+                  <span v-if="item.start_meter_bw > 0 && item.start_meter_color > 0"> | </span>
+                  <span v-if="item.start_meter_color > 0">Color: {{ item.start_meter_color.toLocaleString('id-ID') }}</span>
+                </div>
+              </div>
+              <div v-if="item.free_quota_bw > 0 || item.free_quota_color > 0">
+                <span style="font-size: 0.85em; color: var(--color-text-secondary); display: block; margin-bottom: 2px;">Free Quota (mo)</span>
+                <div style="font-size: 0.9em; font-weight: 500;">
+                  <span v-if="item.free_quota_bw > 0">BW: {{ item.free_quota_bw.toLocaleString('id-ID') }}</span>
+                  <span v-if="item.free_quota_bw > 0 && item.free_quota_color > 0"> | </span>
+                  <span v-if="item.free_quota_color > 0">Color: {{ item.free_quota_color.toLocaleString('id-ID') }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="item.rates && item.rates.length > 0" style="margin-top: 12px; padding: 8px; background: var(--color-surface); border-radius: 6px; border: 1px solid var(--color-border-light);">
+              <span style="font-size: 0.85em; font-weight: 600; color: var(--color-text-secondary); display: block; margin-bottom: 4px; text-transform: uppercase;">Rates</span>
+              <div style="display: grid; gap: 4px;">
+                <div v-for="rate in item.rates" :key="rate.id" style="font-size: 0.85em; display: flex; justify-content: space-between;">
+                  <span>{{ rate.paper_size?.name || 'Any Size' }} ({{ rate.paper_type?.name || 'Any Type' }})</span>
+                  <span style="font-weight: 500;">
+                    <span v-if="rate.rate_per_page_bw > 0">BW: {{ formatRupiah(rate.rate_per_page_bw) }}</span>
+                    <span v-if="rate.rate_per_page_bw > 0 && rate.rate_per_page_color > 0"> | </span>
+                    <span v-if="rate.rate_per_page_color > 0">Color: {{ formatRupiah(rate.rate_per_page_color) }}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <div v-if="item.description" style="font-size: 0.9em; color: var(--color-text-secondary); margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--color-border-light);">
+              <strong style="display: block; font-size: 0.9em; margin-bottom: 4px;">Description / Specs:</strong>
+              <div style="white-space: pre-wrap;">{{ item.description }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="canSeeAmount" style="margin-top: 1rem; padding: 16px; background: var(--color-surface-hover); border-radius: 8px;">
+          <div style="display: flex; justify-content: flex-end; gap: 32px; font-size: 0.95em;">
+            <div style="text-align: right;">
+              <div style="color: var(--color-text-secondary); margin-bottom: 4px;">Subtotal</div>
+              <div style="color: var(--color-text-secondary); margin-bottom: 4px;">Tax (11%)</div>
+              <div v-if="detailRental.deposit > 0" style="color: var(--color-text-secondary); margin-bottom: 4px;">Deposit</div>
+              <div style="font-weight: 600; color: var(--color-text); margin-top: 8px; font-size: 1.1em;">Total / Month</div>
+            </div>
+            <div style="text-align: right; font-weight: 500;">
+              <div style="margin-bottom: 4px;">{{ formatRupiah(detailRental.subtotal) }}</div>
+              <div style="margin-bottom: 4px;">{{ formatRupiah(detailRental.tax) }}</div>
+              <div v-if="detailRental.deposit > 0" style="margin-bottom: 4px;">{{ formatRupiah(detailRental.deposit) }}</div>
+              <div style="color: var(--color-primary); margin-top: 8px; font-size: 1.1em; font-weight: 700;">{{ formatRupiah(detailRental.total) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showDetailModal = false">Close</button>
+      </template>
+    </FormModal>
 
     <FormModal
       :open="showInvoiceModal"
@@ -870,11 +1120,13 @@ onMounted(async () => {
             </span>
           </div>
           <div class="rental-invoice-actions">
+            <!-- Approval dimatikan: badge menunggu approval dihapus, payment langsung approved. -->
             <span
-              v-if="hasPendingPaymentApproval(invoice)"
+              v-if="isWaitingMeterReport(invoice)"
               class="badge badge-warning"
+              title="Tombol Payment muncul setelah teknisi mengisi copier service report"
             >
-              Menunggu approval accounting
+              Menunggu teknisi isi copier report
             </span>
             <button
               v-if="meterCount(invoice) > 0"
@@ -904,7 +1156,11 @@ onMounted(async () => {
               Kwitansi A5
             </button>
             <button
-              v-if="invoice.payment_status !== 'paid' && can('payment:create')"
+              v-if="
+                invoice.payment_status !== 'paid' &&
+                !isWaitingMeterReport(invoice) &&
+                can('payment:create')
+              "
               type="button"
               class="btn btn-sm btn-primary"
               :disabled="isSavingPayment"

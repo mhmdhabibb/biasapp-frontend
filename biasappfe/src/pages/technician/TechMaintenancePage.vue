@@ -15,6 +15,7 @@ const { can } = usePermission()
 const router = useRouter()
 const { currentUser } = useAuth()
 const {
+  jobOrders,
   getServiceReportsByTechnician,
   serviceReports,
   getTechnicianIdByUser,
@@ -27,7 +28,11 @@ const {
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
 
 const myJobs = computed(() => {
-  return getServiceReportsByTechnician(myTechId.value).filter(j => j.service_type === 'maintenance')
+  return jobOrders.value.filter(j => 
+    String(j.technician_id) === String(myTechId.value) && 
+    (j.job_type === 'maintenance' || j.job_type === 'maintenance_visit' || 
+     (j.job_type === 'service' && (j.instructions?.includes('Rutin Maintenance') || j.service_request?.problem_description?.includes('[MAINTENANCE_VISIT]'))))
+  )
 })
 
 const activeJobs = computed(() => myJobs.value.filter(j => j.status !== 'completed' && j.status !== 'cancelled'))
@@ -146,7 +151,16 @@ async function completeMaintenance() {
     const now = new Date().toISOString()
 
     try {
-      await api.patch(`/service-reports/${selectedJob.value.id}`, {
+      const unitId = selectedJob.value.service_request?.unit_id || selectedJob.value.unit_id
+      const customerId = selectedJob.value.service_request?.customer_id || selectedJob.value.customer_id
+      
+      const payload = {
+        report_no: `SR-${Date.now().toString().slice(-6)}`,
+        job_order_id: selectedJob.value.id,
+        unit_id: String(unitId),
+        customer_id: String(customerId),
+        technician_id: selectedJob.value.technician_id,
+        service_type: 'maintenance',
         status: 'completed',
         is_completed: true,
         is_tested: checklist.value.machineTesting,
@@ -155,17 +169,17 @@ async function completeMaintenance() {
         repair_action: cl.join(', '),
         remarks,
         meter_reading_before: meterReadingForm.value.previous_meter,
-        meter_reading_after: meterReadingForm.value.current_meter
-      })
+        meter_reading_after: meterReadingForm.value.current_meter,
+        service_date: now
+      }
+      
+      await api.post(`/service-reports`, payload)
+      await api.patch(`/job-orders/${selectedJob.value.id}`, { status: 'completed', completed_at: now })
 
       Object.assign(selectedJob.value, {
         status: 'completed',
-        is_completed: true,
         time_out: now,
-        repair_action: cl.join(', '),
-        remarks,
-        meter_reading_before: meterReadingForm.value.previous_meter,
-        meter_reading_after: meterReadingForm.value.current_meter
+        remarks
       })
 
       showDetailModal.value = false
@@ -200,13 +214,13 @@ async function completeMaintenance() {
           </thead>
           <tbody>
             <tr v-for="job in activeJobs" :key="job.id">
-              <td>{{ job.report_no }}</td>
-              <td>{{ getCustomerName(job.customer_id) }}</td>
-              <td>{{ getUnitName(job.unit_id) }}</td>
-              <td>{{ job.service_date ? new Date(job.service_date).toLocaleDateString('en-GB') : '-' }}</td>
+              <td>{{ job.job_order_no || job.report_no }}</td>
+              <td>{{ getCustomerName(job.customer_id || job.service_request?.customer_id) }}</td>
+              <td>{{ getUnitName(job.unit_id || job.service_request?.unit_id) }}</td>
+              <td>{{ job.scheduled_date || job.service_date ? new Date(job.scheduled_date || job.service_date).toLocaleDateString('en-GB') : '-' }}</td>
               <td>
                 <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : 'warning')">
-                  {{ job.status.toUpperCase().replace('_', ' ') }}
+                  {{ (job.status || 'SCHEDULED').toUpperCase().replace('_', ' ') }}
                 </span>
               </td>
               <td>
@@ -234,15 +248,15 @@ async function completeMaintenance() {
           <div class="info-grid mb-md">
             <div>
               <span class="text-xs text-muted block">Customer</span>
-              <span class="font-bold">{{ getCustomerName(selectedJob?.customer_id) }}</span>
+              <span class="font-bold">{{ getCustomerName(selectedJob?.customer_id || selectedJob?.service_request?.customer_id) }}</span>
             </div>
             <div>
               <span class="text-xs text-muted block">Unit</span>
-              <span class="font-bold">{{ getUnitName(selectedJob?.unit_id) }}</span>
+              <span class="font-bold">{{ getUnitName(selectedJob?.unit_id || selectedJob?.service_request?.unit_id) }}</span>
             </div>
             <div>
               <span class="text-xs text-muted block">Schedule</span>
-              <span class="font-bold">{{ selectedJob?.service_date ? new Date(selectedJob.service_date).toLocaleDateString('en-GB') : '-' }}</span>
+              <span class="font-bold">{{ (selectedJob?.scheduled_date || selectedJob?.service_date) ? new Date(selectedJob?.scheduled_date || selectedJob?.service_date).toLocaleDateString('en-GB') : '-' }}</span>
             </div>
           </div>
 
