@@ -146,6 +146,11 @@ const allMenuGroups: MenuGroup[] = [
         route: "/customer-service/job-orders",
       },
       {
+        label: "Maintenance Schedules",
+        icon: "calendar",
+        route: "/customer-service/maintenance",
+      },
+      {
         label: "sidebar.service_reports",
         icon: "tool",
         route: "/customer-service/service-reports",

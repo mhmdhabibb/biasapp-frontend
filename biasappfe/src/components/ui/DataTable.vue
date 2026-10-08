@@ -17,6 +17,7 @@ defineEmits<{
   (e: "edit", item: any): void;
   (e: "delete", item: any): void;
   (e: "hard-delete", item: any): void;
+  (e: "row-click", item: any): void;
 }>();
 
 const slots = useSlots();
@@ -166,7 +167,7 @@ const visiblePages = computed(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, idx) in paginatedData" :key="row.id ?? idx">
+          <tr v-for="(row, idx) in paginatedData" :key="row.id ?? idx" @click="$emit('row-click', row)" style="cursor: pointer;">
             <td class="td-num">{{ (currentPage - 1) * perPage + idx + 1 }}</td>
             <td v-for="col in columns" :key="col.key">
               <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row">
@@ -179,7 +180,7 @@ const visiblePages = computed(() => {
                   v-if="showEdit"
                   class="action-btn action-btn--edit"
                   title="Edit"
-                  @click="$emit('edit', row)"
+                  @click.stop="$emit('edit', row)"
                 >
                   <svg
                     class="action-icon"
@@ -204,7 +205,7 @@ const visiblePages = computed(() => {
                   v-if="showDelete"
                   class="action-btn action-btn--delete"
                   title="Delete"
-                  @click="$emit('delete', row)"
+                  @click.stop="$emit('delete', row)"
                 >
                   <svg
                     class="action-icon"
@@ -229,7 +230,7 @@ const visiblePages = computed(() => {
                   v-if="showHardDelete"
                   class="action-btn action-btn--hard"
                   title="Hapus permanen dari database (superadmin)"
-                  @click="$emit('hard-delete', row)"
+                  @click.stop="$emit('hard-delete', row)"
                 >
                   <svg
                     class="action-icon"

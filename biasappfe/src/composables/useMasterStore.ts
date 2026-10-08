@@ -282,7 +282,7 @@ export function useMasterStore() {
     if (!customerId) return [];
     // Find all contract items for this customer
     const customerContracts = store.contractItems.filter(
-      (c) => (c.customer_id as any) == customerId,
+      (c) => (c.customer_id as any) == customerId || (c.contract?.customer_id as any) == customerId,
     );
     const unitIds = customerContracts
       .map((c) => c.unit_id)
@@ -296,7 +296,7 @@ export function useMasterStore() {
   ): ContractItem[] {
     if (!customerId) return [];
     return store.contractItems.filter(
-      (c) => (c.customer_id as any) == customerId,
+      (c) => (c.customer_id as any) == customerId || (c.contract?.customer_id as any) == customerId,
     );
   }
 

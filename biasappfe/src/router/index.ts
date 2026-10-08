@@ -214,6 +214,12 @@ const router = createRouter({
         import("@/pages/customer-service/SparepartRequestPage.vue"),
     },
     {
+      path: "/customer-service/maintenance",
+      name: "csMaintenanceSchedules",
+      component: () =>
+        import("@/pages/customer-service/MaintenanceSchedulesPage.vue"),
+    },
+    {
       path: "/customer-service/indent",
       name: "csIndent",
       component: () => import("@/pages/customer-service/IndentPage.vue"),

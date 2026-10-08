@@ -167,6 +167,7 @@ const unassignedRequests = computed(() => {
       (sr) =>
         (sr.status === "pending" || sr.status === "open") &&
         !assignedSrIds.has(sr.id) &&
+        !(sr.problem_description || "").includes("[MAINTENANCE_VISIT]") &&
         (sr.request_no
           .toLowerCase()
           .includes(searchUnassigned.value.toLowerCase()) ||
@@ -236,10 +237,59 @@ const unassignedVisits = computed(() => {
     );
 });
 
+// Maintenance schedules (job orders) belum di-assign teknisi
+const unassignedMaintenance = computed(() => {
+  const joMaintenance = jobOrders.value
+    .filter(
+      (j) =>
+        !j.technician_id &&
+        (j.job_type === "service" || j.job_type === "maintenance_visit") &&
+        (j.instructions?.includes("Rutin Maintenance") ||
+          j.service_request?.problem_description?.includes("[MAINTENANCE_VISIT]"))
+    )
+    .map((j) => ({
+      ...j,
+      taskType: "maintenance",
+      is_jo: true,
+      service_request_no: (j.job_order_no || j.service_request?.request_no || "-").replace("REQ-", "MT-"),
+      customer_name: j.customer_name || j.service_request?.customer?.company_name || j.service_request?.customer?.name || "-",
+    }));
+
+  const assignedSrIds = new Set(
+    jobOrders.value.map((j) => j.service_request_id),
+  );
+  const srMaintenance = serviceRequests.value
+    .filter(
+      (sr) =>
+        (sr.status === "pending" || sr.status === "open") &&
+        !assignedSrIds.has(sr.id) &&
+        (sr.problem_description || "").includes("[MAINTENANCE_VISIT]")
+    )
+    .map((sr) => ({
+      ...sr,
+      taskType: "maintenance",
+      is_sr: true,
+      service_request_no: (sr.request_no || "-").replace("REQ-", "MT-"),
+      customer_name: sr.customer?.company_name || sr.customer?.name || "-",
+      problem: (sr.problem_description || "Maintenance Visit").replace("[MAINTENANCE_VISIT]", "").trim(),
+    }));
+
+  return [...joMaintenance, ...srMaintenance].filter(
+    (m) =>
+      (m.service_request_no || "")
+        .toLowerCase()
+        .includes(searchUnassigned.value.toLowerCase()) ||
+      (m.customer_name || "")
+        .toLowerCase()
+        .includes(searchUnassigned.value.toLowerCase()),
+  );
+});
+
 const displayedUnassigned = computed(() => {
   if (activeTab.value === "sr") return unassignedRequests.value;
   if (activeTab.value === "do") return unassignedDeliveries.value;
   if (activeTab.value === "visit") return unassignedVisits.value;
+  if (activeTab.value === "maintenance") return unassignedMaintenance.value;
   return [];
 });
 
@@ -474,9 +524,9 @@ function isTerminalStatus(status: string | undefined) {
 function isTechnicianBusy(technicianId: string | number) {
   const targetDate = dateKey(
     draggedTask.value?.delivery_date ||
-      draggedTask.value?.scheduled_date ||
-      draggedTask.value?.service_date ||
-      new Date(),
+    draggedTask.value?.scheduled_date ||
+    draggedTask.value?.service_date ||
+    new Date(),
   );
   if (!targetDate) return false;
 
@@ -620,8 +670,8 @@ async function onDrop(techId: string | number) {
     assignDeliveryDate.value = toLocalDatetimeStr(
       draggedRequest.delivery_date || new Date().toISOString(),
     );
-  } else if (draggedRequest.taskType === "visit") {
-    // Visit copier: default keep scheduled date dari generate.
+  } else if (draggedRequest.taskType === "visit" || draggedRequest.taskType === "maintenance") {
+    // Visit copier / Maintenance: default keep scheduled date dari generate.
     assignScheduledDate.value = toLocalDatetimeStr(
       draggedRequest.scheduled_date || new Date().toISOString(),
     );
@@ -673,6 +723,67 @@ async function confirmAssign() {
       }
     } catch (error) {
       toast.error("Something went wrong");
+    }
+  } else if (task.taskType === "maintenance") {
+    if (task.is_jo) {
+      // Maintenance: update JobOrder yang sudah ada
+      const payload = {
+        technician_id: techId,
+        scheduled_date: new Date(assignScheduledDate.value).toISOString(),
+        status: "scheduled",
+      };
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_BASE_URL}/job-orders/${task.id}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+            },
+            body: JSON.stringify(payload),
+          },
+        );
+        if (res.ok) {
+          fetchJobOrders();
+          toast.success("Maintenance assigned to technician.");
+        } else {
+          const body = await res.json().catch(() => ({}));
+          toast.error(body.message || "Failed to assign maintenance");
+        }
+      } catch (error) {
+        toast.error("Something went wrong");
+      }
+    } else {
+      // Maintenance dari Service Request yang belum ada JobOrder
+      const payload = {
+        job_order_no: `JO-${Date.now().toString().slice(-6)}`,
+        service_request_id: task.id,
+        technician_id: techId,
+        scheduled_date: new Date(assignScheduledDate.value).toISOString(),
+        instructions: task.problem_description || "Rutin Maintenance",
+      };
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_BASE_URL}/job-orders`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
+            },
+            body: JSON.stringify(payload),
+          },
+        );
+        if (res.ok) {
+          fetchJobOrders();
+          toast.success("Maintenance Job order successfully created and assigned.");
+        } else {
+          toast.error("Failed to assign maintenance job order");
+        }
+      } catch (error) {
+        toast.error("Something went wrong");
+      }
     }
   } else if (task.taskType === "do") {
     // Buat baris job_orders bertipe delivery; backend ikut update
@@ -778,66 +889,42 @@ async function confirmAssign() {
           </div>
         </div>
 
-        <div
-          class="sidebar-tabs"
-          style="display: flex; gap: 8px; margin-top: -8px"
-        >
-          <button
-            class="btn btn-sm"
-            :class="activeTab === 'sr' ? 'btn-primary' : 'btn-outline'"
-            style="flex: 1; padding: 4px"
-            @click="activeTab = 'sr'"
-          >
+        <div class="sidebar-tabs" style="display: flex; gap: 8px; margin-top: -8px; flex-wrap: wrap">
+          <button class="btn btn-sm" :class="activeTab === 'sr' ? 'btn-primary' : 'btn-outline'"
+            style="flex: 1 1 calc(50% - 8px); padding: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+            @click="activeTab = 'sr'">
             Requests ({{ unassignedRequests.length }})
           </button>
-          <button
-            class="btn btn-sm"
-            :class="activeTab === 'do' ? 'btn-primary' : 'btn-outline'"
-            style="flex: 1; padding: 4px"
-            @click="activeTab = 'do'"
-          >
+          <button class="btn btn-sm" :class="activeTab === 'do' ? 'btn-primary' : 'btn-outline'"
+            style="flex: 1 1 calc(50% - 8px); padding: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+            @click="activeTab = 'do'">
             Deliveries ({{ unassignedDeliveries.length }})
           </button>
-          <button
-            class="btn btn-sm"
-            :class="activeTab === 'visit' ? 'btn-primary' : 'btn-outline'"
-            style="flex: 1; padding: 4px"
-            @click="activeTab = 'visit'"
-          >
+          <button class="btn btn-sm" :class="activeTab === 'visit' ? 'btn-primary' : 'btn-outline'"
+            style="flex: 1 1 calc(50% - 8px); padding: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+            @click="activeTab = 'visit'">
             Visits ({{ unassignedVisits.length }})
+          </button>
+          <button class="btn btn-sm" :class="activeTab === 'maintenance' ? 'btn-primary' : 'btn-outline'"
+            style="flex: 1 1 calc(50% - 8px); padding: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+            @click="activeTab = 'maintenance'">
+            Maintenance ({{ unassignedMaintenance.length }})
           </button>
         </div>
 
         <div class="sidebar-search">
-          <input
-            v-model="searchUnassigned"
-            type="text"
-            placeholder="Search code..."
-            class="form-input search-input"
-          />
-          <button
-            class="btn-icon refresh-btn"
-            title="Refresh"
-            @click="
-              activeTab === 'sr'
-                ? fetchServiceRequests()
-                : activeTab === 'do'
-                  ? fetchDeliveryOrders()
-                  : activeTab === 'visit'
-                    ? fetchJobOrders()
-                    : null
-            "
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
+          <input v-model="searchUnassigned" type="text" placeholder="Search code..." class="form-input search-input" />
+          <button class="btn-icon refresh-btn" title="Refresh" @click="
+            activeTab === 'sr'
+              ? fetchServiceRequests()
+              : activeTab === 'do'
+                ? fetchDeliveryOrders()
+                : activeTab === 'visit' || activeTab === 'maintenance'
+                  ? fetchJobOrders()
+                  : null
+            ">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12a9 9 0 1 1-2.64-6.36" />
               <polyline points="21 3 21 9 15 9" />
             </svg>
@@ -845,35 +932,16 @@ async function confirmAssign() {
         </div>
         <div class="unassigned-list">
           <div v-if="displayedUnassigned.length === 0" class="empty-state">
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-            >
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
               <rect x="3" y="4" width="18" height="17" rx="3" />
               <path d="M8 2v4M16 2v4M3 10h18" />
             </svg>
             <span>No new tasks yet</span>
           </div>
-          <div
-            v-for="req in displayedUnassigned"
-            :key="req.id"
-            class="job-card draggble"
-            draggable="true"
-            @dragstart="onDragStart(req)"
-            @dragend="markDragEnd"
-            @click="openRequestDetail(req)"
-          >
+          <div v-for="req in displayedUnassigned" :key="req.id" class="job-card draggble" draggable="true"
+            @dragstart="onDragStart(req)" @dragend="markDragEnd" @click="openRequestDetail(req)">
             <div class="card-grip" aria-hidden="true">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="9" cy="6" r="1.6" />
                 <circle cx="15" cy="6" r="1.6" />
                 <circle cx="9" cy="12" r="1.6" />
@@ -885,9 +953,9 @@ async function confirmAssign() {
             <div class="card-main">
               <div class="card-header">
                 <span class="ref-no">{{
+                  req.service_request_no ||
                   req.request_no ||
                   req.do_number ||
-                  req.service_request_no ||
                   req.job_order_no
                 }}</span>
                 <span class="date-tag">{{
@@ -897,87 +965,49 @@ async function confirmAssign() {
               <div class="card-body">
                 <template v-if="req.taskType === 'do'">
                   <div class="card-customer" v-if="doCustomerName(req)">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path
-                        d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
-                      />
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
                     <span>{{ doCustomerName(req) }}</span>
                   </div>
                   <div class="card-address" v-if="req.delivery_address">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path
-                        d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"
-                      />
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                       <circle cx="12" cy="10" r="3" />
                     </svg>
                     <span>{{ req.delivery_address }}</span>
                   </div>
-                  <div
-                    class="card-type"
-                    style="
+                  <div class="card-type" style="
                       margin-top: 4px;
                       display: flex;
                       align-items: center;
                       gap: 6px;
                       font-size: 11px;
                       color: var(--color-text-muted);
-                    "
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
+                    ">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
                       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                       <line x1="8" y1="21" x2="16" y2="21" />
                       <line x1="12" y1="17" x2="12" y2="21" />
                     </svg>
-                    <span
-                      style="font-weight: 500; color: var(--color-primary)"
-                      >{{ deliveryTypeLabel(req.do_type) }}</span
-                    >
+                    <span style="font-weight: 500; color: var(--color-primary)">{{ deliveryTypeLabel(req.do_type)
+                    }}</span>
                   </div>
-                  <div
-                    class="card-address"
-                    v-if="doItemsCount(req) > 0"
-                  >
-                    <span
-                      >{{ doItemsCount(req) }} item{{
-                        doItemsCount(req) > 1 ? "s" : ""
-                      }} ·
+                  <div class="card-address" v-if="doItemsCount(req) > 0">
+                    <span>{{ doItemsCount(req) }} item{{
+                      doItemsCount(req) > 1 ? "s" : ""
+                    }} ·
                       {{
                         doItemLabel(
                           (req.delivery_order_items ||
                             req.delivery_order?.delivery_order_items ||
                             [])[0],
                         )
-                      }}</span
-                    >
+                      }}</span>
                   </div>
                   <div class="problem-text" style="margin-top: 6px">
                     {{ req.notes || req.problem || "No description" }}
@@ -985,95 +1015,86 @@ async function confirmAssign() {
                 </template>
                 <template v-else-if="req.taskType === 'visit'">
                   <div class="card-customer" v-if="req.customer_name">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path
-                        d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
-                      />
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
                     <span>{{ req.customer_name }}</span>
                   </div>
                   <div class="card-address" v-if="req.service_report?.unit">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
                       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                       <line x1="8" y1="21" x2="16" y2="21" />
                       <line x1="12" y1="17" x2="12" y2="21" />
                     </svg>
-                    <span
-                      >{{ req.service_report.unit.model
-                      }}{{
+                    <span>{{ req.service_report.unit.model
+                    }}{{
                         req.service_report.unit.serial_no
                           ? ` (${req.service_report.unit.serial_no})`
                           : ""
-                      }}</span
-                    >
+                      }}</span>
                   </div>
-                  <div
-                    class="card-type"
-                    style="
+                  <div class="card-type" style="
                       margin-top: 4px;
                       display: flex;
                       align-items: center;
                       gap: 6px;
                       font-size: 11px;
                       color: var(--color-text-muted);
-                    "
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
+                    ">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
                       <path
-                        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"
-                      />
+                        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z" />
                     </svg>
-                    <span style="font-weight: 500; color: var(--color-primary)"
-                      >Copier Visit</span
-                    >
+                    <span style="font-weight: 500; color: var(--color-primary)">Copier Visit</span>
                   </div>
                   <div class="problem-text" style="margin-top: 6px">
                     {{ req.problem }}
                   </div>
                 </template>
+                <template v-else-if="req.taskType === 'maintenance'">
+                  <div class="card-customer" v-if="req.customer || req.customer_name">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span>{{
+                      req.customer?.company_name || req.customer?.name || req.customer_name
+                    }}</span>
+                  </div>
+                  <div class="card-address" v-if="req.customer?.address || req.delivery_address">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>{{ req.customer?.address || req.delivery_address }}</span>
+                  </div>
+                  <div class="card-type" style="
+                      margin-top: 4px;
+                      display: flex;
+                      align-items: center;
+                      gap: 6px;
+                      font-size: 11px;
+                      color: var(--color-text-muted);
+                    ">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6">
+                      </path>
+                    </svg>
+                    <span style="font-weight: 500; color: var(--color-primary)">Maintenance</span>
+                  </div>
+                </template>
                 <template v-else>
                   <div class="card-customer" v-if="req.customer">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path
-                        d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
-                      />
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
                     <span>{{
@@ -1081,51 +1102,28 @@ async function confirmAssign() {
                     }}</span>
                   </div>
                   <div class="card-address" v-if="req.customer?.address">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path
-                        d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"
-                      />
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                       <circle cx="12" cy="10" r="3" />
                     </svg>
                     <span>{{ req.customer.address }}</span>
                   </div>
-                  <div
-                    class="card-type"
-                    style="
+                  <div class="card-type" style="
                       margin-top: 4px;
                       display: flex;
                       align-items: center;
                       gap: 6px;
                       font-size: 11px;
                       color: var(--color-text-muted);
-                    "
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
+                    ">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
                       <path
-                        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"
-                      ></path>
+                        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z">
+                      </path>
                     </svg>
-                    <span style="font-weight: 500; color: var(--color-primary)"
-                      >Service Request</span
-                    >
+                    <span style="font-weight: 500; color: var(--color-primary)">Service Request</span>
                   </div>
                   <div class="problem-text" style="margin-top: 6px">
                     {{ req.problem_description || "No description" }}
@@ -1133,19 +1131,9 @@ async function confirmAssign() {
                 </template>
                 <template v-if="req.taskType === 'visit' && (req.customer || req.unit)">
                   <div class="card-customer" v-if="req.customer">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path
-                        d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
-                      />
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
                     <span>{{
@@ -1153,54 +1141,31 @@ async function confirmAssign() {
                     }}</span>
                   </div>
                   <div class="card-address" v-if="req.unit">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
                       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                       <line x1="8" y1="21" x2="16" y2="21" />
                       <line x1="12" y1="17" x2="12" y2="21" />
                     </svg>
-                    <span
-                      >{{ req.unit.model || "Unit"
-                      }}{{
+                    <span>{{ req.unit.model || "Unit"
+                    }}{{
                         req.unit.serial_no ? ` (${req.unit.serial_no})` : ""
-                      }}</span
-                    >
+                      }}</span>
                   </div>
-                  <div
-                    class="card-type"
-                    style="
+                  <div class="card-type" style="
                       margin-top: 4px;
                       display: flex;
                       align-items: center;
                       gap: 6px;
                       font-size: 11px;
                       color: var(--color-text-muted);
-                    "
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
+                    ">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
                       <rect x="3" y="4" width="18" height="17" rx="2" />
                       <path d="M8 2v4M16 2v4M3 10h18" />
                     </svg>
-                    <span style="font-weight: 500; color: var(--color-primary)"
-                      >Visit · Copier Report</span
-                    >
+                    <span style="font-weight: 500; color: var(--color-primary)">Visit · Copier Report</span>
                   </div>
                   <div class="problem-text" style="margin-top: 6px">
                     Visit {{ formatFullDate(req.service_date) }} ·
@@ -1217,53 +1182,29 @@ async function confirmAssign() {
       <section class="main-board panel">
         <div class="board-topbar">
           <div class="topbar-search">
-            <svg
-              class="topbar-search-icon"
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-            >
+            <svg class="topbar-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
             </svg>
-            <input
-              v-model="searchTech"
-              type="text"
-              placeholder="Search for Technician Name"
-              class="form-input search-input"
-            />
+            <input v-model="searchTech" type="text" placeholder="Search for Technician Name"
+              class="form-input search-input" />
           </div>
           <div class="filter-pills" role="tablist" aria-label="Filter job type">
-            <button
-              class="btn btn-sm"
-              :class="jobTypeFilter === 'all' ? 'btn-primary' : 'btn-outline'"
-              @click="jobTypeFilter = 'all'"
-            >
+            <button class="btn btn-sm" :class="jobTypeFilter === 'all' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'all'">
               All ({{ jobTypeCounts.all }})
             </button>
-            <button
-              class="btn btn-sm"
-              :class="jobTypeFilter === 'sr' ? 'btn-primary' : 'btn-outline'"
-              @click="jobTypeFilter = 'sr'"
-            >
+            <button class="btn btn-sm" :class="jobTypeFilter === 'sr' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'sr'">
               Requests ({{ jobTypeCounts.sr }})
             </button>
-            <button
-              class="btn btn-sm"
-              :class="jobTypeFilter === 'do' ? 'btn-primary' : 'btn-outline'"
-              @click="jobTypeFilter = 'do'"
-            >
+            <button class="btn btn-sm" :class="jobTypeFilter === 'do' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'do'">
               Deliveries ({{ jobTypeCounts.do }})
             </button>
-            <button
-              class="btn btn-sm"
-              :class="jobTypeFilter === 'visit' ? 'btn-primary' : 'btn-outline'"
-              @click="jobTypeFilter = 'visit'"
-            >
+            <button class="btn btn-sm" :class="jobTypeFilter === 'visit' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'visit'">
               Visits ({{ jobTypeCounts.visit }})
             </button>
           </div>
@@ -1274,53 +1215,31 @@ async function confirmAssign() {
             <div class="tech-name">
               <span class="tech-avatar">{{ techInitials(t) }}</span>
               <span class="tech-label">{{ techName(t) }}</span>
-              <span
-                class="tech-status"
-                :class="{
-                  online:
-                    !isTechnicianBusy(t.id) &&
-                    String((t as any).status || 'AVAILABLE').toLowerCase() ===
-                      'available',
-                  busy: isTechnicianBusy(t.id),
-                }"
-              >
+              <span class="tech-status" :class="{
+                online:
+                  !isTechnicianBusy(t.id) &&
+                  String((t as any).status || 'AVAILABLE').toLowerCase() ===
+                  'available',
+                busy: isTechnicianBusy(t.id),
+              }">
                 {{
                   isTechnicianBusy(t.id)
                     ? "BUSY"
                     : (t as any).status || "AVAILABLE"
                 }}
               </span>
-              <span class="tech-count"
-                >{{ getFilteredJobsForTech(t.id).length
-                }}<template v-if="jobTypeFilter !== 'all'"
-                  >/{{ getJobsForTech(t.id).length }}</template
-                >
+              <span class="tech-count">{{ getFilteredJobsForTech(t.id).length
+              }}<template v-if="jobTypeFilter !== 'all'">/{{ getJobsForTech(t.id).length }}</template>
                 {{
                   getFilteredJobsForTech(t.id).length === 1 ? "job" : "jobs"
-                }}</span
-              >
+                }}</span>
             </div>
 
-            <div
-              class="tech-lane"
-              :class="{ 'drag-over': dragOverTechId === t.id }"
-              @dragover.prevent="onDragOver(t.id)"
-              @dragleave="onDragLeave"
-              @drop="onDrop(t.id)"
-            >
-              <div
-                class="lane-empty"
-                v-if="getFilteredJobsForTech(t.id).length === 0"
-              >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                >
+            <div class="tech-lane" :class="{ 'drag-over': dragOverTechId === t.id }"
+              @dragover.prevent="onDragOver(t.id)" @dragleave="onDragLeave" @drop="onDrop(t.id)">
+              <div class="lane-empty" v-if="getFilteredJobsForTech(t.id).length === 0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                  stroke-linecap="round">
                   <path d="M12 5v14M5 12h14" />
                 </svg>
                 <span>{{
@@ -1332,15 +1251,8 @@ async function confirmAssign() {
                 }}</span>
               </div>
 
-              <div
-                v-for="job in getFilteredJobsForTech(t.id)"
-                :key="job.id"
-                class="job-card assigned"
-                role="button"
-                tabindex="0"
-                @click="openJobDetail(job)"
-                @keydown.enter="openJobDetail(job)"
-              >
+              <div v-for="job in getFilteredJobsForTech(t.id)" :key="job.id" class="job-card assigned" role="button"
+                tabindex="0" @click="openJobDetail(job)" @keydown.enter="openJobDetail(job)">
                 <div class="ac-row">
                   <span class="ref-no">{{
                     job.service_request_no ||
@@ -1353,40 +1265,18 @@ async function confirmAssign() {
                   </span>
                 </div>
                 <div class="ac-row muted">
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="17" rx="2" />
                     <path d="M8 2v4M16 2v4M3 10h18" />
                   </svg>
-                  <span v-if="isDeliveryJob(job)"
-                    >🚚 Delivery
-                    {{ formatFullDate(jobDeliveryDate(job)) }}</span
-                  >
-                  <span v-else-if="isVisitJob(job)"
-                    >🔧 Visit {{ formatFullDate(visitDateOf(job)) }}</span
-                  >
-                  <span v-else
-                    >🗓 Scheduled {{ formatFullDate(job.scheduled_date) }}</span
-                  >
+                  <span v-if="isDeliveryJob(job)">🚚 Delivery
+                    {{ formatFullDate(jobDeliveryDate(job)) }}</span>
+                  <span v-else-if="isVisitJob(job)">🔧 Visit {{ formatFullDate(visitDateOf(job)) }}</span>
+                  <span v-else>🗓 Scheduled {{ formatFullDate(job.scheduled_date) }}</span>
                   <span class="ac-dot">·</span>
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                     <polyline points="9 22 9 12 15 12 15 22" />
                   </svg>
@@ -1399,28 +1289,13 @@ async function confirmAssign() {
                   }}</span>
                 </div>
                 <div class="ac-row muted" style="margin-top: 4px">
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path
-                      v-if="isDeliveryJob(job)"
-                      d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"
-                    ></path>
-                    <path
-                      v-if="isDeliveryJob(job)"
-                      d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
-                    ></path>
-                    <path
-                      v-if="!isDeliveryJob(job)"
-                      d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"
-                    ></path>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path v-if="isDeliveryJob(job)" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path v-if="isDeliveryJob(job)" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    <path v-if="!isDeliveryJob(job)"
+                      d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z">
+                    </path>
                   </svg>
                   <span>{{
                     isDeliveryJob(job)
@@ -1429,60 +1304,27 @@ async function confirmAssign() {
                         ? "Visit · Copier Report"
                         : "Service Request"
                   }}</span>
-                  <span
-                    v-if="isDeliveryJob(job) && doItemsCount(job) > 0"
-                    class="ac-dot"
-                    >·</span
-                  >
-                  <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0"
-                    >{{ doItemsCount(job) }} item{{
-                      doItemsCount(job) > 1 ? "s" : ""
-                    }}</span
-                  >
+                  <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0" class="ac-dot">·</span>
+                  <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0">{{ doItemsCount(job) }} item{{
+                    doItemsCount(job) > 1 ? "s" : ""
+                  }}</span>
                 </div>
-                <div
-                  v-if="isDeliveryJob(job) && jobDoAddress(job)"
-                  class="ac-row muted"
-                  style="margin-top: 4px"
-                >
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
+                <div v-if="isDeliveryJob(job) && jobDoAddress(job)" class="ac-row muted" style="margin-top: 4px">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                     <circle cx="12" cy="10" r="3" />
                   </svg>
                   <span class="ac-company">{{ jobDoAddress(job) }}</span>
                 </div>
                 <div class="ac-row muted" style="margin-top: 4px">
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path
-                      v-if="job.taskType === 'do'"
-                      d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"
-                    ></path>
-                    <path
-                      v-if="job.taskType === 'do'"
-                      d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
-                    ></path>
-                    <path
-                      v-if="job.taskType === 'sr'"
-                      d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"
-                    ></path>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path v-if="job.taskType === 'do'" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                    <path v-if="job.taskType === 'do'" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    <path v-if="job.taskType === 'sr'"
+                      d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z">
+                    </path>
                   </svg>
                   <span>{{
                     job.taskType === "do"
@@ -1500,12 +1342,8 @@ async function confirmAssign() {
     </div>
 
     <!-- Job Order / Service Request detail -->
-    <FormModal
-      :open="!!selectedJob || !!selectedRequest"
-      :title="selectedJob ? 'Job Order Details' : 'Service Request Details'"
-      max-width="560px"
-      @close="closeDetail"
-    >
+    <FormModal :open="!!selectedJob || !!selectedRequest"
+      :title="selectedJob ? (selectedJob.taskType === 'maintenance' ? 'Maintenance Details' : 'Job Order Details') : (selectedRequest?.taskType === 'maintenance' ? 'Maintenance Details' : 'Service Request Details')" max-width="560px" @close="closeDetail">
       <template v-if="selectedJob">
         <div class="detail-hero">
           <div class="detail-hero-main">
@@ -1519,17 +1357,12 @@ async function confirmAssign() {
             </span>
           </div>
           <span class="detail-hero-scheduled">
-            <template v-if="isDeliveryJob(selectedJob)"
-              >🚚 Delivery
-              {{ formatFullDate(jobDeliveryDate(selectedJob)) }}</template
-            >
-            <template v-else-if="isVisitJob(selectedJob)"
-              >🔧 Visit {{ formatFullDate(visitDateOf(selectedJob)) }}</template
-            >
-            <template v-else
-              >🗓 Scheduled
-              {{ formatFullDate(selectedJob.scheduled_date) }}</template
-            >
+            <template v-if="isDeliveryJob(selectedJob)">🚚 Delivery
+              {{ formatFullDate(jobDeliveryDate(selectedJob)) }}</template>
+            <template v-else-if="isVisitJob(selectedJob)">🔧 Visit {{ formatFullDate(visitDateOf(selectedJob))
+            }}</template>
+            <template v-else>🗓 Scheduled
+              {{ formatFullDate(selectedJob.scheduled_date) }}</template>
           </span>
         </div>
 
@@ -1641,10 +1474,7 @@ async function confirmAssign() {
                   : "-"
               }}</span>
             </div>
-            <div
-              class="detail-item"
-              v-if="selectedJob.service_report.service_date"
-            >
+            <div class="detail-item" v-if="selectedJob.service_report.service_date">
               <span class="detail-label">Visit Date</span>
               <span class="detail-value">{{
                 formatFullDate(selectedJob.service_report.service_date)
@@ -1683,54 +1513,36 @@ async function confirmAssign() {
                 formatFullDate(selectedJob.delivery_order.delivery_date)
               }}</span>
             </div>
-            <div
-              class="detail-item"
-              v-if="selectedJob.delivery_order.recipient_name"
-            >
+            <div class="detail-item" v-if="selectedJob.delivery_order.recipient_name">
               <span class="detail-label">Recipient</span>
-              <span class="detail-value"
-                >{{ selectedJob.delivery_order.recipient_name
-                }}{{
+              <span class="detail-value">{{ selectedJob.delivery_order.recipient_name
+              }}{{
                   selectedJob.delivery_order.recipient_phone
                     ? ` (${selectedJob.delivery_order.recipient_phone})`
                     : ""
-                }}</span
-              >
+                }}</span>
             </div>
-            <div
-              class="detail-item wide"
-              v-if="selectedJob.delivery_order.delivery_address"
-            >
+            <div class="detail-item wide" v-if="selectedJob.delivery_order.delivery_address">
               <span class="detail-label">Delivery Address</span>
               <span class="detail-value">{{
                 selectedJob.delivery_order.delivery_address
               }}</span>
             </div>
           </div>
-          <div
-            v-if="
-              (selectedJob.delivery_order.delivery_order_items || []).length > 0
-            "
-            style="margin-top: 8px"
-          >
+          <div v-if="
+            (selectedJob.delivery_order.delivery_order_items || []).length > 0
+          " style="margin-top: 8px">
             <div class="detail-label" style="margin-bottom: 6px">
               Items ({{
                 (selectedJob.delivery_order.delivery_order_items || []).length
               }})
             </div>
-            <div
-              v-for="(it, iIdx) in selectedJob.delivery_order
-                .delivery_order_items"
-              :key="iIdx"
-              class="detail-item"
-              style="
+            <div v-for="(it, iIdx) in selectedJob.delivery_order
+              .delivery_order_items" :key="iIdx" class="detail-item" style="
                 padding: 6px 0;
                 border-top: 1px dashed var(--color-border-light);
-              "
-            >
-              <span class="detail-value"
-                >{{ Number(iIdx) + 1 }}. {{ doItemLabel(it) }}</span
-              >
+              ">
+              <span class="detail-value">{{ Number(iIdx) + 1 }}. {{ doItemLabel(it) }}</span>
             </div>
           </div>
         </div>
@@ -1776,10 +1588,7 @@ async function confirmAssign() {
           </p>
         </div>
 
-        <div
-          class="detail-section"
-          v-if="selectedJob.instructions || selectedJob.action"
-        >
+        <div class="detail-section" v-if="selectedJob.instructions || selectedJob.action">
           <div class="detail-section-title">Instructions / Action</div>
           <p class="detail-text">
             {{ selectedJob.instructions || selectedJob.action }}
@@ -1791,6 +1600,7 @@ async function confirmAssign() {
         <div class="detail-hero">
           <div class="detail-hero-main">
             <span class="detail-hero-id">{{
+              selectedRequest.service_request_no ||
               selectedRequest.request_no ||
               selectedRequest.do_number ||
               selectedRequest.report_no
@@ -1799,9 +1609,7 @@ async function confirmAssign() {
               String(selectedRequest.status || "-").replace("_", " ")
             }}</span>
           </div>
-          <span class="detail-hero-scheduled"
-            >Created {{ formatFullDate(selectedRequest.created_at) }}</span
-          >
+          <span class="detail-hero-scheduled">Created {{ formatFullDate(selectedRequest.created_at) }}</span>
         </div>
 
         <div class="detail-grid">
@@ -1810,8 +1618,8 @@ async function confirmAssign() {
             <span class="detail-value">{{
               formatFullDate(
                 selectedRequest.request_date ||
-                  selectedRequest.delivery_date ||
-                  selectedRequest.service_date,
+                selectedRequest.delivery_date ||
+                selectedRequest.service_date,
               )
             }}</span>
           </div>
@@ -1849,10 +1657,7 @@ async function confirmAssign() {
           </div>
         </div>
 
-        <div
-          class="detail-section"
-          v-if="selectedRequest.taskType === 'visit' && selectedRequest.unit"
-        >
+        <div class="detail-section" v-if="selectedRequest.taskType === 'visit' && selectedRequest.unit">
           <div class="detail-section-title">Unit</div>
           <p class="detail-text">
             {{ selectedRequest.unit.model || "Unit"
@@ -1868,9 +1673,9 @@ async function confirmAssign() {
           <div class="detail-section-title">Problem / Notes</div>
           <p class="detail-text">
             {{
+              selectedRequest.problem ||
               selectedRequest.problem_description ||
               selectedRequest.notes ||
-              selectedRequest.problem ||
               selectedRequest.machine_problem ||
               "-"
             }}
@@ -1884,18 +1689,12 @@ async function confirmAssign() {
     </FormModal>
 
     <!-- Assign Confirmation Modal -->
-    <FormModal
-      :open="showAssignModal"
-      :title="
-        assignTarget?.task?.taskType === 'do'
-          ? 'Assign Delivery Order'
-          : assignTarget?.task?.taskType === 'visit'
-            ? 'Assign Visit'
-            : 'Assign Service Request'
-      "
-      max-width="480px"
-      @close="cancelAssign"
-    >
+    <FormModal :open="showAssignModal" :title="assignTarget?.task?.taskType === 'do'
+      ? 'Assign Delivery Order'
+      : assignTarget?.task?.taskType === 'visit'
+        ? 'Assign Visit'
+        : 'Assign Service Request'
+      " max-width="480px" @close="cancelAssign">
       <div v-if="assignTarget" class="assign-modal-body">
         <div class="assign-info">
           <div class="assign-info-row">
@@ -1922,36 +1721,18 @@ async function confirmAssign() {
           </div>
         </div>
 
-        <div
-          class="form-group mt-lg"
-          v-if="assignTarget.task.taskType === 'do'"
-        >
-          <label class="form-label"
-            >Delivery Date <span class="text-danger">*</span></label
-          >
-          <input
-            type="datetime-local"
-            v-model="assignDeliveryDate"
-            class="form-input"
-          />
+        <div class="form-group mt-lg" v-if="assignTarget.task.taskType === 'do'">
+          <label class="form-label">Delivery Date <span class="text-danger">*</span></label>
+          <input type="datetime-local" v-model="assignDeliveryDate" class="form-input" />
           <p class="assign-hint">
             Atur tanggal dan waktu pengantaran. Default: tanggal DO yang sudah
             ada.
           </p>
         </div>
 
-        <div
-          class="form-group mt-lg"
-          v-else-if="assignTarget.task.taskType === 'visit'"
-        >
-          <label class="form-label"
-            >Visit Date <span class="text-danger">*</span></label
-          >
-          <input
-            type="datetime-local"
-            v-model="assignVisitDate"
-            class="form-input"
-          />
+        <div class="form-group mt-lg" v-else-if="assignTarget.task.taskType === 'visit'">
+          <label class="form-label">Visit Date <span class="text-danger">*</span></label>
+          <input type="datetime-local" v-model="assignVisitDate" class="form-input" />
           <p class="assign-hint">
             Atur tanggal kunjungan teknisi untuk pengisian copier report. Assign
             visit tidak mengubah service request.
@@ -1959,14 +1740,8 @@ async function confirmAssign() {
         </div>
 
         <div class="form-group mt-lg" v-else>
-          <label class="form-label"
-            >Scheduled Date <span class="text-danger">*</span></label
-          >
-          <input
-            type="datetime-local"
-            v-model="assignScheduledDate"
-            class="form-input"
-          />
+          <label class="form-label">Scheduled Date <span class="text-danger">*</span></label>
+          <input type="datetime-local" v-model="assignScheduledDate" class="form-input" />
           <p class="assign-hint">
             Atur tanggal dan waktu penjadwalan servis. Default: hari ini.
           </p>
@@ -1974,18 +1749,10 @@ async function confirmAssign() {
       </div>
 
       <template #footer>
-        <button
-          class="btn btn-outline"
-          :disabled="isAssigning"
-          @click="cancelAssign"
-        >
+        <button class="btn btn-outline" :disabled="isAssigning" @click="cancelAssign">
           Cancel
         </button>
-        <button
-          class="btn btn-primary"
-          :disabled="isAssigning"
-          @click="confirmAssign"
-        >
+        <button class="btn btn-primary" :disabled="isAssigning" @click="confirmAssign">
           {{ isAssigning ? "Assigning..." : "Confirm Assign" }}
         </button>
       </template>
@@ -2522,9 +2289,9 @@ async function confirmAssign() {
   -webkit-box-orient: vertical;
 }
 
-.card-body > .card-customer + .card-address,
-.card-body > .card-customer + .card-recipient,
-.card-body > .card-address + .card-recipient {
+.card-body>.card-customer+.card-address,
+.card-body>.card-customer+.card-recipient,
+.card-body>.card-address+.card-recipient {
   margin-top: 4px;
 }
 

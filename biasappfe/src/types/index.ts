@@ -54,6 +54,7 @@ export interface Customer {
 }
 
 export interface Technician {
+  user: any;
   id: string | number;
   name: string;
   phone: string;

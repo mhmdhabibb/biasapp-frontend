@@ -32,6 +32,7 @@ const {
   findCustomer,
   findTechnician,
   findProduct,
+  findUnit,
   findServiceReport,
 } = useMasterStore()
 
@@ -178,6 +179,44 @@ function doTypeLabel(type: string | undefined): string {
 
 function printDO(item: any) {
   printDeliveryServiceHistory(item)
+}
+
+// ── DO Detail Modal ─────────────────────────────────────────────────────────
+const showDoDetail = ref(false)
+const doDetailItem = ref<any>(null)
+
+function openDoDetail(row: any) {
+  doDetailItem.value = row
+  showDoDetail.value = true
+}
+
+function getDoItemName(item: any): string {
+  if (item.product?.name) return item.product.name
+  if (item.product_id) return findProduct(item.product_id as any)?.name || `Product ${item.product_id}`
+  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_number ? ` (SN: ${item.unit.serial_number})` : ''}`
+  if (item.unit_id) {
+    const unit = findUnit(item.unit_id as any)
+    return unit ? `${unit.model}${(unit as any).serial_number ? ` (SN: ${(unit as any).serial_number})` : ''}` : `Unit ${item.unit_id}`
+  }
+  return '-'
+}
+
+// ── SR Detail Modal ─────────────────────────────────────────────────────────
+const showSrDetail = ref(false)
+const srDetailItem = ref<any>(null)
+
+function openSrDetail(row: any) {
+  srDetailItem.value = row
+  showSrDetail.value = true
+}
+
+function getSrUnitName(item: any): string {
+  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_number ? ` (SN: ${item.unit.serial_number})` : ''}`
+  if (item.unit_id) {
+    const unit = findUnit(item.unit_id as any)
+    return unit ? `${unit.model}${(unit as any).serial_number ? ` (SN: ${(unit as any).serial_number})` : ''}` : `Unit ${item.unit_id}`
+  }
+  return '-'
 }
 
 const columns: TableColumn[] = [
@@ -393,6 +432,9 @@ function printTable() {
       </button>
     </div>
     <DataTable v-if="activeTab === 'service'" :columns="columns" :data="serviceOnlyReports" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
+      <template #cell-report_no="{ value, row }">
+        <span class="sr-link" @click="openSrDetail(row)">{{ value || row.service_report_no || '-' }}</span>
+      </template>
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
@@ -433,6 +475,9 @@ function printTable() {
       </template>
     </DataTable>
     <DataTable v-if="activeTab === 'delivery'" :columns="doColumns" :data="deliveryHistories" search-placeholder="Search delivery history...">
+      <template #cell-do_number="{ value, row }">
+        <span class="do-link" @click="openDoDetail(row)">{{ value }}</span>
+      </template>
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-do_type="{ value }">{{ doTypeLabel(value) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
@@ -452,6 +497,156 @@ function printTable() {
         </button>
       </template>
     </DataTable>
+
+    <!-- SR Detail Modal -->
+    <FormModal :open="showSrDetail" :title="srDetailItem ? `Detail ${srDetailItem.report_no || srDetailItem.service_report_no}` : 'Detail Service Report'" max-width="640px" @close="showSrDetail = false">
+      <template v-if="srDetailItem">
+        <div class="detail-grid">
+          <div class="detail-field">
+            <span>Report No.</span>
+            <strong>{{ srDetailItem.report_no || srDetailItem.service_report_no }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Service Type</span>
+            <strong>{{ srDetailItem.service_type || '-' }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Customer</span>
+            <strong>{{ customerName(srDetailItem.customer_id) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Technician</span>
+            <strong>{{ technicianName(srDetailItem.technician_id) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Product / Unit</span>
+            <strong>{{ getSrUnitName(srDetailItem) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Visit Date</span>
+            <strong>{{ srDetailItem.service_date ? new Date(srDetailItem.service_date).toLocaleDateString('en-GB') : '-' }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Status</span>
+            <strong>
+              <span class="badge" :class="srDetailItem.status === 'completed' ? 'badge-success' : srDetailItem.status === 'in_progress' ? 'badge-info' : 'badge-warning'">
+                {{ String(srDetailItem.status === 'open' ? 'Open' : srDetailItem.status === 'in_progress' ? 'In Progress' : srDetailItem.status === 'completed' ? 'Completed' : srDetailItem.status || '-').replace('_', ' ') }}
+              </span>
+            </strong>
+          </div>
+          <div v-if="srDetailItem.delivery_address" class="detail-field detail-field--wide">
+            <span>Delivery Address</span>
+            <strong>{{ srDetailItem.delivery_address }}</strong>
+          </div>
+          <div v-if="srDetailItem.machine_problem" class="detail-field detail-field--wide">
+            <span>Machine Problem</span>
+            <strong>{{ srDetailItem.machine_problem }}</strong>
+          </div>
+          <div v-if="srDetailItem.repair_action" class="detail-field detail-field--wide">
+            <span>Repair Action</span>
+            <strong>{{ srDetailItem.repair_action }}</strong>
+          </div>
+          <div v-if="srDetailItem.remarks" class="detail-field detail-field--wide">
+            <span>Remarks</span>
+            <strong>{{ srDetailItem.remarks }}</strong>
+          </div>
+        </div>
+        <section class="detail-items" v-if="srDetailItem.spareparts && srDetailItem.spareparts.length > 0">
+          <h4>Spareparts Used</h4>
+          <div class="detail-items-table-wrap">
+            <table class="detail-items-table">
+              <thead>
+                <tr><th>Sparepart</th><th>Qty</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(sp, index) in srDetailItem.spareparts" :key="index">
+                  <td>{{ sp.product?.name || findProduct(sp.product_id as any)?.name || `Product ${sp.product_id}` }}</td>
+                  <td>{{ sp.qty }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showSrDetail = false">Close</button>
+      </template>
+    </FormModal>
+
+    <!-- DO Detail Modal -->
+    <FormModal :open="showDoDetail" :title="doDetailItem ? `Detail ${doDetailItem.do_number}` : 'Detail Delivery Order'" max-width="640px" @close="showDoDetail = false">
+      <template v-if="doDetailItem">
+        <div class="detail-grid">
+          <div class="detail-field">
+            <span>DO Number</span>
+            <strong>{{ doDetailItem.do_number }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Type</span>
+            <strong>{{ doTypeLabel(doDetailItem.do_type) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Customer</span>
+            <strong>{{ customerName(doDetailItem.customer_id) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Technician</span>
+            <strong>{{ technicianName(doDetailItem.technician_id) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Delivery Date</span>
+            <strong>{{ doDetailItem.delivery_date ? new Date(doDetailItem.delivery_date).toLocaleDateString('en-GB') : '-' }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Status</span>
+            <strong>
+              <span class="badge" :class="doDetailItem.status === 'delivered' ? 'badge-success' : doDetailItem.status === 'in_transit' ? 'badge-info' : 'badge-warning'">
+                {{ String(doDetailItem.status || '-').replace('_', ' ') }}
+              </span>
+            </strong>
+          </div>
+          <div class="detail-field">
+            <span>Recipient</span>
+            <strong>{{ doDetailItem.recipient_name || '-' }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Phone</span>
+            <strong>{{ doDetailItem.recipient_phone || '-' }}</strong>
+          </div>
+          <div v-if="doDetailItem.delivery_address" class="detail-field detail-field--wide">
+            <span>Delivery Address</span>
+            <strong>{{ doDetailItem.delivery_address }}</strong>
+          </div>
+          <div v-if="doDetailItem.notes" class="detail-field detail-field--wide">
+            <span>Notes</span>
+            <strong>{{ doDetailItem.notes }}</strong>
+          </div>
+        </div>
+        <section class="detail-items">
+          <h4>Products / Items</h4>
+          <div class="detail-items-table-wrap">
+            <table class="detail-items-table">
+              <thead>
+                <tr><th>Item</th><th>Qty</th><th>Remarks</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, index) in doDetailItem.delivery_order_items || []" :key="item.id || index">
+                  <td>{{ getDoItemName(item) }}</td>
+                  <td>{{ item.qty || 1 }}</td>
+                  <td>{{ item.remarks || '-' }}</td>
+                </tr>
+                <tr v-if="!doDetailItem.delivery_order_items?.length">
+                  <td colspan="3" class="detail-items-empty">No delivery items</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showDoDetail = false">Close</button>
+      </template>
+    </FormModal>
     <!-- Sparepart Requests Tab -->
     <DataTable v-if="activeTab === 'sparepart'" :columns="sprColumns" :data="sparepartRequests" permission="service_sparepart" search-placeholder="Search requests...">
       <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
@@ -644,5 +839,88 @@ function printTable() {
 }
 .mt-3 {
   margin-top: 1rem;
+}
+
+/* DO & SR Detail Link */
+.do-link, .sr-link {
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s, text-decoration 0.15s;
+}
+.do-link:hover, .sr-link:hover {
+  color: var(--color-primary-hover, #2563eb);
+  text-decoration: underline;
+}
+
+/* DO Detail Modal */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.detail-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+}
+.detail-field span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+.detail-field strong {
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.detail-field--wide {
+  grid-column: 1 / -1;
+}
+.detail-items {
+  margin-top: 16px;
+}
+.detail-items h4 {
+  margin: 0 0 10px;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.detail-items-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+}
+.detail-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.detail-items-table th,
+.detail-items-table td {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--color-border-light);
+  text-align: left;
+}
+.detail-items-table th {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+}
+.detail-items-table tr:last-child td {
+  border-bottom: 0;
+}
+.detail-items-empty {
+  color: var(--color-text-muted);
+  text-align: center !important;
+}
+@media (max-width: 520px) {
+  .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>
