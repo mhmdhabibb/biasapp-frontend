@@ -470,6 +470,104 @@ function servicePhotosBody(item: any): string {
   `;
 }
 
+/* =========================================================
+   PHOTO DOKUMENTASI — satu halaman, tabel multi-row
+   Kolom: No | Project Name | Model/Type | Serial Number |
+           Repair Action | Foto Problem | Foto At-Service
+   ========================================================= */
+function photoDokumentasiBody(items: any[]): string {
+  const masterStore = useMasterStore();
+
+  const rows = items.map((item: any, idx: number) => {
+    const u: any = masterStore.findUnit(item.unit_id) || item.unit || {};
+    const brand: any = masterStore.findBrand(u.brand_id);
+    const modelType = [brand?.name, u.model].filter(Boolean).join(" ") || "-";
+    const serialNo = u.serial_no || u.serial_number || "-";
+    const projectName = item.project_name || "-";
+    const repairAction = item.repair_action || "-";
+
+    const photoBefore = item.photo_before
+      ? `<img src="${item.photo_before}" style="max-width:100%; max-height:120px; object-fit:cover; display:block; margin:0 auto;" />`
+      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0;">No Photo</div>`;
+
+    const photoAfter = item.photo_after
+      ? `<img src="${item.photo_after}" style="max-width:100%; max-height:120px; object-fit:cover; display:block; margin:0 auto;" />`
+      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0;">No Photo</div>`;
+
+    return `
+      <tr>
+        <td class="pd-center">${idx + 1}</td>
+        <td>${projectName}</td>
+        <td>${modelType}</td>
+        <td>${serialNo}</td>
+        <td>${repairAction}</td>
+        <td class="pd-photo">${photoBefore}</td>
+        <td class="pd-photo">${photoAfter}</td>
+      </tr>`;
+  }).join("");
+
+  // Get surat pesanan no from first item if available
+  const firstItem = items[0] || {};
+  const spNo = firstItem.report_no || firstItem.service_report_no || "";
+
+  return `
+    <div class="pd-container">
+      ${companyHeaderHtml}
+      <div class="pd-title">PHOTO DOKUMENTASI</div>
+      <div class="pd-subtitle">SURAT PESANAN NO : ${spNo}</div>
+      <table class="pd-table">
+        <thead>
+          <tr>
+            <th class="pd-th pd-center" style="width:4%;">No</th>
+            <th class="pd-th" style="width:16%;">Project Name</th>
+            <th class="pd-th" style="width:16%;">Model/Type</th>
+            <th class="pd-th" style="width:14%;">Serial Number</th>
+            <th class="pd-th" style="width:20%;">Repair Action</th>
+            <th class="pd-th pd-center" style="width:15%;">Foto Dokumentasi Problem</th>
+            <th class="pd-th pd-center" style="width:15%;">Foto dokumentasi at-service</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+const PD_CSS = `
+  .pd-container { max-width: 820px; margin: 0 auto; font-family: Arial, sans-serif; font-size: 10px; color: #000; }
+  .pd-title { text-align: center; font-size: 14px; font-weight: bold; margin: 10px 0 2px; letter-spacing: 1px; }
+  .pd-subtitle { text-align: center; font-size: 10px; font-weight: bold; margin-bottom: 10px; text-decoration: underline; }
+  .pd-table { width: 100%; border-collapse: collapse; }
+  .pd-th { background: #4da6ff; color: #000; font-weight: bold; font-size: 9px; text-align: center; border: 1px solid #000; padding: 5px 4px; }
+  .pd-table td { border: 1px solid #000; padding: 5px 6px; vertical-align: middle; font-size: 9px; }
+  .pd-center { text-align: center; }
+  .pd-photo { padding: 4px; text-align: center; }
+  @media print {
+    @page { margin: 8mm; size: A4 landscape; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+`;
+
+function wrapDokumentasiDocument(body: string, autoPrint: boolean): string {
+  const printScript = autoPrint
+    ? `<script>window.onload = function() { setTimeout(function() { window.print(); }, 600); }<\/script>`
+    : "";
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${CSS}${PD_CSS}</style></head><body>${body}${printScript}</body></html>`;
+}
+
+/** Print Photo Dokumentasi untuk satu atau banyak service report sekaligus */
+export function printPhotoDokumentasi(items: any | any[]) {
+  const arr = Array.isArray(items) ? items : [items];
+  const body = photoDokumentasiBody(arr);
+  const html = wrapDokumentasiDocument(body, true);
+  const win = window.open("", "_blank");
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  }
+}
+
 export type ReportType = 'technical' | 'history' | 'copier';
 
 /**

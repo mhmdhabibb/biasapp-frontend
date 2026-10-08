@@ -122,6 +122,7 @@ const form = reactive({
   request_no: `REQ-${Date.now().toString().slice(-6)}`,
   customer_id: "",
   unit_ids: [] as string[],
+  project_name: "",
   problem_description: "",
   request_date: new Date().toISOString().slice(0, 10),
   external_brand: "",
@@ -163,6 +164,7 @@ function resetCreateForm(tab: "internal" | "external" = listTab.value) {
     request_no: newRequestNo(tab),
     customer_id: "",
     unit_ids: [],
+    project_name: "",
     problem_description: "",
     request_date: new Date().toISOString().slice(0, 10),
     external_brand: "",
@@ -205,6 +207,7 @@ async function submitExternalRequest() {
     external_model: form.external_model,
     external_serial_no: form.external_serial_no,
     external_note: form.external_note,
+    project_name: form.project_name,
     problem_description: form.problem_description,
     request_date: new Date(form.request_date).toISOString(),
   };
@@ -504,6 +507,7 @@ async function handleSubmit() {
     request_no: form.request_no,
     customer_id: form.customer_id,
     unit_id: form.unit_ids.length > 0 ? form.unit_ids[0] : null,
+    project_name: form.project_name,
     problem_description: form.problem_description,
     request_date: new Date(form.request_date).toISOString(),
   };
@@ -897,6 +901,11 @@ onMounted(() => {
             </span>
           </div>
         </div>
+      </div>
+
+      <div class="form-group mt-3">
+        <label class="form-label">Project Name</label>
+        <input v-model="form.project_name" type="text" class="form-input" placeholder="e.g. Pemeliharaan Printer Kantor A" />
       </div>
 
       <div class="form-group mt-3">

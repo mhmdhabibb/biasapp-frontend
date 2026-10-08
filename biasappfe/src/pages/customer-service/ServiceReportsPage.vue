@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
@@ -206,16 +206,19 @@ function getDoItemName(item: any): string {
 const showSrDetail = ref(false)
 const srDetailItem = ref<any>(null)
 const isLoadingDetail = ref(false)
+const srPhotoZoom = ref<string | null>(null)
 
 async function openSrDetail(row: any) {
+  // Show modal immediately with list data so it's never empty
+  srDetailItem.value = row
   showSrDetail.value = true
-  srDetailItem.value = null
   isLoadingDetail.value = true
   try {
     const res: any = await api.get(`/service-reports/${row.id}`)
-    srDetailItem.value = res.data.data
+    // Support both { data: { data: ... } } and { data: ... } response shapes
+    srDetailItem.value = res.data?.data ?? res.data ?? row
   } catch (err) {
-    srDetailItem.value = row // Fallback to list data if API fails
+    // Keep row as fallback; already set above
     toast.error('Failed to load full detail')
   } finally {
     isLoadingDetail.value = false
@@ -278,6 +281,35 @@ const form = reactive({
 })
 
 const defaultForm = { ...form }
+
+// Auto-fill project name from contract item placement_location or customer name
+watch(
+  () => [form.unit_id, form.customer_id] as const,
+  ([unitId, customerId]) => {
+    // Only auto-fill when adding new (not editing existing)
+    if (editingItem.value) return
+
+    if (unitId) {
+      // Find contract item linked to this unit
+      const ci = (contractItems.value as any[]).find(
+        (c: any) => String(c.unit_id) === String(unitId)
+      )
+      if (ci?.placement_location) {
+        form.project_name = ci.placement_location
+        return
+      }
+    }
+
+    // Fallback: use customer name if no contract placement found
+    if (customerId) {
+      const c = findCustomer(customerId as any)
+      if (c) {
+        form.project_name = (c as any).company_name || (c as any).name || ''
+        return
+      }
+    }
+  }
+)
 
 function openAdd() {
   editingItem.value = null
@@ -368,7 +400,7 @@ function technicianName(id: any): string {
   return t ? t.user?.name || t.name || '-' : '-'
 }
 
-import { printServiceReport, printMultipleServiceReports, type ReportType } from '@/utils/printReport'
+import { printServiceReport, printMultipleServiceReports, printPhotoDokumentasi, type ReportType } from '@/utils/printReport'
 import { isCopierReport } from '@/utils/copierReport'
 
 const printModalOpen = ref(false)
@@ -429,6 +461,10 @@ function printTable() {
         <button v-if="activeTab === 'service'" class="btn btn-outline" @click="openPrintModal(null)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
           Print / PDF
+        </button>
+        <button v-if="activeTab === 'service'" class="btn btn-outline" @click="printPhotoDokumentasi(serviceOnlyReports)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Photo Dokumentasi
         </button>
       </template>
     </PageHeader>
@@ -565,16 +601,33 @@ function printTable() {
             <span>Remarks</span>
             <strong>{{ srDetailItem.remarks }}</strong>
           </div>
-          <div v-if="srDetailItem.photo_before || srDetailItem.photo_after" class="detail-field detail-field--wide" style="margin-top: 1rem;">
-            <span>Photos</span>
-            <div style="display: flex; gap: 1rem; margin-top: 0.5rem; flex-wrap: wrap;">
-              <div v-if="srDetailItem.photo_before" style="flex: 1; min-width: 200px;">
-                <p style="font-size: 0.85rem; margin-bottom: 4px; color: var(--color-text-muted);">Before</p>
-                <img :src="srDetailItem.photo_before" alt="Photo Before" style="max-width: 100%; border-radius: 4px; border: 1px solid var(--color-border-light);" />
+        </div>
+
+        <!-- Photos Section -->
+        <div class="sr-photos-section">
+          <h4 class="sr-photos-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; vertical-align: -2px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Photos
+          </h4>
+          <div class="sr-photos-grid">
+            <div class="sr-photo-card">
+              <div class="sr-photo-label sr-photo-label--before">Before</div>
+              <div class="sr-photo-frame">
+                <img v-if="srDetailItem.photo_before" :src="srDetailItem.photo_before" alt="Photo Before" class="sr-photo-img" @click="srPhotoZoom = srDetailItem.photo_before" />
+                <div v-else class="sr-photo-empty">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <span>No photo</span>
+                </div>
               </div>
-              <div v-if="srDetailItem.photo_after" style="flex: 1; min-width: 200px;">
-                <p style="font-size: 0.85rem; margin-bottom: 4px; color: var(--color-text-muted);">After</p>
-                <img :src="srDetailItem.photo_after" alt="Photo After" style="max-width: 100%; border-radius: 4px; border: 1px solid var(--color-border-light);" />
+            </div>
+            <div class="sr-photo-card">
+              <div class="sr-photo-label sr-photo-label--after">After</div>
+              <div class="sr-photo-frame">
+                <img v-if="srDetailItem.photo_after" :src="srDetailItem.photo_after" alt="Photo After" class="sr-photo-img" @click="srPhotoZoom = srDetailItem.photo_after" />
+                <div v-else class="sr-photo-empty">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <span>No photo</span>
+                </div>
               </div>
             </div>
           </div>
@@ -597,9 +650,23 @@ function printTable() {
         </section>
       </template>
       <template #footer>
+        <button type="button" class="btn btn-outline" @click="printPhotoDokumentasi(srDetailItem)" style="margin-right: auto;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 5px; vertical-align: -2px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Photo Dokumentasi
+        </button>
         <button type="button" class="btn btn-outline" @click="showSrDetail = false">Close</button>
       </template>
     </FormModal>
+
+    <!-- Photo Lightbox -->
+    <Teleport to="body">
+      <div v-if="srPhotoZoom" class="sr-lightbox" @click="srPhotoZoom = null">
+        <button class="sr-lightbox-close" @click="srPhotoZoom = null">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <img :src="srPhotoZoom" alt="Zoom" class="sr-lightbox-img" @click.stop />
+      </div>
+    </Teleport>
 
     <!-- DO Detail Modal -->
     <FormModal :open="showDoDetail" :title="doDetailItem ? `Detail ${doDetailItem.do_number}` : 'Detail Delivery Order'" max-width="640px" @close="showDoDetail = false">
@@ -723,7 +790,8 @@ function printTable() {
       </div>
       <div class="form-group">
         <label class="form-label">Project Name</label>
-        <input v-model="form.project_name" type="text" class="form-input">
+        <input v-model="form.project_name" type="text" class="form-input" placeholder="Auto-filled from unit contract location">
+        <span class="form-hint">Otomatis dari lokasi kontrak unit. Bisa diubah manual.</span>
       </div>
       <div class="form-group">
         <label class="form-label">Reading Period</label>
@@ -848,6 +916,12 @@ function printTable() {
   grid-template-columns: 1fr 1fr;
   gap: var(--space-base);
 }
+.form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
 .form-check-group {
   display: flex;
   align-items: center;
@@ -950,5 +1024,127 @@ function printTable() {
   .detail-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Photos Section */
+.sr-photos-section {
+  margin-top: 20px;
+}
+.sr-photos-title {
+  margin: 0 0 12px;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+.sr-photos-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.sr-photo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sr-photo-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  width: fit-content;
+}
+.sr-photo-label--before {
+  background: #fff3cd;
+  color: #92620a;
+}
+.sr-photo-label--after {
+  background: #d1fae5;
+  color: #065f46;
+}
+.sr-photo-frame {
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-surface-sunken);
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sr-photo-img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+  transition: opacity 0.15s;
+}
+.sr-photo-img:hover {
+  opacity: 0.88;
+}
+.sr-photo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  padding: 24px;
+  text-align: center;
+}
+.sr-photo-empty span {
+  font-size: var(--font-size-xs);
+}
+@media (max-width: 520px) {
+  .sr-photos-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Photo Lightbox */
+.sr-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.sr-lightbox-img {
+  max-width: 90vw;
+  max-height: 88vh;
+  border-radius: 6px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  cursor: default;
+  object-fit: contain;
+}
+.sr-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sr-lightbox-close:hover {
+  background: rgba(255,255,255,0.28);
 }
 </style>

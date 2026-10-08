@@ -158,7 +158,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       <span>Manage all Delivery Orders (Inbound and Outbound).</span>
     </div>
 
-    <DataTable :columns="columns" :data="store.deliveryOrders.value" permission="delivery_order" search-placeholder="Search delivery orders...">
+    <DataTable :columns="columns" :data="store.deliveryOrders.value" permission="delivery_order" search-placeholder="Search delivery orders..." @row-click="openDetail">
       <template #cell-do_type="{ value }">
         <span class="badge badge-info">{{ (value || '').toUpperCase() }}</span>
       </template>
@@ -181,18 +181,6 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       </template>
       <template #actions="{ row }">
         <div class="action-group">
-          <button
-            v-if="can('delivery_order:read')"
-            class="action-btn"
-            title="Detail"
-            aria-label="Detail delivery order"
-            @click="openDetail(row)"
-          >
-            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          </button>
           <button
             v-if="can('delivery_order:update')"
             class="action-btn action-btn--edit"
