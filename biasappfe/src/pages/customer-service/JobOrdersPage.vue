@@ -23,8 +23,8 @@ const techStatusFilter = ref("All");
 const techStatusOptions = [{ value: "All", label: "All" }];
 const dragOverTechId = ref<string | number | null>(null);
 
-// ── Job type filter for technician lanes (Requests / Deliveries / Visits) ──
-const jobTypeFilter = ref<"all" | "sr" | "do" | "visit">("all");
+// ── Job type filter for technician lanes (Requests / Deliveries / Visits / Maintenance) ──
+const jobTypeFilter = ref<"all" | "sr" | "do" | "visit" | "maintenance">("all");
 const VISIT_JOB_TYPES = ["visit", "maintenance_visit", "meter_reading"];
 const VISIT_TERMINAL = ["completed", "done", "cancelled", "canceled"];
 
@@ -53,12 +53,17 @@ async function fetchJobOrders() {
       const isVisit =
         j.job_type === "visit" ||
         VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase());
+      const isMaintenance = 
+        (j.job_type === "service" || j.job_type === "maintenance_visit") &&
+        (j.instructions?.includes("Rutin Maintenance") ||
+          j.service_request?.problem_description?.includes("[MAINTENANCE_VISIT]"));
       const sr = j.service_request || null;
       const srpt = j.service_report || null;
       const customer =
         sr?.customer || j.delivery_order?.customer || srpt?.customer || null;
       let taskType = "sr";
       if (isDelivery) taskType = "do";
+      else if (isMaintenance) taskType = "maintenance";
       else if (isVisit) taskType = "visit";
       return {
         ...j,
@@ -350,7 +355,14 @@ function getJobsForTech(techId: string | number) {
   return [...jobs, ...dos, ...visits];
 }
 
-function getJobKind(job: any): "sr" | "do" | "visit" {
+function getJobKind(job: any): "sr" | "do" | "visit" | "maintenance" {
+  if (job?.taskType === "maintenance") return "maintenance";
+  const isMaintenance = 
+    (job?.job_type === "service" || job?.job_type === "maintenance_visit") &&
+    (job?.instructions?.includes("Rutin Maintenance") ||
+      job?.service_request?.problem_description?.includes("[MAINTENANCE_VISIT]"));
+  if (isMaintenance) return "maintenance";
+
   const jt = String(job?.job_type || "").toLowerCase();
   if (VISIT_JOB_TYPES.includes(jt)) return "visit";
   if (job?.taskType === "visit") return "visit";
@@ -371,13 +383,15 @@ function jobTypeLabel(kind: string) {
       return "Deliveries";
     case "visit":
       return "Visits";
+    case "maintenance":
+      return "Maintenance";
     default:
       return "jobs";
   }
 }
 
 const jobTypeCounts = computed(() => {
-  const counts = { all: 0, sr: 0, do: 0, visit: 0 };
+  const counts = { all: 0, sr: 0, do: 0, visit: 0, maintenance: 0 };
   const seen = new Set<string>();
   for (const t of technicians.value as any[]) {
     if (!t?.id) continue;
@@ -1206,6 +1220,10 @@ async function confirmAssign() {
             <button class="btn btn-sm" :class="jobTypeFilter === 'visit' ? 'btn-primary' : 'btn-outline'"
               @click="jobTypeFilter = 'visit'">
               Visits ({{ jobTypeCounts.visit }})
+            </button>
+            <button class="btn btn-sm" :class="jobTypeFilter === 'maintenance' ? 'btn-primary' : 'btn-outline'"
+              @click="jobTypeFilter = 'maintenance'">
+              Maintenance ({{ jobTypeCounts.maintenance }})
             </button>
           </div>
         </div>

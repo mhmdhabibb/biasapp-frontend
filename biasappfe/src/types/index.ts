@@ -123,6 +123,7 @@ export interface Product {
   price: number;
   stock: number;
   is_computer?: boolean;
+  is_sparepart?: boolean;
   specs?: string;
   created_at: string;
   updated_at: string;
