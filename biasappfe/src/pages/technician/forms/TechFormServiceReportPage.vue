@@ -29,11 +29,15 @@ const form = ref({
   technician_signature: '',
   customer_name: '',
   technician_name: '',
+  photo_before: '',
+  photo_after: '',
 })
 const isLoading = ref(true)
 const isSaving = ref(false)
 const currentStep = ref(1)
 const removedSparepartIds = ref<string[]>([])
+const fileInputBefore = ref<HTMLInputElement | null>(null)
+const fileInputAfter = ref<HTMLInputElement | null>(null)
 
 const productOptions = computed(() =>
   products.value.map((product: any) => ({ value: product.id, label: product.name })),
@@ -55,6 +59,8 @@ onMounted(async () => {
       technician_signature: job.value.technician_signature || '',
       customer_name: job.value.customer_name || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || '',
       technician_name: job.value.technician_name || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || '',
+      photo_before: job.value.photo_before || '',
+      photo_after: job.value.photo_after || '',
     }
   } catch (err: any) {
     toast.error(err.message || 'Failed to load service report')
@@ -62,6 +68,32 @@ onMounted(async () => {
     isLoading.value = false
   }
 })
+
+function handlePhoto(event: Event, type: 'before' | 'after') {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (file) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      if (type === 'before') {
+        form.value.photo_before = e.target?.result as string
+      } else {
+        form.value.photo_after = e.target?.result as string
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+}
+
+function clearPhoto(type: 'before' | 'after') {
+  if (type === 'before') {
+    form.value.photo_before = ''
+    if (fileInputBefore.value) fileInputBefore.value.value = ''
+  } else {
+    form.value.photo_after = ''
+    if (fileInputAfter.value) fileInputAfter.value.value = ''
+  }
+}
 
 async function saveRepairAction() {
   if (!form.value.repair_action.trim()) {
@@ -73,6 +105,8 @@ async function saveRepairAction() {
   try {
     await api.patch(`/service-reports/${serviceId}`, {
       repair_action: form.value.repair_action,
+      photo_before: form.value.photo_before,
+      photo_after: form.value.photo_after,
     })
     currentStep.value = 2
   } catch (err: any) {
@@ -170,7 +204,48 @@ async function saveSignatures() {
               <label class="form-label">Repair Action <span class="text-danger">*</span></label>
               <textarea v-model="form.repair_action" class="form-textarea" rows="5" placeholder="What was done to fix the problem?"></textarea>
             </div>
-            <button class="btn btn-primary w-full" :disabled="isSaving" @click="saveRepairAction">
+            
+            <div class="form-group mt-lg">
+              <label class="form-label">Photo Before Service</label>
+              <div v-if="form.photo_before" class="photo-preview mb-sm">
+                <img :src="form.photo_before" alt="Photo Before" style="max-width: 100%; max-height: 200px; border-radius: 8px;" />
+                <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('before')">Remove Photo</button>
+              </div>
+              <div v-else class="flex gap-sm mt-xs" style="display: flex; gap: 8px;">
+                <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; text-align: center; cursor: pointer; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                  Ambil Foto
+                  <input type="file" accept="image/*" capture="environment" style="display: none;" @change="e => handlePhoto(e, 'before')" ref="fileInputBefore" />
+                </label>
+                <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; text-align: center; cursor: pointer; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                  Upload Galeri
+                  <input type="file" accept="image/*" style="display: none;" @change="e => handlePhoto(e, 'before')" ref="fileInputBefore" />
+                </label>
+              </div>
+            </div>
+            
+            <div class="form-group mt-lg">
+              <label class="form-label">Photo After Service</label>
+              <div v-if="form.photo_after" class="photo-preview mb-sm">
+                <img :src="form.photo_after" alt="Photo After" style="max-width: 100%; max-height: 200px; border-radius: 8px;" />
+                <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('after')">Remove Photo</button>
+              </div>
+              <div v-else class="flex gap-sm mt-xs" style="display: flex; gap: 8px;">
+                <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; text-align: center; cursor: pointer; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                  Ambil Foto
+                  <input type="file" accept="image/*" capture="environment" style="display: none;" @change="e => handlePhoto(e, 'after')" ref="fileInputAfter" />
+                </label>
+                <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; text-align: center; cursor: pointer; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                  Upload Galeri
+                  <input type="file" accept="image/*" style="display: none;" @change="e => handlePhoto(e, 'after')" ref="fileInputAfter" />
+                </label>
+              </div>
+            </div>
+
+            <button class="btn btn-primary w-full mt-lg" :disabled="isSaving" @click="saveRepairAction">
               {{ isSaving ? 'Saving...' : 'Save & Continue to Sparepart' }}
             </button>
           </section>

@@ -8,7 +8,7 @@ import CreateJobModal from "./CreateJobModal.vue";
 import { useRouter } from "vue-router";
 import { computed, ref } from "vue";
 
-useAutoRefresh(15000, [
+useAutoRefresh(5000, [
   "jobOrders",
   "serviceReports",
   "technicians",

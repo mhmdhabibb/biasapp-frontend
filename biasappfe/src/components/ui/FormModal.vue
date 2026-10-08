@@ -77,11 +77,11 @@ onUnmounted(() => {
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   z-index: 200;
-  padding: var(--space-base);
+  padding: 40px var(--space-base);
+  overflow-y: auto;
 }
 
 .modal-content {
@@ -89,9 +89,9 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   width: 100%;
-  max-height: 90vh;
   display: flex;
   flex-direction: column;
+  margin: auto;
 }
 
 .modal-header {
@@ -129,7 +129,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: var(--space-base);
   flex: 1;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .modal-footer {

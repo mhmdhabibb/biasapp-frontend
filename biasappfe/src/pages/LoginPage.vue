@@ -346,17 +346,7 @@ async function handleSubmit() {
   }
 
   .login-left {
-    flex: none;
-    padding: var(--space-xl) var(--space-base);
-    min-height: 280px;
-  }
-
-  .left-illustration {
-    max-width: 240px;
-  }
-
-  .left-heading {
-    font-size: var(--font-size-xl);
+    display: none;
   }
 
   .login-right {

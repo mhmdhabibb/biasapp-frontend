@@ -333,4 +333,13 @@ async function submitJob() {
   color: #ef4444;
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
+
+@media (max-width: 768px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .machine-details {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

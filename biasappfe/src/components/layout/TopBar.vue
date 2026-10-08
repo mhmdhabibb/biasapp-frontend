@@ -3,15 +3,31 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useNotificationsStore } from "@/stores/notifications.store";
 import type { Notification } from "@/types";
+import { useAuth } from "@/composables/useAuth";
 
 defineProps<{ title: string; hideHamburger?: boolean }>();
 defineEmits<{ (e: "toggle-sidebar"): void }>();
 
 const router = useRouter();
 const { notifications, fetchAll, markRead } = useNotificationsStore();
+const { currentUser } = useAuth();
 const showNotif = ref(false);
+
+const filteredNotifications = computed(() => {
+  const user = currentUser.value as any;
+  const roleName = typeof user?.role === 'string' ? user.role : user?.role?.name;
+  if (roleName?.toLowerCase() === 'technician') {
+    return notifications.value.filter((n) => {
+      const type = String(n.type || '').toLowerCase();
+      const title = String(n.title || '').toLowerCase();
+      return type.includes('job') || type.includes('delivery') || type.includes('maintenance') || title.includes('job') || title.includes('delivery') || title.includes('maintenance');
+    });
+  }
+  return notifications.value;
+});
+
 const unreadCount = computed(
-  () => notifications.value.filter((item) => !item.is_read).length,
+  () => filteredNotifications.value.filter((item) => !item.is_read).length,
 );
 let notificationInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -106,7 +122,7 @@ async function openNotification(notification: Notification) {
             <h4>Notifications</h4>
           </div>
           <div class="notif-body">
-            <div v-if="!notifications.length" class="notif-empty">
+            <div v-if="!filteredNotifications.length" class="notif-empty">
               <svg
                 width="32"
                 height="32"
@@ -127,7 +143,7 @@ async function openNotification(notification: Notification) {
               <p>No new notifications</p>
             </div>
             <button
-              v-for="notification in notifications"
+              v-for="notification in filteredNotifications"
               :key="notification.id"
               class="notif-item"
               :class="{ 'notif-item-unread': !notification.is_read }"

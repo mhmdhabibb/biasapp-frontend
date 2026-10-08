@@ -11,6 +11,7 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import { useRouter } from 'vue-router'
+import { api } from '@/services/api'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import type { TableColumn, ServiceReport, SparepartRequest } from '@/types'
 
@@ -204,10 +205,21 @@ function getDoItemName(item: any): string {
 // ── SR Detail Modal ─────────────────────────────────────────────────────────
 const showSrDetail = ref(false)
 const srDetailItem = ref<any>(null)
+const isLoadingDetail = ref(false)
 
-function openSrDetail(row: any) {
-  srDetailItem.value = row
+async function openSrDetail(row: any) {
   showSrDetail.value = true
+  srDetailItem.value = null
+  isLoadingDetail.value = true
+  try {
+    const res: any = await api.get(`/service-reports/${row.id}`)
+    srDetailItem.value = res.data.data
+  } catch (err) {
+    srDetailItem.value = row // Fallback to list data if API fails
+    toast.error('Failed to load full detail')
+  } finally {
+    isLoadingDetail.value = false
+  }
 }
 
 function getSrUnitName(item: any): string {
@@ -500,7 +512,10 @@ function printTable() {
 
     <!-- SR Detail Modal -->
     <FormModal :open="showSrDetail" :title="srDetailItem ? `Detail ${srDetailItem.report_no || srDetailItem.service_report_no}` : 'Detail Service Report'" max-width="640px" @close="showSrDetail = false">
-      <template v-if="srDetailItem">
+      <div v-if="isLoadingDetail" class="text-center py-lg text-muted">
+        Loading...
+      </div>
+      <template v-else-if="srDetailItem">
         <div class="detail-grid">
           <div class="detail-field">
             <span>Report No.</span>
@@ -549,6 +564,19 @@ function printTable() {
           <div v-if="srDetailItem.remarks" class="detail-field detail-field--wide">
             <span>Remarks</span>
             <strong>{{ srDetailItem.remarks }}</strong>
+          </div>
+          <div v-if="srDetailItem.photo_before || srDetailItem.photo_after" class="detail-field detail-field--wide" style="margin-top: 1rem;">
+            <span>Photos</span>
+            <div style="display: flex; gap: 1rem; margin-top: 0.5rem; flex-wrap: wrap;">
+              <div v-if="srDetailItem.photo_before" style="flex: 1; min-width: 200px;">
+                <p style="font-size: 0.85rem; margin-bottom: 4px; color: var(--color-text-muted);">Before</p>
+                <img :src="srDetailItem.photo_before" alt="Photo Before" style="max-width: 100%; border-radius: 4px; border: 1px solid var(--color-border-light);" />
+              </div>
+              <div v-if="srDetailItem.photo_after" style="flex: 1; min-width: 200px;">
+                <p style="font-size: 0.85rem; margin-bottom: 4px; color: var(--color-text-muted);">After</p>
+                <img :src="srDetailItem.photo_after" alt="Photo After" style="max-width: 100%; border-radius: 4px; border: 1px solid var(--color-border-light);" />
+              </div>
+            </div>
           </div>
         </div>
         <section class="detail-items" v-if="srDetailItem.spareparts && srDetailItem.spareparts.length > 0">

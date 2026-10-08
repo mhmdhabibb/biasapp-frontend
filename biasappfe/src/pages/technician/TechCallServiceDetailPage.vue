@@ -11,7 +11,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
-import { computed, onMounted, ref, watchEffect } from 'vue'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const toast = useToast()
@@ -30,7 +30,25 @@ const {
 
 const serviceId = String(route.params.id)
 const job = computed(() => jobOrders.value.find(j => String(j.id) === serviceId))
-const serviceReport = computed(() => serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id)))
+const serviceReportFromStore = computed(() => serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id)))
+const fullServiceReportData = ref<any>(null)
+
+const serviceReport = computed(() => {
+  // Merge: full API data takes priority, store data as fallback
+  const storeData = serviceReportFromStore.value
+  const apiData = fullServiceReportData.value
+  if (apiData && storeData) return { ...storeData, ...apiData }
+  return apiData || storeData || null
+})
+
+async function fetchFullServiceReport() {
+  const sr = serviceReportFromStore.value
+  if (!sr) return
+  try {
+    const res: any = await api.get(`/service-reports/${sr.id}`)
+    fullServiceReportData.value = res.data?.data || res.data
+  } catch { /* ignore, will use store data */ }
+}
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
@@ -268,7 +286,15 @@ const isAllFormsCompleted = computed(() => {
   return techOk && signaturesOk && copierOk
 })
 
-onMounted(() => refreshInBackground())
+onMounted(async () => {
+  await refreshInBackground()
+  await fetchFullServiceReport()
+})
+
+// Re-fetch full data when store updates (e.g., after returning from form pages)
+watch(serviceReportFromStore, () => {
+  fetchFullServiceReport()
+})
 
 // --- Custom confirmation modal state ---
 const showAcceptModal = ref(false)
@@ -560,7 +586,7 @@ async function confirmCompleteJob() {
             <label class="form-label">Action / Repair <span class="text-danger">*</span></label>
             <textarea v-model="doForm.action" class="form-textarea" rows="3" placeholder="Action taken..."></textarea>
           </div>
-          <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+          <div class="responsive-flex mb-md">
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Time In (Auto)</label>
               <input v-model="doForm.time_in" type="time" class="form-input" readonly disabled>
@@ -570,7 +596,7 @@ async function confirmCompleteJob() {
               <input v-model="doForm.time_out" type="time" class="form-input" readonly disabled placeholder="Auto at completion">
             </div>
           </div>
-          <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+          <div class="responsive-flex mb-md align-center">
             <label style="display: flex; align-items: center; gap: 0.5rem;">
               <input type="checkbox" v-model="doForm.is_tested"> Is Tested?
             </label>
@@ -578,7 +604,7 @@ async function confirmCompleteJob() {
               <input type="checkbox" v-model="doForm.is_completed"> Is Completed?
             </label>
           </div>
-          <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+          <div class="responsive-flex mt-md">
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Technician Name</label>
               <input v-model="doForm.technician_name" type="text" class="form-input" readonly disabled>
@@ -592,7 +618,7 @@ async function confirmCompleteJob() {
               <SignaturePad v-model="doForm.customer_signature" height="150px" />
             </div>
           </div>
-          <div class="mt-lg" style="display: flex; gap: 0.75rem;">
+          <div class="mt-lg responsive-flex">
             <button v-if="can('delivery_order:update')" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
               {{ isSavingDoForm ? 'Saving...' : 'Save Draft' }}
             </button>
@@ -1148,5 +1174,24 @@ async function confirmCompleteJob() {
 .confirm-modal-leave-to .confirm-dialog {
   transform: scale(0.96) translateY(6px);
   opacity: 0;
+}
+
+.responsive-flex {
+  display: flex;
+  gap: 1rem;
+}
+
+.responsive-flex.align-center {
+  align-items: center;
+}
+
+@media (max-width: 768px) {
+  .responsive-flex {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .responsive-flex.align-center {
+    align-items: flex-start;
+  }
 }
 </style>

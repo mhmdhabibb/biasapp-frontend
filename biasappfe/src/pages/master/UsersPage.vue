@@ -21,10 +21,8 @@ const isPrivileged = computed(() => {
   return role === 'admin' || role === 'superadmin'
 })
 
-// CS (dan role non-admin lain) tidak boleh membuat user superadmin:
-// opsi superadmin disembunyikan dari pilihan role.
+// Opsi superadmin disembunyikan dari pilihan role untuk semua user
 const assignableRoles = computed(() => {
-  if (isPrivileged.value) return roles.value
   return roles.value.filter((r: any) => String(r.name || '').toLowerCase() !== 'superadmin')
 })
 const roleOptions = computed(() => assignableRoles.value.map((r: any) => ({ value: r.id, label: r.name })))
@@ -89,7 +87,7 @@ async function fetchData() {
   try {
     const [resUsers, resRoles] = await Promise.all([
       resources.users.list(),
-      resources.roles.list()
+      resources.roles.list({ limit: 100 })
     ])
     
     roles.value = resRoles.data

@@ -244,6 +244,7 @@ function exportToExcel() {
               <th>Unit & SN</th>
               <th>Service Type</th>
               <th>Action / Result</th>
+              <th>Photos</th>
               <th>Technician</th>
             </tr>
           </thead>
@@ -263,10 +264,17 @@ function exportToExcel() {
                   <strong>Repair:</strong> {{ job.repair_action || '-' }}
                 </div>
               </td>
+              <td>
+                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                  <a v-if="job.photo_before" :href="job.photo_before" target="_blank" class="btn btn-sm btn-outline" style="padding: 4px 8px; font-size: 11px;">Before</a>
+                  <a v-if="job.photo_after" :href="job.photo_after" target="_blank" class="btn btn-sm btn-outline" style="padding: 4px 8px; font-size: 11px;">After</a>
+                  <span v-if="!job.photo_before && !job.photo_after" class="text-muted" style="font-size: 11px;">-</span>
+                </div>
+              </td>
               <td>{{ getTechName(job.technician_id) }}</td>
             </tr>
             <tr v-if="filteredHistory.length === 0">
-              <td colspan="6" class="text-center py-lg text-muted">No service history matching the filter.</td>
+              <td colspan="7" class="text-center py-lg text-muted">No service history matching the filter.</td>
             </tr>
           </tbody>
         </table>

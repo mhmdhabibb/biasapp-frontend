@@ -6,6 +6,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAutoRefresh } from '@/composables/useAutoRefresh'
 
 const router = useRouter()
 const { currentUser } = useAuth()
@@ -13,18 +14,9 @@ const {
   jobOrders,
   getTechnicianIdByUser,
   findCustomer,
-  findUnit, refreshInBackground } = useMasterStore()
+  findUnit } = useMasterStore()
 
-let refreshInterval: ReturnType<typeof setInterval> | undefined
-
-onMounted(() => {
-  void refreshInBackground()
-  refreshInterval = setInterval(() => void refreshInBackground(), 30000)
-})
-
-onUnmounted(() => {
-  if (refreshInterval) clearInterval(refreshInterval)
-})
+useAutoRefresh(5000, ["jobOrders", "serviceReports", "technicians", "customers", "units"])
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
