@@ -1,6 +1,7 @@
 import { useAuth } from "@/composables/useAuth";
 import { canView, routeNamesByMenuOrder } from "@/router/permission-map";
 import {
+  allowedRouteNamesByRole,
   dashboardRouteByRole,
   dashboardRouteNames,
   homeRouteNameByRole,
