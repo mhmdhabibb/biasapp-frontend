@@ -451,6 +451,25 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
   `;
 }
 
+function servicePhotosBody(item: any): string {
+  if (!item.photo_before && !item.photo_after) return "";
+  return `
+    <div class="container" style="border: none;">
+      <div class="title-bar" style="font-size: 22px; margin-bottom: 20px;">SERVICE PHOTOS</div>
+      <div style="display: flex; gap: 20px; justify-content: space-around;">
+        ${item.photo_before ? \`<div style="text-align: center; width: 48%;">
+          <div style="font-weight: bold; margin-bottom: 10px;">BEFORE SERVICE</div>
+          <img src="\${item.photo_before}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
+        </div>\` : ""}
+        ${item.photo_after ? \`<div style="text-align: center; width: 48%;">
+          <div style="font-weight: bold; margin-bottom: 10px;">AFTER SERVICE</div>
+          <img src="\${item.photo_after}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
+        </div>\` : ""}
+      </div>
+    </div>
+  `;
+}
+
 export type ReportType = 'technical' | 'history' | 'copier';
 
 /**
@@ -458,14 +477,22 @@ export type ReportType = 'technical' | 'history' | 'copier';
  */
 function getReportPages(item: any, type?: ReportType): string[] {
   const ctx = buildCtx(item);
-  if (type === 'technical') return [technicalReportBody(item, ctx)];
-  if (type === 'history') return [serviceReportBody(item, ctx)];
-  if (type === 'copier') return ctx.isCopier ? [copierServiceReportBody(item, ctx)] : [];
-
-  const pages = [technicalReportBody(item, ctx), serviceReportBody(item, ctx)];
-  if (ctx.isCopier) {
-    pages.push(copierServiceReportBody(item, ctx));
+  let pages: string[] = [];
+  
+  if (type === 'technical') pages = [technicalReportBody(item, ctx)];
+  else if (type === 'history') pages = [serviceReportBody(item, ctx)];
+  else if (type === 'copier') pages = ctx.isCopier ? [copierServiceReportBody(item, ctx)] : [];
+  else {
+    pages = [technicalReportBody(item, ctx), serviceReportBody(item, ctx)];
+    if (ctx.isCopier) {
+      pages.push(copierServiceReportBody(item, ctx));
+    }
   }
+  
+  if (item.photo_before || item.photo_after) {
+    pages.push(servicePhotosBody(item));
+  }
+  
   return pages;
 }
 
