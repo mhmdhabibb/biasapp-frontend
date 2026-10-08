@@ -89,7 +89,7 @@ async function saveDeliveryOrder() {
       delivery_address: editForm.delivery_address,
       notes: editForm.notes,
     })
-    await store.refresh(true)
+    await store.refreshInBackground()
     showEdit.value = false
     toast.success(`DO ${editingItem.value.do_number} updated successfully.`)
   } catch (err) {
@@ -109,7 +109,7 @@ async function deleteDeliveryOrder() {
   busyId.value = deletingItem.value.id
   try {
     await resources.remove('deliveryOrders', String(deletingItem.value.id))
-    await store.refresh(true)
+    await store.refreshInBackground()
     toast.success(`DO ${deletingItem.value.do_number} deleted successfully.`)
   } catch (err) {
     toast.error(toast.fromError(err, 'Failed to delete delivery order'))
@@ -125,7 +125,7 @@ async function updateStatus(doItem: ProcurementDeliveryOrder, newStatus: string)
   busyId.value = doItem.id
   try {
     await resources.update('deliveryOrders', String(doItem.id), { status: newStatus })
-    await store.refresh(true)
+    await store.refreshInBackground()
     if (newStatus === 'received') {
       toast.success(`DO ${doItem.do_number} received. Inventory stock has been updated.`)
     } else if (newStatus === 'delivered' || newStatus === 'completed') {

@@ -31,6 +31,7 @@ onMounted(fetchData)
 
 const columns: TableColumn[] = [
   { key: 'company_name', label: 'Customer' },
+  { key: 'category', label: 'Type' },
   { key: 'pic_name', label: 'PIC Name' },
   { key: 'phone', label: 'Phone' },
 ]
@@ -59,12 +60,12 @@ const countryCodes = [
   { name: 'France', code: '+33' },
   { name: 'Netherlands', code: '+31' },
 ]
-const form = reactive({ company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '' })
+const form = reactive({ category: 'Corporate' as string, company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '' })
 
 function openAdd() {
   editingItem.value = null
   phoneCountryCode.value = '+62'
-  Object.assign(form, { company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '' })
+  Object.assign(form, { category: 'Corporate', company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '' })
   showModal.value = true
 }
 
@@ -79,7 +80,7 @@ function openEdit(item: Customer) {
   const localPhone = matchingCode
     ? storedDigits.slice(matchingCode.code.length - 1)
     : storedDigits.replace(/^0+/, '')
-  Object.assign(form, { company_name: item.company_name, pic_name: item.pic_name, pic_gender: item.pic_gender || 'L', pic_position: item.pic_position || '', nip: item.nip || '', phone: localPhone, fax: item.fax || '', email: item.email || '', address: item.address })
+  Object.assign(form, { category: item.category || 'Corporate', company_name: item.company_name, pic_name: item.pic_name, pic_gender: item.pic_gender || 'L', pic_position: item.pic_position || '', nip: item.nip || '', phone: localPhone, fax: item.fax || '', email: item.email || '', address: item.address })
   showModal.value = true
 }
 
@@ -105,7 +106,7 @@ async function handleSubmit() {
       await resources.customers.create(payload)
     }
     await fetchData()
-    masterStore.refresh()
+    masterStore.refreshInBackground()
     showModal.value = false
     toast.success(editingItem.value ? 'Customer updated successfully!' : 'Customer saved successfully!')
   } catch (error) {
@@ -119,7 +120,7 @@ async function handleDelete() {
     try {
       await resources.customers.remove(String(deletingItem.value.id))
       await fetchData()
-      masterStore.refresh()
+      masterStore.refreshInBackground()
       toast.success('Customer deleted successfully!')
     } catch (error) {
       console.error('Failed to delete customer:', error)
@@ -141,6 +142,13 @@ async function handleDelete() {
       <div class="form-group">
         <label for="cust-company" class="form-label">Customer Name</label>
         <input id="cust-company" v-model="form.company_name" type="text" class="form-input" placeholder="PT Example">
+      </div>
+      <div class="form-group">
+        <label for="cust-category" class="form-label">Customer Type</label>
+        <select id="cust-category" v-model="form.category" class="form-select" required>
+          <option value="Corporate">Corporate</option>
+          <option value="Government">Government</option>
+        </select>
       </div>
       <div class="form-group">
         <label for="cust-name" class="form-label">PIC Name</label>

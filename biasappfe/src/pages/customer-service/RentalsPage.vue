@@ -8,16 +8,22 @@ import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
 import { resources } from "@/services/resource.service";
 import {
+  buildPaymentTimestamp,
+  buildPaymentVerifyUrl,
+  generatePaymentQrDataUrl,
+  paymentMethodOf,
   printPaymentReceipt,
   printPaymentSlip,
+  printPaymentStruk,
 } from "@/utils/paymentReceipt";
 import type { TableColumn } from "@/types";
+import type { PaymentReceiptData } from "@/utils/paymentReceipt";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 const toast = useToast();
 const { can } = usePermission();
-const { customers, units, products, payments, refresh } = useMasterStore();
+const { customers, units, products, payments, refreshInBackground } = useMasterStore();
 const { t } = useI18n();
 
 const columns = computed<TableColumn[]>(() => [
@@ -266,7 +272,7 @@ function onItemSelectChange(item: any) {
 }
 
 async function openAdd() {
-  await refresh(true);
+  await refreshInBackground();
   Object.assign(form, {
     customer_id: "",
     start_date: new Date().toISOString().slice(0, 10),
@@ -497,6 +503,7 @@ async function submitInvoicePayment() {
   const invoiceId = String(selectedInvoice.value.id);
   const invNo = selectedInvoice.value.invoice_no || "-";
   const payNo = `PAY-${Date.now()}`;
+  const paymentTs = buildPaymentTimestamp(paymentForm.payment_date);
   try {
     const bankName =
       paymentForm.payment_method === "cash"
@@ -505,7 +512,7 @@ async function submitInvoicePayment() {
     await api.post("/payments", {
       payment_no: payNo,
       rental_invoice_id: invoiceId,
-      payment_date: `${paymentForm.payment_date}T00:00:00Z`,
+      payment_date: paymentTs,
       amount: paymentForm.amount,
       bank_name: bankName,
       reference_no: paymentForm.reference_no.trim() || "-",
@@ -519,7 +526,7 @@ async function submitInvoicePayment() {
       payment_no: payNo,
       invoice_no: invNo,
       customer_name: customer?.company_name || customer?.name || "-",
-      payment_date: paymentForm.payment_date,
+      payment_date: paymentTs,
       amount: Number(paymentForm.amount || 0),
       reference_no: paymentForm.reference_no.trim() || "-",
       status: "pending",
@@ -559,29 +566,58 @@ function invoicePayments(invoice: any): any[] {
   return currentPayments.length ? currentPayments : invoice.payments || [];
 }
 
-function printRentalPaymentReceipt(invoice: any, payment: any) {
+function rentalReceiptPayload(invoice: any, payment: any): PaymentReceiptData {
   const customer =
     customers.value.find(
       (item: any) => String(item.id) === String(invoice.customer_id),
-    ) || selectedRental.value?.customer;
+    ) || (selectedRental.value as any)?.customer;
   const ps = String(invoice.payment_status || "").toLowerCase();
-  const opened = printPaymentReceipt({
+  const sender =
+    (payment as any).sender_name ||
+    payment.bank_name?.match(/\bA\/N\s*:\s*([^)]*)\)?/i)?.[1]?.trim() ||
+    "";
+  return {
     payment_no: payment.payment_no,
     invoice_no: invoice.invoice_no,
     customer_name: customer?.company_name || customer?.name || "-",
     payment_date: payment.payment_date,
     amount: Number(payment.amount || 0),
     reference_no: payment.reference_no,
+    sender_name: sender,
     status: payment.status,
     lunas: ps === "paid",
     partial: ps === "partially_paid" || ps === "partial",
-  });
+    method: paymentMethodOf(payment.bank_name),
+    cs_name:
+      (payment as any).user?.name ||
+      (payment as any).user?.username ||
+      "-",
+  };
+}
+
+async function printRentalPaymentReceipt(invoice: any, payment: any) {
+  const payload = rentalReceiptPayload(invoice, payment);
+  const win = window.open("", "_blank");
+  if (!win) {
+    toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
+    return;
+  }
+  payload.qr_data_url = await generatePaymentQrDataUrl(
+    buildPaymentVerifyUrl(payload),
+  );
+  const opened = printPaymentStruk(payload, win);
+  if (!opened)
+    toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
+}
+
+function printRentalPaymentReceiptA5(invoice: any, payment: any) {
+  const opened = printPaymentReceipt(rentalReceiptPayload(invoice, payment));
   if (!opened)
     toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
 }
 
 onMounted(async () => {
-  await refresh(true);
+  await refreshInBackground();
   fetchRentals();
   try {
     const res = await resources.paperSizes.list();
@@ -738,7 +774,16 @@ onMounted(async () => {
               class="btn btn-sm btn-outline"
               @click="printRentalPaymentReceipt(invoice, payment)"
             >
-              Kwitansi / Bukti Bayar
+              Struk Bukti Bayar
+            </button>
+            <button
+              v-for="payment in approvedPayments(invoice)"
+              :key="'a5-' + payment.id"
+              type="button"
+              class="btn btn-sm btn-outline"
+              @click="printRentalPaymentReceiptA5(invoice, payment)"
+            >
+              Kwitansi A5
             </button>
             <button
               v-if="invoice.payment_status !== 'paid' && can('payment:create')"
@@ -840,11 +885,12 @@ onMounted(async () => {
       <div class="form-group">
         <label class="form-label">Payment Amount</label>
         <input
-          v-model.number="paymentForm.amount"
-          type="number"
+          :value="Number(paymentForm.amount || 0).toLocaleString('id-ID')"
+          type="text"
           class="form-input"
-          min="1"
-          required
+          readonly
+          title="Otomatis dari total invoice"
+          style="background: var(--color-surface-raised); cursor: not-allowed;"
         />
       </div>
       <div class="form-group">

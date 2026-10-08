@@ -8,7 +8,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import FormModal from '@/components/ui/FormModal.vue'
 import type { MenuGroup } from '@/types'
-import { allowedRouteNamesByRole, normalizeRole } from '@/router/role-access'
+import { dashboardRouteByRole, dashboardRouteNames, normalizeRole } from '@/router/role-access'
 import { canView, permissionKeysFor } from '@/router/permission-map'
 
 const moduleKey = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '_')
@@ -36,15 +36,15 @@ function openPwdModal() {
 
 async function submitPwdChange() {
   if (!pwdForm.old_password || !pwdForm.new_password) {
-    toastError('Lengkapi password lama dan baru.')
+    toastError('Complete Current Password and New Password!.')
     return
   }
   if (pwdForm.new_password.length < 6) {
-    toastError('Password baru minimal 6 karakter.')
+    toastError('New Password must be more than 6 characters!.')
     return
   }
   if (pwdForm.new_password !== pwdForm.confirm_password) {
-    toastError('Konfirmasi password tidak cocok.')
+    toastError('Confirm Password not matching!.')
     return
   }
   isSavingPwd.value = true
@@ -54,9 +54,9 @@ async function submitPwdChange() {
       new_password: pwdForm.new_password,
     })
     showPwdModal.value = false
-    toastSuccess('Password berhasil diubah.')
+    toastSuccess('Password has been changed!.')
   } catch (err: any) {
-    toastError(err?.message || 'Gagal mengubah password.')
+    toastError(err?.message || 'Failed to change password!.')
   } finally {
     isSavingPwd.value = false
   }
@@ -139,29 +139,25 @@ const menuGroups = computed(() => {
       // 2. Role-restricted items (technician menu): role decides, no module/permission checks
       if (item.roles) return item.roles.includes(role)
 
-      // 3. Mirror the router guard: only show routes this role may actually open
-      //    (fixes wrong dashboards / bouncing menus for built-in roles)
-      const allowedNames = allowedRouteNamesByRole[role]
-      if (allowedNames) {
-        const itemName = router.resolve(item.route).name
-        if (!itemName || !allowedNames.includes(String(itemName))) return false
-      }
-
-      // 4. Visibility is driven by the `<key>:view` permission of the route
-      //    (see router/permission-map.ts). `read` alone never opens a menu.
       const routeName = String(router.resolve(item.route).name || '')
-      const permKeys = permissionKeysFor(routeName)
+      const permissions = currentUser.value?.permissions || []
 
-      if (!permKeys) {
-        // No permission key mapped (dashboards, shared pages) -> visible
-        return true
+      // 3. Dashboards are pinned: each built-in role keeps its own dashboard.
+      //    Custom roles (no pin) keep seeing dashboards, as before.
+      if (dashboardRouteNames.includes(routeName)) {
+        const own = dashboardRouteByRole[role]
+        return own ? routeName === own : true
       }
 
-      if (!canView(routeName, currentUser.value?.permissions || [])) return false
+      // 4. Everything else is dynamic: visibility follows the role's live
+      //    `<key>:view` permissions (see router/permission-map.ts).
+      //    `read` alone never opens a menu.
+      if (!canView(routeName, permissions)) return false
 
       // Respect a deactivated module that owns this permission key.
       // Module names are display names ("Job Order") while permission keys use
       // snake_case ("job_order"), so normalize before comparing.
+      const permKeys = permissionKeysFor(routeName) || []
       const matches = modules.value.filter(m => permKeys.includes(moduleKey(String(m.name))))
       if (matches.length > 0 && !matches.some(m => m.is_active)) return false
 
@@ -292,7 +288,7 @@ const iconPaths: Record<string, string> = {
           <span class="sidebar-user-role">{{
             currentUser?.role ? normalizeRole(currentUser.role).replace(/_/g, ' ').replace(/\b\w/g, c =>
               c.toUpperCase()) : 'Superadmin'
-            }}</span>
+          }}</span>
         </div>
       </div>
       <button class="btn-logout" title="Ubah Password" @click="openPwdModal">

@@ -18,9 +18,7 @@ const { currentUser } = useAuth()
 const {
   products,
   serviceReports,
-  getTechnicianIdByUser,
-  refresh
-} = useMasterStore()
+  getTechnicianIdByUser, refreshInBackground } = useMasterStore()
 
 const serviceId = String(route.query.service_id || '') || null
 
@@ -55,7 +53,7 @@ async function submitRequest() {
         product_id: form.value.product_id,
         qty: Number(form.value.qty)
       })
-      await refresh(true)
+      await refreshInBackground()
       toast.success('Sparepart request successfully sent to Admin/CS/Inventory.')
       router.push(`/technician/call-services/${form.value.service_report_id}`)
     } catch (err: any) {

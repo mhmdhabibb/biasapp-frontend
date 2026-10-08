@@ -12,15 +12,13 @@ const {
   jobOrders,
   getTechnicianIdByUser,
   findCustomer,
-  findUnit,
-  refresh
-} = useMasterStore()
+  findUnit, refreshInBackground } = useMasterStore()
 
 let refreshInterval: ReturnType<typeof setInterval> | undefined
 
 onMounted(() => {
-  void refresh(true)
-  refreshInterval = setInterval(() => void refresh(true), 30000)
+  void refreshInBackground()
+  refreshInterval = setInterval(() => void refreshInBackground(), 30000)
 })
 
 onUnmounted(() => {
@@ -43,7 +41,10 @@ const filterCustomer = ref('')
 const filterServiceNo = ref('')
 
 function isDeliveryJob(job: any): boolean {
-  return !!job && (job.job_type === 'delivery' || !!job.delivery_order_id || !!job.delivery_order)
+  if (!job) return false
+  if (job.delivery_order_id) return true
+  const d = job.delivery_order
+  return !!d && (!!d.id || !!d.do_number)
 }
 
 function jobCustomerId(job: any) {

@@ -37,6 +37,7 @@ export interface Module {
 
 export interface Customer {
   id: string | number;
+  category: string;
   company_name: string;
   pic_name: string;
   pic_gender?: string;
@@ -275,6 +276,16 @@ export interface ServiceReport {
   testing_confirmed?: boolean;
   customer_signature?: string | null;
   technician_signature?: string | null;
+  customer_name?: string | null;
+  technician_name?: string | null;
+  customer_signature_copier?: string | null;
+  technician_signature_copier?: string | null;
+  customer_name_copier?: string | null;
+  technician_name_copier?: string | null;
+  customer_signature_technical?: string | null;
+  technician_signature_technical?: string | null;
+  customer_name_technical?: string | null;
+  technician_name_technical?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -312,6 +323,7 @@ export interface Sale {
   subtotal?: number;
   service_charge?: number;
   tax?: number;
+  discount?: number;
   total?: number;
   sale_items?: SaleItem[];
   created_at: string;
@@ -371,6 +383,7 @@ export interface SalesInvoice {
   subtotal: number;
   service_charge: number;
   tax: number;
+  discount?: number;
   total: number;
   status: string;
   payment_status: string;
@@ -402,7 +415,11 @@ export interface Payment {
   balance: number;
   bank_name: string;
   reference_no: string;
+  sender_name?: string;
+  notes?: string;
   status: string;
+  user_id?: string | null;
+  user?: { id?: string; name?: string; username?: string } | null;
   created_at: string;
   updated_at: string;
 }

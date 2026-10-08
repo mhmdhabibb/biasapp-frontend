@@ -75,95 +75,139 @@ export function useMasterStore() {
     });
   }
 
-  function syncFromApi(force = false, tracksLoading = true) {
-    if (syncPromise && !force) return syncPromise;
+  const safeFetch = (
+    fetchPromise: Promise<any>,
+    assignCallback: (items: any) => void,
+  ) => {
+    return fetchPromise
+      .then((items) => {
+        if (items) assignCallback(items);
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch data:", err);
+      });
+  };
+
+  // Registry tugas sync per resource agar dashboard bisa refresh ringan
+  // (hanya resource yang ditampilkannya) tanpa memicu loading.
+  function buildSyncTasks(
+    tracksLoading: boolean,
+  ): Record<string, () => Promise<void>> {
+    const fetchAll = (name: keyof typeof resources) =>
+      tracksLoading
+        ? resources.fetchAll(name, undefined, true)
+        : resources.fetchAllSilent(name, undefined);
+    return {
+      customers: () =>
+        safeFetch(fetchAll("customers"), (items) => (store.customers = items)),
+      technicians: () =>
+        safeFetch(
+          fetchAll("technicians"),
+          (items) => (store.technicians = items),
+        ),
+      brands: () =>
+        safeFetch(fetchAll("brands"), (items) => (store.brands = items)),
+      units: () =>
+        safeFetch(fetchAll("units"), (items) => (store.units = items)),
+      products: () =>
+        safeFetch(fetchAll("products"), (items) => (store.products = items)),
+      warranties: () =>
+        safeFetch(
+          fetchAll("warranties"),
+          (items) => (store.warranties = items),
+        ),
+      contractItems: () =>
+        safeFetch(
+          fetchAll("contractItems"),
+          (items) => (store.contractItems = items),
+        ),
+      serviceReports: () =>
+        safeFetch(
+          fetchAll("serviceReports"),
+          (items) => (store.serviceReports = items),
+        ),
+      serviceRequests: () =>
+        safeFetch(
+          fetchAll("serviceRequests"),
+          (items) => (store.serviceRequests = items),
+        ),
+      jobOrders: () =>
+        safeFetch(fetchAll("jobOrders"), (items) => (store.jobOrders = items)),
+      monthlyMeterReadings: () =>
+        safeFetch(
+          fetchAll("monthlyMeterReadings"),
+          (items) => (store.monthlyMeterReadings = items),
+        ),
+      sales: () =>
+        safeFetch(fetchAll("sales"), (items) => (store.sales = items)),
+      rentalInvoices: () =>
+        safeFetch(
+          fetchAll("rentalInvoices"),
+          (items) => (store.rentalInvoices = items),
+        ),
+      salesInvoices: () =>
+        safeFetch(
+          fetchAll("salesInvoices"),
+          (items) => (store.salesInvoices = items),
+        ),
+      payments: () =>
+        safeFetch(fetchAll("payments"), (items) => (store.payments = items)),
+      warrantyClaims: () =>
+        safeFetch(
+          fetchAll("warrantyClaims"),
+          (items) => (store.warrantyClaims = items),
+        ),
+      serviceSpareparts: () =>
+        safeFetch(
+          fetchAll("serviceSpareparts"),
+          (items) => (store.sparepartRequests = items),
+        ),
+      purchaseOrders: () =>
+        safeFetch(
+          fetchAll("purchaseOrders"),
+          (items) => (store.purchaseOrders = items),
+        ),
+      deliveryOrders: () =>
+        safeFetch(fetchAll("deliveryOrders"), (items) => {
+          store.deliveryOrders = items;
+          // Inbound (procurement) shipments are the ones linked to a purchase order.
+          store.procurementDeliveryOrders = items.filter(
+            (d: any) => d.purchase_order_id || d.do_type === "inbound",
+          );
+        }),
+    };
+  }
+
+  function runSyncTasks(names: string[] | null, tracksLoading: boolean) {
     // Hindari request bertumpuk (mis. interval polling + navigasi cepat):
     // lewati bila sync masih berjalan.
     if (syncing && syncPromise) return syncPromise;
     syncing = true;
 
-    const safeFetch = (
-      fetchPromise: Promise<any>,
-      assignCallback: (items: any) => void,
-    ) => {
-      return fetchPromise
-        .then((items) => {
-          if (items) assignCallback(items);
-        })
-        .catch((err) => {
-          console.warn("Failed to fetch data:", err);
-        });
-    };
+    const registry = buildSyncTasks(tracksLoading);
+    const picked = (
+      names && names.length > 0
+        ? names.map((name) => registry[name]).filter(Boolean)
+        : Object.values(registry)
+    ) as Array<() => Promise<void>>;
 
-    const fetchAll = (name: keyof typeof resources) =>
-      tracksLoading
-        ? resources.fetchAll(name, undefined, true)
-        : resources.fetchAllSilent(name, undefined);
-
-    const tasks: Promise<void>[] = [
-      safeFetch(fetchAll("customers"), (items) => (store.customers = items)),
-      safeFetch(
-        fetchAll("technicians"),
-        (items) => (store.technicians = items),
-      ),
-      safeFetch(fetchAll("brands"), (items) => (store.brands = items)),
-      safeFetch(fetchAll("units"), (items) => (store.units = items)),
-      safeFetch(fetchAll("products"), (items) => (store.products = items)),
-      safeFetch(fetchAll("warranties"), (items) => (store.warranties = items)),
-      safeFetch(
-        fetchAll("contractItems"),
-        (items) => (store.contractItems = items),
-      ),
-      safeFetch(
-        fetchAll("serviceReports"),
-        (items) => (store.serviceReports = items),
-      ),
-      safeFetch(
-        fetchAll("serviceRequests"),
-        (items) => (store.serviceRequests = items),
-      ),
-      safeFetch(fetchAll("jobOrders"), (items) => (store.jobOrders = items)),
-      safeFetch(
-        fetchAll("monthlyMeterReadings"),
-        (items) => (store.monthlyMeterReadings = items),
-      ),
-      safeFetch(fetchAll("sales"), (items) => (store.sales = items)),
-      safeFetch(
-        fetchAll("rentalInvoices"),
-        (items) => (store.rentalInvoices = items),
-      ),
-      safeFetch(
-        fetchAll("salesInvoices"),
-        (items) => (store.salesInvoices = items),
-      ),
-      safeFetch(fetchAll("payments"), (items) => (store.payments = items)),
-      safeFetch(
-        fetchAll("warrantyClaims"),
-        (items) => (store.warrantyClaims = items),
-      ),
-      safeFetch(
-        fetchAll("serviceSpareparts"),
-        (items) => (store.sparepartRequests = items),
-      ),
-      safeFetch(
-        fetchAll("purchaseOrders"),
-        (items) => (store.purchaseOrders = items),
-      ),
-      safeFetch(fetchAll("deliveryOrders"), (items) => {
-        store.deliveryOrders = items;
-        // Inbound (procurement) shipments are the ones linked to a purchase order.
-        store.procurementDeliveryOrders = items.filter(
-          (d: any) => d.purchase_order_id || d.do_type === "inbound",
-        );
-      }),
-    ];
-
-    syncPromise = Promise.all(tasks)
+    syncPromise = Promise.all(picked.map((task) => task()))
       .then(() => undefined)
       .finally(() => {
         syncing = false;
       });
     return syncPromise;
+  }
+
+  function syncFromApi(force = false, tracksLoading = true) {
+    if (syncPromise && !force) return syncPromise;
+    return runSyncTasks(null, tracksLoading);
+  }
+
+  /** Refresh ringan: hanya resource yang disebut, selalu silent (tanpa loading). */
+  function refreshOnly(names: string[]) {
+    if (!names || names.length === 0) return refreshInBackground();
+    return runSyncTasks(names, false);
   }
 
   syncFromApi();
@@ -263,6 +307,7 @@ export function useMasterStore() {
     ...toRefs(store),
     refresh: syncFromApi,
     refreshInBackground: () => syncFromApi(true, false),
+    refreshOnly,
     findCustomer,
     findTechnician,
     findUnit,

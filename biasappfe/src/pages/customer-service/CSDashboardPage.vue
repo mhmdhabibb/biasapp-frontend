@@ -4,7 +4,14 @@ import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
 
-useAutoRefresh();
+useAutoRefresh(15000, [
+  "serviceRequests",
+  "jobOrders",
+  "serviceReports",
+  "contractItems",
+  "serviceSpareparts",
+  "warrantyClaims",
+]);
 
 const {
   serviceReports,

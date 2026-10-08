@@ -5,17 +5,20 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
+import { useAuth } from '@/composables/useAuth'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { serviceReports, products, refresh } = useMasterStore()
+const { currentUser } = useAuth()
+const { serviceReports, products, findCustomer, findTechnician, refreshInBackground } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
 const job = computed(() => reportRecord.value || serviceReports.value.find(sr => String(sr.id) === serviceId))
+const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
 
 const form = ref({
   remarks: '',
@@ -24,6 +27,8 @@ const form = ref({
   spareparts: [] as any[],
   customer_signature: '',
   technician_signature: '',
+  customer_name: '',
+  technician_name: '',
 })
 const isLoading = ref(true)
 const isSaving = ref(false)
@@ -45,6 +50,8 @@ onMounted(async () => {
       })),
       customer_signature: job.value.customer_signature_technical || '',
       technician_signature: job.value.technician_signature_technical || '',
+      customer_name: job.value.customer_name_technical || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || '',
+      technician_name: job.value.technician_name_technical || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || '',
     }
   } catch (err: any) {
     toast.error(err.message || 'Failed to load service report')
@@ -88,7 +95,7 @@ async function saveSpareparts() {
       product_id: String(item.product_id),
       qty: Number(item.qty) || 1,
     }))
-    await refresh(true)
+    await refreshInBackground()
     return true
   } catch (err: any) {
     toast.error(err.message || 'Failed to update sparepart')
@@ -100,8 +107,8 @@ async function saveSpareparts() {
 
 async function saveForm() {
   if (isLoading.value || !job.value || isSaving.value) return
-  if (!form.value.customer_signature || !form.value.technician_signature) {
-    toast.warning('Customer and technician signatures are required.')
+  if (!form.value.customer_signature || !form.value.technician_signature || !form.value.customer_name.trim()) {
+    toast.warning('Customer name, customer and technician signatures are required.')
     return
   }
   isSaving.value = true
@@ -113,9 +120,11 @@ async function saveForm() {
       is_tested: form.value.is_tested,
       customer_signature_technical: form.value.customer_signature,
       technician_signature_technical: form.value.technician_signature,
+      customer_name_technical: form.value.customer_name,
+      technician_name_technical: form.value.technician_name,
     })
     toast.success('Technical Report saved successfully')
-    await refresh(true)
+    await refreshInBackground()
     router.back()
   } catch (err: any) {
     toast.error(err.message || 'Failed to save form')
@@ -167,11 +176,17 @@ async function saveForm() {
 
       <div class="signature-grid">
         <div class="form-group">
-          <label class="form-label">Customer Signature <span class="text-danger">*</span></label>
+          <label class="form-label">Customer Type</label>
+          <input :value="customerType" type="text" class="form-input" readonly disabled>
+          <label class="form-label mt-sm">Customer / PIC Name <span class="text-danger">*</span></label>
+          <input v-model="form.customer_name" type="text" class="form-input" placeholder="Customer PIC name">
+          <label class="form-label mt-sm">Customer Signature <span class="text-danger">*</span></label>
           <SignaturePad v-model="form.customer_signature" height="160px" />
         </div>
         <div class="form-group">
-          <label class="form-label">Technician Signature <span class="text-danger">*</span></label>
+          <label class="form-label">Technician Name</label>
+          <input v-model="form.technician_name" type="text" class="form-input" readonly disabled>
+          <label class="form-label mt-sm">Technician Signature <span class="text-danger">*</span></label>
           <SignaturePad v-model="form.technician_signature" height="160px" />
         </div>
       </div>

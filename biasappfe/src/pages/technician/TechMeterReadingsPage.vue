@@ -13,7 +13,7 @@ const toast = useToast();
 const { can } = usePermission();
 
 const { currentUser } = useAuth();
-const { monthlyMeterReadings, contractItems, findCustomer, findUnit, refresh } =
+const { monthlyMeterReadings, contractItems, findCustomer, findUnit, refreshInBackground } =
   useMasterStore();
 
 const data = computed(() => monthlyMeterReadings.value);
@@ -227,7 +227,7 @@ async function submitReading() {
       for (const p of payloads) {
         await api.post("/monthly-meter-readings/", p);
       }
-      await refresh(true);
+      await refreshInBackground();
       showAddModal.value = false;
       toast.success(`${payloads.length} Meter Readings saved successfully!`);
       sizeInputs.value = {};
@@ -266,7 +266,7 @@ async function submitReading() {
       total_usage: Math.max(0, endMeter - startMeter),
       reading_date: readingDate,
     });
-    await refresh(true);
+    await refreshInBackground();
     showAddModal.value = false;
     toast.success("Meter Reading saved successfully!");
     form.value.end_meter = 0;

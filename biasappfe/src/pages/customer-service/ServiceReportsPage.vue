@@ -37,7 +37,11 @@ const doColumns: TableColumn[] = [
 ]
 
 const deliveryHistories = computed(() =>
-  (deliveryOrders.value as any[]).filter((d: any) => hasDeliveryHistory(d)),
+  (deliveryOrders.value as any[]).filter(
+    (d: any) =>
+      hasDeliveryHistory(d) &&
+      String(d.do_type || '').toLowerCase() !== 'inbound',
+  ),
 )
 
 function doTypeLabel(type: string | undefined): string {

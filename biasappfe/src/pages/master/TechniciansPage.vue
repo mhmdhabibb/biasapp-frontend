@@ -94,7 +94,7 @@ async function handleSubmit() {
       })
     }
     await fetchData()
-    masterStore.refresh()
+    masterStore.refreshInBackground()
     showModal.value = false
     toast.success(editingItem.value ? 'Technician updated successfully!' : 'Technician saved successfully!')
   } catch (error) {
@@ -112,7 +112,7 @@ async function handleDelete() {
     try {
       await resources.technicians.remove(String(deletingItem.value.id))
       await fetchData()
-      masterStore.refresh()
+      masterStore.refreshInBackground()
       toast.success('Technician deleted successfully!')
     } catch (error) {
       console.error('Failed to delete technician:', error)

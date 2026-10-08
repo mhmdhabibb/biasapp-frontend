@@ -29,20 +29,38 @@ const columns: TableColumn[] = [
   { key: 'actions', label: 'Action' }
 ]
 
-function getProduct(id: number | null) {
-  const p = store.findProduct(id as any)
-  return p ? p.name : '-'
+function getProduct(row: any) {
+  const id = row?.product_id ?? row
+  return (
+    (row as any)?.product?.name ||
+    store.findProduct(id as any)?.name ||
+    '-'
+  )
 }
 
-function getSR(id: number | null) {
-  const sr = store.findServiceReport(id as any)
-  return sr ? sr.report_no || sr.service_report_no || '-' : '-'
+function getSR(row: any) {
+  const id = row?.service_report_id ?? row
+  const sr = (row as any)?.service_report || store.findServiceReport(id as any)
+  return sr ? sr.report_no || (sr as any).service_report_no || '-' : '-'
 }
 
-function getTechnician(id: string | number | null) {
-  if (!id) return '-'
-  const technician = store.findTechnician(id)
-  return technician?.name || '-'
+function techNameOf(tech: any): string {
+  if (!tech) return ''
+  return tech.user?.name || tech.user?.username || tech.name || ''
+}
+
+function getTechnician(row: any) {
+  const direct =
+    row?.technician ||
+    (row?.technician_id ? store.findTechnician(row.technician_id as any) : null)
+  const directName = techNameOf(direct)
+  if (directName) return directName
+  // Fallback: teknisi dari service report terkait.
+  const srTechId = row?.service_report?.technician_id
+  const srTech =
+    row?.service_report?.technician ||
+    (srTechId ? store.findTechnician(srTechId as any) : null)
+  return techNameOf(srTech) || '-'
 }
 
 async function handleCreatePO(request: SparepartRequest) {
@@ -56,7 +74,7 @@ async function handleCreatePO(request: SparepartRequest) {
       order_date: new Date().toISOString(),
       status: 'draft'
     })
-    await store.refresh(true)
+    await store.refreshInBackground()
     toast.success(`Purchase order created for ${request.request_no}`)
     router.push('/accounting/purchase-orders')
   } catch (err) {
@@ -75,9 +93,9 @@ async function handleCreatePO(request: SparepartRequest) {
 
     <DataTable :columns="columns" :data="store.sparepartRequests.value" permission="service_sparepart"
       search-placeholder="Search requests...">
-      <template #cell-product_id="{ value }">{{ getProduct(value) }}</template>
-      <template #cell-service_report_id="{ value }">{{ getSR(value) }}</template>
-      <template #cell-technician_id="{ value }">{{ getTechnician(value) }}</template>
+      <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
+      <template #cell-service_report_id="{ row }">{{ getSR(row) }}</template>
+      <template #cell-technician_id="{ row }">{{ getTechnician(row) }}</template>
       <template #cell-status="{ value }">
         <span class="badge" :class="{
           'badge-warning': value === 'pending',

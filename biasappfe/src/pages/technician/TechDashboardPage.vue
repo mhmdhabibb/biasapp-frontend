@@ -25,7 +25,13 @@ import CreateJobModal from "./CreateJobModal.vue";
 import { useRouter } from "vue-router";
 import { computed, ref } from "vue";
 
-useAutoRefresh();
+useAutoRefresh(15000, [
+  "jobOrders",
+  "serviceReports",
+  "technicians",
+  "customers",
+  "units",
+]);
 
 const router = useRouter();
 const { currentUser } = useAuth();
@@ -575,7 +581,7 @@ function goToDetail(id: number) {
     <CreateJobModal
       :open="showModal"
       @close="showModal = false"
-      @refresh="refresh(true)"
+      @refresh="refresh()"
     />
   </div>
 </template>

@@ -106,7 +106,7 @@ function getCategoryPrefix(categoryId: string): string {
   const category = categories.value.find(
     (item) => String(item.id) === categoryId,
   );
-  const words = (category?.name || category?.slug || "")
+  const words = ((category as any)?.name || (category as any)?.slug || "")
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, " ")
     .split(/\s+/)
@@ -114,7 +114,7 @@ function getCategoryPrefix(categoryId: string): string {
   if (words.length === 0) return "PRD";
   if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
   return words
-    .map((word) => word[0])
+    .map((word: string) => word[0])
     .join("")
     .toUpperCase();
 }
