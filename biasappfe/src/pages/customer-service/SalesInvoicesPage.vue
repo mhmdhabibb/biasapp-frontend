@@ -1,22 +1,31 @@
 <script setup lang="ts">
 // @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
-import { useResourcesStore } from '@/stores/resources.store'
 import { api } from '@/services/api'
+import { useResourcesStore } from '@/stores/resources.store'
 import type { SalesInvoice, TableColumn } from '@/types'
-import { computed, reactive, ref } from 'vue'
-import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
+import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_RP, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
-import { printPaymentStruk, paymentMethodOf, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
+import { buildPaymentVerifyUrl, generatePaymentQrDataUrl, paymentMethodOf, printPaymentStruk } from '@/utils/paymentReceipt'
+import { computed, reactive, ref } from 'vue'
 
 const toast = useToast()
 const { can } = usePermission()
+const { currentUser } = useAuth()
+
+/** Penanda tangan dokumen: pembuat invoice (user backend), fallback user login. */
+function signerName(item: any): string {
+  return item?.user?.name || item?.user?.username
+    || (currentUser as any)?.value?.name || (currentUser as any)?.name || '-'
+}
 const {
   salesInvoices: data,
   sales,
@@ -85,6 +94,24 @@ const form = reactive({
 
 const defaultForm = { ...form }
 
+const siSaleOptions = computed(() =>
+  (sales.value as any[]).map((s: any) => ({
+    value: s.id,
+    label: `${s.sale_no} — ${formatRupiah(s.total)}`,
+  })),
+)
+const siCustomerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name || '-',
+  })),
+)
+const siStatusOptions = [
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'overdue', label: 'Overdue' },
+]
+
 // Date Range & Month Filters
 const startDateFilter = ref('')
 const endDateFilter = ref('')
@@ -98,11 +125,11 @@ function onMonthFilterChange() {
   const [yearStr, monthStr] = monthFilter.value.split('-')
   const year = parseInt(yearStr)
   const month = parseInt(monthStr)
-  
+
   const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
   const lastDayNum = new Date(year, month, 0).getDate()
   const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
-  
+
   startDateFilter.value = firstDay
   endDateFilter.value = lastDay
 }
@@ -213,8 +240,9 @@ async function exportInvoicesToExcel(
   const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
   // Sheet names must be unique (two customers may share the same company name).
   const usedSheetNames = new Set<string>()
-  // Column widths in Excel character units (not pixels) to prevent overflow
-  const columnWidths = [6, 40, 8, 10, 7, 16]
+  // Layout 5 kolom ala invoice manual (tanpa kolom Rp terpisah, Rp via number
+  // format): A=No(4.2), B=Description(39.2), C=Qty(7.8), D=UOM(13), E=Amount(31.2)
+  const columnWidths = [4.2, 39.2, 7.8, 13, 31.2]
 
   for (const [customerId, groupItems] of groups) {
     const sortedItems = [...groupItems].sort((a, b) => {
@@ -240,26 +268,65 @@ async function exportInvoicesToExcel(
         : '-'
       const poNo = item.sale?.po_no || item.po_no || '-'
 
-      // Header blok
-      addRow([{ v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 2, style: 'plainBold' }, {}, {}, { v: 'Inv No. :', style: 'border' }, { v: item.invoice_no || '-', mergeAcross: 1, style: 'border' }])
-      addRow([{ v: 'Ruko Purimas Blok A No.47 Kota Batam', mergeAcross: 2 }, {}, {}, { v: 'Date :', style: 'border' }, { v: dateLabel, mergeAcross: 1, style: 'border' }])
-      addRow([{ v: 'Kepulauan Riau - Indonesia', mergeAcross: 2 }, {}, {}, { v: 'PO No. :', style: 'border' }, { v: poNo, mergeAcross: 1, style: 'border' }])
-      addRow([{ v: 'Phone : +62811 704 5657', mergeAcross: 2 }, {}, {}, { v: 'To:', style: 'headerCell', mergeAcross: 2 }])
-      addRow([{ v: 'Email : admin@biasbst.com', mergeAcross: 2 }, {}, {}, { v: custName, style: 'borderBold', mergeAcross: 2 }])
-      addRow([{}, {}, {}, { v: customer?.address || '-', mergeAcross: 2, style: 'border' }])
-      addRow([{}, {}, {}, { v: 'Attn: ' + (customer?.pic_name || '-'), mergeAcross: 2, style: 'border' }])
+      // Header blok (5 kolom, konsisten dengan export rental)
+      addRow([
+        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
+        {},
+        { v: 'Inv No. :', style: 'borderBoldRight' },
+        { v: item.invoice_no || '-', style: 'border' },
+      ])
+      addRow([
+        { v: 'Ruko Puri Mas I Blok A No.40 teluk tering', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Date :', style: 'borderBoldRight' },
+        { v: dateLabel, style: 'border' },
+      ])
+      addRow([
+        { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'PO No. :', style: 'borderBoldRight' },
+        { v: poNo, style: 'border' },
+      ])
+      addRow([
+        { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Kepada Yth. ', style: 'borderBoldRight' },
+        { style: 'border' },
+      ])
+      addRow([
+        { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: custName, style: 'borderBold' },
+        { style: 'border' },
+      ])
+      addRow([
+        { v: 'www.biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: customer?.address || '-', mergeAcross: 1, style: 'border' }, {},
+      ])
+      addRow([
+        { style: 'border' }, { style: 'border' },
+        {},
+        { v: 'Up :', style: 'borderBoldRight' },
+        { v: customer?.pic_name || '-', style: 'borderBold' },
+      ])
+      // Spacer bergaris ala invoice manual
+      addRow([
+        { style: 'border' }, { style: 'border' },
+        {},
+        { style: 'border' }, { style: 'border' },
+      ])
 
-      addRow([{ v: 'INVOICE', mergeAcross: 5, style: 'titleCell' }])
+      addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
       addRow([])
 
       // Header tabel items
       addRow([
-        { v: 'No', style: 'headerCell' },
-        { v: 'Description', style: 'headerCell' },
-        { v: 'Qty', style: 'headerCell' },
-        { v: 'UOM', style: 'headerCell' },
-        { v: 'Rp', style: 'headerCell' },
-        { v: 'Amount', style: 'headerCell' },
+        { v: 'No', style: 'borderBoldCenter' },
+        { v: 'Description', style: 'borderBold' },
+        { v: 'Qty', style: 'borderBoldCenter' },
+        { v: 'UOM', style: 'borderBoldCenter' },
+        { v: 'Amount', style: 'borderBold' },
       ])
 
       const sale = findSale(item.sale_id)
@@ -276,31 +343,29 @@ async function exportInvoicesToExcel(
             { v: pName, style: 'border' },
             { v: qty, style: 'borderCenter' },
             { v: 'unit', style: 'borderCenter' },
-            { v: 'Rp', style: 'border' },
-            { v: amount, style: 'borderRight' },
+            { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
           ])
         })
       } else {
         addRow([
           { v: 1, style: 'borderCenter' },
           { v: 'No item data available', style: 'border' },
-          { v: '', style: 'border' },
-          { v: '', style: 'border' },
-          { v: 'Rp', style: 'border' },
-          { v: 0, style: 'borderRight' },
+          { style: 'border' },
+          { style: 'border' },
+          { v: 0, style: 'borderBoldRight', numFmt: NUMFMT_RP },
         ])
       }
 
       const subTotal = item.subtotal || item.total_amount || item.total || 0
       const grandTotal = item.total_amount || item.total || 0
-      addRow([{}, {}, {}, { v: 'Sub Total', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: subTotal, style: 'totalCell' }])
-      addRow([{}, {}, {}, { v: 'Discount', style: 'totalCell' }, { v: 'Rp', style: 'totalCell' }, { v: item.discount || 0, style: 'totalCell' }])
-      addRow([{}, {}, {}, { v: 'Amount', style: 'grandTotalCell' }, { v: 'Rp', style: 'grandTotalCell' }, { v: grandTotal, style: 'grandTotalCell' }])
+      addRow([{}, {}, {}, { v: 'Sub Total', style: 'borderBoldRight' }, { v: subTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+      addRow([{}, {}, {}, { v: 'Discount', style: 'borderBoldRight' }, { v: item.discount || 0, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+      addRow([{}, {}, {}, { v: 'Amount', style: 'borderBoldRight' }, { v: grandTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
 
       addRow([])
-      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 2 }, {}, {}, { v: 'Received By,' }, {}, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
-      addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Account No. 106-08-85757', mergeAcross: 2 }, {}, {}, {}, {}, {}])
-      addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 2 }, {}, {}, {}, {}, { v: 'Grace', style: 'plainBold' }])
+      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {}, {}, { v: 'Received By,' }, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
+      addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Account No. 106-08-85757', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { v: signerName(item), style: 'plainBold' }])
       addRow([])
     }
 
@@ -479,10 +544,11 @@ function invoiceHtml(item: any): string {
   if (gender === 'L') prefix = 'Bapak '
   if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
-  
+  const signer = signerName(item)
+
   const invoiceNo = item.invoice_no || '-'
   const invoiceDate = item.created_at || item.due_date
-  
+
   const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
   let itemsHtml = ''
@@ -533,39 +599,39 @@ function invoiceHtml(item: any): string {
           }
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; color: #000; font-size: 12px; margin: 0; }
           .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-          
+
           .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
           .header-table td { vertical-align: top; padding: 0; }
-          
+
           .logo-col { width: 50%; padding-right: 20px; }
           .info-col { width: 50%; }
-          
+
           .logo-container { display: flex; align-items: center; margin-bottom: 10px; }
           .logo { width: 80px; height: 80px; margin-right: 15px; flex-shrink: 0; }
-          
+
           .company-details h1 { margin: 0; font-size: 22px; font-weight: bold; }
           .company-details h2 { margin: 0; font-size: 14px; font-style: italic; font-weight: normal; margin-bottom: 10px; color: #333; }
           .company-details p { margin: 0; font-size: 11px; line-height: 1.4; }
-          
+
           .invoice-text { font-size: 28px; font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 10px; letter-spacing: 1px; }
-          
+
           .meta-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #7ea8ce; }
           .meta-table td, .meta-table th { border: 1px solid #7ea8ce; padding: 4px 8px; }
           .meta-table .bg-blue { background-color: #003366; color: white; font-weight: bold; }
           .meta-table .label { width: 90px; font-weight: bold; }
-          
+
           .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
           .items-table th { background-color: #003366; color: white; border: 1px solid #7ea8ce; padding: 8px; text-align: center; font-size: 12px; }
           .items-table td { border: 1px solid #7ea8ce; padding: 8px; vertical-align: top; }
           .items-table .rp-col { border-right: none; width: 20px; padding-right: 2px; }
           .items-table .val-col { border-left: none; text-align: right; }
-          
+
           .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 0; margin-bottom: 20px; }
           .summary-table td { border: 1px solid #7ea8ce; padding: 6px; background-color: #dbeaf4; font-weight: bold; }
           .summary-table .label { text-align: right; padding-right: 10px; }
-          
+
           .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
-          
+
           .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
           .sig-box { width: 250px; }
           .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
@@ -693,7 +759,7 @@ function invoiceHtml(item: any): string {
             </div>
             <div class="sig-box">
               Sincerely,
-              <div class="sig-line">Grace</div>
+              <div class="sig-line">${signer}</div>
             </div>
           </div>
         </div>
@@ -748,7 +814,7 @@ async function printReceiptAsync(item: any, approved: any) {
     lunas: ps === 'paid',
     partial: ps === 'partially_paid' || ps === 'partial',
     method: paymentMethodOf(approved.bank_name),
-    cs_name: approved.user?.name || approved.user?.username || '-',
+    cs_name: approved.user?.name || approved.user?.username || (currentUser as any)?.value?.name || (currentUser as any)?.name || '-',
   }
   const win = window.open('', '_blank')
   if (!win) {
@@ -817,7 +883,7 @@ async function printReceiptAsync(item: any, approved: any) {
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-status="{ value }">
         <span :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' : 'Pending' }}
+          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' : 'Unpaid' }}
         </span>
       </template>
       <template #cell-payment_status="{ value }">
@@ -827,12 +893,7 @@ async function printReceiptAsync(item: any, approved: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('sales_invoice:update')" class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')" style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          </button>
-          <button v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('sales_invoice:update')" class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')" style="color: var(--color-danger); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
+          <!-- Approval dimatikan: invoice auto-approved via payment, tombol Approve/Reject dihapus. -->
           <button v-if="row.status === 'approved' && can('sales_invoice:read')" class="action-btn action-btn--edit" title="Print Receipt" @click="printInvoice(row)" style="color: var(--color-primary); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 9V2h12v7"></path>
@@ -875,17 +936,11 @@ async function printReceiptAsync(item: any, approved: any) {
       </div>
       <div class="form-group">
         <label for="si-sale" class="form-label">Sale Reference</label>
-        <select id="si-sale" v-model="form.sale_id" class="form-select" @change="onSaleChange">
-          <option :value="null">-- Select Sale --</option>
-          <option v-for="s in sales" :key="s.id" :value="s.id">{{ s.sale_no }} — {{ formatRupiah(s.total) }}</option>
-        </select>
+        <CustomSelect id="si-sale" v-model="form.sale_id" :options="siSaleOptions" placeholder="-- Select Sale --" class="form-select" @update:modelValue="onSaleChange" />
       </div>
       <div class="form-group">
         <label for="si-customer" class="form-label">Customer</label>
-        <select id="si-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
-        </select>
+        <CustomSelect id="si-customer" v-model="form.customer_id" :options="siCustomerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="si-due" class="form-label">Due Date</label>
@@ -914,11 +969,7 @@ async function printReceiptAsync(item: any, approved: any) {
       </div>
       <div class="form-group">
         <label for="si-status" class="form-label">Status</label>
-        <select id="si-status" v-model="form.status" class="form-select">
-          <option value="unpaid">Unpaid</option>
-          <option value="paid">Paid</option>
-          <option value="overdue">Overdue</option>
-        </select>
+        <CustomSelect id="si-status" v-model="form.status" :options="siStatusOptions" class="form-select" />
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Sales Invoice" :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />

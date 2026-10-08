@@ -1,17 +1,23 @@
 <script setup lang="ts">
-// @ts-nocheck
 import { ref, reactive, computed } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
+import { useResourcesStore } from '@/stores/resources.store'
+import { useRouter } from 'vue-router'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
-import type { TableColumn, ServiceReport } from '@/types'
+import type { TableColumn, ServiceReport, SparepartRequest } from '@/types'
 
 const { can } = usePermission()
+const router = useRouter()
+const toast = useToast()
+const resources = useResourcesStore()
 
 const {
   serviceReports: data,
@@ -19,13 +25,129 @@ const {
   contractItems,
   customers,
   technicians,
+  units,
+  products,
+  sparepartRequests,
   findContractItem,
   findCustomer,
   findTechnician,
+  findProduct,
+  findUnit,
+  findServiceReport,
 } = useMasterStore()
 
-// Tab: laporan service (dari service request) vs service history delivery (dari DO).
-const activeTab = ref<'service' | 'delivery'>('service')
+const customerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name,
+  })),
+)
+
+const unitOptions = computed(() =>
+  (units.value as any[]).map((u: any) => ({
+    value: u.id,
+    label: `${u.model} (SN: ${u.serial_number})`,
+  })),
+)
+
+const serviceTypeOptions = [
+  { value: 'corrective', label: 'Corrective' },
+  { value: 'preventive', label: 'Preventive' },
+  { value: 'installation', label: 'Installation' },
+  { value: 'relocation', label: 'Relocation' },
+]
+
+const technicianOptions = computed(() =>
+  (technicians.value as any[]).map((t: any) => ({
+    value: t.id,
+    label: t.name,
+  })),
+)
+
+const statusOptions = [
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'Continue (In Progress)' },
+  { value: 'completed', label: 'Done (Test OK)' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
+
+const sparepartProductOptions = computed(() =>
+  (products.value as any[]).map((p: any) => ({
+    value: p.id,
+    label: p.name,
+  })),
+)
+
+const printTypeOptions = [
+  { value: 'technical', label: 'Technical Report Form' },
+  { value: 'history', label: 'Service History Form' },
+  { value: 'copier', label: 'Copier Service Report' },
+]
+
+// Tab: service reports | delivery history | sparepart requests
+const activeTab = ref<'service' | 'delivery' | 'sparepart'>('service')
+
+// ── Sparepart Requests (Procurement) ───────────────────────────────────────
+const sprColumns: TableColumn[] = [
+  { key: 'request_no', label: 'Request No' },
+  { key: 'service_report_id', label: 'Service No' },
+  { key: 'technician_id', label: 'Requested By' },
+  { key: 'product_id', label: 'Sparepart' },
+  { key: 'qty', label: 'Qty' },
+  { key: 'status', label: 'Status' },
+  { key: 'created_at', label: 'Date' },
+  { key: 'actions', label: 'Action' },
+]
+
+const creatingId = ref<string | number | null>(null)
+
+function getProduct(row: any) {
+  const id = row?.product_id ?? row
+  return (
+    (row as any)?.product?.name ||
+    findProduct(id as any)?.name ||
+    '-'
+  )
+}
+
+function getSR(row: any) {
+  const id = row?.service_report_id ?? row
+  const sr = (row as any)?.service_report || findServiceReport(id as any)
+  return sr ? sr.report_no || (sr as any).service_report_no || '-' : '-'
+}
+
+function sprTechName(row: any): string {
+  const direct =
+    row?.technician ||
+    (row?.technician_id ? findTechnician(row.technician_id as any) : null)
+  const name = (t: any) => t?.user?.name || t?.user?.username || t?.name || ''
+  if (name(direct)) return name(direct)
+  const srTechId = row?.service_report?.technician_id
+  const srTech =
+    row?.service_report?.technician ||
+    (srTechId ? findTechnician(srTechId as any) : null)
+  return name(srTech) || '-'
+}
+
+async function handleCreatePO(request: SparepartRequest) {
+  if (creatingId.value !== null) return
+  creatingId.value = request.id
+  try {
+    await resources.create('purchaseOrders', {
+      sparepart_request_id: request.id,
+      order_date: new Date().toISOString(),
+      status: 'draft',
+    })
+    await useMasterStore().refreshInBackground()
+    toast.success(`Purchase order created for ${request.request_no}`)
+    router.push('/accounting/purchase-orders')
+  } catch (err) {
+    toast.error(toast.fromError(err, 'Failed to create purchase order'))
+  } finally {
+    creatingId.value = null
+  }
+}
+// ───────────────────────────────────────────────────────────────────────────
 
 const doColumns: TableColumn[] = [
   { key: 'do_number', label: 'DO No.' },
@@ -59,6 +181,44 @@ function printDO(item: any) {
   printDeliveryServiceHistory(item)
 }
 
+// ── DO Detail Modal ─────────────────────────────────────────────────────────
+const showDoDetail = ref(false)
+const doDetailItem = ref<any>(null)
+
+function openDoDetail(row: any) {
+  doDetailItem.value = row
+  showDoDetail.value = true
+}
+
+function getDoItemName(item: any): string {
+  if (item.product?.name) return item.product.name
+  if (item.product_id) return findProduct(item.product_id as any)?.name || `Product ${item.product_id}`
+  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_number ? ` (SN: ${item.unit.serial_number})` : ''}`
+  if (item.unit_id) {
+    const unit = findUnit(item.unit_id as any)
+    return unit ? `${unit.model}${(unit as any).serial_number ? ` (SN: ${(unit as any).serial_number})` : ''}` : `Unit ${item.unit_id}`
+  }
+  return '-'
+}
+
+// ── SR Detail Modal ─────────────────────────────────────────────────────────
+const showSrDetail = ref(false)
+const srDetailItem = ref<any>(null)
+
+function openSrDetail(row: any) {
+  srDetailItem.value = row
+  showSrDetail.value = true
+}
+
+function getSrUnitName(item: any): string {
+  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_number ? ` (SN: ${item.unit.serial_number})` : ''}`
+  if (item.unit_id) {
+    const unit = findUnit(item.unit_id as any)
+    return unit ? `${unit.model}${(unit as any).serial_number ? ` (SN: ${(unit as any).serial_number})` : ''}` : `Unit ${item.unit_id}`
+  }
+  return '-'
+}
+
 const columns: TableColumn[] = [
   { key: 'report_no', label: 'Report No.' },
   { key: 'customer_id', label: 'Customer' },
@@ -67,6 +227,14 @@ const columns: TableColumn[] = [
   { key: 'service_date', label: 'Visit Date' },
   { key: 'status', label: 'Status' },
 ]
+
+// Copier report punya list tersendiri (CopierReportsPage) — disembunyikan
+// dari list Service Reports.
+const serviceOnlyReports = computed(() =>
+  data.value.filter(
+    (item: any) => !isCopierReport(item),
+  ),
+)
 
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -135,7 +303,7 @@ function openEdit(item: any) {
 }
 
 function handleSubmit() {
-  if (!form.report_no.trim() && !form.service_report_no?.trim()) return
+  if (!form.report_no.trim()) return
   
   const finalForm = { ...form, service_report_no: form.report_no }
   
@@ -189,6 +357,7 @@ function technicianName(id: any): string {
 }
 
 import { printServiceReport, printMultipleServiceReports, type ReportType } from '@/utils/printReport'
+import { isCopierReport } from '@/utils/copierReport'
 
 const printModalOpen = ref(false)
 const printType = ref<ReportType>('technical')
@@ -204,14 +373,14 @@ function handleConfirmPrint() {
   if (printTarget.value) {
     printServiceReport(printTarget.value, printType.value)
   } else {
-    printMultipleServiceReports(data.value, printType.value)
+    printMultipleServiceReports(serviceOnlyReports.value, printType.value)
   }
   printModalOpen.value = false
 }
 
 function exportToExcel() {
   const rows = [['Report No.', 'Customer', 'Contract', 'Service Type', 'Technician', 'Visit Date', 'Status']]
-  for (const item of data.value) {
+  for (const item of serviceOnlyReports.value) {
     rows.push([
       item.report_no || item.service_report_no || '-',
       customerName(item.customer_id),
@@ -253,13 +422,19 @@ function printTable() {
     </PageHeader>
     <div style="display: flex; gap: 8px; margin-bottom: 12px;">
       <button class="btn btn-sm" :class="activeTab === 'service' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'service'">
-        Service Reports ({{ (data as any[]).length }})
+        Service Reports ({{ serviceOnlyReports.length }})
       </button>
       <button class="btn btn-sm" :class="activeTab === 'delivery' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'delivery'">
         Delivery History ({{ deliveryHistories.length }})
       </button>
+      <button class="btn btn-sm" :class="activeTab === 'sparepart' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'sparepart'">
+        Sparepart Requests ({{ (sparepartRequests as any[]).length }})
+      </button>
     </div>
-    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="data" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
+    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="serviceOnlyReports" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
+      <template #cell-report_no="{ value, row }">
+        <span class="sr-link" @click="openSrDetail(row)">{{ value || row.service_report_no || '-' }}</span>
+      </template>
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
@@ -300,6 +475,9 @@ function printTable() {
       </template>
     </DataTable>
     <DataTable v-if="activeTab === 'delivery'" :columns="doColumns" :data="deliveryHistories" search-placeholder="Search delivery history...">
+      <template #cell-do_number="{ value, row }">
+        <span class="do-link" @click="openDoDetail(row)">{{ value }}</span>
+      </template>
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-do_type="{ value }">{{ doTypeLabel(value) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
@@ -319,6 +497,181 @@ function printTable() {
         </button>
       </template>
     </DataTable>
+
+    <!-- SR Detail Modal -->
+    <FormModal :open="showSrDetail" :title="srDetailItem ? `Detail ${srDetailItem.report_no || srDetailItem.service_report_no}` : 'Detail Service Report'" max-width="640px" @close="showSrDetail = false">
+      <template v-if="srDetailItem">
+        <div class="detail-grid">
+          <div class="detail-field">
+            <span>Report No.</span>
+            <strong>{{ srDetailItem.report_no || srDetailItem.service_report_no }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Service Type</span>
+            <strong>{{ srDetailItem.service_type || '-' }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Customer</span>
+            <strong>{{ customerName(srDetailItem.customer_id) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Technician</span>
+            <strong>{{ technicianName(srDetailItem.technician_id) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Product / Unit</span>
+            <strong>{{ getSrUnitName(srDetailItem) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Visit Date</span>
+            <strong>{{ srDetailItem.service_date ? new Date(srDetailItem.service_date).toLocaleDateString('en-GB') : '-' }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Status</span>
+            <strong>
+              <span class="badge" :class="srDetailItem.status === 'completed' ? 'badge-success' : srDetailItem.status === 'in_progress' ? 'badge-info' : 'badge-warning'">
+                {{ String(srDetailItem.status === 'open' ? 'Open' : srDetailItem.status === 'in_progress' ? 'In Progress' : srDetailItem.status === 'completed' ? 'Completed' : srDetailItem.status || '-').replace('_', ' ') }}
+              </span>
+            </strong>
+          </div>
+          <div v-if="srDetailItem.delivery_address" class="detail-field detail-field--wide">
+            <span>Delivery Address</span>
+            <strong>{{ srDetailItem.delivery_address }}</strong>
+          </div>
+          <div v-if="srDetailItem.machine_problem" class="detail-field detail-field--wide">
+            <span>Machine Problem</span>
+            <strong>{{ srDetailItem.machine_problem }}</strong>
+          </div>
+          <div v-if="srDetailItem.repair_action" class="detail-field detail-field--wide">
+            <span>Repair Action</span>
+            <strong>{{ srDetailItem.repair_action }}</strong>
+          </div>
+          <div v-if="srDetailItem.remarks" class="detail-field detail-field--wide">
+            <span>Remarks</span>
+            <strong>{{ srDetailItem.remarks }}</strong>
+          </div>
+        </div>
+        <section class="detail-items" v-if="srDetailItem.spareparts && srDetailItem.spareparts.length > 0">
+          <h4>Spareparts Used</h4>
+          <div class="detail-items-table-wrap">
+            <table class="detail-items-table">
+              <thead>
+                <tr><th>Sparepart</th><th>Qty</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(sp, index) in srDetailItem.spareparts" :key="index">
+                  <td>{{ sp.product?.name || findProduct(sp.product_id as any)?.name || `Product ${sp.product_id}` }}</td>
+                  <td>{{ sp.qty }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showSrDetail = false">Close</button>
+      </template>
+    </FormModal>
+
+    <!-- DO Detail Modal -->
+    <FormModal :open="showDoDetail" :title="doDetailItem ? `Detail ${doDetailItem.do_number}` : 'Detail Delivery Order'" max-width="640px" @close="showDoDetail = false">
+      <template v-if="doDetailItem">
+        <div class="detail-grid">
+          <div class="detail-field">
+            <span>DO Number</span>
+            <strong>{{ doDetailItem.do_number }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Type</span>
+            <strong>{{ doTypeLabel(doDetailItem.do_type) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Customer</span>
+            <strong>{{ customerName(doDetailItem.customer_id) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Technician</span>
+            <strong>{{ technicianName(doDetailItem.technician_id) }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Delivery Date</span>
+            <strong>{{ doDetailItem.delivery_date ? new Date(doDetailItem.delivery_date).toLocaleDateString('en-GB') : '-' }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Status</span>
+            <strong>
+              <span class="badge" :class="doDetailItem.status === 'delivered' ? 'badge-success' : doDetailItem.status === 'in_transit' ? 'badge-info' : 'badge-warning'">
+                {{ String(doDetailItem.status || '-').replace('_', ' ') }}
+              </span>
+            </strong>
+          </div>
+          <div class="detail-field">
+            <span>Recipient</span>
+            <strong>{{ doDetailItem.recipient_name || '-' }}</strong>
+          </div>
+          <div class="detail-field">
+            <span>Phone</span>
+            <strong>{{ doDetailItem.recipient_phone || '-' }}</strong>
+          </div>
+          <div v-if="doDetailItem.delivery_address" class="detail-field detail-field--wide">
+            <span>Delivery Address</span>
+            <strong>{{ doDetailItem.delivery_address }}</strong>
+          </div>
+          <div v-if="doDetailItem.notes" class="detail-field detail-field--wide">
+            <span>Notes</span>
+            <strong>{{ doDetailItem.notes }}</strong>
+          </div>
+        </div>
+        <section class="detail-items">
+          <h4>Products / Items</h4>
+          <div class="detail-items-table-wrap">
+            <table class="detail-items-table">
+              <thead>
+                <tr><th>Item</th><th>Qty</th><th>Remarks</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, index) in doDetailItem.delivery_order_items || []" :key="item.id || index">
+                  <td>{{ getDoItemName(item) }}</td>
+                  <td>{{ item.qty || 1 }}</td>
+                  <td>{{ item.remarks || '-' }}</td>
+                </tr>
+                <tr v-if="!doDetailItem.delivery_order_items?.length">
+                  <td colspan="3" class="detail-items-empty">No delivery items</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showDoDetail = false">Close</button>
+      </template>
+    </FormModal>
+    <!-- Sparepart Requests Tab -->
+    <DataTable v-if="activeTab === 'sparepart'" :columns="sprColumns" :data="sparepartRequests" permission="service_sparepart" search-placeholder="Search requests...">
+      <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
+      <template #cell-service_report_id="{ row }">{{ getSR(row) }}</template>
+      <template #cell-technician_id="{ row }">{{ sprTechName(row) }}</template>
+      <template #cell-status="{ value }">
+        <span class="badge" :class="{
+          'badge-warning': value === 'pending',
+          'badge-success': value === 'po_created' || value === 'completed',
+          'badge-danger': value === 'rejected'
+        }">
+          {{ value || 'pending' }}
+        </span>
+      </template>
+      <template #cell-created_at="{ value }">
+        {{ new Date(value).toLocaleDateString() }}
+      </template>
+      <template #cell-actions="{ row }">
+        <button v-if="row.status === 'pending' && can('purchase_order:create')" class="btn btn-sm btn-primary"
+          :disabled="creatingId !== null" @click="handleCreatePO(row)">
+          {{ creatingId === row.id ? 'Creating...' : 'Create PO' }}
+        </button>
+        <span v-else class="text-muted text-sm">Processed</span>
+      </template>
+    </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Service Report' : 'Add Service Report'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="sr-no" class="form-label">Report No.</label>
@@ -326,33 +679,19 @@ function printTable() {
       </div>
       <div class="form-group">
         <label for="sr-customer" class="form-label">Customer</label>
-        <select id="sr-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ (c as any).company_name || (c as any).name }}</option>
-        </select>
+        <CustomSelect id="sr-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div class="form-group">
         <label class="form-label">Unit / Machine</label>
-        <select v-model="form.unit_id" class="form-select">
-          <option :value="null">-- Select Unit --</option>
-          <option v-for="u in (useMasterStore().units as any)" :key="u.id" :value="u.id">{{ u.model }} (SN: {{ u.serial_number }})</option>
-        </select>
+        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" class="form-select" />
       </div>
       <div class="form-group">
         <label for="sr-type" class="form-label">Service Type</label>
-        <select id="sr-type" v-model="form.service_type" class="form-select">
-          <option value="corrective">Corrective</option>
-          <option value="preventive">Preventive</option>
-          <option value="installation">Installation</option>
-          <option value="relocation">Relocation</option>
-        </select>
+        <CustomSelect id="sr-type" v-model="form.service_type" :options="serviceTypeOptions" class="form-select" />
       </div>
       <div class="form-group">
         <label for="sr-tech" class="form-label">Technician</label>
-        <select id="sr-tech" v-model="form.technician_id" class="form-select">
-          <option :value="null">-- Select Technician --</option>
-          <option v-for="t in technicians" :key="t.id" :value="t.id">{{ (t as any).name }}</option>
-        </select>
+        <CustomSelect id="sr-tech" v-model="form.technician_id" :options="technicianOptions" placeholder="-- Select Technician --" class="form-select" />
       </div>
       <div class="form-group">
         <label class="form-label">Project Name</label>
@@ -390,12 +729,7 @@ function printTable() {
       </div>
       <div class="form-group">
         <label for="sr-status" class="form-label">Status</label>
-        <select id="sr-status" v-model="form.status" class="form-select">
-          <option value="open">Open</option>
-          <option value="in_progress">Continue (In Progress)</option>
-          <option value="completed">Done (Test OK)</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
+        <CustomSelect id="sr-status" v-model="form.status" :options="statusOptions" class="form-select" />
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -410,10 +744,7 @@ function printTable() {
       <div class="form-group" v-if="form.status === 'in_progress' || true">
         <label class="form-label">Change Sparepart / Component Replacement</label>
         <div v-for="(sp, idx) in form.spareparts" :key="idx" style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
-          <select v-model="sp.product_id" class="form-select" style="flex: 1;">
-            <option value="" disabled>Select Product (Sparepart)...</option>
-            <option v-for="p in useMasterStore().products" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
+          <CustomSelect v-model="sp.product_id" :options="sparepartProductOptions" placeholder="Select Product (Sparepart)..." class="form-select" style="flex: 1;" />
           <input type="number" v-model="sp.qty" class="form-input" style="width: 80px;" min="1" placeholder="Qty">
           <button type="button" class="btn btn-sm btn-outline" @click="form.spareparts.splice(idx, 1)">Delete</button>
         </div>
@@ -473,11 +804,7 @@ function printTable() {
     <FormModal :open="printModalOpen" title="Select Report Type" @close="printModalOpen = false" @submit="handleConfirmPrint">
       <div class="form-group">
         <label class="form-label">Report Type (PDF)</label>
-        <select v-model="printType" class="form-select">
-          <option value="technical">Technical Report Form</option>
-          <option value="history">Service History Form</option>
-          <option value="copier">Copier Service Report</option>
-        </select>
+        <CustomSelect v-model="printType" :options="printTypeOptions" class="form-select" />
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="printModalOpen = false">Cancel</button>
@@ -512,5 +839,88 @@ function printTable() {
 }
 .mt-3 {
   margin-top: 1rem;
+}
+
+/* DO & SR Detail Link */
+.do-link, .sr-link {
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s, text-decoration 0.15s;
+}
+.do-link:hover, .sr-link:hover {
+  color: var(--color-primary-hover, #2563eb);
+  text-decoration: underline;
+}
+
+/* DO Detail Modal */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.detail-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+}
+.detail-field span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+.detail-field strong {
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.detail-field--wide {
+  grid-column: 1 / -1;
+}
+.detail-items {
+  margin-top: 16px;
+}
+.detail-items h4 {
+  margin: 0 0 10px;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.detail-items-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+}
+.detail-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.detail-items-table th,
+.detail-items-table td {
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--color-border-light);
+  text-align: left;
+}
+.detail-items-table th {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+}
+.detail-items-table tr:last-child td {
+  border-bottom: 0;
+}
+.detail-items-empty {
+  color: var(--color-text-muted);
+  text-align: center !important;
+}
+@media (max-width: 520px) {
+  .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

@@ -76,6 +76,40 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
+/** Upload multipart/form-data (mis. file Excel). Tanpa header JSON. */
+export async function uploadFile<T>(
+  path: string,
+  formData: FormData,
+  tracksLoading = false,
+): Promise<T> {
+  if (tracksLoading) activeApiRequests.value++;
+  try {
+    const headers = new Headers();
+    const token = sessionStorage.getItem("bias_token");
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      body: formData,
+      headers,
+    });
+    const body = (await response.json().catch(() => null)) as {
+      message?: string;
+      error?: string;
+    } | null;
+    if (!response.ok) {
+      if (response.status === 401) sessionStorage.removeItem("bias_token");
+      throw new ApiError(
+        body?.message || body?.error || "A server error occurred",
+        response.status,
+      );
+    }
+    return body as T;
+  } finally {
+    if (tracksLoading) activeApiRequests.value--;
+  }
+}
+
 export async function downloadFile(
   path: string,
   filename: string,

@@ -2,6 +2,7 @@
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import type { Brand, TableColumn } from '@/types'
@@ -62,7 +63,11 @@ async function handleDelete() {
   <div>
     <PageHeader title="Brands" button-label="Add Brand" permission="brand:create" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Search brands..." permission="brand" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search brands..." permission="brand" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="brand" @imported="fetchAll" />
+      </template>
+    </DataTable>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Add Brand'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="brand-name" class="form-label">Brand Name</label>

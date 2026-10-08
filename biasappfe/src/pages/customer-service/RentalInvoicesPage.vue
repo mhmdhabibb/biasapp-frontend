@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -10,7 +11,7 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { RentalInvoice, TableColumn } from '@/types'
-import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
+import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_COUNT, NUMFMT_RP, NUMFMT_RP_RATE, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { printPaymentSlip, printPaymentStruk, paymentMethodOf, buildPaymentTimestamp, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
 import { computed, reactive, ref } from 'vue'
 
@@ -48,9 +49,26 @@ function formatDate(value: any): string {
 }
 
 function approvalStatus(status: string): string {
+  if (status === 'pending_meter_reading') return 'pending_meter_reading'
   if (status === 'approved') return 'approved'
   if (status === 'rejected') return 'rejected'
   return 'pending'
+}
+
+function meterReadingStatusLabel(status: string): string {
+  if (status === 'pending_meter_reading') return 'Awaiting Meter Reading'
+  return approvalStatusLabel(status)
+}
+
+function approvalStatusLabel(status: string): string {
+  if (status === 'approved') return 'Approved'
+  if (status === 'rejected') return 'Rejected'
+  if (status === 'pending_meter_reading') return 'Awaiting Meter Reading'
+  return 'Unpaid'
+}
+
+function isPaymentBlocked(item: any): boolean {
+  return item?.status === 'pending_meter_reading'
 }
 
 function isCopierUnit(unit: any): boolean {
@@ -168,10 +186,10 @@ async function exportInvoicesToExcel(
   const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
   // Sheet names must be unique (two customers may share the same company name).
   const usedSheetNames = new Set<string>()
-  // Column widths: A=No(5), B=Description(30), C=MeterValues(12), D=Operator/Rate(8), E=Rp(4), F=Amount(16)
-  const columnWidths = [5, 30, 12, 8, 4, 16]
-
-  const fmtRp = (n: number) => n > 0 ? n.toLocaleString('id-ID') : (n === 0 ? '0' : String(n))
+  // Layout 5 kolom ala invoice manual (tanpa kolom Rp terpisah):
+  // A=No(4.2), B=Description(39.2), C=MeterValues(7.8), D=Operator/Rate(13), E=Amount(31.2).
+  // Rp ditampilkan via number format; nol tampil '-', negatif dalam kurung.
+  const columnWidths = [4.2, 39.2, 7.8, 13, 31.2]
 
   for (const [customerId, groupItems] of groups) {
     const sortedItems = [...groupItems].sort((a, b) => {
@@ -212,90 +230,109 @@ async function exportInvoicesToExcel(
       const brandName = unit?.brand?.name || unit?.brand_name || ''
       const modelDesc = unit?.model || ci?.description || ''
       const serialNo = unit?.serial_no || ''
-      // Format: "Rental Charges Photocopy Machine <Customer> <Brand> <Model> S/N : <Serial>  1 Unit"
-      const machineType = isCopier ? 'Photocopy Machine' : 'Printer'
-      const descParts = [`Rental Charges ${machineType} ${custName}`]
-      if (brandName) descParts.push(brandName)
-      if (modelDesc) descParts.push(modelDesc)
-      if (serialNo) descParts.push(`S/N : ${serialNo}`)
-      descParts.push(' 1 Unit')
-      const unitLine = descParts.join(' ').replace(/\s+/g, ' ').trim()
 
-      // ===== COMPANY HEADER (left) + INVOICE INFO (right) =====
+      // ===== COMPANY HEADER (left) + INVOICE INFO (right), 5 kolom ala invoice manual =====
       // Row 1: Company name + Inv No.
       addRow([
-        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 2, style: 'borderBold' }, {}, {},
+        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
+        {},
         { v: 'Inv No. :', style: 'borderBoldRight' },
-        { v: item.invoice_no || '-', mergeAcross: 1, style: 'border' }, {},
+        { v: item.invoice_no || '-', style: 'border' },
       ])
       // Row 2: Address line 1 + Date
       addRow([
-        { v: 'Greenland Housing Blok E6 No. 11', mergeAcross: 2, style: 'borderCenter' }, {}, {},
+        { v: 'Greenland Housing Blok E6 No. 11', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
         { v: 'Date :', style: 'borderBoldRight' },
-        { v: dateLabel, mergeAcross: 1, style: 'border' }, {},
+        { v: dateLabel, style: 'border' },
       ])
-      // Row 3: Address line 2 + Bill-to
+      // Row 3: Address line 2 + Kepada Yth.
       addRow([
-        { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 2, style: 'borderCenter' }, {}, {},
-        { v: 'To:', style: 'borderBoldRight' },
-        { v: custName, mergeAcross: 1, style: 'borderBold' }, {},
+        { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Kepada Yth. ', style: 'borderBoldRight' },
+        { style: 'border' },
       ])
-      // Row 4: Phone + Customer address
+      // Row 4: Phone + Customer name
       addRow([
-        { v: 'Telp : +62 811 7045 657', mergeAcross: 2, style: 'borderCenter' }, {}, {},
+        { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: custName, style: 'borderBold' },
+        { style: 'border' },
+      ])
+      // Row 5: Email + Customer address
+      addRow([
+        { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
         { v: custAddress, mergeAcross: 1, style: 'border' }, {},
       ])
-      // Row 5: Email + (continued address)
+      // Row 6: Website + PIC
       addRow([
-        { v: 'Email : admin@biasbst.com', mergeAcross: 2, style: 'borderCenter' }, {}, {},
-        {}, {},
+        { v: 'www.biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Up :', style: 'borderBoldRight' },
+        { v: picDisplay, style: 'borderBold' },
       ])
-      // Row 6: Website + PIC / Attn
+      // Row 7: spacer bergaris ala invoice manual
       addRow([
-        { v: 'www.biasbst.com', mergeAcross: 2, style: 'borderCenter' }, {}, {},
-        { v: 'Attn :', style: 'borderBoldRight' },
-        { v: picDisplay, mergeAcross: 1, style: 'borderBold' }, {},
+        { style: 'border' }, { style: 'border' },
+        {},
+        { style: 'border' }, { style: 'border' },
       ])
 
       // ===== INVOICE TITLE + PERIOD =====
-      addRow([{ v: 'INVOICE', mergeAcross: 5, style: 'titleCell' }])
-      addRow([{ v: 'Period: ' + periodLabel, mergeAcross: 2, style: 'borderCenter' }])
+      addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
+      addRow([{ v: 'Periode : ' + periodLabel, mergeAcross: 1, style: 'borderBold' }, {}])
 
       // ===== TABLE HEADER =====
       addRow([
-        { v: 'No', style: 'headerCell' },
-        { v: 'Description', mergeAcross: 2, style: 'headerCell' }, {}, {},
-        {}, // operator/rate column (empty in header)
-        { v: 'Amount', style: 'headerCell' },
+        { v: 'No', style: 'borderBoldCenter' },
+        { v: 'Description', style: 'borderBold' },
+        { style: 'border' },
+        { style: 'border' },
+        { v: 'Amount', style: 'borderBold' },
       ])
 
-      // ===== ROW 1: Rental Charge =====
+      // ===== ROW 1: Rental Charge (2 baris ala invoice manual) =====
+      // Baris 1: jenis mesin + customer + amount. Baris 2: unit + S/N.
+      const machineLine = `Rental Charges ${isCopier ? 'Mesin Fotocopy' : 'Printer'} ${custName}`
+      const unitLine2 = [brandName, modelDesc, serialNo ? `S/N : ${serialNo}` : '', '1 Unit'].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
       addRow([
         { v: 1, style: 'borderCenter' },
-        { v: unitLine, mergeAcross: 2, style: 'borderBold' }, {}, {},
-        { v: 'Rp', style: 'borderBoldRight' },
-        { v: fmtRp(baseRentalFee), style: 'borderBoldRight' },
+        { v: machineLine, style: 'borderBold' },
+        {}, {},
+        { v: baseRentalFee, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      ])
+      addRow([
+        {},
+        { v: unitLine2 || '-', style: 'borderBold' },
+        { style: 'border' }, { style: 'border' },
+        { style: 'border' },
       ])
 
       const meterDetails: any[] = item.meter_details || []
       let rowNum = 2
 
       // --- Helper: render meter section ---
+      // Format ikut invoice Excel manual: angka tetap numerik, Rp via number
+      // format, 0 tampil '-', net negatif tampil dalam kurung.
+      // Nominal uang tidak berubah (billable tetap clamp >= 0).
       const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number) => {
         const total = last - start
-        const billable = Math.max(0, total - free)
+        const net = total - free
+        const billable = Math.max(0, net)
         // Section label (e.g. "B/W A4", "Colour A4") — bold
-        addRow([{}, { v: sectionLabel, mergeAcross: 2, style: 'borderBoldCenter' }, {}, {}, {}, {}])
+        addRow([{ style: 'border' }, { v: sectionLabel, style: 'borderBold' }, { style: 'border' }, { style: 'border' }, { style: 'border' }])
         // Start Meter Reading
-        addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight' }, {}, {}, {}])
+        addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
         // Last Meter Reading + (-)
-        addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight' }, { v: '(-)', style: 'border' }, {}, {}])
+        addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
         // Total Copies
-        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight' }, {}, {}, {}])
+        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
         // Free Copies + (-)
-        addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight' }, { v: '(-)', style: 'border' }, {}, {}])
-        // Total Copies (billable)
-        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: billable, style: 'borderBoldRight' }, {}, {}, {}])
+        addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
+        // Total Copies (net)
+        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
         return { total, billable }
       }
 
@@ -305,9 +342,8 @@ async function exportInvoicesToExcel(
           { v: rowNum++, style: 'borderCenter' },
           { v: desc, style: 'border' },
           { v: '(x)', style: 'borderCenter' },
-          { v: 'Rp', style: 'borderRight' },
-          { v: fmtRp(rate), style: 'borderRight' },
-          { v: fmtRp(amount), style: 'borderBoldRight' },
+          { v: rate, style: 'borderRight', numFmt: NUMFMT_RP_RATE },
+          { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
         ])
       }
 
@@ -331,7 +367,6 @@ async function exportInvoicesToExcel(
             const start = detail.start_meter_reading || 0
             const last = detail.last_meter_reading || 0
             const free = detail.free_quota ?? 0
-            const billable = detail.billable_copies ?? Math.max(0, (last - start) - free)
             pushMeterSection(`B/W ${paperSize}`, start, last, free)
             chargeRow(`Copies Charges B/W ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
           }
@@ -341,7 +376,6 @@ async function exportInvoicesToExcel(
             const start = detail.start_meter_reading || 0
             const last = detail.last_meter_reading || 0
             const free = detail.free_quota ?? 0
-            const billable = detail.billable_copies ?? Math.max(0, (last - start) - free)
             pushMeterSection(`Colour ${paperSize}`, start, last, free)
             chargeRow(`Copies Charges Colour ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
           }
@@ -370,22 +404,32 @@ async function exportInvoicesToExcel(
       const tax = item.tax || 0
       const totalPay = item.total_pay ?? subtotal + tax
 
-      addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: 'Rp', style: 'borderBoldRight' }, { v: fmtRp(subtotal), style: 'borderBoldRight' }])
-      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {}, { v: 'TAX', style: 'borderBoldRight' }, {}, { v: tax || '-', style: 'borderBoldRight' }])
-      addRow([{ v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {}, { v: 'TOTAL PAY', style: 'borderBoldRight' }, { v: 'Rp', style: 'borderBoldRight' }, { v: fmtRp(totalPay), style: 'borderBoldRight' }])
-      addRow([{ v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }])
-      addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }])
-      addRow([{ v: 'Account No. 1060885757', mergeAcross: 1, style: 'borderBold' }])
-      addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }])
-      addRow([{ v: 'Account No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }])
+      addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: subtotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+      addRow([
+        { v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {},
+        { style: 'border' },
+        { v: 'TAX', style: 'borderBoldRight' },
+        { v: tax, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      ])
+      addRow([
+        { v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {},
+        { style: 'border' },
+        { v: 'TOTAL PAY', style: 'borderBoldRight' },
+        { v: totalPay, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      ])
+      addRow([{ v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'Account No. 1060885757', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{ v: 'Account No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
 
       // ===== SIGNATURES =====
       addRow([])
       addRow([{ v: 'Received By,', mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'plainBoldCenter' }])
       addRow([])
       addRow([{ v: '_______________________', mergeAcross: 1, style: 'plainCenter' }, {}, {}, { v: '_______________________', mergeAcross: 1, style: 'plainCenter' }])
-      addRow([{ v: '', mergeAcross: 1 }, {}, {}, { v: 'Grace Hutapea', mergeAcross: 1, style: 'plainBoldCenter' }])
-      addRow([{}, {}, {}, { v: 'Admin Finance', style: 'plainCenter' }])
+      addRow([{ v: '', mergeAcross: 1 }, {}, {}, { v: item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-', mergeAcross: 1, style: 'plainBoldCenter' }])
+      addRow([{}, {}, { v: 'Admin Finance', mergeAcross: 2, style: 'plainCenter' }])
       addRow([])
     }
 
@@ -443,6 +487,36 @@ const form = reactive({
 })
 
 const defaultForm = { ...form }
+
+const customerFilterOptions = computed(() => [
+  { value: '', label: 'All Customers' },
+  ...(customers.value as any[]).map((customer: any) => ({
+    value: String(customer.id),
+    label: customer.company_name || customer.name || '-',
+  })),
+])
+const riContractOptions = computed(() =>
+  (contractItems.value as any[]).map((ci: any) => ({
+    value: ci.id,
+    label: ci.contract_no,
+  })),
+)
+const riCustomerOptions = computed(() =>
+  (customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name || '-',
+  })),
+)
+const riStatusOptions = [
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'overdue', label: 'Overdue' },
+]
+const riPaymentMethodOptions = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'transfer', label: 'Bank Transfer' },
+  { value: 'credit_card', label: 'Credit / Debit Card' },
+]
 
 async function exportAnnualExcel() {
   if (isExporting.value) return
@@ -643,6 +717,10 @@ const paymentForm = reactive({
 })
 
 function openPaymentModal(item: any) {
+  if (item?.status === 'pending_meter_reading') {
+    toast.warning('Payment blocked: technician has not submitted the meter reading for this period yet.')
+    return
+  }
   paymentInvoiceId.value = item.id
   paymentForm.amount = item.total_pay || item.subtotal || 0
   paymentForm.payment_date = new Date().toISOString().split('T')[0]
@@ -745,6 +823,7 @@ function invoiceHtml(item: any): string {
   if (gender === 'L') prefix = 'Bapak '
   if (gender === 'P') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
+  const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
 
   const dateStr = item.invoice_date
     ? new Date(item.invoice_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
@@ -772,22 +851,28 @@ function invoiceHtml(item: any): string {
   const legacyFree = item.free_copies || ci?.free_copy_quota || 2000
   const legacyRateBw = item.rate_per_page || 150
 
+  // Format cetak ala invoice manual: 0 tampil '-', net negatif dalam kurung.
+  const fmtPcsPrint = (n: number) => n === 0 ? '-' : n.toLocaleString('id-ID')
+  const fmtNetPrint = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : n === 0 ? '-' : n.toLocaleString('id-ID')
+
   function meterDetailRows(details: any[], label: string): string {
     if (details.length === 0) return ''
     return details.map(d => {
-      const total = d.total_copies ?? Math.max(0, (d.last_meter_reading || 0) - (d.start_meter_reading || 0))
+      const start = d.start_meter_reading || 0
+      const last = d.last_meter_reading || 0
+      const total = d.total_copies ?? (last - start)
       const free = d.free_quota ?? 0
-      const net = d.billable_copies ?? Math.max(0, total - free)
+      const net = total - free
       const sizeLabel = d.paper_size?.name || d.color_mode || label
       return `
         <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
           <b>${sizeLabel}</b><br>
           <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
-            <span>Start Meter Reading</span><span style="text-align:right;">${(d.start_meter_reading || 0).toLocaleString('id-ID')}</span><span></span>
-            <span>Last Meter Reading</span><span style="text-align:right;">${(d.last_meter_reading || 0).toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-            <span>Total Copies</span><span style="text-align:right;"><b>${total.toLocaleString('id-ID')}</b></span><span></span>
-            ${free > 0 ? `<span>Free Copies</span><span style="text-align:right;">${free.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>` : ''}
-            ${free > 0 ? `<span>Total Copies</span><span style="text-align:right;"><b>${net.toLocaleString('id-ID')}</b></span><span></span>` : ''}
+            <span>Start Meter Reading</span><span style="text-align:right;">${start.toLocaleString('id-ID')}</span><span></span>
+            <span>Last Meter Reading</span><span style="text-align:right;">${last.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
+            <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(total)}</b></span><span></span>
+            <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(free)}</span><span style="padding-left:4px;">(-)</span>
+            <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(net)}</b></span><span></span>
           </div>
         </td></tr>`
     }).join('')
@@ -803,7 +888,7 @@ function invoiceHtml(item: any): string {
         <td class="no-col">${rowNum + i}</td>
         <td>${sizeLabel}</td>
         <td style="text-align:center;">(x)</td>
-        <td style="text-align:right;">Rp&nbsp;${rate.toLocaleString('id-ID')}</td>
+        <td style="text-align:right;">${rate > 0 ? `Rp&nbsp;${rate.toLocaleString('id-ID')}` : '-'}</td>
         <td class="rp-col">Rp</td>
         <td class="val-col">${amount > 0 ? amount.toLocaleString('id-ID') : '-'}</td>
       </tr>`
@@ -812,14 +897,15 @@ function invoiceHtml(item: any): string {
 
   // Legacy (no meter_details) rows
   const legacyBwTotal = Math.max(0, legacyBwEnd - legacyBwStart)
-  const legacyBwBillable = Math.max(0, legacyBwTotal - legacyFree)
+  const legacyBwNet = legacyBwTotal - legacyFree
+  const legacyBwBillable = Math.max(0, legacyBwNet)
   const legacyBwAmount = legacyBwBillable * legacyRateBw
 
   const legacyColStart = ci?.start_meter_color || 0
   const legacyColEnd = legacyColStart
   const legacyColFree = ci?.free_quota_color || 0
   const legacyColTotal = Math.max(0, legacyColEnd - legacyColStart)
-  const legacyColBillable = Math.max(0, legacyColTotal - legacyColFree)
+  const legacyColNet = legacyColTotal - legacyColFree
 
   const legacyBodyRows = (meterDetails.length === 0 && isCopier) ? `
     <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
@@ -827,33 +913,36 @@ function invoiceHtml(item: any): string {
       <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
         <span>Start Meter Reading</span><span style="text-align:right;">${legacyBwStart.toLocaleString('id-ID')}</span><span></span>
         <span>Last Meter Reading</span><span style="text-align:right;">${legacyBwEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${legacyBwTotal.toLocaleString('id-ID')}</b></span><span></span>
-        <span>Free Copies</span><span style="text-align:right;">${legacyFree.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${legacyBwBillable.toLocaleString('id-ID')}</b></span><span></span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyBwTotal)}</b></span><span></span>
+        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyFree)}</span><span style="padding-left:4px;">(-)</span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyBwNet)}</b></span><span></span>
       </div>
-      
+
       ${legacyColStart > 0 || legacyColFree > 0 ? `
       <br><b>Color</b><br>
       <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
         <span>Start Meter Reading</span><span style="text-align:right;">${legacyColStart.toLocaleString('id-ID')}</span><span></span>
         <span>Last Meter Reading</span><span style="text-align:right;">${legacyColEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${legacyColTotal.toLocaleString('id-ID')}</b></span><span></span>
-        <span>Free Copies</span><span style="text-align:right;">${legacyColFree.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${legacyColBillable.toLocaleString('id-ID')}</b></span><span></span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyColTotal)}</b></span><span></span>
+        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyColFree)}</span><span style="padding-left:4px;">(-)</span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyColNet)}</b></span><span></span>
       </div>
       ` : ''}
     </td></tr>
     <tr>
       <td class="no-col">2</td><td>Copies Charges B/W</td>
       <td style="text-align:center;">(x)</td>
-      <td style="text-align:right;">Rp&nbsp;${legacyRateBw.toLocaleString('id-ID')}</td>
+      <td style="text-align:right;">${legacyRateBw > 0 ? `Rp&nbsp;${legacyRateBw.toLocaleString('id-ID')}` : '-'}</td>
       <td class="rp-col">Rp</td>
       <td class="val-col">${legacyBwAmount > 0 ? legacyBwAmount.toLocaleString('id-ID') : '-'}</td>
     </tr>` : ''
 
-  const total = (item.subtotal || baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0)).toLocaleString('id-ID')
-  const tax = (item.tax || 0).toLocaleString('id-ID')
-  const totalPay = (item.total_pay || 0).toLocaleString('id-ID')
+  const totalNum = item.subtotal || baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0)
+  const taxNum = item.tax || 0
+  const totalPayNum = item.total_pay || 0
+  const total = totalNum === 0 ? '-' : totalNum.toLocaleString('id-ID')
+  const tax = taxNum === 0 ? '-' : taxNum.toLocaleString('id-ID')
+  const totalPay = totalPayNum === 0 ? '-' : totalPayNum.toLocaleString('id-ID')
 
   // Stempel pelunasan: hanya bila invoice sudah di-approve accounting.
   const payStatus = String(item.payment_status || '').toLowerCase()
@@ -1028,7 +1117,7 @@ function invoiceHtml(item: any): string {
       <div class="sig-col">
         <span class="sig-label">PT. BiAS SURYA TEKNOLOGI</span>
         <div class="sig-line"></div>
-        <div class="sig-name">Grace Hutapea</div>
+        <div class="sig-name">${signer}</div>
         <div class="sig-role">Admin Finance</div>
       </div>
     </div>
@@ -1112,11 +1201,7 @@ function printInvoice(item: any) {
         </div>
         <div class="filter-item">
           <label class="filter-label">Customer</label>
-          <select v-model="customerFilter" class="form-select filter-input">
-            <option value="">All Customers</option>
-            <option v-for="customer in customers" :key="customer.id" :value="String(customer.id)">{{
-              customer.company_name || customer.name || '-' }}</option>
-          </select>
+          <CustomSelect v-model="customerFilter" :options="customerFilterOptions" class="form-select filter-input" />
         </div>
         <button v-if="startDateFilter || endDateFilter || monthFilter || customerFilter" type="button"
           class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
@@ -1180,11 +1265,11 @@ function printInvoice(item: any) {
       <template #cell-period_end="{ value }">{{ formatDate(value) }}</template>
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-total_pay="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-status="{ value }">
+      <template #cell-status="{ row }">
         <span
-          :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' :
-            'Pending' }}
+          :class="row.status === 'approved' ? 'badge badge-info' : row.status === 'rejected' ? 'badge badge-danger' : row.status === 'pending_meter_reading' ? 'badge badge-warning' : 'badge badge-warning'"
+          :title="row.status === 'pending_meter_reading' ? 'Payment blocked until technician submits meter reading' : ''">
+          {{ approvalStatusLabel(row.status) }}
         </span>
       </template>
       <template #cell-payment_status="{ value }">
@@ -1196,25 +1281,7 @@ function printInvoice(item: any) {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <button
-            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
-            class="action-btn action-btn--edit" title="Approve" @click="handleUpdateStatus(row, 'approved')"
-            style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-          </button>
-          <button
-            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'pending') && can('rental_invoice:update')"
-            class="action-btn action-btn--delete" title="Reject" @click="handleUpdateStatus(row, 'rejected')"
-            style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
+          <!-- Approval dimatikan: invoice auto-approved via payment, tombol Approve/Reject dihapus. -->
           <button
             v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'partially_paid') && (can('payment:create') || can('rental_invoice:update'))"
             class="action-btn action-btn--edit" title="Payment" @click="openPaymentModal(row)"
@@ -1223,6 +1290,18 @@ function printInvoice(item: any) {
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="5" width="20" height="14" rx="2"></rect>
               <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+          </button>
+          <button
+            v-if="row.status === 'pending_meter_reading' && can('rental_invoice:read')"
+            class="action-btn" disabled
+            title="Payment blocked: technician has not submitted the meter reading for this period"
+            style="color: var(--color-text-muted); width: 36px; height: 36px; opacity: 0.5; cursor: not-allowed;">
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+              <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2"></line>
             </svg>
           </button>
           <button v-if="can('rental_invoice:read')" class="action-btn action-btn--edit" title="Detail"
@@ -1284,17 +1363,11 @@ function printInvoice(item: any) {
       </div>
       <div class="form-group">
         <label for="ri-contract" class="form-label">Contract</label>
-        <select id="ri-contract" v-model="form.contract_item_id" class="form-select" @change="onContractChange">
-          <option :value="null">-- Select Contract --</option>
-          <option v-for="ci in contractItems" :key="ci.id" :value="ci.id">{{ ci.contract_no }}</option>
-        </select>
+        <CustomSelect id="ri-contract" v-model="form.contract_item_id" :options="riContractOptions" placeholder="-- Select Contract --" class="form-select" @update:modelValue="onContractChange" />
       </div>
       <div class="form-group">
         <label for="ri-customer" class="form-label">Customer</label>
-        <select id="ri-customer" v-model="form.customer_id" class="form-select">
-          <option :value="null">-- Select Customer --</option>
-          <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
-        </select>
+        <CustomSelect id="ri-customer" v-model="form.customer_id" :options="riCustomerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -1367,11 +1440,7 @@ function printInvoice(item: any) {
       </div>
       <div class="form-group">
         <label for="ri-status" class="form-label">Status</label>
-        <select id="ri-status" v-model="form.status" class="form-select">
-          <option value="unpaid">Unpaid</option>
-          <option value="paid">Paid</option>
-          <option value="overdue">Overdue</option>
-        </select>
+        <CustomSelect id="ri-status" v-model="form.status" :options="riStatusOptions" class="form-select" />
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Invoice"
@@ -1460,11 +1529,7 @@ function printInvoice(item: any) {
       </div>
       <div class="form-group">
         <label class="form-label">Payment Method</label>
-        <select v-model="paymentForm.payment_method" class="form-select" required>
-          <option value="cash">Cash</option>
-          <option value="transfer">Bank Transfer</option>
-          <option value="credit_card">Credit / Debit Card</option>
-        </select>
+        <CustomSelect v-model="paymentForm.payment_method" :options="riPaymentMethodOptions" class="form-select" />
       </div>
 
       <template v-if="paymentForm.payment_method === 'transfer'">

@@ -2,6 +2,7 @@
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -246,6 +247,12 @@ const badgeFalse = {
       @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search units..." permission="unit" @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="unit" @imported="fetchData" />
+      </template>
+      <template #cell-uom.name="{ row }">
+        {{ row.uom?.name ?? "-" }}
+      </template>
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
       </template>

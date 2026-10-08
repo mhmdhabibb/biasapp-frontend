@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
@@ -84,6 +85,12 @@ const form = ref({
 const isLoading = ref(true)
 const isSaving = ref(false)
 
+const copyQualityOptions = [
+  { value: 'Good', label: 'Good' },
+  { value: 'Fair', label: 'Fair' },
+  { value: 'Poor', label: 'Poor' },
+]
+
 // ---- Meter per ukuran kertas ----
 // Section per paper size (dari readings yang terhubung ke report ini +
 // ukuran dari contract rates). Tiap section berisi baris B/W dan Colour
@@ -121,9 +128,11 @@ function prevMeterFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): numbe
     normMeterMode(r.color_mode) === mode,
   )
   if (sized.length > 0) {
-    const latest = sized.reduce((prev: any, curr: any) =>
-      new Date(prev.created_at).getTime() > new Date(curr.created_at).getTime() ? prev : curr,
-    )
+    const latest = sized.reduce((prev: any, curr: any) => {
+      const prevDate = new Date(prev.reading_date || prev.created_at).getTime()
+      const currDate = new Date(curr.reading_date || curr.created_at).getTime()
+      return prevDate > currDate ? prev : curr
+    })
     return num(latest.end_meter)
   }
   if (!ci) return 0
@@ -413,11 +422,7 @@ async function saveForm() {
 
       <div class="form-group">
         <label class="form-label">Copy Quality Check</label>
-        <select v-model="form.copy_quality" class="form-select">
-          <option>Good</option>
-          <option>Fair</option>
-          <option>Poor</option>
-        </select>
+        <CustomSelect v-model="form.copy_quality" class="form-select" :options="copyQualityOptions" />
       </div>
 
       <div class="form-group">

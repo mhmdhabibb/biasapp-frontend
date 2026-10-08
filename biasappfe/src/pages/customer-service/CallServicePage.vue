@@ -3,6 +3,7 @@
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
 import { usePermission } from '@/composables/usePermission'
@@ -34,6 +35,21 @@ const selectedCustomer = computed(() => {
 const availableUnits = computed(() => {
   return getUnitsByCustomer(form.customer_id)
 })
+
+const customerOptions = computed(() => customers.value.map((c: any) => ({ value: c.id, label: c.company_name || c.name || '-' })))
+const unitOptions = computed(() => availableUnits.value.map((u: any) => ({ value: u.id, label: `${u.model} (SN: ${u.serial_no})` })))
+const serviceTypeOptions = [
+  { value: 'corrective', label: 'Corrective' },
+  { value: 'preventive', label: 'Preventive' },
+  { value: 'installation', label: 'Installation' },
+  { value: 'relocation', label: 'Relocation' },
+]
+const priorityOptions = [
+  { value: 'low', label: 'Low' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'high', label: 'High (SLA Critical)' },
+]
+const technicianOptions = computed(() => technicians.value.map((t: any) => ({ value: t.id, label: t.name })))
 
 const isSubmitting = ref(false)
 
@@ -90,10 +106,7 @@ function handleAssignJob() {
         <h3 class="section-title">1. Customer Information</h3>
         <div class="form-group">
           <label class="form-label">Customer *</label>
-          <select v-model="form.customer_id" class="form-select" @change="form.unit_id = null">
-            <option :value="null">-- Select Customer --</option>
-            <option v-for="c in customers" :key="c.id" :value="c.id">{{ c.company_name || c.name || '-' }}</option>
-          </select>
+          <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" @update:modelValue="form.unit_id = null" />
         </div>
 
         <div v-if="selectedCustomer" class="customer-details">
@@ -108,12 +121,7 @@ function handleAssignJob() {
         <h3 class="section-title">2. Unit Information</h3>
         <div class="form-group">
           <label class="form-label">Unit *</label>
-          <select v-model="form.unit_id" class="form-select" :disabled="!form.customer_id">
-            <option :value="null">-- Select Unit --</option>
-            <option v-for="u in availableUnits" :key="u.id" :value="u.id">
-              {{ u.model }} (SN: {{ u.serial_no }})
-            </option>
-          </select>
+          <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" :disabled="!form.customer_id" />
           <div v-if="form.customer_id && availableUnits.length === 0" class="help-text text-warning">
             No active units found for this customer.
           </div>
@@ -124,12 +132,7 @@ function handleAssignJob() {
         <h3 class="section-title">3. Service Details</h3>
         <div class="form-group">
           <label class="form-label">Service Type</label>
-          <select v-model="form.service_type" class="form-select" :disabled="!form.unit_id">
-            <option value="corrective">Corrective</option>
-            <option value="preventive">Preventive</option>
-            <option value="installation">Installation</option>
-            <option value="relocation">Relocation</option>
-          </select>
+          <CustomSelect v-model="form.service_type" :options="serviceTypeOptions" placeholder="Select service type" :disabled="!form.unit_id" />
         </div>
         <div class="form-group">
           <label class="form-label">Machine Problem *</label>
@@ -143,11 +146,7 @@ function handleAssignJob() {
         </div>
         <div class="form-group">
           <label class="form-label">Priority</label>
-          <select v-model="form.priority" class="form-select" :disabled="!form.unit_id">
-            <option value="low">Low</option>
-            <option value="normal">Normal</option>
-            <option value="high">High (SLA Critical)</option>
-          </select>
+          <CustomSelect v-model="form.priority" :options="priorityOptions" placeholder="Select priority" :disabled="!form.unit_id" />
         </div>
       </div>
 
@@ -155,10 +154,7 @@ function handleAssignJob() {
         <h3 class="section-title">4. Job Assignment</h3>
         <div class="form-group">
           <label class="form-label">Technician *</label>
-          <select v-model="form.technician_id" class="form-select" :disabled="!form.machine_problem">
-            <option :value="null">-- Select Technician --</option>
-            <option v-for="t in technicians" :key="t.id" :value="t.id">{{ t.name }}</option>
-          </select>
+          <CustomSelect v-model="form.technician_id" :options="technicianOptions" placeholder="-- Select Technician --" :disabled="!form.machine_problem" />
         </div>
         <div v-if="can('service_report:create')" class="form-actions">
           <button 

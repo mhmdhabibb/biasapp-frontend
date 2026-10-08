@@ -1,5 +1,5 @@
-import { createRouter, createWebHistory } from "vue-router";
 import { useAuth } from "@/composables/useAuth";
+import { canView, routeNamesByMenuOrder } from "@/router/permission-map";
 import {
   dashboardRouteByRole,
   dashboardRouteNames,
@@ -7,7 +7,7 @@ import {
   normalizeRole,
   technicianOnlyRouteNames,
 } from "@/router/role-access";
-import { canView, routeNamesByMenuOrder } from "@/router/permission-map";
+import { createRouter, createWebHistory } from "vue-router";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -98,6 +98,11 @@ const router = createRouter({
       component: () => import("@/pages/master/WarrantiesPage.vue"),
     },
     {
+      path: "/master/excel-templates",
+      name: "excelTemplates",
+      component: () => import("@/pages/master/ExcelTemplatesPage.vue"),
+    },
+    {
       path: "/master/suppliers",
       name: "suppliers",
       component: () => import("@/pages/master/SuppliersPage.vue"),
@@ -127,6 +132,11 @@ const router = createRouter({
       name: "serviceReports",
       component: () =>
         import("@/pages/customer-service/ServiceReportsPage.vue"),
+    },
+    {
+      path: "/customer-service/copier-reports",
+      name: "copierReports",
+      component: () => import("@/pages/customer-service/CopierReportsPage.vue"),
     },
     {
       path: "/customer-service/service-requests",
@@ -167,6 +177,11 @@ const router = createRouter({
       component: () => import("@/pages/customer-service/SalesInvoicesPage.vue"),
     },
     {
+      path: "/customer-service/copier-reports",
+      name: "Copier Reports",
+      component: () => import("@/pages/customer-service/CopierReportsPage.vue"),
+    },
+    {
       path: "/customer-service/payments",
       name: "payments",
       component: () => import("@/pages/customer-service/PaymentsPage.vue"),
@@ -200,6 +215,12 @@ const router = createRouter({
         import("@/pages/customer-service/SparepartRequestPage.vue"),
     },
     {
+      path: "/customer-service/maintenance",
+      name: "csMaintenanceSchedules",
+      component: () =>
+        import("@/pages/customer-service/MaintenanceSchedulesPage.vue"),
+    },
+    {
       path: "/customer-service/indent",
       name: "csIndent",
       component: () => import("@/pages/customer-service/IndentPage.vue"),
@@ -219,9 +240,7 @@ const router = createRouter({
     },
     {
       path: "/accounting/sparepart-requests",
-      name: "accSparepartRequests",
-      component: () =>
-        import("@/pages/accounting/AccSparepartRequestsPage.vue"),
+      redirect: "/customer-service/service-reports",
     },
     {
       path: "/accounting/purchase-orders",
@@ -310,7 +329,7 @@ router.beforeEach((to) => {
   const role = normalizeRole(currentUser.value?.role);
 
   if (to.meta.requiresAuth === false) {
-    if (isAuthenticated.value && !to.meta.allowAuthenticated) {
+    if (isAuthenticated.value) {
       const home = homeRouteNameByRole[role];
       return { name: home || "users" };
     }
@@ -321,23 +340,10 @@ router.beforeEach((to) => {
     return { name: "login" };
   }
 
-  // Dashboards are pinned to their own role; technician operational pages
-  // are role-locked. Everything else is dynamic via the `view` gate below.
-  if (role !== "admin" && to.name) {
-    const target = String(to.name);
-    const ownDashboard = dashboardRouteByRole[role];
-    if (
-      ownDashboard &&
-      dashboardRouteNames.includes(target) &&
-      target !== ownDashboard
-    ) {
-      return { name: homeRouteNameByRole[role] };
-    }
-    if (role !== "technician" && technicianOnlyRouteNames.includes(target)) {
-      const home = homeRouteNameByRole[role];
-      // Custom roles without a home keep the previous behavior (no bounce).
-      if (home) return { name: home };
-    }
+  // Role route allowlists (see role-access.ts). Admin/custom roles are unrestricted here.
+  const allowed = allowedRouteNamesByRole[role];
+  if (allowed && to.name && !allowed.includes(to.name as string)) {
+    return { name: homeRouteNameByRole[role] };
   }
 
   // `view` gate: a page is only reachable when the role holds `<key>:view`

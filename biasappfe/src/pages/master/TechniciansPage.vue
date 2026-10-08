@@ -2,7 +2,9 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
@@ -53,6 +55,11 @@ const availableUsers = computed(() => {
   return users.value.filter(u => !linked.has(String(u.id)))
 })
 
+const userOptions = computed(() => (editingItem.value ? users.value : availableUsers.value).map((u: any) => ({
+  value: String(u.id),
+  label: `${u.name}${u.email ? ` (${u.email})` : ''}`,
+})))
+
 function openAdd() {
   editingItem.value = null
   Object.assign(form, { user_id: null, employee_code: '', name: '', phone: '' })
@@ -62,7 +69,7 @@ function openAdd() {
 function openEdit(item: Technician) {
   editingItem.value = item
   Object.assign(form, {
-    user_id: (item as any).user_id || null,
+    user_id: (item as any).user_id != null ? String((item as any).user_id) : null,
     employee_code: (item as any).employee_code || '',
     name: (item as any).name || '',
     phone: (item as any).phone || ''
@@ -128,6 +135,9 @@ async function handleDelete() {
   <div>
     <PageHeader title="Technicians" button-label="Add Technician" permission="technician:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" search-placeholder="Search technician..." permission="technician" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <ExcelImportButtons master-key="technician" @imported="fetchData" />
+      </template>
       <template #cell-status="{ value }">
         <span
           class="badge"
@@ -144,12 +154,7 @@ async function handleDelete() {
     <FormModal :open="showModal" :title="editingItem ? 'Edit Technician' : 'Add Technician'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="tech-user" class="form-label">User</label>
-        <select id="tech-user" v-model="form.user_id" class="form-select" :disabled="!!editingItem">
-          <option :value="null">-- Select User --</option>
-          <option v-for="u in (editingItem ? users : availableUsers)" :key="u.id" :value="String(u.id)">
-            {{ u.name }}{{ u.email ? ` (${u.email})` : '' }}
-          </option>
-        </select>
+        <CustomSelect id="tech-user" v-model="form.user_id" :options="userOptions" placeholder="-- Select User --" :disabled="!!editingItem" />
       </div>
       <div class="form-group">
         <label for="tech-code" class="form-label">Employee Code</label>
