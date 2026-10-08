@@ -274,7 +274,7 @@ function recordedBy(row: any): string {
 
 <template>
   <div>
-    <PageHeader title="Monthly Meter Readings" button-label="Add Reading" permission="monthly_meter_reading:create" @add="openAdd" />
+    <PageHeader title="Monthly Meter Readings" permission="monthly_meter_reading:create"  />
     <DataTable :columns="columns" :data="grouped" search-placeholder="Search meter readings...">
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-service_report_id="{ value }">{{ srNo(value as any) }}</template>
@@ -353,43 +353,6 @@ function recordedBy(row: any): string {
       <template #footer>
         <button class="btn btn-outline" @click="showDetail = false">Close</button>
       </template>
-    </FormModal>
-
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Meter Reading' : 'Add Meter Reading'" @close="showModal = false" @submit="handleSubmit">
-      <div class="form-group">
-        <label for="mm-contract" class="form-label">Contract</label>
-        <CustomSelect id="mm-contract" v-model="form.contract_item_id" :options="contractOptions" placeholder="-- Select Contract --" class="form-select" />
-      </div>
-      <div class="form-group">
-        <label for="mm-sr" class="form-label">Service Report (Optional)</label>
-        <CustomSelect id="mm-sr" v-model="form.service_report_id" :options="serviceReportOptions" placeholder="-- Select Report --" class="form-select" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Unit</label>
-        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" class="form-select" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Paper Size</label>
-        <CustomSelect v-model="form.paper_size_id" :options="paperSizeOptions" placeholder="-- Tanpa ukuran --" class="form-select" />
-      </div>
-      <div class="form-group">
-        <label for="mm-mode" class="form-label">Color Mode</label>
-        <CustomSelect id="mm-mode" v-model="form.color_mode" :options="colorModeOptions" class="form-select" />
-      </div>
-      <div class="form-group">
-        <label for="mm-date" class="form-label">Reading Date</label>
-        <input id="mm-date" v-model="form.reading_date" type="date" class="form-input">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="mm-start" class="form-label">Start Meter</label>
-          <input id="mm-start" v-model.number="form.start_meter" type="number" class="form-input" min="0">
-        </div>
-        <div class="form-group">
-          <label for="mm-end" class="form-label">End Meter</label>
-          <input id="mm-end" v-model.number="form.end_meter" type="number" class="form-input" min="0">
-        </div>
-      </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Meter Reading" :message="`Are you sure you want to delete this meter reading?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>

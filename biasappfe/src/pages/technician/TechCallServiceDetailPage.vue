@@ -262,28 +262,26 @@ function resolveBeforeMeter(): number {
   const fromContract = numVal(c?.start_mono_value) || numVal(c?.start_color_value)
   return fromContract > 0 ? fromContract : 0
 }
+// Copier Service Report hanya untuk job VISIT — job dari service request
+// tidak menampilkan maupun mewajibkan form copier.
 // JO service (dari service request) TIDAK memakai form Service Report:
 // cukup Technical Report (+ Copier bila copier).
+const showCopierForm = computed(() => isVisitJob.value)
 const isAllFormsCompleted = computed(() => {
   const sr: any = serviceReport.value
   if (!sr) return false
-  const techOk = !!(sr.remarks || job.value?.remarks) && (sr.is_tested ?? job.value?.is_tested)
-
-  const techSigOk = !!sr?.customer_signature_technical && !!sr?.technician_signature_technical
-
-  let copierOk = true
-  let copierSigOk = true
-  if (isVisitJob.value || unit.value?.is_copier || unit.value?.model?.toLowerCase().includes('copier')) {
-    copierOk = (numVal(sr.meter_reading_after) || numVal(sr.reading_counter)) > 0
-    copierSigOk = !!sr?.customer_signature_copier && !!sr?.technician_signature_copier
-  }
 
   // Visit copier: cukup form copier (meter + tanda tangan copier),
   // Technical Report tidak wajib.
-  if (isVisitJob.value) return copierOk && copierSigOk
+  if (isVisitJob.value) {
+    const copierOk = (numVal(sr.meter_reading_after) || numVal(sr.reading_counter)) > 0
+    const copierSigOk = !!sr?.customer_signature_copier && !!sr?.technician_signature_copier
+    return copierOk && copierSigOk
+  }
 
-  const signaturesOk = techSigOk && copierSigOk
-  return techOk && signaturesOk && copierOk
+  const techOk = !!(sr.remarks || job.value?.remarks) && (sr.is_tested ?? job.value?.is_tested)
+  const techSigOk = !!sr?.customer_signature_technical && !!sr?.technician_signature_technical
+  return techOk && techSigOk
 })
 
 onMounted(async () => {
@@ -742,15 +740,15 @@ async function confirmCompleteJob() {
               <span>></span>
             </button>
             <button
-              v-if="(unit?.is_copier || unit?.model?.toLowerCase().includes('copier')) && serviceReport?.status !== 'draft'"
+              v-if="showCopierForm && serviceReport?.status !== 'draft'"
               class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md"
               @click="router.push(`/technician/call-services/${serviceReport?.id}/copier-report`)"
             >
-              <span class="font-bold"><span v-if="serviceReport?.meter_reading_after || serviceReport?.reading_counter">✅</span><span v-else>📝</span> {{ isVisitJob ? '1' : '2' }}. Copier Service Report</span>
+              <span class="font-bold"><span v-if="serviceReport?.meter_reading_after || serviceReport?.reading_counter">✅</span><span v-else>📝</span> 1. Copier Service Report</span>
               <span>></span>
             </button>
             <div
-              v-else-if="unit?.is_copier || unit?.model?.toLowerCase().includes('copier')"
+              v-else-if="showCopierForm"
               class="p-md text-sm text-muted"
               style="background: var(--color-surface-sunken); border-radius: var(--radius-md); margin-bottom: 8px;"
             >

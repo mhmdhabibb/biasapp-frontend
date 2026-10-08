@@ -5,7 +5,7 @@ import { useMasterStore } from "@/composables/useMasterStore";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref } from "vue";
 
 const toast = useToast();
 const { technicians, units, products, serviceReports, refreshOnly } =
@@ -143,22 +143,40 @@ function onBoardVisible() {
   if (document.visibilityState === "visible") void silentReloadBoard();
 }
 
+function startBoardAutoReload() {
+  if (autoReloadTimer) return;
+  autoReloadTimer = setInterval(() => {
+    void silentReloadBoard();
+  }, AUTO_RELOAD_MS);
+  document.addEventListener("visibilitychange", onBoardVisible);
+}
+
+function stopBoardAutoReload() {
+  if (autoReloadTimer) {
+    clearInterval(autoReloadTimer);
+    autoReloadTimer = null;
+  }
+  document.removeEventListener("visibilitychange", onBoardVisible);
+}
+
 onMounted(() => {
   fetchJobOrders();
   fetchServiceRequests();
   fetchDeliveryOrders();
   fetchServiceReports();
-  // Silent auto-reload: data baru/berubah tampil otomatis tanpa
-  // loading maupun skeleton (fetch di halaman ini memang tanpa loading).
-  autoReloadTimer = setInterval(() => {
-    void silentReloadBoard();
-  }, AUTO_RELOAD_MS);
-  document.addEventListener("visibilitychange", onBoardVisible);
+  startBoardAutoReload();
+});
+
+onActivated(() => {
+  startBoardAutoReload();
+});
+
+onDeactivated(() => {
+  stopBoardAutoReload();
 });
 
 onUnmounted(() => {
-  if (autoReloadTimer) clearInterval(autoReloadTimer);
-  document.removeEventListener("visibilitychange", onBoardVisible);
+  stopBoardAutoReload();
 });
 
 const unassignedRequests = computed(() => {

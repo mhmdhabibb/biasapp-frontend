@@ -79,7 +79,7 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Contracts" button-label="Add Contract" permission="contract:create" @add="openAdd" />
+    <PageHeader title="Contracts"/>
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
     <DataTable :columns="columns" :data="data" search-placeholder="Search..." permission="contract" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #actions="{ row }">
@@ -89,16 +89,7 @@ async function handleDelete() {
         <button v-if="hardDelete.isSuperadmin" class="action-btn action-btn--hard" title="Hapus permanen dari database (superadmin)" @click="hardDelete.open(row)">Hard Delete</button>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Contract' : 'Add Contract'" @close="showModal = false" @submit="handleSubmit">
-      <div class="form-group" v-for="col in columns.filter((c) => c.key !== 'terms_notes')" :key="col.key">
-        <label class="form-label">{{ col.label }}</label>
-        <input v-model="form[col.key]" type="text" class="form-input">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Free Quota Terms (e.g. Free 200 lembar, selebihnya kena charge)</label>
-        <textarea v-model="form.terms_notes" class="form-input" rows="3" placeholder="Free 200 lembar/bulan khusus cetak Warna; selebihnya dikenakan charge sesuai rate."></textarea>
-      </div>
-    </FormModal>
+ 
     <FormModal :open="showRenewModal" title="Perpanjang Contract" @close="showRenewModal = false" @submit="handleRenew">
       <div class="form-group">
         <label class="form-label">End Date</label>

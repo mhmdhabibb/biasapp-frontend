@@ -454,8 +454,10 @@ export interface MenuItem {
   label: string;
   icon: string;
   route: string;
-  /** Restrict this item to specific (normalized) roles. When set, permission/module checks are skipped. */
+  /** Restrict this item to specific (normalized) roles. When set, permission checks are skipped (module gate still applies). */
   roles?: string[];
+  /** Explicit module key (e.g. "maintenance") that hides this menu when the module is inactive. */
+  module?: string;
 }
 
 export interface MenuGroup {

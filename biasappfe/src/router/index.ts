@@ -135,6 +135,12 @@ const router = createRouter({
         import("@/pages/customer-service/ServiceReportsPage.vue"),
     },
     {
+      path: "/customer-service/standalone-service-history",
+      name: "csStandaloneServiceHistory",
+      component: () =>
+        import("@/pages/customer-service/StandaloneServiceHistoryPage.vue"),
+    },
+    {
       path: "/customer-service/copier-reports",
       name: "copierReports",
       component: () => import("@/pages/customer-service/CopierReportsPage.vue"),
@@ -308,6 +314,18 @@ const router = createRouter({
       path: "/technician/service-history",
       name: "techServiceHistory",
       component: () => import("@/pages/technician/TechServiceHistoryPage.vue"),
+    },
+    {
+      path: "/technician/standalone-service-history",
+      name: "techStandaloneServiceHistory",
+      component: () =>
+        import("@/pages/technician/TechStandaloneServiceHistoryPage.vue"),
+    },
+    {
+      path: "/technician/standalone-service-history/:id",
+      name: "techStandaloneServiceHistoryDetail",
+      component: () =>
+        import("@/pages/technician/TechStandaloneServiceHistoryDetailPage.vue"),
     },
     // Shared Routes
     {

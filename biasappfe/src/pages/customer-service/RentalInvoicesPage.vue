@@ -1177,8 +1177,7 @@ function printInvoice(item: any) {
 
 <template>
   <div>
-    <PageHeader title="Monitoring Invoice" button-label="Add Invoice" permission="rental_invoice:create"
-      @add="openAdd" />
+    <PageHeader title="Rental Invoices"/>
 
     <!-- Filter & Export Toolbar -->
     <div class="filter-toolbar">
@@ -1210,28 +1209,8 @@ function printInvoice(item: any) {
       </div>
 
       <div class="export-actions">
-        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportMonthToPdf"
-          title="Export Invoices (PDF)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-          </svg>
-          Export PDF
-        </button>
-        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel"
-          :disabled="isExporting" title="Export Invoices (Excel)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="8" y1="13" x2="16" y2="13"></line>
-            <line x1="8" y1="17" x2="16" y2="17"></line>
-          </svg>
-          Export Excel
-        </button>
+      
+       
         <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf"
           title="Export Annual (PDF)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -1355,94 +1334,7 @@ function printInvoice(item: any) {
         </div>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Invoice' : 'Add Invoice'" @close="showModal = false"
-      @submit="handleSubmit">
-      <div class="form-group">
-        <label for="ri-no" class="form-label">No. Invoice</label>
-        <input id="ri-no" v-model="form.invoice_no" type="text" class="form-input" placeholder="INV-R-XXXXXX">
-      </div>
-      <div class="form-group">
-        <label for="ri-contract" class="form-label">Contract</label>
-        <CustomSelect id="ri-contract" v-model="form.contract_item_id" :options="riContractOptions" placeholder="-- Select Contract --" class="form-select" @update:modelValue="onContractChange" />
-      </div>
-      <div class="form-group">
-        <label for="ri-customer" class="form-label">Customer</label>
-        <CustomSelect id="ri-customer" v-model="form.customer_id" :options="riCustomerOptions" placeholder="-- Select Customer --" class="form-select" />
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="ri-period-start" class="form-label">Period Start</label>
-          <input id="ri-period-start" v-model="form.period_start" type="date" class="form-input">
-        </div>
-        <div class="form-group">
-          <label for="ri-period-end" class="form-label">Period End</label>
-          <input id="ri-period-end" v-model="form.period_end" type="date" class="form-input">
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="ri-due" class="form-label">Due Date</label>
-        <input id="ri-due" v-model="form.due_date" type="date" class="form-input">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="ri-basis" class="form-label">Base Rental Fee (Rp)</label>
-          <input id="ri-basis" v-model.number="form.basis_rental_fee" type="number" class="form-input" min="0"
-            @input="recalculate">
-        </div>
-      </div>
-
-      <!-- Meter Readings for Copier -->
-      <div
-        v-if="findContractItem(form.contract_item_id) && (!findContractItem(form.contract_item_id)?.specs || findContractItem(form.contract_item_id)?.specs.length < 5)"
-        style="border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; margin-bottom: 15px;">
-        <div style="font-weight: bold; margin-bottom: 10px; font-size: 14px;">Meter Reading (Photocopy)</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Start Meter Reading</label>
-            <input v-model.number="form.meter_start" type="number" class="form-input" min="0" @input="recalculate">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Last Meter Reading</label>
-            <input v-model.number="form.meter_end" type="number" class="form-input" min="0" @input="recalculate">
-          </div>
-        </div>
-        <div class="form-row mt-2">
-          <div class="form-group">
-            <label class="form-label">Free Copies</label>
-            <input v-model.number="form.free_copies" type="number" class="form-input" min="0" @input="recalculate">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Unit Price (Overusage)</label>
-            <input v-model.number="form.rate_per_page" type="number" class="form-input" min="0" @input="recalculate">
-          </div>
-        </div>
-        <div style="margin-top: 10px; font-size: 12px; color: #64748b;">
-          Total Usage: <b>{{ Math.max(0, form.meter_end - form.meter_start) }}</b> sheets.
-          Excess: <b>{{ Math.max(0, (form.meter_end - form.meter_start) - form.free_copies) }}</b> sheets.
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label for="ri-excess" class="form-label">Excess Amount (Rp)</label>
-          <input id="ri-excess" v-model.number="form.excess_amount" type="number" class="form-input" min="0"
-            @input="recalculate">
-        </div>
-        <div class="form-group">
-          <label for="ri-tax" class="form-label">Tax (Rp)</label>
-          <input id="ri-tax" v-model.number="form.tax" type="number" class="form-input" min="0" @input="recalculate">
-        </div>
-      </div>
-      <div class="sale-summary">
-        <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(form.subtotal) }}</span></div>
-        <div class="summary-row summary-total"><span>Total Pay</span><span>{{ formatRupiah(form.total_pay) }}</span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="ri-status" class="form-label">Status</label>
-        <CustomSelect id="ri-status" v-model="form.status" :options="riStatusOptions" class="form-select" />
-      </div>
-    </FormModal>
+ 
     <ConfirmDialog :open="showConfirm" title="Delete Invoice"
       :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false"
       @confirm="handleDelete" />

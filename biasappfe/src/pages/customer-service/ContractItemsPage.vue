@@ -1098,9 +1098,7 @@ function unitSerialNo(id: any, rowUnit?: any): string {
   <div>
     <PageHeader
       title="Contract Items"
-      button-label="Add Contract"
-      permission="contract_item:create"
-      @add="openAdd"
+    
     />
     <DataTable
       :columns="columns"

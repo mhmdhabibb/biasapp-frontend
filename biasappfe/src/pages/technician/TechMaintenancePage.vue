@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import PageHeader from '@/components/ui/PageHeader.vue'
+import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
@@ -17,6 +18,7 @@ const {
   serviceReports,
   getTechnicianIdByUser,
   findCustomer,
+  findTechnician,
   findUnit,
   contractItems,
   monthlyMeterReadings,
@@ -50,7 +52,19 @@ const form = ref({
   repair_action: '',
   work_start: '',
   work_end: '',
+  customer_name: '',
+  technician_name: '',
+  customer_signature: '',
+  technician_signature: '',
 })
+
+const isFormCompleted = computed(() =>
+  !!form.value.repair_action.trim() &&
+  !!form.value.work_start &&
+  !!form.value.customer_name.trim() &&
+  !!form.value.customer_signature &&
+  !!form.value.technician_signature,
+)
 
 const fileInputBefore = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
@@ -115,12 +129,18 @@ function openJob(job: any) {
   selectedJob.value = job
   // Pre-fill saved data if any
   const sr = serviceReports.value.find(s => String(s.job_order_id) === String(job.id))
+  const tech: any = findTechnician(job.technician_id)
+  const cust: any = findCustomer(jobCustomerId(job))
   form.value = {
     photo_before: sr?.photo_before || '',
     photo_after: sr?.photo_after || '',
     repair_action: sr?.repair_action || '',
     work_start: sr?.time_in || job.started_at || '',
     work_end: sr?.time_out || '',
+    customer_name: sr?.customer_name || cust?.pic_name || cust?.name || '',
+    technician_name: sr?.technician_name || tech?.user?.name || tech?.name || currentUser.value?.name || '',
+    customer_signature: sr?.customer_signature || '',
+    technician_signature: sr?.technician_signature || '',
   }
   showForm.value = true
 }
@@ -150,6 +170,10 @@ async function completeJob() {
     toast.error('Please start the job first.')
     return
   }
+  if (!form.value.customer_name.trim() || !form.value.customer_signature || !form.value.technician_signature) {
+    toast.error('Customer name and both signatures are required.')
+    return
+  }
 
   const now = new Date().toISOString()
   form.value.work_end = now
@@ -159,27 +183,38 @@ async function completeJob() {
     const unitId = jobUnitId(selectedJob.value)
     const customerId = jobCustomerId(selectedJob.value)
 
-    const payload = {
-      report_no: `SR-${Date.now().toString().slice(-6)}`,
-      job_order_id: selectedJob.value.id,
-      unit_id: String(unitId),
-      customer_id: String(customerId),
-      technician_id: selectedJob.value.technician_id,
-      project_name: jobProjectName(selectedJob.value),
-      service_type: 'maintenance',
-      status: 'completed',
-      is_completed: true,
-      is_tested: true,
+    const reportPayload = {
       machine_problem: jobProblem(selectedJob.value),
       repair_action: form.value.repair_action,
       time_in: form.value.work_start,
       time_out: now,
       photo_before: form.value.photo_before || '',
       photo_after: form.value.photo_after || '',
-      service_date: form.value.work_start,
+      customer_name: form.value.customer_name,
+      technician_name: form.value.technician_name,
+      customer_signature: form.value.customer_signature,
+      technician_signature: form.value.technician_signature,
+      is_tested: true,
+      is_completed: true,
+      status: 'completed',
     }
 
-    await api.post('/service-reports', payload)
+    const existing = serviceReports.value.find(s => String(s.job_order_id) === String(selectedJob.value.id))
+    if (existing) {
+      await api.patch(`/service-reports/${existing.id}`, reportPayload)
+    } else {
+      await api.post('/service-reports', {
+        report_no: `SR-${Date.now().toString().slice(-6)}`,
+        job_order_id: selectedJob.value.id,
+        unit_id: String(unitId),
+        customer_id: String(customerId),
+        technician_id: selectedJob.value.technician_id,
+        project_name: jobProjectName(selectedJob.value),
+        service_type: 'maintenance',
+        service_date: form.value.work_start,
+        ...reportPayload,
+      })
+    }
     await api.patch(`/job-orders/${selectedJob.value.id}`, { status: 'completed' })
 
     selectedJob.value.status = 'completed'
@@ -394,6 +429,38 @@ async function completeJob() {
               ></textarea>
             </div>
 
+            <!-- ── Section: Signatures ── -->
+            <div class="mf-section-label">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+              Signatures
+            </div>
+            <div v-if="selectedJob.status !== 'completed'" class="mf-sig-grid">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Customer / PIC Name <span class="text-danger">*</span></label>
+                <input v-model="form.customer_name" type="text" class="form-input" placeholder="Customer PIC name" />
+                <label class="form-label mt-sm">Customer Signature <span class="text-danger">*</span></label>
+                <SignaturePad v-model="form.customer_signature" height="150px" />
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label">Technician Name</label>
+                <input v-model="form.technician_name" type="text" class="form-input" readonly disabled />
+                <label class="form-label mt-sm">Technician Signature <span class="text-danger">*</span></label>
+                <SignaturePad v-model="form.technician_signature" height="150px" />
+              </div>
+            </div>
+            <div v-else class="mf-sig-grid">
+              <div class="mf-info-field">
+                <span class="mf-info-label">Customer</span>
+                <span class="mf-info-value">{{ form.customer_name || '-' }}</span>
+                <img v-if="form.customer_signature" :src="form.customer_signature" alt="Customer signature" class="mf-sig-img" />
+              </div>
+              <div class="mf-info-field">
+                <span class="mf-info-label">Technician</span>
+                <span class="mf-info-value">{{ form.technician_name || '-' }}</span>
+                <img v-if="form.technician_signature" :src="form.technician_signature" alt="Technician signature" class="mf-sig-img" />
+              </div>
+            </div>
+
           </div>
 
           <!-- Footer -->
@@ -401,11 +468,11 @@ async function completeJob() {
             <button class="btn btn-outline" @click="showForm = false">Close</button>
             <button
               class="btn btn-primary"
-              :disabled="isSaving || !form.work_start || !form.repair_action.trim()"
+              :disabled="isSaving || !isFormCompleted"
               @click="completeJob"
             >
               <svg v-if="isSaving" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite; margin-right:5px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-              {{ isSaving ? 'Saving...' : 'Complete Maintenance' }}
+              {{ isSaving ? 'Saving...' : (isFormCompleted ? 'Complete Maintenance' : 'Complete Form First') }}
             </button>
           </div>
           <div class="mf-footer mf-footer--done" v-else>
@@ -628,6 +695,18 @@ async function completeJob() {
 
 .mf-result-area { resize: vertical; }
 
+/* Signatures */
+.mf-sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mf-sig-img {
+  margin-top: 6px;
+  max-height: 60px;
+  max-width: 100%;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+}
+
 /* Footer */
 .mf-footer {
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
@@ -665,7 +744,7 @@ async function completeJob() {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 440px) {
-  .mf-info-grid, .mf-time-grid, .mf-photos-grid { grid-template-columns: 1fr; }
+  .mf-info-grid, .mf-time-grid, .mf-photos-grid, .mf-sig-grid { grid-template-columns: 1fr; }
   .mf-info-field--wide { grid-column: 1; }
 }
 </style>

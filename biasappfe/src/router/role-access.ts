@@ -34,6 +34,8 @@ export const technicianOnlyRouteNames: string[] = [
   "techSparepartRequest",
   "techMeterReadings",
   "techServiceHistory",
+  "techStandaloneServiceHistory",
+  "techStandaloneServiceHistoryDetail",
   "techFormServiceReport",
   "techFormTechnicalReport",
   "techFormCopierReport",

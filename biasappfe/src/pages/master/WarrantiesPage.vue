@@ -272,7 +272,7 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Warranties" button-label="Add Warranty" permission="warranty:create" @add="openAdd" />
+    <PageHeader title="Warranties"  />
 
     <DataTable :columns="columns" :data="data" search-placeholder="Search warranties..." permission="warranty"
       @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
@@ -298,83 +298,7 @@ async function handleDelete() {
       </template>
     </DataTable>
 
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Warranty' : 'Add Warranty'"
-      @close="showModal = false" @submit="handleSubmit">
-
-      <!-- Customer -->
-      <div class="form-group" style="position: relative;">
-        <label class="form-label">Customer <span class="required">*</span></label>
-        <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="Select customer" />
-      </div>
-
-      <!-- Warranty Type -->
-      <div class="form-group">
-        <label class="form-label">Warranty Type <span class="required">*</span></label>
-        <input v-model="form.warranty_type" type="text" class="form-input"
-          placeholder="e.g. Full Service, Spare Part Only, On-site">
-      </div>
-
-      <!-- Coverage: Unit or Product -->
-      <div class="form-group" style="position: relative;">
-        <label class="form-label">Coverage</label>
-        <CustomSelect v-model="form.coverage" :options="coverageOptions" placeholder="Select coverage type" :searchable="false" />
-      </div>
-
-      <div v-if="form.coverage === 'unit'" class="form-group" style="position: relative;">
-        <label class="form-label">Unit (Machine)</label>
-        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="Select unit" />
-      </div>
-
-      <div v-else class="form-group" style="position: relative;">
-        <label class="form-label">Product / Spare Part</label>
-        <CustomSelect v-model="form.product_id" :options="productOptions" placeholder="Select product" />
-      </div>
-
-      <!-- Linked Sale (optional) -->
-      <div class="form-group" style="position: relative;">
-        <label class="form-label">From Sales Transaction <span style="color: var(--color-text-muted); font-weight: 400;">(optional)</span></label>
-        <CustomSelect v-model="form.sale_id" :options="saleOptions"
-          :placeholder="form.customer_id ? 'Select transaction' : 'Select a customer first'"
-          :disabled="!form.customer_id" />
-      </div>
-
-      <!-- Duration -->
-      <div class="form-row-2">
-        <div class="form-group">
-          <label class="form-label">Duration (months)</label>
-          <input v-model.number="form.duration_months" type="number" class="form-input" min="0">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Duration (days)</label>
-          <input v-model.number="form.duration_days" type="number" class="form-input" min="0">
-        </div>
-      </div>
-
-      <!-- Dates -->
-      <div class="form-row-2">
-        <div class="form-group">
-          <label class="form-label">Start Date <span class="required">*</span></label>
-          <input v-model="form.start_date" type="date" class="form-input">
-        </div>
-        <div class="form-group">
-          <label class="form-label">End Date</label>
-          <input v-model="form.end_date" type="date" class="form-input">
-        </div>
-      </div>
-
-      <!-- Terms -->
-      <div class="form-group">
-        <label class="form-label">Terms & Conditions</label>
-        <textarea v-model="form.terms_conditions" class="form-input" rows="3"
-          placeholder="Warranty terms..."></textarea>
-      </div>
-
-      <!-- Status -->
-      <div class="form-group" style="position: relative;">
-        <label class="form-label">Status</label>
-        <CustomSelect v-model="form.status" :options="statusOptions" placeholder="Select status" :searchable="false" />
-      </div>
-    </FormModal>
+    
 
     <ConfirmDialog :open="showConfirm" title="Delete Warranty"
       :message="`Are you sure you want to delete warranty '${deletingItem?.warranty_type}'?`"

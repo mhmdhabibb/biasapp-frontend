@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onActivated, onMounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -8,8 +8,6 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { TableColumn } from '@/types'
-import html2pdf from 'html2pdf.js'
-import * as XLSX from 'xlsx'
 
 const toast = useToast()
 const store = useMasterStore()
@@ -44,12 +42,8 @@ const columns: TableColumn[] = [
 
 async function fetchJobs() {
   try {
-    const res = await api.get<{ data: any[] }>('/job-orders')
-    // Only maintenance visits (identified by problem_description marker)
-    jobOrders.value = res.data.filter(j => 
-      j.job_type === 'service' && 
-      (j.service_request?.problem_description?.includes('[MAINTENANCE_VISIT]') || j.instructions?.includes('Rutin Maintenance'))
-    ).map(j => ({
+    const res = await api.get<{ data: any[] }>('/job-orders?kind=maintenance&limit=200')
+    jobOrders.value = (res.data || []).map(j => ({
       ...j,
       job_order_no: (j.job_order_no || '').replace('JO-', 'MT-').replace('REQ-', 'MT-')
     }))
@@ -58,7 +52,16 @@ async function fetchJobs() {
   }
 }
 
+let skipNextActivate = true
 onMounted(() => {
+  fetchJobs()
+})
+
+onActivated(() => {
+  if (skipNextActivate) {
+    skipNextActivate = false
+    return
+  }
   fetchJobs()
 })
 
@@ -181,7 +184,8 @@ async function submitForm() {
   }
 }
 
-function exportToPdf() {
+async function exportToPdf() {
+  const { default: html2pdf } = await import('html2pdf.js')
   const data = jobOrders.value.map((j, index) => {
     const u = store.findUnit(j.service_request?.unit_id || j.unit_id)
     return {
@@ -250,7 +254,8 @@ function exportToPdf() {
   html2pdf().set(opt).from(wrapper).save()
 }
 
-function exportToExcel() {
+async function exportToExcel() {
+  const XLSX = await import('xlsx')
   const data = jobOrders.value.map((j, index) => {
     const u = store.findUnit(j.service_request?.unit_id || j.unit_id)
     return {

@@ -10,7 +10,7 @@ import TopBar from "./TopBar.vue";
 const route = useRoute();
 const sidebarOpen = ref(false);
 
-const { refreshInBackground, refreshIfStale } = useMasterStore();
+const { refreshIfStale } = useMasterStore();
 const { currentUser } = useAuth();
 
 let adminInterval: any = null;
@@ -30,7 +30,7 @@ const useMobileLayout = computed(() => {
 onMounted(() => {
   window.addEventListener("resize", handleResize);
   adminInterval = setInterval(() => {
-    refreshInBackground();
+    void refreshIfStale(25000);
   }, 30000);
   // Kembali dari tab browser lain / minimize: refresh silent bila data basi,
   // jadi tidak perlu reload manual agar angka & tabel muncul terbaru.
@@ -68,6 +68,7 @@ const pageTitle = computed(() => {
     "/master/warranties": "Warranties",
     "/customer-service/contract-items": "Contract Items",
     "/customer-service/service-reports": "Service Reports",
+    "/customer-service/standalone-service-history": "Service History Mandiri",
     "/customer-service/monthly-meter-readings": "Monthly Meter Readings",
     "/customer-service/sales": "Sales",
     "/customer-service/rental-invoices": "Rental Invoices",
@@ -85,10 +86,13 @@ const pageTitle = computed(() => {
     "/technician/sparepart-request": "Request Sparepart",
     "/technician/meter-readings": "Meter Readings",
     "/technician/service-history": "Service History",
+    "/technician/standalone-service-history": "Service History Mandiri",
   };
   const exact = titles[route.path];
   if (exact) return exact;
   if (route.path.startsWith("/technician/call-services/")) return "My Jobs";
+  if (route.path.startsWith("/technician/standalone-service-history/"))
+    return "Service History Mandiri";
   return "BIAS App";
 });
 </script>

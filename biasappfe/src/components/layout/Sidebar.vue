@@ -146,14 +146,20 @@ const allMenuGroups: MenuGroup[] = [
         route: "/customer-service/job-orders",
       },
       {
-        label: "Maintenance Schedules",
+        label: "sidebar.maintenance_schedules",
         icon: "calendar",
         route: "/customer-service/maintenance",
+        module: "maintenance",
       },
       {
         label: "sidebar.service_reports",
         icon: "tool",
         route: "/customer-service/service-reports",
+      },
+      {
+        label: "sidebar.standalone_service_history",
+        icon: "file-text",
+        route: "/customer-service/standalone-service-history",
       },
       {
         label: "Copier Reports",
@@ -251,11 +257,18 @@ const allMenuGroups: MenuGroup[] = [
         icon: "wrench",
         route: "/technician/maintenance",
         roles: ["technician"],
+        module: "maintenance",
       },
       {
         label: "sidebar.service_history",
         icon: "file-text",
         route: "/technician/service-history",
+        roles: ["technician"],
+      },
+      {
+        label: "sidebar.standalone_service_history",
+        icon: "clipboard",
+        route: "/technician/standalone-service-history",
         roles: ["technician"],
       },
     ],
@@ -277,7 +290,17 @@ const menuGroups = computed(() => {
           // 1. Superadmin (admin) sees everything
           if (role === "admin") return true;
 
-          // 2. Role-restricted items (technician menu): role decides, no module/permission checks
+          // 2. Explicit module gate (e.g. maintenance): the menu hides when
+          //    the module is deactivated in Master > Modules. Applies to
+          //    role-restricted items too.
+          if (item.module) {
+            const mod = modules.value.find(
+              (m) => moduleKey(String(m.name)) === item.module,
+            );
+            if (mod && !mod.is_active) return false;
+          }
+
+          // 3. Role-restricted items (technician menu): role decides, no permission checks
           if (item.roles) return item.roles.includes(role);
 
           const routeName = String(router.resolve(item.route).name || "");

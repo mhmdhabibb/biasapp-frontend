@@ -20,16 +20,14 @@ import {
 } from "@/utils/paymentReceipt";
 import type { TableColumn } from "@/types";
 import type { PaymentReceiptData } from "@/utils/paymentReceipt";
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onActivated, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { normalizeRole } from "@/router/role-access";
-import html2pdf from "html2pdf.js";
-import * as XLSX from "xlsx";
 
 const toast = useToast();
 const { can, isAdmin } = usePermission();
 const { currentUser } = useAuth();
-const { customers, units, products, payments, refreshInBackground } = useMasterStore();
+const { customers, units, products, payments, refreshOnly } = useMasterStore();
 
 // CS (dan teknisi) tidak boleh melihat nominal: rate, total amount invoice items.
 const canSeeAmount = computed(() => {
@@ -79,9 +77,15 @@ const isSavingPayment = ref(false);
 const showDetailModal = ref(false);
 const detailRental = ref<any>(null);
 
-function openRentalDetail(rental: any) {
+async function openRentalDetail(rental: any) {
   detailRental.value = rental;
   showDetailModal.value = true;
+  try {
+    const response = await api.get<{ data: any }>(`/rents/${rental.id}`, false);
+    detailRental.value = response.data;
+  } catch {
+    // Keep list-row data if the full payload fails to load.
+  }
 }
 
 function meterDetailsOf(invoice: any): any[] {
@@ -401,7 +405,7 @@ function onItemSelectChange(item: any) {
 }
 
 async function openAdd() {
-  await refreshInBackground();
+  await refreshOnly(["customers", "units", "products"]);
   Object.assign(form, {
     customer_id: "",
     start_date: new Date().toISOString().slice(0, 10),
@@ -443,7 +447,7 @@ async function openAdd() {
 
 async function fetchRentals() {
   try {
-    const data = await api.get<{ data: any[] }>("/rents");
+    const data = await api.get<{ data: any[] }>("/rents?limit=200&order_by=created_at&order_dir=desc");
     rentals.value = data.data.map((r: any) => {
       const c = customers.value.find((cust: any) => cust.id === r.customer_id);
       const companyName = c
@@ -762,9 +766,7 @@ function printRentalPaymentReceiptA5(invoice: any, payment: any) {
     toast.warning("Izinkan pop-up browser untuk mencetak bukti pembayaran.");
 }
 
-onMounted(async () => {
-  await refreshInBackground();
-  fetchRentals();
+async function loadPaperLookups() {
   try {
     const res = await resources.paperSizes.list();
     paperSizes.value = res.data as any;
@@ -777,8 +779,28 @@ onMounted(async () => {
   } catch (e) {
     console.error("Failed to fetch paper sizes:", e);
   }
+}
+
+function hydrateRentalLookups() {
+  void refreshOnly(["customers", "units", "products", "payments"]);
+  void loadPaperLookups();
+}
+
+let skipNextRentalActivate = true;
+onMounted(() => {
+  fetchRentals();
+  hydrateRentalLookups();
 });
-function exportToExcel() {
+
+onActivated(() => {
+  if (skipNextRentalActivate) {
+    skipNextRentalActivate = false;
+    return;
+  }
+  fetchRentals();
+});
+async function exportToExcel() {
+  const XLSX = await import("xlsx");
   const exportData = filteredRentals.value.map((j: any, index: number) => ({
     'No': index + 1,
     'Rental No': j.rental_no || '-',
@@ -799,7 +821,8 @@ function exportToExcel() {
   XLSX.writeFile(wb, `Rentals_${Date.now()}.xlsx`)
 }
 
-function exportToPdf() {
+async function exportToPdf() {
+  const { default: html2pdf } = await import("html2pdf.js");
   const exportData = filteredRentals.value.map((j: any, index: number) => ({
     'No': index + 1,
     'Rental No': j.rental_no || '-',
