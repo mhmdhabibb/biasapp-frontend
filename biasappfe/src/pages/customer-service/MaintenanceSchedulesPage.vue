@@ -8,6 +8,8 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { TableColumn } from '@/types'
+import html2pdf from 'html2pdf.js'
+import * as XLSX from 'xlsx'
 
 const toast = useToast()
 const store = useMasterStore()
@@ -157,11 +159,116 @@ async function submitForm() {
     loading.value = false
   }
 }
+
+function exportToPdf() {
+  const data = jobOrders.value.map((j, index) => {
+    const u = store.findUnit(j.service_request?.unit_id || j.unit_id)
+    return {
+      'No': index + 1,
+      'Project Name': j.service_report?.project_name || j.customer_name || 'Pemeliharaan Printer',
+      'Model/Type': u ? u.model : '-',
+      'Serial Number': u ? (u.serial_no || '-') : '-',
+      'Repair Action': (j.service_report?.repair_action || j.instructions || '-').replace('[MAINTENANCE_VISIT]', '').trim(),
+      'photoBefore': j.service_report?.photo_before || null,
+      'photoAfter': j.service_report?.photo_after || null
+    }
+  })
+  
+  if (!data.length) {
+    toast.error('No data to export')
+    return
+  }
+
+  let html = `
+    <div style="font-family: sans-serif; padding: 10px;">
+      <h2 style="text-align: center; margin-bottom: 5px; text-transform: uppercase;">PHOTO DOKUMENTASI</h2>
+      <p style="text-align: center; font-size: 12px; margin-top: 0; margin-bottom: 20px; font-weight: bold;">SURAT PESANAN NO :</p>
+      <table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-size: 11px; text-align: center;">
+        <thead>
+          <tr style="background-color: #5b9bd5; color: white;">
+            <th style="width: 5%">No</th>
+            <th style="width: 15%">Project Name</th>
+            <th style="width: 15%">Model/Type</th>
+            <th style="width: 10%">Serial Number</th>
+            <th style="width: 25%">Repair Action</th>
+            <th style="width: 15%">Foto Dokumentasi Problem</th>
+            <th style="width: 15%">Foto dokumentasi ok diservice</th>
+          </tr>
+        </thead>
+        <tbody>
+  `
+  
+  data.forEach(row => {
+    const img1 = row.photoBefore ? `<img src="${row.photoBefore}" style="max-height: 90px; max-width: 120px; object-fit: contain;" crossorigin="anonymous" />` : '-'
+    const img2 = row.photoAfter ? `<img src="${row.photoAfter}" style="max-height: 90px; max-width: 120px; object-fit: contain;" crossorigin="anonymous" />` : '-'
+    
+    html += `
+      <tr>
+        <td>${row['No']}</td>
+        <td>${row['Project Name']}</td>
+        <td>${row['Model/Type']}</td>
+        <td>${row['Serial Number']}</td>
+        <td>${row['Repair Action']}</td>
+        <td style="padding: 4px;">${img1}</td>
+        <td style="padding: 4px;">${img2}</td>
+      </tr>
+    `
+  })
+  html += '</tbody></table></div>'
+
+  const wrapper = document.createElement('div')
+  wrapper.innerHTML = html
+
+  const opt = {
+    margin: 0.5,
+    filename: `Photo_Dokumentasi_${Date.now()}.pdf`,
+    image: { type: 'jpeg' as const, quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' as const }
+  }
+  html2pdf().set(opt).from(wrapper).save()
+}
+
+function exportToExcel() {
+  const data = jobOrders.value.map((j, index) => {
+    const u = store.findUnit(j.service_request?.unit_id || j.unit_id)
+    return {
+      'No': index + 1,
+      'Project Name': j.service_report?.project_name || j.customer_name || 'Pemeliharaan Printer',
+      'Model/Type': u ? u.model : '-',
+      'Serial Number': u ? (u.serial_no || '-') : '-',
+      'Repair Action': j.service_report?.repair_action || j.instructions || '-',
+      'Foto Dokumentasi Problem': j.service_report?.photo_before || '-',
+      'Foto dokumentasi ok diservice': j.service_report?.photo_after || '-'
+    }
+  })
+  
+  if (!data.length) {
+    toast.error('No data to export')
+    return
+  }
+
+  const ws = XLSX.utils.json_to_sheet(data)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Photo Dokumentasi")
+  XLSX.writeFile(wb, `Photo_Dokumentasi_${Date.now()}.xlsx`)
+}
 </script>
 
 <template>
   <div>
-    <PageHeader title="Maintenance Schedules" button-label="Add Schedule" @add="openAdd" />
+    <PageHeader title="Maintenance Schedules" button-label="Add Schedule" @add="openAdd">
+      <template #actions>
+        <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Export PDF
+        </button>
+        <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="17"></line><line x1="16" y1="13" x2="8" y2="17"></line></svg>
+          Export Excel
+        </button>
+      </template>
+    </PageHeader>
 
     <DataTable :columns="columns" :data="jobOrders" search-placeholder="Search schedules..." @edit="openEdit" @row-click="openEdit">
       <template #cell-customer="{ row }">{{ getCustomerName(row) }}</template>

@@ -457,14 +457,14 @@ function servicePhotosBody(item: any): string {
     <div class="container" style="border: none;">
       <div class="title-bar" style="font-size: 22px; margin-bottom: 20px;">SERVICE PHOTOS</div>
       <div style="display: flex; gap: 20px; justify-content: space-around;">
-        ${item.photo_before ? \`<div style="text-align: center; width: 48%;">
+        ${item.photo_before ? `<div style="text-align: center; width: 48%;">
           <div style="font-weight: bold; margin-bottom: 10px;">BEFORE SERVICE</div>
-          <img src="\${item.photo_before}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
-        </div>\` : ""}
-        ${item.photo_after ? \`<div style="text-align: center; width: 48%;">
+          <img src="${item.photo_before}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
+        </div>` : ""}
+        ${item.photo_after ? `<div style="text-align: center; width: 48%;">
           <div style="font-weight: bold; margin-bottom: 10px;">AFTER SERVICE</div>
-          <img src="\${item.photo_after}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
-        </div>\` : ""}
+          <img src="${item.photo_after}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
+        </div>` : ""}
       </div>
     </div>
   `;

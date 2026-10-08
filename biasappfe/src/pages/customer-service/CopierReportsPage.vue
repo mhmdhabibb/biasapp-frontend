@@ -12,7 +12,7 @@ import { useResourcesStore } from '@/stores/resources.store'
 import type { TableColumn } from '@/types'
 import { isCopierReport } from '@/utils/copierReport'
 import { printServiceReport } from '@/utils/printReport'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const toast = useToast()
@@ -88,10 +88,14 @@ function detailTotals(item: any): { before: number | null; after: number | null;
   const rows = detailReadings(item)
   if (rows.length > 0) {
     let b = 0
-    let a = 0
+    let a: number | null = null
     for (const r of rows) {
       b += Number(r.start_meter || 0)
-      a += Number(r.last_meter ?? r.end_meter ?? 0)
+      const end = r.last_meter ?? r.end_meter
+      if (end != null) {
+        if (a === null) a = 0
+        a += Number(end)
+      }
     }
     return { before: b, after: a, count: rows.length }
   }
@@ -127,13 +131,22 @@ function hasSig(item: any, who: 'customer' | 'technician'): boolean {
 }
 
 function detailReadings(item: any): any[] {
-  return item?.monthly_meter_readings || item?.monthlyMeterReadings || []
+  const arr = item?.monthly_meter_readings || item?.monthlyMeterReadings || []
+  return [...arr].sort((a, b) => {
+    const pA = a.paper_size?.name || ''
+    const pB = b.paper_size?.name || ''
+    if (pA !== pB) return pA.localeCompare(pB)
+    const cA = a.color_mode || ''
+    const cB = b.color_mode || ''
+    return cA.localeCompare(cB)
+  })
 }
 
 function readingUsage(r: any): string {
   const s = Number(r.start_meter || 0)
-  const l = Number(r.last_meter ?? r.end_meter ?? 0)
-  return (l - s).toLocaleString('id-ID')
+  const end = r.last_meter ?? r.end_meter
+  if (end == null) return '-'
+  return (Number(end) - s).toLocaleString('id-ID')
 }
 
 // ---- Detail (read-only) ----
@@ -149,8 +162,30 @@ const genMonth = ref(new Date().toISOString().slice(0, 7))
 const genIntervalDays = ref(30)
 const genIntervalHours = ref(0)
 const genIntervalMode = ref<'days' | 'hours'>('days')
-const genServiceDate = ref(new Date().toISOString().slice(0, 10))
+const genServiceDate = ref('')
 const genServiceTime = ref('09:00')
+
+const minAllowedDate = computed(() => {
+  if (!genMonth.value) return ''
+  return `${genMonth.value}-25`
+})
+
+const maxAllowedDate = computed(() => {
+  if (!genMonth.value) return ''
+  const [yearStr, monthStr] = genMonth.value.split('-')
+  const year = parseInt(yearStr, 10)
+  const month = parseInt(monthStr, 10)
+  const lastDay = new Date(year, month, 0).getDate()
+  return `${genMonth.value}-${String(lastDay).padStart(2, '0')}`
+})
+
+watch(genMonth, (newMonth) => {
+  if (!newMonth) return
+  const current = new Date(genServiceDate.value)
+  if (isNaN(current.getTime()) || genServiceDate.value.slice(0, 7) !== newMonth || current.getDate() < 25) {
+    genServiceDate.value = `${newMonth}-25`
+  }
+}, { immediate: true })
 const copierIntervalSettingId = ref<string | null>(null)
 const isGenerating = ref(false)
 const showResult = ref(false)
@@ -303,9 +338,11 @@ async function handleDelete() {
             v-if="can('service_report:create')"
             v-model="genServiceDate"
             type="date"
+            :min="minAllowedDate"
+            :max="maxAllowedDate"
             class="form-input"
             style="width: auto;"
-            title="Tanggal visit (uji coba) — default hari ini"
+            title="Tanggal visit (hanya bisa tgl 25 hingga akhir bulan)"
           />
           <input
             v-if="can('service_report:create') && genIntervalMode === 'hours'"
@@ -475,7 +512,7 @@ async function handleDelete() {
               <tr v-for="(r, idx) in detailReadings(detailItem)" :key="r.id || idx">
                 <td>{{ r.paper_size?.name || '-' }}</td>
                 <td>{{ String(r.color_mode || '-').toUpperCase() }}</td>
-                <td style="text-align: right; white-space: nowrap;">{{ Number(r.start_meter || 0).toLocaleString('id-ID') }} → {{ Number(r.last_meter ?? r.end_meter ?? 0).toLocaleString('id-ID') }}</td>
+                <td style="text-align: right; white-space: nowrap;">{{ Number(r.start_meter || 0).toLocaleString('id-ID') }} → {{ (r.last_meter ?? r.end_meter) != null ? Number(r.last_meter ?? r.end_meter).toLocaleString('id-ID') : '-' }}</td>
                 <td style="text-align: right;">{{ readingUsage(r) }}</td>
               </tr>
             </tbody>

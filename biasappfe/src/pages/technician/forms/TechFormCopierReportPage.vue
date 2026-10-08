@@ -128,9 +128,11 @@ function prevMeterFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): numbe
     normMeterMode(r.color_mode) === mode,
   )
   if (sized.length > 0) {
-    const latest = sized.reduce((prev: any, curr: any) =>
-      new Date(prev.created_at).getTime() > new Date(curr.created_at).getTime() ? prev : curr,
-    )
+    const latest = sized.reduce((prev: any, curr: any) => {
+      const prevDate = new Date(prev.reading_date || prev.created_at).getTime()
+      const currDate = new Date(curr.reading_date || curr.created_at).getTime()
+      return prevDate > currDate ? prev : curr
+    })
     return num(latest.end_meter)
   }
   if (!ci) return 0

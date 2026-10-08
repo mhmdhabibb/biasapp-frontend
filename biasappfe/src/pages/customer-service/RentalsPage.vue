@@ -23,6 +23,8 @@ import type { PaymentReceiptData } from "@/utils/paymentReceipt";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { normalizeRole } from "@/router/role-access";
+import html2pdf from "html2pdf.js";
+import * as XLSX from "xlsx";
 
 const toast = useToast();
 const { can, isAdmin } = usePermission();
@@ -49,6 +51,20 @@ const columns = computed<TableColumn[]>(() => [
 ]);
 
 const rentals = ref<any[]>([]);
+
+const customerOptions = computed(() => [
+  { value: null, label: 'All Customers' },
+  ...(customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: `${c.company_name || c.name}${c.pic_name ? ' - ' + c.pic_name : ''}`,
+  }))
+]);
+
+const filterCustomer = ref<string | null>(null);
+const filteredRentals = computed(() => {
+  if (!filterCustomer.value) return rentals.value;
+  return rentals.value.filter((r: any) => String(r.customer_id) === String(filterCustomer.value));
+});
 
 const showModal = ref(false);
 const isLoading = ref(false);
@@ -762,6 +778,67 @@ onMounted(async () => {
     console.error("Failed to fetch paper sizes:", e);
   }
 });
+function exportToExcel() {
+  const exportData = filteredRentals.value.map((j: any, index: number) => ({
+    'No': index + 1,
+    'Rental No': j.rental_no || '-',
+    'Company': j.customer?.company_name || j.customer?.name || '-',
+    'PIC Name': j.customer?.pic_name || '-',
+    'Start Date': j.start_date ? new Date(j.start_date).toLocaleDateString('en-GB') : '-',
+    'End Date': j.end_date ? new Date(j.end_date).toLocaleDateString('en-GB') : '-',
+    'Total': j.total || 0,
+    'Status': j.status || '-'
+  }))
+  if (!exportData.length) {
+    toast.error('No data to export')
+    return
+  }
+  const ws = XLSX.utils.json_to_sheet(exportData)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Rentals")
+  XLSX.writeFile(wb, `Rentals_${Date.now()}.xlsx`)
+}
+
+function exportToPdf() {
+  const exportData = filteredRentals.value.map((j: any, index: number) => ({
+    'No': index + 1,
+    'Rental No': j.rental_no || '-',
+    'Company': j.customer?.company_name || j.customer?.name || '-',
+    'PIC Name': j.customer?.pic_name || '-',
+    'Start Date': j.start_date ? new Date(j.start_date).toLocaleDateString('en-GB') : '-',
+    'End Date': j.end_date ? new Date(j.end_date).toLocaleDateString('en-GB') : '-',
+    'Total': (j.total || 0).toLocaleString('id-ID'),
+    'Status': String(j.status || '-').toUpperCase()
+  }))
+  if (!exportData.length) {
+    toast.error('No data to export')
+    return
+  }
+  
+  let html = '<h2 style="font-family: sans-serif; text-align: center;">Rentals Report</h2><table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px; text-align: center;">'
+  html += '<thead><tr style="background-color: #5b9bd5; color: white;">'
+  const keys = Object.keys(exportData[0]!)
+  keys.forEach(k => html += `<th>${k}</th>`)
+  html += '</tr></thead><tbody>'
+  exportData.forEach(row => {
+    html += '<tr>'
+    keys.forEach(k => html += `<td>${(row as any)[k]}</td>`)
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+
+  const wrapper = document.createElement('div')
+  wrapper.innerHTML = html
+
+  const opt = {
+    margin: 0.5,
+    filename: `Rentals_Report_${Date.now()}.pdf`,
+    image: { type: 'jpeg' as const, quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' as const }
+  }
+  html2pdf().set(opt).from(wrapper).save()
+}
 </script>
 
 <template>
@@ -771,11 +848,23 @@ onMounted(async () => {
       :button-label="t('rentals.create_new')"
       permission="rental:create"
       @add="openAdd"
-    />
+    >
+      <template #actions>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <CustomSelect v-model="filterCustomer" :options="customerOptions" placeholder="Filter by Customer" style="min-width: 200px;" />
+          <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
+            Export PDF
+          </button>
+          <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
+            Export Excel
+          </button>
+        </div>
+      </template>
+    </PageHeader>
 
     <DataTable
       :columns="columns"
-      :data="rentals"
+      :data="filteredRentals"
       permission="rental"
       :search-placeholder="t('rentals.search')"
     >
