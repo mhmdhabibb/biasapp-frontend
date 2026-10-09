@@ -88,6 +88,28 @@ const printTypeOptions = [
 // Tab: service reports | delivery history | sparepart requests
 const activeTab = ref<'service' | 'delivery' | 'sparepart'>('service')
 
+// Filter customer berlaku untuk semua tab (service, delivery, sparepart).
+const customerFilter = ref('')
+const customerFilterOptions = computed(() => [
+  { value: '', label: 'All Customers' },
+  ...(customers.value as any[]).map((c: any) => ({
+    value: String(c.id),
+    label: c.company_name || c.name || '-',
+  })),
+])
+
+function matchesCustomer(id: any): boolean {
+  if (!customerFilter.value) return true
+  return String(id) === customerFilter.value
+}
+
+// Sparepart request tidak menyimpan customer_id langsung — ditelusuri
+// lewat service_report_id → service report → customer_id.
+function sparepartCustomerId(row: any): any {
+  const sr = (row as any)?.service_report || findServiceReport(row?.service_report_id as any)
+  return sr?.customer_id
+}
+
 // ── Sparepart Requests (Procurement) ───────────────────────────────────────
 const sprColumns: TableColumn[] = [
   { key: 'request_no', label: 'Request No' },
@@ -192,7 +214,8 @@ const deliveryHistories = computed(() =>
   (deliveryOrders.value as any[]).filter(
     (d: any) =>
       hasDeliveryHistory(d) &&
-      String(d.do_type || '').toLowerCase() !== 'inbound',
+      String(d.do_type || '').toLowerCase() !== 'inbound' &&
+      matchesCustomer(d.customer_id),
   ),
 )
 
@@ -276,7 +299,14 @@ const columns: TableColumn[] = [
 // dari list Service Reports.
 const serviceOnlyReports = computed(() =>
   data.value.filter(
-    (item: any) => !isCopierReport(item),
+    (item: any) => !isCopierReport(item) && matchesCustomer(item.customer_id),
+  ),
+)
+
+// Sparepart Requests difilter customer via service report induknya.
+const filteredSparepartRequests = computed(() =>
+  (sparepartRequests.value as any[]).filter(
+    (row: any) => matchesCustomer(sparepartCustomerId(row)),
   ),
 )
 
@@ -497,6 +527,15 @@ function printTable() {
         </button>
       </template>
     </PageHeader>
+    <div class="filter-bar">
+      <div class="filter-item">
+        <label class="filter-label">Customer</label>
+        <CustomSelect v-model="customerFilter" :options="customerFilterOptions" class="form-select filter-input" />
+      </div>
+      <button v-if="customerFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="customerFilter = ''">
+        Reset Filter
+      </button>
+    </div>
     <div style="display: flex; gap: 8px; margin-bottom: 12px;">
       <button class="btn btn-sm" :class="activeTab === 'service' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'service'">
         Service Reports ({{ serviceOnlyReports.length }})
@@ -505,7 +544,7 @@ function printTable() {
         Delivery History ({{ deliveryHistories.length }})
       </button>
       <button class="btn btn-sm" :class="activeTab === 'sparepart' ? 'btn-primary' : 'btn-outline'" @click="activeTab = 'sparepart'">
-        Sparepart Requests ({{ (sparepartRequests as any[]).length }})
+        Sparepart Requests ({{ filteredSparepartRequests.length }})
       </button>
     </div>
     <DataTable v-if="activeTab === 'service'" :columns="columns" :data="serviceOnlyReports" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
@@ -772,7 +811,7 @@ function printTable() {
       </template>
     </FormModal>
     <!-- Sparepart Requests Tab -->
-    <DataTable v-if="activeTab === 'sparepart'" :columns="sprColumns" :data="sparepartRequests" permission="service_sparepart" search-placeholder="Search requests...">
+    <DataTable v-if="activeTab === 'sparepart'" :columns="sprColumns" :data="filteredSparepartRequests" permission="service_sparepart" search-placeholder="Search requests...">
       <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
       <template #cell-service_report_id="{ row }">{{ getSR(row) }}</template>
       <template #cell-technician_id="{ row }">{{ sprTechName(row) }}</template>
@@ -952,6 +991,26 @@ function printTable() {
 </template>
 
 <style scoped>
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 240px;
+}
+.filter-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.filter-reset-btn {
+  margin-bottom: 2px;
+}
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

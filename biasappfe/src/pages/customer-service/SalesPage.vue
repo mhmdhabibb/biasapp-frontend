@@ -21,12 +21,21 @@ import * as XLSX from 'xlsx'
 const toast = useToast()
 const { can, isAdmin } = usePermission()
 const { currentUser } = useAuth()
+
+// Helper untuk mengubah YYYY-MM-DD menjadi format ISO 8601 lengkap (misal: 2026-10-09T00:00:00Z)
+function formatToISO8601(dateStr: string): string {
+  if (!dateStr) return new Date().toISOString()
+  if (dateStr.includes('T')) return dateStr
+  return new Date(`${dateStr}T00:00:00Z`).toISOString()
+}
+
 // CS tidak boleh melihat nominal pada detail item.
 const canSeeAmount = computed(() => {
   if (isAdmin.value) return true
   const role = normalizeRole(currentUser.value?.role)
   return role === 'accounting' || role === 'admin'
 })
+
 const {
   sales: data,
   customers,
@@ -85,8 +94,6 @@ const columns: TableColumn[] = [
   { key: 'sale_no', label: 'Code' },
   { key: 'customer_id', label: 'Company' },
   { key: 'pic_name', label: 'PIC Name' },
-
-
   { key: 'total', label: 'Total' },
   { key: 'status', label: 'Status' },
 ]
@@ -104,6 +111,7 @@ function openSaleItemDetail(si: any) {
   selectedSaleItem.value = si
   showItemDetail.value = true
 }
+
 function closeSaleItemDetail() {
   showItemDetail.value = false
   selectedSaleItem.value = null
@@ -113,7 +121,7 @@ const showPaymentModal = ref(false)
 const paymentData = reactive({
   amount: 0,
   payment_date: new Date().toISOString().substring(0, 10),
-  method_type: 'CASH', // CASH, TRANSFER, CREDIT_CARD
+  method_type: 'CASH',
   bank_name: '',
   account_number: '',
   sender_name: '',
@@ -146,26 +154,26 @@ async function handlePayment() {
   try {
     const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === viewingItem.value?.id)
     if (invoice) {
-        let finalBankName = paymentData.bank_name
-        if (paymentData.method_type === 'TRANSFER' || paymentData.method_type === 'CREDIT_CARD') {
-           finalBankName = `${paymentData.bank_name} - ${paymentData.account_number} (A/N: ${paymentData.sender_name})`
-        }
+      let finalBankName = paymentData.bank_name
+      if (paymentData.method_type === 'TRANSFER' || paymentData.method_type === 'CREDIT_CARD') {
+        finalBankName = `${paymentData.bank_name} - ${paymentData.account_number} (A/N: ${paymentData.sender_name})`
+      }
 
-        const paymentPayload = {
-            payment_no: 'PAY-' + Math.floor(Date.now() / 1000),
-            sales_invoice_id: invoice.id,
-            payment_date: buildPaymentTimestamp(paymentData.payment_date),
-            amount: Number(paymentData.amount),
-            tax_deduction: 0,
-            bank_name: paymentData.method_type === 'CASH' ? 'CASH' : finalBankName,
-            reference_no: paymentData.reference_no || '-'
-        }
-        await resources.create("payments", paymentPayload)
+      const paymentPayload = {
+        payment_no: 'PAY-' + Math.floor(Date.now() / 1000),
+        sales_invoice_id: invoice.id,
+        payment_date: buildPaymentTimestamp(paymentData.payment_date),
+        amount: Number(paymentData.amount),
+        tax_deduction: 0,
+        bank_name: paymentData.method_type === 'CASH' ? 'CASH' : finalBankName,
+        reference_no: paymentData.reference_no || '-'
+      }
+      await resources.create("payments", paymentPayload)
     }
 
     const payload = {
-       ...viewingItem.value,
-       status: 'paid'
+      ...viewingItem.value,
+      status: 'paid'
     }
     await resources.update("sales", viewingItem.value.id as any, payload)
     await useMasterStore().refreshInBackground()
@@ -175,8 +183,6 @@ async function handlePayment() {
     toast.error("Failed to record payment! " + (err.response?.data?.message || err.message))
   }
 }
-
-
 
 function generateSingleInvoiceHtml(item: any) {
   const customer = findCustomer(item.customer_id)
@@ -205,7 +211,7 @@ function generateSingleInvoiceHtml(item: any) {
       if (si.unit_id) {
         const u = findUnit(si.unit_id)
         if (u) {
-            pName += ` - ${u.name} ${u.serial_no ? `(SN: ${u.serial_no})` : ''}`
+          pName += ` - ${u.name} ${u.serial_no ? `(SN: ${u.serial_no})` : ''}`
         }
       }
       if (si.description) {
@@ -406,7 +412,7 @@ function exportMonthToExcel() {
         if (si.unit_id) {
           const u = findUnit(si.unit_id)
           if (u) {
-              pName += ` - ${u.name} ${u.serial_no ? `(SN: ${u.serial_no})` : ''}`
+            pName += ` - ${u.name} ${u.serial_no ? `(SN: ${u.serial_no})` : ''}`
           }
         }
         pName = pName.replace(/;/g, ',')
@@ -548,8 +554,6 @@ const form = reactive({
   }
 })
 
-// Warranty cukup diisi tanggal expired; duration dihitung saat submit
-// (backend hanya mengenal duration_months/days + start_date).
 function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -560,7 +564,6 @@ function addMonthsISO(dateStr: string, months: number): string {
 }
 
 const calcSubtotal = computed(() => saleItems.value.reduce((sum, item) => sum + (item.qty * item.unit_price), 0))
-// You can use calcSubtotal to set total_amount automatically before submit
 const calcDiscount = computed(() => Math.max(0, Number(form.discount) || 0))
 const calcTotal = computed(() => Math.max(0, calcSubtotal.value - calcDiscount.value))
 
@@ -575,7 +578,16 @@ function removeSaleItem(idx: number) {
 function onCombinedItemChange(idx: number) {
   const item = saleItems.value[idx]
   if (!item || !item._combined_id) return
-  
+
+  const parseSpecs = (raw: any) => {
+    const blank = { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }
+    if (!raw) return blank
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw
+      return { ...blank, ...parsed }
+    } catch { return blank }
+  }
+
   if (item._combined_id.startsWith('P_')) {
     item.product_id = parseInt(item._combined_id.replace('P_', ''))
     item.unit_id = null
@@ -583,6 +595,7 @@ function onCombinedItemChange(idx: number) {
     if (prod) {
       item.unit_price = prod.price
       item.is_computer = !!prod.is_computer
+      if (item.is_computer) item.specs = parseSpecs((prod as any).specs)
     }
   } else if (item._combined_id.startsWith('U_')) {
     item.unit_id = item._combined_id.replace('U_', '')
@@ -591,6 +604,7 @@ function onCombinedItemChange(idx: number) {
     item.unit_price = (unit && (unit as any).price) ? (unit as any).price : 0
     if (unit) {
       item.is_computer = !!unit.is_computer
+      if (item.is_computer) item.specs = parseSpecs((unit as any).specs)
     }
   }
 }
@@ -617,7 +631,7 @@ function openEdit(item: any) {
     sale_no: item.sale_no || `SLS-${item.id}`,
     customer_id: item.customer_id,
     po_no: item.po_no || '',
-      installation_address: item.installation_address || '',
+    installation_address: item.installation_address || '',
     sale_date: item.sale_date ? item.sale_date.slice(0, 10) : '',
     total_amount: item.total_amount || item.total,
     discount: item.discount || 0,
@@ -646,7 +660,7 @@ function openEdit(item: any) {
     saleItems.value = item.sale_items.map((si: any) => {
       let parsedSpecs = { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }
       if (si.specs) {
-        try { parsedSpecs = typeof si.specs === 'string' ? JSON.parse(si.specs) : si.specs } catch (e) {}
+        try { parsedSpecs = typeof si.specs === 'string' ? JSON.parse(si.specs) : si.specs } catch (e) { }
       }
       return {
         product_id: si.product_id,
@@ -671,7 +685,8 @@ async function handleSubmit() {
     toast.warning('Installation/delivery address is required.')
     return
   }
-  // Konversi expired date -> duration (backend hanya mengenal duration).
+
+  // Konversi expired date -> duration
   const warrantyPayload = { ...form.warranty }
   if (form.has_warranty) {
     if (!warrantyPayload.expired_date) {
@@ -690,23 +705,26 @@ async function handleSubmit() {
       toast.warning('Warranty expired date must not be before the sale date.')
       return
     }
-    warrantyPayload.start_date = form.sale_date
+    warrantyPayload.start_date = formatToISO8601(form.sale_date)
     warrantyPayload.duration_months = 0
     warrantyPayload.duration_days = diffDays
     warrantyPayload.warranty_type = types[0]
     warrantyPayload.warranty_types = types
   }
+
   const saleData = {
     ...form,
+    // Format tanggal transaksi menjadi ISO8601 lengkap agar backend Go dapat mempassing waktu T00:00:00Z
+    sale_date: formatToISO8601(form.sale_date),
     warranty: warrantyPayload,
     warranties: form.has_warranty
       ? [...new Set((form.warranty.warranty_types || []).filter(Boolean))].map((t) => ({
-          warranty_type: t,
-          start_date: form.sale_date,
-          duration_months: warrantyPayload.duration_months,
-          duration_days: warrantyPayload.duration_days,
-          terms_conditions: form.warranty.terms_conditions || '',
-        }))
+        warranty_type: t,
+        start_date: formatToISO8601(form.sale_date),
+        duration_months: warrantyPayload.duration_months,
+        duration_days: warrantyPayload.duration_days,
+        terms_conditions: form.warranty.terms_conditions || '',
+      }))
       : [],
     subtotal: calcSubtotal.value,
     discount: calcDiscount.value,
@@ -716,7 +734,7 @@ async function handleSubmit() {
       specs: JSON.stringify(item.specs)
     }))
   }
-  
+
   let pw: Window | null = null;
   if (!editingItem.value) {
     pw = window.open('', '_blank');
@@ -724,7 +742,7 @@ async function handleSubmit() {
       pw.document.write('Loading invoice...');
     }
   }
-  
+
   try {
     let res;
     if (editingItem.value) {
@@ -736,7 +754,6 @@ async function handleSubmit() {
     showModal.value = false
     toast.success(editingItem.value ? "Sale updated successfully!" : "Sale saved successfully!")
 
-    // Auto-print invoice when a new sale is created
     if (!editingItem.value && res && res.id) {
       const newSale = useMasterStore().sales.value.find(s => s.id === res.id)
       if (newSale) {
@@ -844,9 +861,9 @@ function printInvoice(item: any, existingWindow?: Window | null) {
 
 function generateSingleReceiptHtml(item: any) {
   const customer = findCustomer(item.customer_id)
-  const compName = customer?.company_name 
+  const compName = customer?.company_name
   const custName = customer?.pic_name
-  
+
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
   const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
@@ -939,7 +956,7 @@ function exportToPdf() {
     toast.error('No data to export')
     return
   }
-  
+
   let html = '<h2 style="font-family: sans-serif; text-align: center;">Sales Report</h2><table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px; text-align: center;">'
   html += '<thead><tr style="background-color: #5b9bd5; color: white;">'
   const keys = Object.keys(exportData[0]!)
@@ -1009,787 +1026,3 @@ const combinedItemOptions = computed(() => {
 })
 
 </script>
-
-<template>
-  <div>
-    <PageHeader title="Sales" button-label="Add Sale" permission="sale:create" @add="openAdd">
-      <template #actions>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <CustomSelect v-model="filterCustomer" :options="customerOptions" placeholder="Filter by Customer" style="min-width: 200px;" />
-          <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
-            Export PDF
-          </button>
-          <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
-            Export Excel
-          </button>
-        </div>
-      </template>
-    </PageHeader>
-    
-    <DataTable :columns="columns" :data="filteredSales" search-placeholder="Search sales..." @edit="openEdit"
-      @delete="openDelete">
-      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
-      <template #cell-pic_name="{ row }">{{ picName(row.customer_id) }}</template>
-      <template #cell-date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
-      <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-service_charge="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-tax="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-status="{ value }">
-        <span
-          :class="(!value || value === 'pending') ? 'badge badge-info' : value === 'approved' ? 'badge badge-success' : value === 'paid' ? 'badge badge-success' : 'badge badge-danger'">
-          {{ (!value || value === 'pending') ? 'Approved' : value === 'approved' ? 'Approved' : value === 'paid' ? 'Paid'
-            : 'Cancelled' }}
-        </span>
-      </template>
-      <template #actions="{ row }">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="can('sale:read')" class="action-btn action-btn--edit" title="Detail" @click="openView(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-          </button>
-          <button v-if="row.status !== 'paid' && can('payment:create')" class="action-btn action-btn--edit" title="Payment" @click="openPayment(row)" style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="2" y1="10" x2="22" y2="10"></line>
-            </svg>
-          </button>
-          <button v-if="row.status === 'paid' && can('sale:read')" class="action-btn action-btn--edit" title="Print Receipt"
-            @click="printReceipt(row)" style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-          </button>
-          <button v-if="row.status === 'approved' && can('sale:read')" class="action-btn action-btn--edit" title="Print Invoice"
-            @click="printInvoice(row)" style="color: var(--color-primary); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 6 2 18 2 18 9"></polyline>
-              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
-              <rect x="6" y="14" width="12" height="8"></rect>
-            </svg>
-          </button>
-          <button v-if="can('sale:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)" style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-            </svg>
-          </button>
-          <button v-if="can('sale:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-              <line x1="10" y1="11" x2="10" y2="17"></line>
-              <line x1="14" y1="11" x2="14" y2="17"></line>
-            </svg>
-          </button>
-        </div>
-      </template>
-    </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Sale' : 'Add Sale'" @close="showModal = false" :max-width="'700px'">
-      <!-- Stepper Header -->
-      <div class="stepper-container">
-        <div class="stepper-item" :class="{ active: currentStep === 1, completed: currentStep > 1 }">
-          <div class="step-circle">1</div>
-          <div class="step-label">General Info</div>
-        </div>
-        <div class="stepper-line" :class="{ active: currentStep > 1 }"></div>
-        <div class="stepper-item" :class="{ active: currentStep === 2, completed: currentStep > 2 }">
-          <div class="step-circle">2</div>
-          <div class="step-label">Sale Items</div>
-        </div>
-        <div class="stepper-line" :class="{ active: currentStep > 2 }"></div>
-        <div class="stepper-item" :class="{ active: currentStep === 3 }">
-          <div class="step-circle">3</div>
-          <div class="step-label">Summary</div>
-        </div>
-      </div>
-
-      <!-- Step 1 -->
-      <div v-show="currentStep === 1" class="step-content">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="sale-no" class="form-label">Sale No. (Auto)</label>
-            <input id="sale-no" v-model="form.sale_no" type="text" class="form-input" disabled style="background: var(--color-surface-raised); cursor: not-allowed;">
-          </div>
-          <div class="form-group">
-            <label for="sale-customer" class="form-label">Customer</label>
-            <CustomSelect id="sale-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="sale-date" class="form-label">Date</label>
-            <input id="sale-date" v-model="form.sale_date" type="date" class="form-input">
-          </div>
-          <div class="form-group">
-            <label for="sale-po-no" class="form-label">PO No (Optional)</label>
-            <input id="sale-po-no" v-model="form.po_no" type="text" class="form-input" placeholder="E.g. PO-2024-001">
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="sale-installation-address" class="form-label">Installation / Delivery Address</label>
-          <textarea id="sale-installation-address" v-model="form.installation_address" class="form-textarea" rows="3" placeholder="Enter the full delivery address..." required></textarea>
-        </div>
-      </div>
-
-      <!-- Step 2 -->
-      <div v-show="currentStep === 2" class="step-content">
-        <div class="form-section-title" style="margin-top: 0;">Sale Items</div>
-      <div v-for="(item, idx) in saleItems" :key="idx" class="sale-item-row">
-        <div class="form-group sale-item-product" style="grid-column: span 2;">
-          <CustomSelect v-model="item._combined_id" :options="combinedItemOptions" placeholder="-- Item (Product or Unit) --" class="form-select" @update:modelValue="onCombinedItemChange(idx)" />
-        </div>
-        <div class="form-group sale-item-qty">
-          <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
-        </div>
-        <div class="form-group sale-item-price">
-          <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Price" readonly style="background: var(--color-surface-raised); cursor: not-allowed;">
-        </div>
-        <button type="button" class="btn-remove-item" title="Remove item" @click="removeSaleItem(idx)">✕</button>
-
-        <div v-if="item.is_computer" style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
-          <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Computer / PC Specifications</h4>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Processor (CPU)</label>
-              <input v-model="item.specs.cpu" type="text" class="form-input" placeholder="E.g. Intel Core i5">
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">RAM</label>
-              <input v-model="item.specs.ram" type="text" class="form-input" placeholder="E.g. 16GB DDR4">
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">VGA / GPU</label>
-              <input v-model="item.specs.vga" type="text" class="form-input" placeholder="E.g. Intel UHD Graphics">
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
-              <CustomSelect v-model="item.specs.storage_type" :options="storageTypeOptions" placeholder="Select" class="form-select" />
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>
-              <input v-model="item.specs.storage" type="text" class="form-input" placeholder="E.g. 512GB">
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Operating System (OS)</label>
-              <input v-model="item.specs.os" type="text" class="form-input" placeholder="E.g. Windows 11 Pro">
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.75rem;">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Office Package</label>
-              <input v-model="item.specs.office" type="text" class="form-input" placeholder="E.g. Microsoft Office 2021">
-            </div>
-          </div>
-        </div>
-
-        <div style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
-          <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">Description / Notes (Shown on Invoice)</label>
-            <textarea v-model="item.description" class="form-input" placeholder="E.g. Good condition, including power cable..." rows="2"></textarea>
-          </div>
-        </div>
-      </div>
-      <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem" style="margin-top: 1rem;">+ Add Item</button>
-
-      </div>
-
-      <!-- Step 3 -->
-      <div v-show="currentStep === 3" class="step-content">
-        <div class="form-section-title" style="margin-top: 0;">Warranty & Services</div>
-      <div style="border: 1px solid var(--color-border); padding: 1rem; border-radius: var(--radius-md); background-color: var(--color-surface); margin-bottom: 1.5rem;">
-        <div style="display: flex; flex-direction: column; gap: 1rem;">
-          <div class="form-group">
-            <label class="form-label">Warranty Type <span class="text-muted" style="font-weight: 400;">(bisa pilih lebih dari 1)</span></label>
-            <div class="warranty-type-checks">
-              <label v-for="opt in warrantyTypeOptions" :key="opt.value" class="warranty-type-check">
-                <input type="checkbox" :value="opt.value" v-model="form.warranty.warranty_types" />
-                {{ opt.label }}
-              </label>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Warranty Expired Date</label>
-            <input v-model="form.warranty.expired_date" type="date" class="form-input">
-          </div>
-        </div>
-        <div class="form-group" style="margin-top: 0.75rem;">
-          <label class="form-label">Warranty Terms & Conditions</label>
-          <textarea v-model="form.warranty.terms_conditions" class="form-input" rows="3" placeholder="E.g. Warranty is void if the seal is broken, due to human error, or water damage..."></textarea>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label for="sale-discount" class="form-label">Discount (Rp)</label>
-        <input id="sale-discount" v-model.number="form.discount" type="number" class="form-input" min="0" placeholder="0">
-      </div>
-
-      <div class="sale-summary">
-        <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(calcSubtotal) }}</span></div>
-        <div class="summary-row"><span>Discount</span><span>{{ formatRupiah(calcDiscount) }}</span></div>
-        <div class="summary-row summary-total"><span>Total</span><span>{{ formatRupiah(calcTotal) }}</span></div>
-      </div>
-      </div>
-
-      <template #footer>
-        <button class="btn btn-outline" @click="showModal = false">Cancel</button>
-        <div style="flex: 1;"></div>
-        <button v-if="currentStep > 1" class="btn btn-outline" @click="currentStep--">Previous</button>
-        <button v-if="currentStep < 3" class="btn btn-accent" @click="currentStep++">Next</button>
-        <button v-if="currentStep === 3" class="btn btn-accent" @click="handleSubmit">Save Sale</button>
-      </template>
-    </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Sale"
-      :message="`Are you sure you want to delete sale ID ${deletingItem?.id}?`" @close="showConfirm = false"
-      @confirm="handleDelete" />
-
-    <FormModal :open="showDetail" title="Sale Details" @close="showDetail = false" @submit="showDetail = false">
-      <template #default>
-        <template v-if="viewingItem">
-          <div style="margin-bottom: var(--space-md);">
-            <div
-              style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); margin-bottom: var(--space-md);">
-              <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Sales Code</p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{ viewingItem.sale_no || '-' }}
-                </p>
-              </div>
-              <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Transaction Date
-                </p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{ (viewingItem.sale_date || (viewingItem as any).date) ? new
-                  Date(viewingItem.sale_date || (viewingItem as any).date).toLocaleDateString('en-GB') : '-' }}</p>
-              </div>
-              <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Customer</p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{
-                  customerName(viewingItem.customer_id) }}</p>
-              </div>
-              <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">PIC Name</p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{
-                  picName(viewingItem.customer_id) }}</p>
-              </div>
-              <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">PO No</p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{ viewingItem.po_no || '-' }}</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-section-title">Items Sold</div>
-          <div
-            style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-md); flex-shrink: 0; min-height: 100px;">
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
-              <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
-                <tr>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Product</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Unit</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center;">Qty</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Unit Price</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Total</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center; width: 64px;">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="!viewingItem.sale_items || viewingItem.sale_items.length === 0">
-                  <td colspan="5" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
-                </tr>
-                <tr v-for="(si, idx) in viewingItem.sale_items" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
-                  <td style="padding: 12px;">{{ si.product_id ? (findProduct(si.product_id)?.name || 'Product ID: ' + si.product_id) : '-' }}</td>
-                  <td style="padding: 12px;">{{ si.unit_id ? (findUnit(si.unit_id)?.name + (findUnit(si.unit_id)?.serial_no ? ' (' + findUnit(si.unit_id)?.serial_no + ')' : '')) : '-' }}</td>
-                  <td style="padding: 12px; text-align: center;">{{ si.qty }}</td>
-                  <td style="padding: 12px; text-align: right;">{{ formatRupiah(si.unit_price || (si as any).price || 0) }}</td>
-                  <td style="padding: 12px; text-align: right;">{{ formatRupiah((si.unit_price || (si as any).price || 0) * (si.qty || 1)) }}</td>
-                  <td style="padding: 12px; text-align: center;">
-                    <button type="button" class="action-btn action-btn--edit" title="Lihat detail item" @click="openSaleItemDetail(si)" style="width: 32px; height: 32px; color: var(--color-text-muted);">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div v-if="viewingItem.has_warranty || (viewingItem.warranties && viewingItem.warranties.length > 0)">
-            <div class="form-section-title">Warranty Details</div>
-            <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: var(--space-md); background-color: var(--color-surface-raised);">
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.25rem;">
-                <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Warranty Type</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0; text-transform: capitalize;">
-                    {{ viewingItem.warranties && viewingItem.warranties.length > 0 ? [...new Set(viewingItem.warranties.map((w: any) => w.warranty_type).filter(Boolean))].join(', ') : '-' }}
-                  </p>
-                </div>
-                <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Warranty Expired Date</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0;">
-                    {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].end_date) ? String(viewingItem.warranties[0].end_date).substring(0, 10) : '-' }}
-                  </p>
-                </div>
-                <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Status</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0; text-transform: capitalize;">
-                    <span v-if="viewingItem.warranties && viewingItem.warranties.length > 0" 
-                          :style="{ 
-                            display: 'inline-block', 
-                            padding: '4px 10px', 
-                            borderRadius: '12px', 
-                            fontSize: '0.75rem', 
-                            fontWeight: '600',
-                            backgroundColor: viewingItem.warranties[0].status === 'active' ? '#e6f4ea' : '#fce8e6',
-                            color: viewingItem.warranties[0].status === 'active' ? '#137333' : '#c5221f'
-                          }">
-                      {{ viewingItem.warranties[0].status === 'active' ? 'Active' : viewingItem.warranties[0].status }}
-                    </span>
-                    <span v-else>-</span>
-                  </p>
-                </div>
-                
-                <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Valid From</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0;">
-                    {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].start_date) ? String(viewingItem.warranties[0].start_date).substring(0, 10) : '-' }}
-                  </p>
-                </div>
-                <div style="grid-column: 1 / -1; margin-top: 0.5rem; padding-top: 1rem; border-top: 1px dashed var(--color-border-light);">
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 8px 0;">Terms & Conditions</p>
-                  <div style="font-weight: var(--font-weight-medium); margin: 0; white-space: pre-line; background: var(--color-surface); padding: 12px; border-radius: 8px; border: 1px solid var(--color-border-light); font-size: 0.85rem; color: var(--color-text);">
-                    {{ viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].terms_conditions ? viewingItem.warranties[0].terms_conditions : 'No specific terms & conditions.' }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="salePayments && salePayments.length > 0" style="margin-top: var(--space-lg);">
-            <div class="form-section-title">Payment History</div>
-            <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-md);">
-              <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
-                <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
-                  <tr>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Payment Date</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Ref No.</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Method</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(pay, idx) in salePayments" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
-                    <td style="padding: 12px;">{{ pay.payment_date ? String(pay.payment_date).substring(0, 10) : '-' }}</td>
-                    <td style="padding: 12px;">{{ pay.reference_no || '-' }}</td>
-                    <td style="padding: 12px;">{{ pay.bank_name || 'CASH' }}</td>
-                    <td style="padding: 12px; text-align: right; font-weight: 600; color: var(--color-success);">{{ formatRupiah(pay.amount || 0) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="sale-summary" style="margin-top: var(--space-md);">
-            <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(viewingItem.subtotal || 0) }}</span>
-            </div>
-            <div class="summary-row"><span>Service Fee</span><span>{{ formatRupiah(viewingItem.service_charge || 0)
-                }}</span></div>
-            <div class="summary-row"><span>Tax (VAT)</span><span>{{ formatRupiah(viewingItem.tax || 0) }}</span></div>
-            <div class="summary-row summary-total"><span>Grand Total</span><span>{{ formatRupiah(viewingItem.total || 0)
-                }}</span></div>
-          </div>
-
-          <!-- Hide submit button for view only using CSS in modal -->
-          <div style="display: flex; justify-content: flex-end; margin-top: var(--space-lg);">
-            <button type="button" class="btn btn-outline" @click="showDetail = false">Close</button>
-          </div>
-        </template>
-      </template>
-      <template #footer>
-        <span style="display:none;"></span>
-      </template>
-    </FormModal>
-    <FormModal :open="showItemDetail" :title="selectedSaleItem ? `Detail Item — ${(selectedSaleItem.product_id ? findProduct(selectedSaleItem.product_id)?.name : 'Unit Only') || 'Item'}` : 'Detail Item'" @close="closeSaleItemDetail" max-width="480px">
-      <template v-if="selectedSaleItem">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-          <div class="form-group">
-            <label class="form-label">Product</label>
-            <div style="font-weight: 600;">{{ selectedSaleItem.product_id ? (findProduct(selectedSaleItem.product_id)?.name || 'Product ID: ' + selectedSaleItem.product_id) : '-' }}</div>
-            <div style="font-size: 12px; color: var(--color-text-muted);">SKU: {{ selectedSaleItem.product_id ? (findProduct(selectedSaleItem.product_id)?.sku || '-') : '-' }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">UOM</label>
-            <div>{{ selectedSaleItem.product_id ? ((findProduct(selectedSaleItem.product_id) as any)?.uom?.name || '-') : '-' }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Unit</label>
-            <div>{{ selectedSaleItem.unit_id ? (findUnit(selectedSaleItem.unit_id)?.name + (findUnit(selectedSaleItem.unit_id)?.serial_no ? ` (${findUnit(selectedSaleItem.unit_id)?.serial_no})` : '')) : '-' }}</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Qty</label>
-            <div>{{ selectedSaleItem.qty || 0 }}</div>
-          </div>
-          <div v-if="canSeeAmount" class="form-group">
-            <label class="form-label">Unit Price</label>
-            <div>{{ formatRupiah(selectedSaleItem.unit_price || (selectedSaleItem as any).price || 0) }}</div>
-          </div>
-          <div v-if="canSeeAmount" class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Total</label>
-            <div style="font-weight: 700; color: var(--color-success);">{{ formatRupiah((selectedSaleItem.unit_price || (selectedSaleItem as any).price || 0) * (selectedSaleItem.qty || 1)) }}</div>
-          </div>
-          <div v-if="(selectedSaleItem as any).description" class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Description</label>
-            <div style="white-space: pre-line; background: var(--color-surface-raised); padding: 10px; border-radius: 8px; border: 1px solid var(--color-border-light);">{{ (selectedSaleItem as any).description }}</div>
-          </div>
-        </div>
-      </template>
-      <template #footer>
-        <button type="button" class="btn btn-outline" @click="closeSaleItemDetail">Close</button>
-      </template>
-    </FormModal>
-    <FormModal :open="showPaymentModal" title="Process Payment" @close="showPaymentModal = false" @submit="handlePayment">
-      <div style="display: flex; flex-direction: column; gap: var(--space-md);">
-        <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Date</label>
-          <input type="date" class="form-input" v-model="paymentData.payment_date" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
-        </div>
-        <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Method</label>
-          <CustomSelect v-model="paymentData.method_type" :options="paymentMethodOptions" class="form-input" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" />
-        </div>
-        
-        <template v-if="paymentData.method_type === 'TRANSFER'">
-          <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Bank Name</label>
-            <input type="text" class="form-input" v-model="paymentData.bank_name" placeholder="E.g. BCA, Mandiri, BRI" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
-          </div>
-          <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Account Number</label>
-            <input type="text" class="form-input" v-model="paymentData.account_number" placeholder="Sender account number" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
-          </div>
-          <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Sender Name</label>
-            <input type="text" class="form-input" v-model="paymentData.sender_name" placeholder="Account holder name" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
-          </div>
-        </template>
-        
-        <template v-if="paymentData.method_type === 'CREDIT_CARD'">
-          <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Card Provider / Bank</label>
-            <input type="text" class="form-input" v-model="paymentData.bank_name" placeholder="E.g. Visa, Mastercard, BCA" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
-          </div>
-          <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Card Number (Last 4 Digits)</label>
-            <input type="text" class="form-input" v-model="paymentData.account_number" placeholder="E.g. 1234" maxlength="16" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
-          </div>
-          <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Cardholder Name</label>
-            <input type="text" class="form-input" v-model="paymentData.sender_name" placeholder="Name as shown on card" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
-          </div>
-        </template>
-        <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Amount</label>
-          <input type="text" class="form-input" :value="Number(paymentData.amount || 0).toLocaleString('id-ID')" readonly title="Otomatis dari total invoice" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface-raised); cursor: not-allowed;" />
-        </div>
-        <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Reference No. / Receipt (Optional)</label>
-          <input type="text" class="form-input" v-model="paymentData.reference_no" placeholder="Enter reference number..." style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" />
-        </div>
-        <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Notes (Optional)</label>
-          <textarea class="form-input" v-model="paymentData.notes" rows="3" placeholder="Add payment notes..." style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;"></textarea>
-        </div>
-      </div>
-      <template #footer>
-        <button class="btn btn-outline" @click="showPaymentModal = false">Cancel</button>
-        <button class="btn btn-accent" @click="handlePayment">Save Payment</button>
-      </template>
-    </FormModal>
-
-  </div>
-</template>
-
-<style scoped>
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-base);
-  margin-bottom: var(--space-base);
-}
-
-.warranty-type-checks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.warranty-type-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  user-select: none;
-  background: var(--color-surface);
-  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
-}
-.warranty-type-check:hover {
-  border-color: var(--color-text-muted);
-}
-.warranty-type-check:has(input:checked) {
-  border-color: var(--color-primary);
-  background: var(--color-primary-surface);
-  color: var(--color-primary);
-  font-weight: var(--font-weight-medium);
-}
-.warranty-type-check input {
-  accent-color: var(--color-primary);
-  width: 15px;
-  height: 15px;
-  margin: 0;
-}
-
-.step-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-base);
-  animation: fadeIn 0.3s ease-in-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.stepper-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-xl);
-  padding: 0 var(--space-lg);
-}
-
-.stepper-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  position: relative;
-  z-index: 2;
-}
-
-.step-circle {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--color-surface-raised);
-  border: 2px solid var(--color-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  transition: all 0.3s ease;
-}
-
-.stepper-item.active .step-circle {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: white;
-  box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb), 0.1);
-}
-
-.stepper-item.completed .step-circle {
-  border-color: var(--color-success);
-  background: var(--color-success);
-  color: white;
-}
-
-.step-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  transition: all 0.3s ease;
-}
-
-.stepper-item.active .step-label {
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.stepper-item.completed .step-label {
-  color: var(--color-success);
-}
-
-.stepper-line {
-  flex: 1;
-  height: 2px;
-  background: var(--color-border);
-  margin: 0 12px;
-  position: relative;
-  top: -10px;
-  z-index: 1;
-  transition: background 0.3s ease;
-}
-
-.stepper-line.active {
-  background: var(--color-success);
-}
-
-.form-section-title {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text);
-  padding-top: var(--space-sm);
-  border-top: 1px solid var(--color-border-light);
-}
-
-.sale-item-row {
-  display: grid;
-  grid-template-columns: minmax(120px, 2fr) minmax(120px, 2fr) 80px 140px auto;
-  gap: var(--space-sm);
-  align-items: end;
-}
-
-.btn-remove-item {
-  width: 32px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  color: var(--color-danger);
-  font-size: var(--font-size-sm);
-  margin-bottom: 2px;
-}
-
-.btn-remove-item:hover {
-  background: var(--color-danger-surface);
-}
-
-.sale-summary {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  padding: var(--space-md);
-  border-radius: var(--radius-base);
-  background: var(--color-surface-raised);
-}
-
-.summary-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-}
-
-.summary-total {
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text);
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-xs);
-}
-
-.filter-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  background: var(--color-surface, #ffffff);
-  padding: 16px;
-  border-radius: var(--radius-lg, 12px);
-  border: 1px solid var(--color-border-light, #e2e8f0);
-  margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-}
-
-.filter-inputs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-}
-
-.filter-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.filter-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--color-text-muted, #64748b);
-  letter-spacing: 0.5px;
-}
-
-.filter-input {
-  padding: 7px 12px;
-  font-size: 13px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border, #cbd5e1);
-  background: var(--color-background, #ffffff);
-}
-
-.filter-reset-btn {
-  height: 35px;
-  align-self: flex-end;
-}
-
-.export-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.btn-export-pdf {
-  display: flex;
-  align-items: center;
-  background: #dc2626;
-  color: white;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-export-pdf:hover {
-  background: #b91c1c;
-  transform: translateY(-1px);
-}
-
-.btn-export-excel {
-  display: flex;
-  align-items: center;
-  background: #16a34a;
-  color: white;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-export-excel:hover {
-  background: #15803d;
-  transform: translateY(-1px);
-}
-</style>

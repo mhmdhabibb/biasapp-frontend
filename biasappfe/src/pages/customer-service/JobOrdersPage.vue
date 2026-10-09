@@ -3,7 +3,7 @@ import FormModal from "@/components/ui/FormModal.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { useToast } from "@/composables/useToast";
-import { api } from "@/services/api";
+import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref } from "vue";
 
@@ -764,26 +764,11 @@ async function confirmAssign() {
       status: "scheduled",
     };
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/job-orders/${task.id}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
-          },
-          body: JSON.stringify(payload),
-        },
-      );
-      if (res.ok) {
-        fetchJobOrders();
-        toast.success("Visit assigned to technician.");
-      } else {
-        const body = await res.json().catch(() => ({}));
-        toast.error(body.message || "Failed to assign visit");
-      }
+      await apiRequest({ url: `/job-orders/${task.id}`, method: "PUT", data: payload });
+      fetchJobOrders();
+      toast.success("Visit assigned to technician.");
     } catch (error) {
-      toast.error("Something went wrong");
+      toast.error(toast.fromError(error, "Something went wrong"));
     }
   } else if (task.taskType === "maintenance") {
     if (task.is_jo) {

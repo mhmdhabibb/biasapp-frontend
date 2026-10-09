@@ -6,7 +6,7 @@ import PageHeader from "@/components/ui/PageHeader.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
-import { api } from "@/services/api";
+import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
 import type { TableColumn } from "@/types";
 import { computed, onMounted, reactive, ref, watch } from "vue";
@@ -215,30 +215,17 @@ async function submitExternalRequest() {
     request_date: new Date(form.request_date).toISOString(),
   };
   try {
-    const method = isEditing.value ? "PATCH" : "POST";
-    const url = isEditing.value ? `${import.meta.env.VITE_API_BASE_URL}/service-requests/${editId.value}` : `${import.meta.env.VITE_API_BASE_URL}/service-requests`;
-    const res = await fetch(
-      url,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
-    if (res.ok) {
-      toast.success("Service request (unit luar) berhasil dibuat!");
-      showModal.value = false;
-      listTab.value = "external";
-      fetchRequests();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      toast.error("Failed: " + ((err as any)?.message || JSON.stringify(err)));
-    }
-  } catch {
-    toast.error("A network error occurred.");
+    await apiRequest({
+      url: isEditing.value ? `/service-requests/${editId.value}` : "/service-requests",
+      method: isEditing.value ? "PATCH" : "POST",
+      data: payload,
+    });
+    toast.success("Service request (unit luar) berhasil dibuat!");
+    showModal.value = false;
+    listTab.value = "external";
+    fetchRequests();
+  } catch (error) {
+    toast.error(toast.fromError(error, "A network error occurred."));
   } finally {
     isLoading.value = false;
   }
@@ -532,34 +519,17 @@ async function handleSubmit() {
   };
 
   try {
-    const method = isEditing.value ? "PATCH" : "POST";
-    const url = isEditing.value ? `${import.meta.env.VITE_API_BASE_URL}/service-requests/${editId.value}` : `${import.meta.env.VITE_API_BASE_URL}/service-requests`;
-    
-    const res = await fetch(
-      url,
-      {
-        method: method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
-
-    if (res.ok) {
-      toast.success("Service request created successfully!");
-      showModal.value = false;
-      listTab.value = "internal";
-      fetchRequests();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      toast.error(
-        "Failed: " + ((err as any)?.message || JSON.stringify(err)),
-      );
-    }
+    await apiRequest({
+      url: isEditing.value ? `/service-requests/${editId.value}` : "/service-requests",
+      method: isEditing.value ? "PATCH" : "POST",
+      data: payload,
+    });
+    toast.success("Service request created successfully!");
+    showModal.value = false;
+    listTab.value = "internal";
+    fetchRequests();
   } catch (error) {
-    toast.error("A network error occurred.");
+    toast.error(toast.fromError(error, "A network error occurred."));
   } finally {
     isLoading.value = false;
   }
@@ -596,28 +566,12 @@ async function handleAssignSubmit() {
   };
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_BASE_URL}/service-requests`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
-
-    if (res.ok) {
-      toast.success("Technician assigned successfully! Job order created.");
-      showAssignModal.value = false;
-      fetchRequests(); // To maybe refresh status if backend updates SR status automatically
-    } else {
-      const err = await res.json();
-      toast.error("Failed: " + JSON.stringify(err));
-    }
+    await apiRequest({ url: "/service-requests", method: "POST", data: payload });
+    toast.success("Technician assigned successfully! Job order created.");
+    showAssignModal.value = false;
+    fetchRequests(); // To maybe refresh status if backend updates SR status automatically
   } catch (error) {
-    toast.error("A network error occurred.");
+    toast.error(toast.fromError(error, "A network error occurred."));
   } finally {
     isLoading.value = false;
   }
@@ -666,19 +620,11 @@ function openEdit(row: any) {
 async function confirmDelete(row: any) {
   if (!confirm('Are you sure you want to delete this service request?')) return;
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/service-requests/${row.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${sessionStorage.getItem("bias_token")}` },
-    });
-    if (res.ok) {
-      toast.success("Service request deleted!");
-      fetchRequests();
-    } else {
-      const err = await res.json().catch(() => ({}));
-      toast.error("Failed: " + ((err as any)?.message || JSON.stringify(err)));
-    }
+    await api.delete(`/service-requests/${row.id}`);
+    toast.success("Service request deleted!");
+    fetchRequests();
   } catch (error) {
-    toast.error("A network error occurred.");
+    toast.error(toast.fromError(error, "A network error occurred."));
   }
 }
 

@@ -21,6 +21,7 @@ const columns: TableColumn[] = [
   { key: 'name', label: 'Unit Name' },
   { key: 'brand_id', label: 'Brand' },
   { key: 'model', label: 'Model' },
+  { key: 'price', label: 'Price' },
   { key: 'uom.name', label: 'UOM' },
   { key: 'serial_no', label: 'Serial Number' },
   { key: 'status', label: 'Status' },
@@ -219,6 +220,11 @@ function formatStatus(status: string | null | undefined): string {
     .join(' ')
 }
 
+function formatRupiah(val: number | null | undefined): string {
+  if (val === null || val === undefined) return '-'
+  return 'Rp ' + Number(val).toLocaleString('id-ID')
+}
+
 const badgeTrue = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -263,6 +269,9 @@ const badgeFalse = {
       </template>
       <template #cell-brand_id="{ value }">
         {{ getBrandName(value) }}
+      </template>
+      <template #cell-price="{ value }">
+        {{ formatRupiah(value) }}
       </template>
       <template #cell-status="{ value }">
         <span class="badge" :class="statusBadgeClass(value)">
