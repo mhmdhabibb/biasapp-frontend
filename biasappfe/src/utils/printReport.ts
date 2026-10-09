@@ -587,10 +587,6 @@ function getReportPages(item: any, type?: ReportType): string[] {
     }
   }
   
-  if (item.photo_before || item.photo_after) {
-    pages.push(servicePhotosBody(item));
-  }
-  
   return pages;
 }
 

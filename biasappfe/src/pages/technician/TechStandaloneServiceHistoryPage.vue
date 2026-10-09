@@ -2,13 +2,19 @@
 // @ts-nocheck
 // Standalone Service History — sisi Teknisi (list).
 // Tanpa assign job: semua teknisi bisa melihat & mengisi PRODUCT DETAIL.
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
+import { resources } from '@/services/resource.service'
 
 const router = useRouter()
-const { deliveryOrders, findCustomer, findTechnician } = useMasterStore()
+const toast = useToast()
+const { can } = usePermission()
+const { deliveryOrders, findCustomer, findTechnician, refreshOnly } = useMasterStore()
+const deletingId = ref<string | null>(null)
 
 const standaloneList = computed(() =>
   (deliveryOrders.value as any[]).filter(
@@ -28,6 +34,23 @@ function techName(id: any): string {
 }
 function isFilled(row: any): boolean {
   return !!(row?.action || row?.is_tested || row?.is_completed || row?.technician_signature || (row?.delivery_order_items || []).length)
+}
+function isPending(row: any): boolean {
+  return String(row?.status || '').toLowerCase() === 'pending'
+}
+async function removeStandalone(row: any) {
+  if (!isPending(row)) return
+  if (!confirm(`Hapus form stand alone ${row.do_number || ''} yang masih pending?`)) return
+  deletingId.value = String(row.id)
+  try {
+    await resources.deliveryOrders.remove(String(row.id))
+    await refreshOnly(['deliveryOrders'])
+    toast.success('Form stand alone dihapus.')
+  } catch (err: any) {
+    toast.error(err?.message || 'Gagal menghapus form.')
+  } finally {
+    deletingId.value = null
+  }
 }
 </script>
 
@@ -72,6 +95,16 @@ function isFilled(row: any): boolean {
                   @click="router.push(`/technician/standalone-service-history/${row.id}`)"
                 >
                   {{ isFilled(row) ? 'Lihat / Lanjut' : 'Isi Product Detail' }}
+                </button>
+                <button
+                  v-if="can('delivery_order:delete') && isPending(row)"
+                  type="button"
+                  class="btn btn-sm btn-outline btn-danger"
+                  style="margin-left: 6px;"
+                  :disabled="deletingId === String(row.id)"
+                  @click="removeStandalone(row)"
+                >
+                  {{ deletingId === String(row.id) ? 'Menghapus...' : 'Hapus' }}
                 </button>
               </td>
             </tr>

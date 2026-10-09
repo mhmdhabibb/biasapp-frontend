@@ -15,7 +15,6 @@ const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Type Name' },
-  { key: 'slug', label: 'Slug' },
 ]
 
 const data = ref<UnitType[]>([])
@@ -36,23 +35,22 @@ const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<UnitType | null>(null)
 const deletingItem = ref<UnitType | null>(null)
-const form = reactive({ name: '', slug: '' })
+const form = reactive({ name: '' })
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { name: '', slug: '' })
+  Object.assign(form, { name: '' })
   showModal.value = true
 }
 
 function openEdit(item: UnitType) {
   editingItem.value = item
-  Object.assign(form, { name: item.name, slug: item.slug })
+  Object.assign(form, { name: item.name })
   showModal.value = true
 }
 
 async function handleSubmit() {
   if (!form.name.trim()) return
-  if (!form.slug.trim()) form.slug = form.name.toLowerCase().replace(/\s+/g, '-')
   try {
     if (editingItem.value) {
       await resources.unitTypes.update(String(editingItem.value.id), form)
@@ -100,10 +98,6 @@ async function handleDelete() {
       <div class="form-group">
         <label for="ut-name" class="form-label">Type Name</label>
         <input id="ut-name" v-model="form.name" type="text" class="form-input" placeholder="Example: Printer, Copier">
-      </div>
-      <div class="form-group">
-        <label for="ut-slug" class="form-label">Slug</label>
-        <input id="ut-slug" v-model="form.slug" type="text" class="form-input" placeholder="Auto-generated from name if empty">
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Unit Type" :message="`Are you sure you want to delete unit type '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />

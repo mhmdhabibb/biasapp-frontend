@@ -65,7 +65,6 @@ export interface Technician {
 export interface UnitType {
   id: string | number;
   name: string;
-  slug: string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -98,7 +97,6 @@ export interface PaperType {
 export interface ProductCategory {
   id: string | number;
   name: string;
-  slug: string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -510,6 +508,8 @@ export interface PurchaseOrder {
   order_date: string;
   status: string;
   total_amount?: number;
+  reason?: string;
+  installation_date?: string;
   purchase_order_items?: PurchaseOrderItem[];
   created_at: string;
   updated_at: string;

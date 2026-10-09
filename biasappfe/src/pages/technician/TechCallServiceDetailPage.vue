@@ -10,6 +10,7 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
+import { hasDeliveryHistory } from '@/utils/printDeliveryHistory'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -23,10 +24,11 @@ const {
   serviceReports,
   jobOrders,
   contractItems,
+  deliveryOrders,
   findCustomer,
   findUnit,
   findProduct,
-  getTechnicianIdByUser, refreshInBackground } = useMasterStore()
+  getTechnicianIdByUser, refreshInBackground, refreshOnly } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const job = computed(() => jobOrders.value.find(j => String(j.id) === serviceId))
@@ -107,6 +109,35 @@ function doItemLabel(item: any): string {
     return `${item.product?.name || p?.name || 'Product'} x${item.qty || 1}`
   }
   return `Item x${item?.qty || 1}`
+}
+
+// ── Stand Alone yang sudah dibuat/disim (teknisi) untuk kunjungan ini ──
+// Backend tidak menyimpan relasi job_order → delivery_order, jadi
+// dicocokkan via customer + teknisi + waktu pembuatan (>= job dibuat).
+// Data lama ikut tampil tanpa perlu migrasi.
+const standaloneList = computed(() => {
+  const j: any = job.value
+  if (!j) return []
+  const custId = String(j.customer_id || j.service_request?.customer_id || '')
+  const techId = String(j.technician_id || '')
+  const jobCreated = j.created_at ? new Date(j.created_at).getTime() : 0
+  const linkedDoId = String((deliveryOrder.value as any)?.id || '')
+  return ((deliveryOrders.value || []) as any[])
+    .filter((d: any) => {
+      if (String(d.do_type || '').toLowerCase() !== 'service') return false
+      if (d.purchase_order_id) return false
+      if (linkedDoId && String(d.id) === linkedDoId) return false
+      if (custId && String(d.customer_id || '') !== custId) return false
+      if (techId && d.technician_id && String(d.technician_id) !== techId) return false
+      if (jobCreated && d.created_at && new Date(d.created_at).getTime() < jobCreated) return false
+      return true
+    })
+    .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+})
+function standaloneStatusClass(st: any): string {
+  if (st?.status === 'delivered') return 'badge-success'
+  if (st?.status === 'in_transit') return 'badge-info'
+  return 'badge-warning'
 }
 
 const doForm = ref({
@@ -222,7 +253,12 @@ async function completeDeliveryJob() {
     await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
     toast.success('Delivery completed. End time recorded.')
     await refreshInBackground()
-    router.push('/technician/call-services')
+    
+    if (confirm('Job berhasil diselesaikan! Apakah ada tambahan servis unit lain (Buat SH Stand Alone) di lokasi ini?')) {
+      await createStandalone();
+    } else {
+      router.push('/technician/call-services')
+    }
   } catch (err: any) {
     toast.error(err.message || 'Failed to complete delivery')
   } finally {
@@ -298,6 +334,7 @@ watch(serviceReportFromStore, () => {
 const showAcceptModal = ref(false)
 const showCompleteModal = ref(false)
 const isCompletingJob = ref(false)
+const isCreatingStandalone = ref(false)
 
 // --- Add Unit Form ---
 const showAddUnitModal = ref(false)
@@ -390,7 +427,7 @@ async function ensureServiceReport(now: string) {
     status: 'in_progress',
     time_in: now,
     machine_problem: job.value.instructions || job.value.service_request?.problem_description || '-',
-    project_name: '-',
+    project_name: job.value.service_request?.project_name || '-',
     repair_action: '-',
     service_date: now,
     time_out: '-',
@@ -476,11 +513,54 @@ async function confirmCompleteJob() {
 
     toast.success('Job completed! Sparepart replacement data queued for Procurement.')
     await refresh(true)
-    router.push('/technician/call-services')
+    
+    if (confirm('Job berhasil diselesaikan! Apakah ada tambahan servis unit lain (Buat SH Stand Alone) di lokasi ini?')) {
+      await createStandalone();
+    } else {
+      router.push('/technician/call-services')
+    }
   } catch (err: any) {
     toast.error(err.message || 'Failed to complete job')
   } finally {
     isCompletingJob.value = false
+  }
+}
+
+async function createStandalone() {
+  if (isCreatingStandalone.value) return
+  isCreatingStandalone.value = true
+  try {
+    const d = deliveryOrder.value;
+    const sr = serviceReport.value || job.value?.service_request;
+    const custId = d?.customer_id || sr?.customer_id || job.value?.customer_id;
+    const techId = d?.technician_id || job.value?.technician_id;
+    
+    const now = new Date()
+    const timeIn = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    // Warisi Project Name dari CS (lewati '-' peninggalan data lama).
+    const pickName = (...vals: any[]) => vals.map((v) => String(v || '').trim()).find((v) => v && v !== '-') || ''
+
+    const newDo = await resources.deliveryOrders.create({
+        do_type: 'service',
+        status: 'pending',
+        customer_id: custId,
+        customer_category: d?.customer_category || sr?.customer_category || 'Corporate',
+        project_name: pickName(d?.project_name, sr?.project_name, job.value?.service_request?.project_name),
+        delivery_address: d?.delivery_address || sr?.customer?.address || '',
+        recipient_name: d?.recipient_name || sr?.customer?.pic_name || '',
+        recipient_phone: d?.recipient_phone || sr?.customer?.phone || '',
+        technician_id: techId,
+        notes: d?.notes || '',
+        delivery_date: new Date().toISOString(),
+        time_in: timeIn,
+    })
+    toast.success('Service History baru (Stand Alone) berhasil dibuat.')
+    await refreshOnly(['deliveryOrders'])
+    router.push(`/technician/standalone-service-history/${(newDo as any).data.id}`)
+  } catch (err: any) {
+    toast.error(err.message || 'Gagal membuat form Stand Alone')
+  } finally {
+    isCreatingStandalone.value = false
   }
 }
 </script>
@@ -759,6 +839,27 @@ async function confirmCompleteJob() {
        
 
           <div class="mt-xl pt-md" style="border-top: 1px solid var(--color-border-light)">
+            <div v-if="standaloneList.length" class="mb-md">
+              <p class="font-bold mb-xs text-sm">Stand Alone yang sudah dibuat ({{ standaloneList.length }})</p>
+              <button
+                v-for="st in standaloneList"
+                :key="st.id"
+                class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md"
+                @click="router.push(`/technician/standalone-service-history/${st.id}`)"
+              >
+                <span class="font-bold">
+                  <span v-if="hasDeliveryHistory(st)">✅</span><span v-else>📝</span>
+                  {{ st.do_number }}
+                  <span class="badge" :class="standaloneStatusClass(st)" style="margin-left: 6px;">
+                    {{ String(st.status || '-').toUpperCase().replace('_', ' ') }}
+                  </span>
+                </span>
+                <span>></span>
+              </button>
+            </div>
+            <button class="btn btn-outline w-full mb-md" style="padding: var(--space-md); font-size: 16px; border-color: var(--color-primary); color: var(--color-primary);" :disabled="isCreatingStandalone" @click="createStandalone">
+              {{ isCreatingStandalone ? 'Membuat form...' : '➕ Tambah Unit Bermasalah (Stand Alone)' }}
+            </button>
             <button v-if="can('service_report:update')" class="btn btn-primary w-full" :disabled="!isAllFormsCompleted" style="padding: var(--space-md); font-size: 16px;" @click="completeJob">
               {{ isAllFormsCompleted ? '✅ Complete Service' : '🔒 Complete Forms First' }}
             </button>
@@ -793,6 +894,25 @@ async function confirmCompleteJob() {
           <div class="mt-lg">
             <button class="btn btn-primary w-full" style="padding: var(--space-md); font-size: 16px;" @click="router.push(`/shared/service-reports/${serviceReport?.id}`)">
               📄 View Full Report (Digital)
+            </button>
+          </div>
+
+          <div v-if="standaloneList.length" class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
+            <p class="font-bold mb-xs text-sm">Stand Alone yang sudah dibuat ({{ standaloneList.length }})</p>
+            <button
+              v-for="st in standaloneList"
+              :key="st.id"
+              class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md"
+              @click="router.push(`/technician/standalone-service-history/${st.id}`)"
+            >
+              <span class="font-bold">
+                <span v-if="hasDeliveryHistory(st)">✅</span><span v-else>📝</span>
+                {{ st.do_number }}
+                <span class="badge" :class="standaloneStatusClass(st)" style="margin-left: 6px;">
+                  {{ String(st.status || '-').toUpperCase().replace('_', ' ') }}
+                </span>
+              </span>
+              <span>></span>
             </button>
           </div>
         </div>

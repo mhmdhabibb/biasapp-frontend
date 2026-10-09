@@ -40,7 +40,9 @@ const fileInputBefore = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
 
 const productOptions = computed(() =>
-  products.value.map((product: any) => ({ value: product.id, label: product.name })),
+  products.value
+    .filter((product: any) => product.is_sparepart)
+    .map((product: any) => ({ value: product.id, label: product.name })),
 )
 
 onMounted(async () => {
@@ -75,11 +77,32 @@ function handlePhoto(event: Event, type: 'before' | 'after') {
   if (file) {
     const reader = new FileReader()
     reader.onload = (e) => {
-      if (type === 'before') {
-        form.value.photo_before = e.target?.result as string
-      } else {
-        form.value.photo_after = e.target?.result as string
+      const img = new Image()
+      img.onload = () => {
+        let width = img.width
+        let height = img.height
+        const max = 1024
+        if (width > height && width > max) {
+          height = Math.round(height * (max / width))
+          width = max
+        } else if (height > max) {
+          width = Math.round(width * (max / height))
+          height = max
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx?.drawImage(img, 0, 0, width, height)
+        const compressedUrl = canvas.toDataURL('image/jpeg', 0.6)
+        
+        if (type === 'before') {
+          form.value.photo_before = compressedUrl
+        } else {
+          form.value.photo_after = compressedUrl
+        }
       }
+      img.src = e.target?.result as string
     }
     reader.readAsDataURL(file)
   }

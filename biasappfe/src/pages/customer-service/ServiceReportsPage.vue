@@ -130,17 +130,46 @@ function sprTechName(row: any): string {
   return name(srTech) || '-'
 }
 
-async function handleCreatePO(request: SparepartRequest) {
+// Create PO modal: CS must fill reason + installation date before PO is created.
+const showCreatePOModal = ref(false)
+const poTarget = ref<SparepartRequest | null>(null)
+const poForm = reactive({ reason: '', installation_date: '' })
+
+function openCreatePOModal(request: SparepartRequest) {
+  poTarget.value = request
+  poForm.reason = ''
+  poForm.installation_date = ''
+  showCreatePOModal.value = true
+}
+
+function closeCreatePOModal() {
   if (creatingId.value !== null) return
+  showCreatePOModal.value = false
+  poTarget.value = null
+}
+
+async function handleCreatePO() {
+  const request = poTarget.value
+  if (!request || creatingId.value !== null) return
+  const reason = poForm.reason.trim()
+  if (!reason || !poForm.installation_date) {
+    toast.error('Reason and installation date are required')
+    return
+  }
   creatingId.value = request.id
   try {
     await resources.create('purchaseOrders', {
       sparepart_request_id: request.id,
       order_date: new Date().toISOString(),
       status: 'draft',
+      reason,
+      // Date input gives YYYY-MM-DD; pin to local midnight (WIB) so the day doesn't shift.
+      installation_date: `${poForm.installation_date}T00:00:00+07:00`,
     })
     await useMasterStore().refreshInBackground()
     toast.success(`Purchase order created for ${request.request_no}`)
+    showCreatePOModal.value = false
+    poTarget.value = null
     router.push('/accounting/purchase-orders')
   } catch (err) {
     toast.error(toast.fromError(err, 'Failed to create purchase order'))
@@ -761,7 +790,7 @@ function printTable() {
       </template>
       <template #cell-actions="{ row }">
         <button v-if="row.status === 'pending' && can('purchase_order:create')" class="btn btn-sm btn-primary"
-          :disabled="creatingId !== null" @click="handleCreatePO(row)">
+          :disabled="creatingId !== null" @click="openCreatePOModal(row)">
           {{ creatingId === row.id ? 'Creating...' : 'Create PO' }}
         </button>
         <span v-else class="text-muted text-sm">Processed</span>
@@ -906,6 +935,18 @@ function printTable() {
         <button type="button" class="btn btn-outline" @click="printModalOpen = false">Cancel</button>
         <button type="button" class="btn btn-primary" @click="handleConfirmPrint">Print / Download</button>
       </template>
+    </FormModal>
+
+    <!-- Create PO Modal -->
+    <FormModal :open="showCreatePOModal" title="Create Purchase Order" @close="closeCreatePOModal" @submit="handleCreatePO">
+      <div class="form-group">
+        <label class="form-label">Reason <span style="color:red">*</span></label>
+        <textarea v-model="poForm.reason" class="form-input" rows="3" required placeholder="Alasan pembuatan PO"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Installation Date <span style="color:red">*</span></label>
+        <input v-model="poForm.installation_date" type="date" class="form-input" required>
+      </div>
     </FormModal>
   </div>
 </template>

@@ -99,8 +99,15 @@ function onMove(e: MouseEvent | TouchEvent) {
 function onUp() {
   if (!isDrawing) return;
   isDrawing = false;
-  if (canvasRef.value) {
-    lastEmitted = canvasRef.value.toDataURL();
+  if (canvasRef.value && ctx) {
+    const currentFill = ctx.fillStyle;
+    ctx.globalCompositeOperation = "destination-over";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvasW, canvasH);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = currentFill;
+
+    lastEmitted = canvasRef.value.toDataURL("image/jpeg", 0.5);
     emit("update:modelValue", lastEmitted);
   }
 }

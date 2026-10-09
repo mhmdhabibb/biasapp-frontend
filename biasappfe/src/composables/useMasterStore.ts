@@ -17,6 +17,7 @@ import type {
   SparepartRequest,
   Technician,
   Unit,
+  UnitType,
   Warranty,
   WarrantyClaim,
   PurchaseOrder,
@@ -29,6 +30,7 @@ const store = reactive({
   customers: [] as Customer[],
   technicians: [] as Technician[],
   brands: [] as Brand[],
+  unitTypes: [] as UnitType[],
   units: [] as Unit[],
   products: [] as Product[],
   warranties: [] as Warranty[],
@@ -96,10 +98,11 @@ export function useMasterStore() {
   function buildSyncTasks(
     tracksLoading: boolean,
   ): Record<string, () => Promise<void>> {
-    const fetchAll = (name: keyof typeof resources) =>
+    const DROPDOWN_LIMIT = 1000
+    const fetchAll = (name: keyof typeof resources, limit?: number) =>
       tracksLoading
-        ? resources.fetchAll(name, undefined, true)
-        : resources.fetchAllSilent(name, undefined);
+        ? resources.fetchAll(name, limit ? { limit } : undefined, true)
+        : resources.fetchAllSilent(name, limit ? { limit } : undefined);
     return {
       customers: () =>
         safeFetch(fetchAll("customers"), (items) => (store.customers = items)),
@@ -109,11 +112,16 @@ export function useMasterStore() {
           (items) => (store.technicians = items),
         ),
       brands: () =>
-        safeFetch(fetchAll("brands"), (items) => (store.brands = items)),
+        safeFetch(fetchAll("brands", DROPDOWN_LIMIT), (items) => (store.brands = items)),
+      unitTypes: () =>
+        safeFetch(
+          fetchAll("unitTypes", DROPDOWN_LIMIT),
+          (items) => (store.unitTypes = items),
+        ),
       units: () =>
-        safeFetch(fetchAll("units"), (items) => (store.units = items)),
+        safeFetch(fetchAll("units", DROPDOWN_LIMIT), (items) => (store.units = items)),
       products: () =>
-        safeFetch(fetchAll("products"), (items) => (store.products = items)),
+        safeFetch(fetchAll("products", DROPDOWN_LIMIT), (items) => (store.products = items)),
       warranties: () =>
         safeFetch(
           fetchAll("warranties"),
@@ -247,6 +255,13 @@ export function useMasterStore() {
     return store.brands.find((b) => (b.id as any) == id);
   }
 
+  function findUnitType(
+    id: number | string | null | undefined,
+  ): UnitType | undefined {
+    if (id == null) return undefined;
+    return (store.unitTypes as UnitType[]).find((u) => (u.id as any) == id);
+  }
+
   function findProduct(id: number | string | null): Product | undefined {
     return store.products.find((p) => (p.id as any) == id);
   }
@@ -329,6 +344,7 @@ export function useMasterStore() {
     findTechnician,
     findUnit,
     findBrand,
+    findUnitType,
     findProduct,
     findWarranty,
     findContractItem,

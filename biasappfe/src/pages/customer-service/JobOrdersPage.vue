@@ -689,6 +689,24 @@ function toLocalDatetimeStr(d?: string | Date) {
   return local.toISOString().slice(0, 16);
 }
 
+const visitMinDate = computed(() => {
+  const d = new Date(assignVisitDate.value || Date.now());
+  if (isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const minD = new Date(year, month, 25, 0, 0, 0);
+  return toLocalDatetimeStr(minD);
+});
+
+const visitMaxDate = computed(() => {
+  const d = new Date(assignVisitDate.value || Date.now());
+  if (isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const maxD = new Date(year, month + 1, 0, 23, 59, 59);
+  return toLocalDatetimeStr(maxD);
+});
+
 async function onDrop(techId: string | number) {
   lastDragEnd = Date.now();
   if (!draggedRequest) return;
@@ -702,8 +720,11 @@ async function onDrop(techId: string | number) {
     assignDeliveryDate.value = toLocalDatetimeStr(
       draggedRequest.delivery_date || new Date().toISOString(),
     );
-  } else if (draggedRequest.taskType === "visit" || draggedRequest.taskType === "maintenance") {
-    // Visit copier / Maintenance: default keep scheduled date dari generate.
+  } else if (draggedRequest.taskType === "visit") {
+    assignVisitDate.value = toLocalDatetimeStr(
+      draggedRequest.scheduled_date || new Date().toISOString(),
+    );
+  } else if (draggedRequest.taskType === "maintenance") {
     assignScheduledDate.value = toLocalDatetimeStr(
       draggedRequest.scheduled_date || new Date().toISOString(),
     );
@@ -728,10 +749,18 @@ async function confirmAssign() {
   const { task, techId } = assignTarget.value;
 
   if (task.taskType === "visit") {
+    const dateObj = new Date(assignVisitDate.value);
+    const day = dateObj.getDate();
+    if (day < 25 || day > 31) {
+      toast.error("Visit Date hanya bisa dipilih pada tanggal 25 hingga 31.");
+      isAssigning.value = false;
+      return;
+    }
+
     // Visit copier: update JobOrder yang sudah ada (assign teknisi).
     const payload = {
       technician_id: techId,
-      scheduled_date: new Date(assignScheduledDate.value).toISOString(),
+      scheduled_date: dateObj.toISOString(),
       status: "scheduled",
     };
     try {
@@ -1738,7 +1767,9 @@ async function confirmAssign() {
             <span class="assign-value font-bold">{{
               assignTarget.task.request_no ||
               assignTarget.task.do_number ||
-              assignTarget.task.report_no
+              assignTarget.task.report_no ||
+              assignTarget.task.job_order_no ||
+              assignTarget.task.service_request_no
             }}</span>
           </div>
           <div class="assign-info-row">
@@ -1768,10 +1799,10 @@ async function confirmAssign() {
 
         <div class="form-group mt-lg" v-else-if="assignTarget.task.taskType === 'visit'">
           <label class="form-label">Visit Date <span class="text-danger">*</span></label>
-          <input type="datetime-local" v-model="assignVisitDate" class="form-input" />
+          <input type="datetime-local" v-model="assignVisitDate" :min="visitMinDate" :max="visitMaxDate" class="form-input" />
           <p class="assign-hint">
-            Atur tanggal kunjungan teknisi untuk pengisian copier report. Assign
-            visit tidak mengubah service request.
+            Atur tanggal kunjungan teknisi untuk pengisian copier report. 
+            <strong class="text-danger">Hanya bisa dijadwalkan pada tanggal 25 s.d 31 setiap bulannya.</strong>
           </p>
         </div>
 

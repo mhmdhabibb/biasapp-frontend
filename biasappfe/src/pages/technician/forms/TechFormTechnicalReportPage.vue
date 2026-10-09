@@ -38,7 +38,9 @@ const isSaving = ref(false)
 const removedSparepartIds = ref<string[]>([])
 
 const productOptions = computed(() =>
-  products.value.map((product: any) => ({ value: product.id, label: product.name })),
+  products.value
+    .filter((product: any) => product.is_sparepart)
+    .map((product: any) => ({ value: product.id, label: product.name })),
 )
 
 onMounted(async () => {
@@ -78,11 +80,32 @@ function handlePhoto(event: Event, type: 'before' | 'after') {
   if (file) {
     const reader = new FileReader()
     reader.onload = (e) => {
-      if (type === 'before') {
-        form.value.photo_before = e.target?.result as string
-      } else {
-        form.value.photo_after = e.target?.result as string
+      const img = new Image()
+      img.onload = () => {
+        let width = img.width
+        let height = img.height
+        const max = 1024
+        if (width > height && width > max) {
+          height = Math.round(height * (max / width))
+          width = max
+        } else if (height > max) {
+          width = Math.round(width * (max / height))
+          height = max
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx?.drawImage(img, 0, 0, width, height)
+        const compressedUrl = canvas.toDataURL('image/jpeg', 0.6)
+        
+        if (type === 'before') {
+          form.value.photo_before = compressedUrl
+        } else {
+          form.value.photo_after = compressedUrl
+        }
       }
+      img.src = e.target?.result as string
     }
     reader.readAsDataURL(file)
   }
@@ -335,6 +358,7 @@ async function saveForm() {
   grid-template-columns: minmax(0, 1fr) 88px auto;
   gap: 8px;
   margin-top: 10px;
+  align-items: center;
 }
 
 .qty-input { width: 100%; }
@@ -353,7 +377,12 @@ async function saveForm() {
 @media (max-width: 640px) {
   .signature-grid { grid-template-columns: 1fr; }
   .photo-grid { grid-template-columns: 1fr; }
-  .sparepart-row { grid-template-columns: minmax(0, 1fr) 72px; }
-  .remove-sparepart { grid-column: 1 / -1; }
+  .sparepart-row { 
+    grid-template-columns: minmax(0, 1fr) auto; 
+    align-items: stretch;
+  }
+  .sparepart-row > :nth-child(1) { grid-column: 1 / -1; } /* Select */
+  .sparepart-row > :nth-child(2) { grid-column: 1 / 2; } /* Qty */
+  .sparepart-row > :nth-child(3) { grid-column: 2 / 3; } /* Delete */
 }
 </style>

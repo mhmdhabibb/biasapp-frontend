@@ -15,7 +15,6 @@ const toast = useToast()
 
 const columns: TableColumn[] = [
   { key: 'name', label: 'Category Name' },
-  { key: 'slug', label: 'Slug' },
 ]
 
 const data = ref<ProductCategory[]>([])
@@ -36,23 +35,22 @@ const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<ProductCategory | null>(null)
 const deletingItem = ref<ProductCategory | null>(null)
-const form = reactive({ name: '', slug: '' })
+const form = reactive({ name: '' })
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { name: '', slug: '' })
+  Object.assign(form, { name: '' })
   showModal.value = true
 }
 
 function openEdit(item: ProductCategory) {
   editingItem.value = item
-  Object.assign(form, { name: item.name, slug: item.slug })
+  Object.assign(form, { name: item.name })
   showModal.value = true
 }
 
 async function handleSubmit() {
   if (!form.name.trim()) return
-  if (!form.slug.trim()) form.slug = form.name.toLowerCase().replace(/\s+/g, '-')
   try {
     if (editingItem.value) {
       await resources.productCategories.update(String(editingItem.value.id), form)
@@ -100,10 +98,6 @@ async function handleDelete() {
       <div class="form-group">
         <label for="cat-name" class="form-label">Category Name</label>
         <input id="cat-name" v-model="form.name" type="text" class="form-input" placeholder="Example: Toner, Drum, Spare Part">
-      </div>
-      <div class="form-group">
-        <label for="cat-slug" class="form-label">Slug</label>
-        <input id="cat-slug" v-model="form.slug" type="text" class="form-input" placeholder="Auto-generated from name if empty">
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Category" :message="`Are you sure you want to delete category '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />

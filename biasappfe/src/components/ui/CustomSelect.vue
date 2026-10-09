@@ -38,11 +38,17 @@ const selectedLabel = computed(() => {
   return found ? found.label : ''
 })
 
+const MAX_VISIBLE_OPTIONS = 50
+
 const filteredOptions = computed(() => {
   if (!searchQuery.value.trim()) return props.options
   const q = searchQuery.value.toLowerCase()
   return props.options.filter(o => o.label.toLowerCase().includes(q))
 })
+
+// Batasi DOM yang di-render agar dropdown dengan ratusan opsi tidak freeze.
+// User bisa mengetik di search untuk memfilter.
+const visibleOptions = computed(() => filteredOptions.value.slice(0, MAX_VISIBLE_OPTIONS))
 
 function toggle() {
   if (props.disabled) return
@@ -83,7 +89,7 @@ function handleKeydown(e: KeyboardEvent) {
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault()
-      highlightedIndex.value = Math.min(highlightedIndex.value + 1, filteredOptions.value.length - 1)
+      highlightedIndex.value = Math.min(highlightedIndex.value + 1, visibleOptions.value.length - 1)
       scrollToHighlighted()
       break
     case 'ArrowUp':
@@ -93,8 +99,8 @@ function handleKeydown(e: KeyboardEvent) {
       break
     case 'Enter':
       e.preventDefault()
-      if (highlightedIndex.value >= 0 && highlightedIndex.value < filteredOptions.value.length) {
-        const highlightedOption = filteredOptions.value[highlightedIndex.value]
+      if (highlightedIndex.value >= 0 && highlightedIndex.value < visibleOptions.value.length) {
+        const highlightedOption = visibleOptions.value[highlightedIndex.value]
         if (highlightedOption && !highlightedOption.disabled) select(highlightedOption)
       }
       break
@@ -122,7 +128,7 @@ onMounted(() => document.addEventListener('mousedown', handleClickOutside))
 onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside))
 
 watch(() => searchQuery.value, () => {
-  highlightedIndex.value = filteredOptions.value.length > 0 ? 0 : -1
+  highlightedIndex.value = visibleOptions.value.length >0 ? 0 : -1
 })
 </script>
 
@@ -167,7 +173,7 @@ watch(() => searchQuery.value, () => {
         </div>
         <ul ref="listRef" class="custom-select__list" role="listbox">
           <li
-            v-for="(option, idx) in filteredOptions"
+            v-for="(option, idx) in visibleOptions"
             :key="option.value"
             class="custom-select__option"
             :class="{
@@ -189,6 +195,9 @@ watch(() => searchQuery.value, () => {
           <li v-if="filteredOptions.length === 0" class="custom-select__empty">
             Not found
           </li>
+          <li v-else-if="filteredOptions.length > visibleOptions.length" class="custom-select__empty">
+            Menampilkan {{ visibleOptions.length }} dari {{ filteredOptions.length }} — ketik untuk memfilter
+          </li>
         </ul>
       </div>
     </Transition>
@@ -199,6 +208,16 @@ watch(() => searchQuery.value, () => {
 .custom-select {
   position: relative;
   width: 100%;
+}
+
+/* Pengaman: jika pemakai tak sengaja menambah class="form-select"
+   (yang ditujukan untuk native <select>), netralkan agar tidak
+   muncul border + panah ganda di root. */
+.custom-select.form-select {
+  border: none;
+  background: none;
+  padding: 0;
+  min-height: 0;
 }
 
 .custom-select__trigger {

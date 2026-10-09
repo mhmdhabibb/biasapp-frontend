@@ -153,6 +153,9 @@ const displayedRequests = computed(() =>
   listTab.value === "internal" ? internalRequests.value : externalRequests.value,
 );
 
+const isEditing = ref(false);
+const editId = ref<string | null>(null);
+
 function newRequestNo(tab: "internal" | "external") {
   const suffix = Date.now().toString().slice(-6);
   return tab === "external" ? `REQ-EXT-${suffix}` : `REQ-${suffix}`;
@@ -212,8 +215,10 @@ async function submitExternalRequest() {
     request_date: new Date(form.request_date).toISOString(),
   };
   try {
+    const method = isEditing.value ? "PATCH" : "POST";
+    const url = isEditing.value ? `${import.meta.env.VITE_API_BASE_URL}/service-requests/${editId.value}` : `${import.meta.env.VITE_API_BASE_URL}/service-requests`;
     const res = await fetch(
-      `${import.meta.env.VITE_API_BASE_URL}/service-requests`,
+      url,
       {
         method: "POST",
         headers: {
@@ -303,29 +308,48 @@ const customerRentalUnits = computed(() => {
     }
   }
 
-  // From sales (purchased products)
+  // From sales (purchased products & units)
   for (const sale of sales.value) {
     if (
       (sale as any).customer_id === form.customer_id &&
       (sale as any).sale_items
     ) {
       for (const si of (sale as any).sale_items) {
-        const prod = findProduct(si.product_id);
-        const key = "sale_prod_" + si.product_id;
-        if (!unitMap.has(key)) {
-          // Match by product_id OR sale_id (backend may link warranty to sale, not product)
-          const warranty = getWarrantyStatus(
-            form.customer_id,
-            null,
-            si.product_id,
-            (sale as any).id,
-          );
-          unitMap.set(key, {
-            id: si.product_id,
-            label: `${prod?.name || "Product ID: " + si.product_id} (Qty: ${si.qty || 1})`,
-            source: "sale",
-            warranty,
-          });
+        if (si.unit_id && si.unit) {
+          const key = si.unit_id;
+          if (!unitMap.has(key)) {
+            const warranty = getWarrantyStatus(
+              form.customer_id,
+              null,
+              null,
+              (sale as any).id,
+            );
+            unitMap.set(key, {
+              id: key,
+              label: `${si.unit.brand || ""} ${si.unit.model || si.unit.unit_name || ""} (SN: ${si.unit.serial_no || "-"})`.trim(),
+              source: "sale",
+              warranty,
+            });
+          }
+        }
+        if (si.product_id) {
+          const prod = findProduct(si.product_id);
+          const key = "sale_prod_" + si.product_id;
+          if (!unitMap.has(key)) {
+            // Match by product_id OR sale_id (backend may link warranty to sale, not product)
+            const warranty = getWarrantyStatus(
+              form.customer_id,
+              null,
+              si.product_id,
+              (sale as any).id,
+            );
+            unitMap.set(key, {
+              id: si.product_id,
+              label: `${prod?.name || "Product ID: " + si.product_id} (Qty: ${si.qty || 1})`,
+              source: "sale",
+              warranty,
+            });
+          }
         }
       }
     }
@@ -462,11 +486,6 @@ const hasDeliveredUnit = computed(() =>
   customerRentalUnits.value.some((u: any) => u.delivered),
 );
 
-function openAdd() {
-  resetCreateForm(listTab.value);
-  showModal.value = true;
-}
-
 async function fetchRequests() {
   try {
     const data = await api.get<{ data: any[] }>("/service-requests");
@@ -513,10 +532,13 @@ async function handleSubmit() {
   };
 
   try {
+    const method = isEditing.value ? "PATCH" : "POST";
+    const url = isEditing.value ? `${import.meta.env.VITE_API_BASE_URL}/service-requests/${editId.value}` : `${import.meta.env.VITE_API_BASE_URL}/service-requests`;
+    
     const res = await fetch(
-      `${import.meta.env.VITE_API_BASE_URL}/service-requests`,
+      url,
       {
-        method: "POST",
+        method: method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${sessionStorage.getItem("bias_token")}`,
@@ -614,6 +636,52 @@ const relatedReports = computed(() => {
   );
 });
 
+function openAdd() {
+  isEditing.value = false;
+  editId.value = null;
+  resetCreateForm(listTab.value);
+  showModal.value = true;
+}
+
+function openEdit(row: any) {
+  isEditing.value = true;
+  editId.value = row.id;
+  formTab.value = row.is_external ? 'external' : 'internal';
+  Object.assign(form, {
+    request_no: row.request_no,
+    customer_id: row.customer_id,
+    unit_ids: row.unit_id ? [row.unit_id] : [],
+    project_name: row.project_name || '',
+    problem_description: row.problem_description || '',
+    request_date: row.request_date ? new Date(row.request_date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+    external_brand: row.external_brand || '',
+    external_model: row.external_model || '',
+    external_serial_no: row.external_serial_no || '',
+    external_note: row.external_note || '',
+  });
+  externalBrandSelect.value = row.external_brand;
+  showModal.value = true;
+}
+
+async function confirmDelete(row: any) {
+  if (!confirm('Are you sure you want to delete this service request?')) return;
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/service-requests/${row.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${sessionStorage.getItem("bias_token")}` },
+    });
+    if (res.ok) {
+      toast.success("Service request deleted!");
+      fetchRequests();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      toast.error("Failed: " + ((err as any)?.message || JSON.stringify(err)));
+    }
+  } catch (error) {
+    toast.error("A network error occurred.");
+  }
+}
+
 function openDetail(row: any) {
   selectedRequest.value = row;
   showRequestDetailModal.value = true;
@@ -629,7 +697,7 @@ onMounted(() => {
 <template>
   <div>
     <PageHeader title="Service Request Management" button-label="Log Complaint" permission="service_request:create"
-      @add="openAdd()" />
+      @add="openAdd" />
 
     <div class="sr-tabs sr-tabs--page" role="tablist" aria-label="Filter daftar service request">
       <button type="button" role="tab" class="sr-tab" :class="{ 'sr-tab--active': listTab === 'internal' }"
@@ -667,6 +735,24 @@ onMounted(() => {
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
+        <button v-if="can('service_request:update') && (row.status === 'pending' || row.status === 'assigned')"
+          class="action-btn" title="Edit" @click="openEdit(row)"
+          style="color: var(--color-warning); border-color: transparent">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          </svg>
+        </button>
+        <button v-if="can('service_request:delete') && (row.status === 'pending' || row.status === 'assigned')"
+          class="action-btn" title="Delete" @click="confirmDelete(row)"
+          style="color: var(--color-danger); border-color: transparent">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
           </svg>
         </button>
       </template>
@@ -773,7 +859,7 @@ onMounted(() => {
       </div>
     </FormModal>
 
-    <FormModal :open="showModal" title="Log Complaint (Service Request)" max-width="580px" @close="showModal = false"
+    <FormModal :open="showModal" :title="isEditing ? 'Edit Service Request' : 'Log Complaint (Service Request)'" max-width="580px" @close="showModal = false"
       @submit="handleModalSubmit">
       <div class="sr-tabs sr-tabs--modal" role="tablist" aria-label="Jenis unit service request">
         <button type="button" role="tab" class="sr-tab sr-tab--segment"
@@ -883,7 +969,7 @@ onMounted(() => {
           <div class="form-row external-unit-fields">
             <div class="form-group">
               <label class="form-label form-label-sm">Serial Number</label>
-              <input v-model="form.external_serial_no" type="text" class="form-input"
+              <input v-model="form.external_serial_no" type="text" class="form-input text-uppercase "
                 placeholder="Opsional — auto-generate bila kosong" />
             </div>
             <div class="form-group">
@@ -905,7 +991,8 @@ onMounted(() => {
 
       <div class="form-group mt-3">
         <label class="form-label">Project Name</label>
-        <input v-model="form.project_name" type="text" class="form-input" placeholder="e.g. Pemeliharaan Printer Kantor A" />
+        <input v-model="form.project_name" type="text" class="form-input"
+          placeholder="e.g. Pemeliharaan Printer Kantor A" />
       </div>
 
       <div class="form-group mt-3">

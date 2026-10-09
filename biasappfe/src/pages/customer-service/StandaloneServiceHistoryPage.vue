@@ -89,6 +89,7 @@ const isSaving = ref(false)
 const form = reactive({
   customer_id: null as any,
   customer_category: 'Corporate' as string,
+  project_name: '',
   delivery_address: '',
   recipient_name: '',
   recipient_phone: '',
@@ -101,6 +102,7 @@ function resetForm() {
   Object.assign(form, {
     customer_id: null,
     customer_category: 'Corporate',
+    project_name: '',
     delivery_address: '',
     recipient_name: '',
     recipient_phone: '',
@@ -121,6 +123,7 @@ function openEdit(row: any) {
   Object.assign(form, {
     customer_id: row.customer_id || null,
     customer_category: row.customer_category || row.customer?.category || 'Corporate',
+    project_name: row.project_name || '',
     delivery_address: row.delivery_address || '',
     recipient_name: row.recipient_name || '',
     recipient_phone: row.recipient_phone || '',
@@ -143,6 +146,7 @@ async function handleSubmit() {
       await resources.update('deliveryOrders', String(editingItem.value.id), {
         customer_id: form.customer_id,
         customer_category: form.customer_category,
+        project_name: form.project_name,
         delivery_address: form.delivery_address,
         recipient_name: form.recipient_name,
         recipient_phone: form.recipient_phone,
@@ -157,6 +161,7 @@ async function handleSubmit() {
         status: 'pending',
         customer_id: form.customer_id,
         customer_category: form.customer_category,
+        project_name: form.project_name,
         delivery_address: form.delivery_address,
         recipient_name: form.recipient_name,
         recipient_phone: form.recipient_phone,
@@ -242,6 +247,10 @@ function handlePrint(row: any) {
       <div class="form-group">
         <label class="form-label">Customer <span class="text-danger">*</span></label>
         <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Pilih Customer --" class="form-select" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Project Name</label>
+        <input v-model="form.project_name" type="text" class="form-input" placeholder="Contoh: Service Laptop" />
       </div>
       <div class="form-row">
         <div class="form-group">

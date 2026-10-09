@@ -8,6 +8,7 @@ export function hasDeliveryHistory(d: any): boolean {
   if (d.is_tested || d.is_completed) return true;
   if (d.time_in || d.time_out) return true;
   if (d.customer_signature || d.technician_signature) return true;
+  if (d.photo_before || d.photo_after) return true;
   if (d.action) return true;
   if (d.problem && !String(d.problem).startsWith("Auto-generated")) return true;
   return false;
@@ -34,14 +35,26 @@ function esc(v: unknown): string {
  */
 export function printDeliveryServiceHistory(item: any): boolean {
   if (!item) return false;
-  const { findCustomer, findUnit, findBrand, findTechnician } =
+  const { findCustomer, findUnit, findBrand, findTechnician, findUnitType } =
     useMasterStore();
 
   const customer: any = findCustomer(item.customer_id) || {};
   const firstLine: any = (item.delivery_order_items || [])[0] || {};
-  const u: any =
-    firstLine.unit || findUnit(firstLine.unit_id) || {};
-  const brand: any = findBrand(u.brand_id) || {};
+  
+  let u: any = {};
+  let brand: any = {};
+  let utype: any = {};
+  
+  if (firstLine.unit_id) {
+    u = firstLine.unit || findUnit(firstLine.unit_id) || {};
+    brand = findBrand(u.brand_id) || {};
+    utype = findUnitType(u.unit_type_id) || {};
+  } else if (firstLine.brand_id || firstLine.unit_type_id || firstLine.model) {
+    brand = findBrand(firstLine.brand_id) || {};
+    utype = findUnitType(firstLine.unit_type_id) || {};
+    u = { model: firstLine.model, serial_no: firstLine.serial_no };
+  }
+
   const tech: any = findTechnician(item.technician_id) || {};
 
   const custName = customer.company_name || customer.name || "-";
@@ -135,6 +148,7 @@ export function printDeliveryServiceHistory(item: any): boolean {
           <table class="data-table">
             <tr><td class="label-col">Company Name</td><td class="val-col">${esc(custName)}</td></tr>
             <tr><td class="label-col">Customer Type</td><td class="val-col">${esc(String(item.customer_category || customer.category || "Corporate"))}</td></tr>
+            <tr><td class="label-col">Project Name</td><td class="val-col">${esc(item.project_name || "-")}</td></tr>
             <tr><td class="label-col">Address</td><td class="val-col">${esc(customer.address || "-")}</td></tr>
             <tr><td class="label-col">Installation Address</td><td class="val-col">${esc(item.delivery_address || "-")}</td></tr>
             <tr><td class="label-col">Phone</td><td class="val-col">${esc(custPhone)}</td></tr>
@@ -144,16 +158,18 @@ export function printDeliveryServiceHistory(item: any): boolean {
           <div class="section-title">PRODUCT DETAIL</div>
           <table class="data-table">
             <tr><td class="label-col">Brand</td><td class="val-col">${esc(brand?.name || "-")}</td></tr>
-            <tr><td class="label-col">Product Types</td><td class="val-col">: ${u.is_computer ? "Computer/Desktop" : "Photocopy"}</td></tr>
+            <tr><td class="label-col">Product Types</td><td class="val-col">${esc(utype?.name || (u.is_computer ? "Computer/Desktop" : "Photocopy"))}</td></tr>
             <tr><td class="label-col">Model/Type</td><td class="val-col">${esc(u.model || "-")}</td></tr>
             <tr><td class="label-col">Serial Number</td><td class="val-col">${esc(u.serial_no || "-")}</td></tr>
+            <tr><td class="label-col">Warranty</td><td class="val-col">${esc(firstLine.warranty_status || "-")}</td></tr>
+            <tr><td class="label-col">Warranty expired date</td><td class="val-col">${firstLine.warranty_expired_date ? new Date(firstLine.warranty_expired_date).toLocaleDateString("en-GB") : "-"}</td></tr>
             ${
               itemsCount > 1
                 ? `<tr><td class="label-col">Items (${itemsCount})</td><td class="val-col">${itemsList}</td></tr>`
                 : ""
             }
             <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col">${esc(item.problem || "")}</td></tr>
-            <tr><td class="label-col" style="height: 50px;">Action / Remarks</td><td class="val-col">${esc(item.action || item.notes || "")}</td></tr>
+            <tr><td class="label-col" style="height: 50px;">Remarks</td><td class="val-col">${esc(item.action || item.notes || firstLine.remarks || "")}</td></tr>
           </table>
 
           <table class="bottom-table">
@@ -178,20 +194,39 @@ export function printDeliveryServiceHistory(item: any): boolean {
             </tr>
           </table>
 
-          <div style="display: flex; justify-content: space-between; padding: 5px 20px 20px; font-weight: bold; border-top: 2px solid #000;">
-            <div style="width: 45%; text-align: center;">
-              <div>TESTED ${item.is_tested ? "YES" : "NO"}</div>
-              <div style="min-height: 50px; border-bottom: 1px solid #000; text-align: center; margin-top: 10px;">
-                ${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 50px;" />' : ""}
+          ${item.photo_before || item.photo_after ? `
+          <div class="section-title">DOKUMENTASI FOTO</div>
+          <div style="display: flex; gap: 10px; padding: 10px; border-bottom: 2px solid #000;">
+            ${item.photo_before ? `
+            <div style="flex: 1; text-align: center;">
+              <div style="font-weight: bold; margin-bottom: 5px;">FOTO AWAL</div>
+              <img src="${item.photo_before}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
+            </div>` : ""}
+            ${item.photo_after ? `
+            <div style="flex: 1; text-align: center;">
+              <div style="font-weight: bold; margin-bottom: 5px;">FOTO AKHIR</div>
+              <img src="${item.photo_after}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
+            </div>` : ""}
+          </div>` : ""}
+
+          <div style="border-top: 2px solid #000; padding: 10px 20px 24px; font-weight: bold;">
+            <div style="display: flex; justify-content: space-between; gap: 48px;">
+              <div style="flex: 1; text-align: center;">
+                <div>TESTED ${item.is_tested ? "YES" : "NO"}</div>
+                <div style="height: 70px; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid #000; margin-top: 8px; overflow: hidden;">
+                  ${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 68px; max-width: 100%; object-fit: contain; display: block;" />' : ""}
+                </div>
+                <div style="margin-top: 6px;">${esc(item.technician_name || tech.name || tech.full_name || tech.user?.name || "")}</div>
+                <div style="font-weight: normal; font-size: 10px;">Technician</div>
               </div>
-              <div style="margin-top: 5px;">${esc(item.technician_name || tech.name || tech.full_name || tech.user?.name || "")}</div>
-            </div>
-            <div style="width: 45%; text-align: center; display: flex; flex-direction: column; justify-content: flex-end;">
-              <div style="margin-bottom: 10px;">COMPLETE ${item.is_completed ? "YES" : "NO"}</div>
-              <div style="border-bottom: 1px solid #000; padding-bottom: 5px; min-height: 50px;">
-                ${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 50px;" />' : ""}
+              <div style="flex: 1; text-align: center;">
+                <div>COMPLETE ${item.is_completed ? "YES" : "NO"}</div>
+                <div style="height: 70px; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid #000; margin-top: 8px; overflow: hidden;">
+                  ${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 68px; max-width: 100%; object-fit: contain; display: block;" />' : ""}
+                </div>
+                <div style="margin-top: 6px;">${esc(item.customer_name || picName || "")}</div>
+                <div style="font-weight: normal; font-size: 10px;">Customer</div>
               </div>
-              <div style="margin-top: 5px;">${esc(item.customer_name || picName || "")}</div>
             </div>
           </div>
         </div>

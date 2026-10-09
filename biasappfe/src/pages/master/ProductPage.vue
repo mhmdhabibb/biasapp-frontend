@@ -112,7 +112,7 @@ function getCategoryPrefix(categoryId: string): string {
   const category = categories.value.find(
     (item) => String(item.id) === categoryId,
   );
-  const words = ((category as any)?.name || (category as any)?.slug || "")
+  const words = ((category as any)?.name || "")
     .trim()
     .replace(/[^a-zA-Z0-9]+/g, " ")
     .split(/\s+/)

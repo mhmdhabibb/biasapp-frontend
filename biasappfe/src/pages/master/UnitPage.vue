@@ -74,6 +74,7 @@ const form = reactive({
   uom_id: '' as string | null,
   model: '',
   name: '',
+  price: null as number | null,
   is_copier: false,
   is_computer: false,
   current_meter_bw: 0,
@@ -110,7 +111,7 @@ watch([() => form.brand_id, () => form.model], ([newBrand, newModel]) => {
 })
 
 function openAdd() {
-  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, free_quota_bw: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
+  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', price: null, is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, free_quota_bw: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
   showModal.value = true
 }
 
@@ -123,6 +124,7 @@ function openEdit(item: any) {
     uom_id: item.uom_id ?? '',
     model: item.model,
     name: item.name || '',
+    price: (item as any).price || null,
     is_copier: !!item.is_copier,
     is_computer: !!item.is_computer,
     current_meter_bw: item.current_meter_bw || 0,
@@ -250,6 +252,12 @@ const badgeFalse = {
       <template #toolbar>
         <ExcelImportButtons master-key="unit" @imported="fetchData" />
       </template>
+      <template #cell-name="{ row }">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>{{ row.name }}</span>
+          <span v-if="row.is_external" class="badge badge-warning" style="font-size: 10px; padding: 2px 6px;">External</span>
+        </div>
+      </template>
       <template #cell-uom.name="{ row }">
         {{ row.uom?.name ?? "-" }}
       </template>
@@ -278,7 +286,7 @@ const badgeFalse = {
       @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="unit-serial" class="form-label">Serial Number</label>
-        <input id="unit-serial" v-model="form.serial_no" type="text" class="form-input"
+        <input id="unit-serial" v-model="form.serial_no" @input="form.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input" style="text-transform: uppercase;"
           placeholder="Unit serial number">
       </div>
       <div class="form-group">
@@ -297,6 +305,10 @@ const badgeFalse = {
           <div class="form-group" style="position: relative;">
         <label for="uom" class="form-label">Unit Of Measure</label>
         <CustomSelect id="uom" v-model="form.uom_id" :options="uomOptions" placeholder="Select UOM type" />
+      </div>
+      <div class="form-group">
+        <label for="unit-price" class="form-label">Price (Optional)</label>
+        <input id="unit-price" v-model.number="form.price" type="number" class="form-input" placeholder="e.g. 15000000" min="0">
       </div>
       <div class="form-group">
         <label for="unit-model" class="form-label">Model</label>

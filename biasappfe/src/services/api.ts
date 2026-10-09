@@ -53,10 +53,17 @@ async function request<T>(
     } | null;
     if (!response.ok) {
       if (response.status === 401) sessionStorage.removeItem("bias_token");
-      throw new ApiError(
-        body?.message || body?.error || "A server error occurred",
-        response.status,
-      );
+      
+      let errorMsg = body?.message || body?.error;
+      if (!errorMsg) {
+        if (response.status === 413) {
+          errorMsg = "Payload too large! Please check photo sizes.";
+        } else {
+          errorMsg = `Server error ${response.status}: ${response.statusText || 'Unknown'}`;
+        }
+      }
+      
+      throw new ApiError(errorMsg, response.status);
     }
     return body as T;
   } finally {

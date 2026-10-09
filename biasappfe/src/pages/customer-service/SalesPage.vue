@@ -31,10 +31,12 @@ const {
   sales: data,
   customers,
   products,
+  units,
   salesInvoices,
   payments,
   findCustomer,
   findProduct,
+  findUnit,
 } = useMasterStore()
 
 const resources = useResourcesStore()
@@ -198,8 +200,14 @@ function generateSingleInvoiceHtml(item: any) {
   let itemsHtml = ''
   if (item.sale_items && item.sale_items.length > 0) {
     itemsHtml = item.sale_items.map((si: any, idx: number) => {
-      const p = findProduct(si.product_id)
-      let pName = p ? p.name : ('Product ID: ' + si.product_id)
+      const p = si.product_id ? findProduct(si.product_id) : null
+      let pName = p ? p.name : (si.product_id ? 'Product ID: ' + si.product_id : 'Unit Only')
+      if (si.unit_id) {
+        const u = findUnit(si.unit_id)
+        if (u) {
+            pName += ` - ${u.name} ${u.serial_no ? `(SN: ${u.serial_no})` : ''}`
+        }
+      }
       if (si.description) {
         pName += `<br><span style="font-size: 10px; color: #555;">${si.description}</span>`
       }
@@ -393,8 +401,15 @@ function exportMonthToExcel() {
 
     if (item.sale_items && item.sale_items.length > 0) {
       item.sale_items.forEach((si: any, sIdx: number) => {
-        const p = findProduct(si.product_id)
-        const pName = (p ? p.name : ('Product ID: ' + si.product_id)).replace(/;/g, ',')
+        const p = si.product_id ? findProduct(si.product_id) : null
+        let pName = (p ? p.name : (si.product_id ? 'Product ID: ' + si.product_id : 'Unit Only'))
+        if (si.unit_id) {
+          const u = findUnit(si.unit_id)
+          if (u) {
+              pName += ` - ${u.name} ${u.serial_no ? `(SN: ${u.serial_no})` : ''}`
+          }
+        }
+        pName = pName.replace(/;/g, ',')
         const qty = si.qty || 1
         const uPrice = si.unit_price || si.price || 0
         const itemTotal = uPrice * qty
@@ -511,7 +526,7 @@ function exportMonthToPdf() {
   }
 }
 
-const saleItems = ref<{ product_id: number | null; qty: number; unit_price: number; is_computer: boolean; specs: { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string; }; description: string; }[]>([])
+const saleItems = ref<{ product_id: number | null; unit_id: string | null; _combined_id: string | null; qty: number; unit_price: number; is_computer: boolean; specs: { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string; }; description: string; }[]>([])
 
 const form = reactive({
   sale_no: '',
@@ -525,11 +540,24 @@ const form = reactive({
   has_warranty: true,
   warranty: {
     warranty_type: 'machine',
+    warranty_types: ['machine'] as string[],
     duration_months: 12,
     duration_days: 0,
+    expired_date: '',
     terms_conditions: ''
   }
 })
+
+// Warranty cukup diisi tanggal expired; duration dihitung saat submit
+// (backend hanya mengenal duration_months/days + start_date).
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function addMonthsISO(dateStr: string, months: number): string {
+  const d = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date()
+  d.setMonth(d.getMonth() + months)
+  return toISODate(d)
+}
 
 const calcSubtotal = computed(() => saleItems.value.reduce((sum, item) => sum + (item.qty * item.unit_price), 0))
 // You can use calcSubtotal to set total_amount automatically before submit
@@ -537,27 +565,43 @@ const calcDiscount = computed(() => Math.max(0, Number(form.discount) || 0))
 const calcTotal = computed(() => Math.max(0, calcSubtotal.value - calcDiscount.value))
 
 function addSaleItem() {
-  saleItems.value.push({ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' })
+  saleItems.value.push({ product_id: null as any, unit_id: null, _combined_id: null, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' })
 }
 
 function removeSaleItem(idx: number) {
   saleItems.value.splice(idx, 1)
 }
 
-function onProductChange(idx: number) {
+function onCombinedItemChange(idx: number) {
   const item = saleItems.value[idx]
-  if (!item) return
-  const prod = findProduct(item.product_id)
-  if (prod) {
-    item.unit_price = prod.price
-    item.is_computer = !!prod.is_computer
+  if (!item || !item._combined_id) return
+  
+  if (item._combined_id.startsWith('P_')) {
+    item.product_id = parseInt(item._combined_id.replace('P_', ''))
+    item.unit_id = null
+    const prod = findProduct(item.product_id)
+    if (prod) {
+      item.unit_price = prod.price
+      item.is_computer = !!prod.is_computer
+    }
+  } else if (item._combined_id.startsWith('U_')) {
+    item.unit_id = item._combined_id.replace('U_', '')
+    item.product_id = null
+    const unit = findUnit(item.unit_id)
+    item.unit_price = (unit && (unit as any).price) ? (unit as any).price : 0
+    if (unit) {
+      item.is_computer = !!unit.is_computer
+    }
   }
 }
 
+const currentStep = ref(1)
+
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, discount: 0, status: 'approved', has_warranty: true, warranty: { warranty_type: 'machine', duration_months: 12, duration_days: 0, terms_conditions: '' } })
-  saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
+  currentStep.value = 1
+  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, discount: 0, status: 'approved', has_warranty: true, warranty: { warranty_type: 'machine', warranty_types: ['machine'], duration_months: 12, duration_days: 0, expired_date: addMonthsISO(new Date().toISOString().slice(0, 10), 12), terms_conditions: '' } })
+  saleItems.value = [{ product_id: null as any, unit_id: null, _combined_id: null, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
   showModal.value = true
 }
 
@@ -568,6 +612,7 @@ function openView(item: any) {
 
 function openEdit(item: any) {
   editingItem.value = item
+  currentStep.value = 1
   Object.assign(form, {
     sale_no: item.sale_no || `SLS-${item.id}`,
     customer_id: item.customer_id,
@@ -580,13 +625,20 @@ function openEdit(item: any) {
     has_warranty: item.has_warranty || (item.warranties && item.warranties.length > 0) || false,
     warranty: item.warranties && item.warranties.length > 0 ? {
       warranty_type: item.warranties[0].warranty_type || 'machine',
+      warranty_types: (() => {
+        const list = item.warranties.map((w: any) => w.warranty_type).filter(Boolean)
+        return list.length ? [...new Set(list)] : ['machine']
+      })(),
       duration_months: item.warranties[0].duration_months || 0,
       duration_days: item.warranties[0].duration_days || 0,
+      expired_date: item.warranties[0].end_date ? String(item.warranties[0].end_date).substring(0, 10) : addMonthsISO(item.sale_date ? item.sale_date.slice(0, 10) : '', 12),
       terms_conditions: item.warranties[0].terms_conditions || ''
     } : {
       warranty_type: 'machine',
+      warranty_types: ['machine'],
       duration_months: 12,
       duration_days: 0,
+      expired_date: addMonthsISO(item.sale_date ? item.sale_date.slice(0, 10) : '', 12),
       terms_conditions: ''
     }
   })
@@ -598,15 +650,17 @@ function openEdit(item: any) {
       }
       return {
         product_id: si.product_id,
+        unit_id: si.unit_id || null,
+        _combined_id: si.unit_id ? `U_${si.unit_id}` : (si.product_id ? `P_${si.product_id}` : null),
         qty: si.qty,
         unit_price: si.unit_price || si.price || 0,
-        is_computer: !!(findProduct(si.product_id)?.is_computer),
+        is_computer: si.unit_id ? !!(findUnit(si.unit_id)?.is_computer) : !!(findProduct(si.product_id)?.is_computer),
         specs: parsedSpecs,
         description: si.description || ''
       }
     })
   } else {
-    saleItems.value = [{ product_id: null as any, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
+    saleItems.value = [{ product_id: null as any, unit_id: null, _combined_id: null, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
   }
   showModal.value = true
 }
@@ -617,8 +671,43 @@ async function handleSubmit() {
     toast.warning('Installation/delivery address is required.')
     return
   }
+  // Konversi expired date -> duration (backend hanya mengenal duration).
+  const warrantyPayload = { ...form.warranty }
+  if (form.has_warranty) {
+    if (!warrantyPayload.expired_date) {
+      toast.warning('Warranty expired date is required.')
+      return
+    }
+    const types = [...new Set((warrantyPayload.warranty_types || []).filter(Boolean))]
+    if (types.length === 0) {
+      toast.warning('Pilih minimal 1 warranty type.')
+      return
+    }
+    const start = new Date(`${form.sale_date}T00:00:00`)
+    const end = new Date(`${warrantyPayload.expired_date}T00:00:00`)
+    const diffDays = Math.round((end.getTime() - start.getTime()) / 86400000)
+    if (diffDays < 0) {
+      toast.warning('Warranty expired date must not be before the sale date.')
+      return
+    }
+    warrantyPayload.start_date = form.sale_date
+    warrantyPayload.duration_months = 0
+    warrantyPayload.duration_days = diffDays
+    warrantyPayload.warranty_type = types[0]
+    warrantyPayload.warranty_types = types
+  }
   const saleData = {
     ...form,
+    warranty: warrantyPayload,
+    warranties: form.has_warranty
+      ? [...new Set((form.warranty.warranty_types || []).filter(Boolean))].map((t) => ({
+          warranty_type: t,
+          start_date: form.sale_date,
+          duration_months: warrantyPayload.duration_months,
+          duration_days: warrantyPayload.duration_days,
+          terms_conditions: form.warranty.terms_conditions || '',
+        }))
+      : [],
     subtotal: calcSubtotal.value,
     discount: calcDiscount.value,
     total: calcTotal.value,
@@ -908,6 +997,17 @@ function printReceipt(item: any, existingWindow?: Window | null) {
   }
 }
 
+const combinedItemOptions = computed(() => {
+  const opts: { value: string; label: string }[] = []
+  products.value.forEach(p => {
+    opts.push({ value: `P_${p.id}`, label: `[Product] ${p.name}` })
+  })
+  units.value.filter(u => u.status !== 'sold').forEach(u => {
+    opts.push({ value: `U_${u.id}`, label: `[Unit] ${u.name} ${u.serial_no ? '(SN: ' + u.serial_no + ')' : ''}` })
+  })
+  return opts
+})
+
 </script>
 
 <template>
@@ -997,41 +1097,65 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         </div>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Sale' : 'Add Sale'" @close="showModal = false"
-      @submit="handleSubmit">
-      <div class="form-group">
-        <label for="sale-no" class="form-label">Sale No. (Auto)</label>
-        <input id="sale-no" v-model="form.sale_no" type="text" class="form-input" disabled
-          style="background: var(--color-surface-raised); cursor: not-allowed;">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Sale' : 'Add Sale'" @close="showModal = false" :max-width="'700px'">
+      <!-- Stepper Header -->
+      <div class="stepper-container">
+        <div class="stepper-item" :class="{ active: currentStep === 1, completed: currentStep > 1 }">
+          <div class="step-circle">1</div>
+          <div class="step-label">General Info</div>
+        </div>
+        <div class="stepper-line" :class="{ active: currentStep > 1 }"></div>
+        <div class="stepper-item" :class="{ active: currentStep === 2, completed: currentStep > 2 }">
+          <div class="step-circle">2</div>
+          <div class="step-label">Sale Items</div>
+        </div>
+        <div class="stepper-line" :class="{ active: currentStep > 2 }"></div>
+        <div class="stepper-item" :class="{ active: currentStep === 3 }">
+          <div class="step-circle">3</div>
+          <div class="step-label">Summary</div>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="sale-customer" class="form-label">Customer</label>
-        <CustomSelect id="sale-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
-      </div>
-      <div class="form-group">
-        <label for="sale-date" class="form-label">Date</label>
-        <input id="sale-date" v-model="form.sale_date" type="date" class="form-input">
-      </div>
-      <div class="form-group">
-        <label for="sale-po-no" class="form-label">PO No (Optional)</label>
-        <input id="sale-po-no" v-model="form.po_no" type="text" class="form-input" placeholder="E.g. PO-2024-001">
-      </div>
-      <div class="form-group">
-        <label for="sale-installation-address" class="form-label">Installation / Delivery Address (Delivery Order)</label>
-        <textarea id="sale-installation-address" v-model="form.installation_address" class="form-textarea" rows="3" placeholder="Enter the full delivery address..." required></textarea>
-      </div>
-    
 
-      <div class="form-section-title">Sale Items</div>
+      <!-- Step 1 -->
+      <div v-show="currentStep === 1" class="step-content">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="sale-no" class="form-label">Sale No. (Auto)</label>
+            <input id="sale-no" v-model="form.sale_no" type="text" class="form-input" disabled style="background: var(--color-surface-raised); cursor: not-allowed;">
+          </div>
+          <div class="form-group">
+            <label for="sale-customer" class="form-label">Customer</label>
+            <CustomSelect id="sale-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="sale-date" class="form-label">Date</label>
+            <input id="sale-date" v-model="form.sale_date" type="date" class="form-input">
+          </div>
+          <div class="form-group">
+            <label for="sale-po-no" class="form-label">PO No (Optional)</label>
+            <input id="sale-po-no" v-model="form.po_no" type="text" class="form-input" placeholder="E.g. PO-2024-001">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="sale-installation-address" class="form-label">Installation / Delivery Address</label>
+          <textarea id="sale-installation-address" v-model="form.installation_address" class="form-textarea" rows="3" placeholder="Enter the full delivery address..." required></textarea>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div v-show="currentStep === 2" class="step-content">
+        <div class="form-section-title" style="margin-top: 0;">Sale Items</div>
       <div v-for="(item, idx) in saleItems" :key="idx" class="sale-item-row">
-        <div class="form-group sale-item-product">
-          <CustomSelect v-model="item.product_id" :options="productOptions" placeholder="-- Product --" class="form-select" @update:modelValue="onProductChange(idx)" />
+        <div class="form-group sale-item-product" style="grid-column: span 2;">
+          <CustomSelect v-model="item._combined_id" :options="combinedItemOptions" placeholder="-- Item (Product or Unit) --" class="form-select" @update:modelValue="onCombinedItemChange(idx)" />
         </div>
         <div class="form-group sale-item-qty">
           <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
         </div>
         <div class="form-group sale-item-price">
-          <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Price">
+          <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Price" readonly style="background: var(--color-surface-raised); cursor: not-allowed;">
         </div>
         <button type="button" class="btn-remove-item" title="Remove item" @click="removeSaleItem(idx)">✕</button>
 
@@ -1082,22 +1206,25 @@ function printReceipt(item: any, existingWindow?: Window | null) {
       </div>
       <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem" style="margin-top: 1rem;">+ Add Item</button>
 
-      <div class="form-section-title" style="margin-top: 1.5rem;">Warranty & Services</div>
+      </div>
+
+      <!-- Step 3 -->
+      <div v-show="currentStep === 3" class="step-content">
+        <div class="form-section-title" style="margin-top: 0;">Warranty & Services</div>
       <div style="border: 1px solid var(--color-border); padding: 1rem; border-radius: var(--radius-md); background-color: var(--color-surface); margin-bottom: 1.5rem;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
           <div class="form-group">
-            <label class="form-label">Warranty Type</label>
-            <CustomSelect v-model="form.warranty.warranty_type" :options="warrantyTypeOptions" class="form-select" />
+            <label class="form-label">Warranty Type <span class="text-muted" style="font-weight: 400;">(bisa pilih lebih dari 1)</span></label>
+            <div class="warranty-type-checks">
+              <label v-for="opt in warrantyTypeOptions" :key="opt.value" class="warranty-type-check">
+                <input type="checkbox" :value="opt.value" v-model="form.warranty.warranty_types" />
+                {{ opt.label }}
+              </label>
+            </div>
           </div>
-          <div style="display: flex; gap: 0.5rem;">
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label">Duration (Months)</label>
-              <input v-model.number="form.warranty.duration_months" type="number" min="0" class="form-input">
-            </div>
-            <div class="form-group" style="flex: 1;">
-              <label class="form-label">Duration (Days)</label>
-              <input v-model.number="form.warranty.duration_days" type="number" min="0" class="form-input">
-            </div>
+          <div class="form-group">
+            <label class="form-label">Warranty Expired Date</label>
+            <input v-model="form.warranty.expired_date" type="date" class="form-input">
           </div>
         </div>
         <div class="form-group" style="margin-top: 0.75rem;">
@@ -1116,6 +1243,15 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <div class="summary-row"><span>Discount</span><span>{{ formatRupiah(calcDiscount) }}</span></div>
         <div class="summary-row summary-total"><span>Total</span><span>{{ formatRupiah(calcTotal) }}</span></div>
       </div>
+      </div>
+
+      <template #footer>
+        <button class="btn btn-outline" @click="showModal = false">Cancel</button>
+        <div style="flex: 1;"></div>
+        <button v-if="currentStep > 1" class="btn btn-outline" @click="currentStep--">Previous</button>
+        <button v-if="currentStep < 3" class="btn btn-accent" @click="currentStep++">Next</button>
+        <button v-if="currentStep === 3" class="btn btn-accent" @click="handleSubmit">Save Sale</button>
+      </template>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Sale"
       :message="`Are you sure you want to delete sale ID ${deletingItem?.id}?`" @close="showConfirm = false"
@@ -1162,6 +1298,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
               <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
                 <tr>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Product</th>
+                  <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Unit</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center;">Qty</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Unit Price</th>
                   <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Total</th>
@@ -1173,7 +1310,8 @@ function printReceipt(item: any, existingWindow?: Window | null) {
                   <td colspan="5" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
                 </tr>
                 <tr v-for="(si, idx) in viewingItem.sale_items" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
-                  <td style="padding: 12px;">{{ findProduct(si.product_id)?.name || 'Product ID: ' + si.product_id }}</td>
+                  <td style="padding: 12px;">{{ si.product_id ? (findProduct(si.product_id)?.name || 'Product ID: ' + si.product_id) : '-' }}</td>
+                  <td style="padding: 12px;">{{ si.unit_id ? (findUnit(si.unit_id)?.name + (findUnit(si.unit_id)?.serial_no ? ' (' + findUnit(si.unit_id)?.serial_no + ')' : '')) : '-' }}</td>
                   <td style="padding: 12px; text-align: center;">{{ si.qty }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah(si.unit_price || (si as any).price || 0) }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah((si.unit_price || (si as any).price || 0) * (si.qty || 1)) }}</td>
@@ -1194,16 +1332,13 @@ function printReceipt(item: any, existingWindow?: Window | null) {
                 <div>
                   <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Warranty Type</p>
                   <p style="font-weight: var(--font-weight-medium); margin: 0; text-transform: capitalize;">
-                    {{ viewingItem.warranties && viewingItem.warranties.length > 0 ? viewingItem.warranties[0].warranty_type : '-' }}
+                    {{ viewingItem.warranties && viewingItem.warranties.length > 0 ? [...new Set(viewingItem.warranties.map((w: any) => w.warranty_type).filter(Boolean))].join(', ') : '-' }}
                   </p>
                 </div>
                 <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Duration</p>
+                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Warranty Expired Date</p>
                   <p style="font-weight: var(--font-weight-medium); margin: 0;">
-                    <template v-if="viewingItem.warranties && viewingItem.warranties.length > 0">
-                      {{ viewingItem.warranties[0].duration_months }} months <span v-if="viewingItem.warranties[0].duration_days">{{ viewingItem.warranties[0].duration_days }} days</span>
-                    </template>
-                    <template v-else>-</template>
+                    {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].end_date) ? String(viewingItem.warranties[0].end_date).substring(0, 10) : '-' }}
                   </p>
                 </div>
                 <div>
@@ -1231,13 +1366,6 @@ function printReceipt(item: any, existingWindow?: Window | null) {
                     {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].start_date) ? String(viewingItem.warranties[0].start_date).substring(0, 10) : '-' }}
                   </p>
                 </div>
-                <div style="grid-column: span 2;">
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Valid Until</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0;">
-                    {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].end_date) ? String(viewingItem.warranties[0].end_date).substring(0, 10) : '-' }}
-                  </p>
-                </div>
-
                 <div style="grid-column: 1 / -1; margin-top: 0.5rem; padding-top: 1rem; border-top: 1px dashed var(--color-border-light);">
                   <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 8px 0;">Terms & Conditions</p>
                   <div style="font-weight: var(--font-weight-medium); margin: 0; white-space: pre-line; background: var(--color-surface); padding: 12px; border-radius: 8px; border: 1px solid var(--color-border-light); font-size: 0.85rem; color: var(--color-text);">
@@ -1292,17 +1420,21 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <span style="display:none;"></span>
       </template>
     </FormModal>
-    <FormModal :open="showItemDetail" :title="selectedSaleItem ? `Detail Item — ${findProduct(selectedSaleItem.product_id)?.name || 'Item'}` : 'Detail Item'" @close="closeSaleItemDetail" max-width="480px">
+    <FormModal :open="showItemDetail" :title="selectedSaleItem ? `Detail Item — ${(selectedSaleItem.product_id ? findProduct(selectedSaleItem.product_id)?.name : 'Unit Only') || 'Item'}` : 'Detail Item'" @close="closeSaleItemDetail" max-width="480px">
       <template v-if="selectedSaleItem">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
             <label class="form-label">Product</label>
-            <div style="font-weight: 600;">{{ findProduct(selectedSaleItem.product_id)?.name || 'Product ID: ' + selectedSaleItem.product_id }}</div>
-            <div style="font-size: 12px; color: var(--color-text-muted);">SKU: {{ findProduct(selectedSaleItem.product_id)?.sku || '-' }}</div>
+            <div style="font-weight: 600;">{{ selectedSaleItem.product_id ? (findProduct(selectedSaleItem.product_id)?.name || 'Product ID: ' + selectedSaleItem.product_id) : '-' }}</div>
+            <div style="font-size: 12px; color: var(--color-text-muted);">SKU: {{ selectedSaleItem.product_id ? (findProduct(selectedSaleItem.product_id)?.sku || '-') : '-' }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">UOM</label>
-            <div>{{ (findProduct(selectedSaleItem.product_id) as any)?.uom?.name || '-' }}</div>
+            <div>{{ selectedSaleItem.product_id ? ((findProduct(selectedSaleItem.product_id) as any)?.uom?.name || '-') : '-' }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit</label>
+            <div>{{ selectedSaleItem.unit_id ? (findUnit(selectedSaleItem.unit_id)?.name + (findUnit(selectedSaleItem.unit_id)?.serial_no ? ` (${findUnit(selectedSaleItem.unit_id)?.serial_no})` : '')) : '-' }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Qty</label>
@@ -1393,6 +1525,128 @@ function printReceipt(item: any, existingWindow?: Window | null) {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-base);
+  margin-bottom: var(--space-base);
+}
+
+.warranty-type-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.warranty-type-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  user-select: none;
+  background: var(--color-surface);
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+.warranty-type-check:hover {
+  border-color: var(--color-text-muted);
+}
+.warranty-type-check:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-surface);
+  color: var(--color-primary);
+  font-weight: var(--font-weight-medium);
+}
+.warranty-type-check input {
+  accent-color: var(--color-primary);
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.step-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-base);
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.stepper-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xl);
+  padding: 0 var(--space-lg);
+}
+
+.stepper-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+}
+
+.step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-surface-raised);
+  border: 2px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  transition: all 0.3s ease;
+}
+
+.stepper-item.active .step-circle {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: white;
+  box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb), 0.1);
+}
+
+.stepper-item.completed .step-circle {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: white;
+}
+
+.step-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  transition: all 0.3s ease;
+}
+
+.stepper-item.active .step-label {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.stepper-item.completed .step-label {
+  color: var(--color-success);
+}
+
+.stepper-line {
+  flex: 1;
+  height: 2px;
+  background: var(--color-border);
+  margin: 0 12px;
+  position: relative;
+  top: -10px;
+  z-index: 1;
+  transition: background 0.3s ease;
+}
+
+.stepper-line.active {
+  background: var(--color-success);
 }
 
 .form-section-title {
@@ -1405,7 +1659,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
 
 .sale-item-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr auto;
+  grid-template-columns: minmax(120px, 2fr) minmax(120px, 2fr) 80px 140px auto;
   gap: var(--space-sm);
   align-items: end;
 }
