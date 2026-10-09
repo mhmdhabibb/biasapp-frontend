@@ -3,6 +3,7 @@
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
@@ -152,9 +153,14 @@ const doForm = ref({
   customer_name: '',
   technician_name: '',
   customer_category: '',
+  photo_after: '',
 })
+const fileInputAfter = ref<HTMLInputElement | null>(null)
 const isDoFormInit = ref(false)
 const isSavingDoForm = ref(false)
+const showCompleteDeliveryConfirm = ref(false)
+const showNewStandaloneConfirm = ref(false)
+const showAcceptDeliveryConfirm = ref(false)
 
 const customerCategoryOptions = [
   { value: 'Corporate', label: 'Corporate' },
@@ -177,6 +183,7 @@ function initDoForm() {
     customer_name: d.customer_name || (theCustomer?.pic_name || theCustomer?.name || ''),
     technician_name: d.technician_name || currentUser.value?.name || '',
     customer_category: d.customer_category || theCustomer?.category || '',
+    photo_after: d.photo_after || '',
   }
   isDoFormInit.value = true
 }
@@ -193,17 +200,55 @@ watchEffect(() => {
 
 const isDeliveryFormCompleted = computed(() => {
   const f = doForm.value
-  return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature && !!(f.customer_name || '').trim()
+  return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature && !!(f.customer_name || '').trim() && !!f.photo_after
 })
+
+function handlePhotoFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = (ev) => {
+    const img = new Image()
+    img.onload = () => {
+      let width = img.width
+      let height = img.height
+      const max = 1024
+      if (width > height && width > max) {
+        height = Math.round(height * (max / width))
+        width = max
+      } else if (height > max) {
+        width = Math.round(width * (max / height))
+        height = max
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d')?.drawImage(img, 0, 0, width, height)
+      doForm.value.photo_after = canvas.toDataURL('image/jpeg', 0.6)
+    }
+    img.src = ev.target?.result as string
+  }
+  reader.readAsDataURL(file)
+}
+
+function clearPhoto() {
+  doForm.value.photo_after = ''
+  if (fileInputAfter.value) fileInputAfter.value.value = ''
+}
 
 function nowHM(): string {
   const d = new Date()
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-async function acceptDeliveryJob() {
+function initAcceptDeliveryJob() {
   if (!job.value || !deliveryOrder.value) return
-  if (!confirm('Are you sure you want to accept this delivery job now? Start time (time_in) will be recorded.')) return
+  showAcceptDeliveryConfirm.value = true
+}
+
+async function executeAcceptDeliveryJob() {
+  showAcceptDeliveryConfirm.value = false
   isSavingDoForm.value = true
   try {
     const timeIn = nowHM()
@@ -236,13 +281,17 @@ async function saveDeliveryForm(silent = false) {
   }
 }
 
-async function completeDeliveryJob() {
+function initCompleteDeliveryJob() {
   if (!job.value || !deliveryOrder.value) return
   if (!isDeliveryFormCompleted.value) {
-    toast.warning('Please complete the service history form first (action, tested, completed + signatures).')
+    toast.warning('Please complete the service history form first (action, foto, tested, completed + signatures).')
     return
   }
-  if (!confirm('Are you sure you want to complete this delivery? End time (time_out) will be recorded.')) return
+  showCompleteDeliveryConfirm.value = true
+}
+
+async function executeCompleteDeliveryJob() {
+  showCompleteDeliveryConfirm.value = false
   isSavingDoForm.value = true
   try {
     const timeOut = nowHM()
@@ -254,16 +303,23 @@ async function completeDeliveryJob() {
     toast.success('Delivery completed. End time recorded.')
     await refreshInBackground()
     
-    if (confirm('Job berhasil diselesaikan! Apakah ada tambahan servis unit lain (Buat SH Stand Alone) di lokasi ini?')) {
-      await createStandalone();
-    } else {
-      router.push('/technician/call-services')
-    }
+    showNewStandaloneConfirm.value = true
   } catch (err: any) {
     toast.error(err.message || 'Failed to complete delivery')
-  } finally {
     isSavingDoForm.value = false
   }
+}
+
+async function executeNewStandaloneDelivery() {
+  showNewStandaloneConfirm.value = false
+  isSavingDoForm.value = false
+  await createStandalone();
+}
+
+function declineNewStandaloneDelivery() {
+  showNewStandaloneConfirm.value = false
+  isSavingDoForm.value = false
+  router.push('/technician/call-services')
 }
 
 const slaDurationStr = computed(() => {
@@ -646,7 +702,7 @@ async function createStandalone() {
 
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
           <p class="mb-lg text-muted">You have not accepted this delivery yet.</p>
-          <button v-if="can('delivery_order:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="acceptDeliveryJob">
+          <button v-if="can('delivery_order:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="initAcceptDeliveryJob">
             {{ isSavingDoForm ? 'Accepting...' : 'Accept Delivery Job' }}
           </button>
         </div>
@@ -682,6 +738,19 @@ async function createStandalone() {
               <input type="checkbox" v-model="doForm.is_completed"> Is Completed?
             </label>
           </div>
+          <div class="form-group mt-md">
+            <label class="form-label">Foto Sesudah Pengantaran <span class="text-danger">*</span></label>
+            <div class="photo-upload-wrapper" style="border: 2px dashed var(--color-border); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
+              <div v-if="!doForm.photo_after">
+                <p class="text-sm text-muted mb-sm">Gunakan kamera atau pilih file gambar</p>
+                <input type="file" accept="image/*" capture="environment" @change="handlePhotoFile" ref="fileInputAfter" class="form-input" style="max-width: 300px; margin: 0 auto;">
+              </div>
+              <div v-else style="position: relative; display: inline-block;">
+                <img :src="doForm.photo_after" alt="Foto Sesudah" style="max-height: 200px; border-radius: 8px; object-fit: contain;">
+                <button class="btn btn-danger btn-sm" style="position: absolute; top: -10px; right: -10px; border-radius: 50%; width: 30px; height: 30px; padding: 0;" @click="clearPhoto" title="Hapus foto">×</button>
+              </div>
+            </div>
+          </div>
           <div class="responsive-flex mt-md">
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Technician Name</label>
@@ -700,13 +769,17 @@ async function createStandalone() {
             <button v-if="can('delivery_order:update')" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
               {{ isSavingDoForm ? 'Saving...' : 'Save Draft' }}
             </button>
-            <button v-if="can('delivery_order:update')" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="completeDeliveryJob">
+            <button v-if="can('delivery_order:update')" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
               {{ isSavingDoForm ? 'Saving...' : (isDeliveryFormCompleted ? '✅ Complete Delivery' : '🔒 Complete Form First') }}
             </button>
           </div>
         </div>
 
         <div v-else-if="job.status === 'completed'">
+          <div class="form-group mt-md mb-md" v-if="deliveryOrder?.photo_after" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
+            <div class="text-sm font-bold mb-sm">Foto Sesudah Pengantaran</div>
+            <img :src="deliveryOrder.photo_after" alt="Foto Sesudah" style="max-height: 200px; border-radius: 8px; object-fit: contain;">
+          </div>
           <div class="form-group">
             <label class="form-label">Problem</label>
             <div class="p-sm text-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-sm); white-space: pre-wrap;">{{ deliveryOrder?.problem || '-' }}</div>
@@ -1041,6 +1114,35 @@ async function createStandalone() {
         </button>
       </template>
     </FormModal>
+
+    <ConfirmDialog
+      :open="showAcceptDeliveryConfirm"
+      title="Accept Delivery Job?"
+      message="Are you sure you want to accept this delivery job now? Start time (time_in) will be recorded."
+      variant="info"
+      confirmLabel="Yes, Accept"
+      @close="showAcceptDeliveryConfirm = false"
+      @confirm="executeAcceptDeliveryJob"
+    />
+    <ConfirmDialog
+      :open="showCompleteDeliveryConfirm"
+      title="Complete Delivery?"
+      message="Are you sure you want to complete this delivery? End time (time_out) will be recorded."
+      variant="success"
+      confirmLabel="Yes, Complete"
+      @close="showCompleteDeliveryConfirm = false"
+      @confirm="executeCompleteDeliveryJob"
+    />
+    <ConfirmDialog
+      :open="showNewStandaloneConfirm"
+      title="Job berhasil diselesaikan!"
+      message="Apakah ada tambahan servis unit lain (Buat SH Stand Alone) di lokasi ini?"
+      variant="success"
+      confirmLabel="Ya, Buat Baru"
+      cancelLabel="Tidak, Kembali"
+      @close="declineNewStandaloneDelivery"
+      @confirm="executeNewStandaloneDelivery"
+    />
 
   </div>
 </template>

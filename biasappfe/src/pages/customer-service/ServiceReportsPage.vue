@@ -766,6 +766,13 @@ function printTable() {
             </table>
           </div>
         </section>
+
+        <section class="detail-items" v-if="doDetailItem?.photo_after" style="margin-top: 24px;">
+          <h4>Foto Sesudah Pengantaran</h4>
+          <div style="margin-top: 12px; text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md);">
+            <img :src="doDetailItem.photo_after" alt="Foto Sesudah" style="max-height: 250px; max-width: 100%; border-radius: 8px; object-fit: contain; border: 1px solid var(--color-border-light);">
+          </div>
+        </section>
       </template>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="showDoDetail = false">Close</button>
