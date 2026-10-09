@@ -9,6 +9,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
@@ -75,7 +76,10 @@ const form = reactive({
 const isInit = ref(false)
 const isSaving = ref(false)
 const fileInputBefore = ref<HTMLInputElement | null>(null)
+const fileInputBefore = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
+const showCompleteConfirm = ref(false)
+const showNewSHConfirm = ref(false)
 
 function initForm() {
   if (!item.value || isInit.value) return
@@ -310,12 +314,16 @@ function initFormRefresh() {
   initForm()
 }
 
-async function completeForm() {
+function confirmCompleteForm() {
   if (!isCompleted.value) {
     toast.warning('Lengkapi dulu: 1 produk + action, tested, completed + tanda tangan + foto awal & akhir.')
     return
   }
-  if (!confirm('Selesaikan service history ini? Time out akan dicatat otomatis.')) return
+  showCompleteConfirm.value = true
+}
+
+async function executeCompleteForm() {
+  showCompleteConfirm.value = false
   isSaving.value = true
   try {
     const now = new Date()
@@ -325,35 +333,48 @@ async function completeForm() {
     await store.refreshOnly(['deliveryOrders'])
     toast.success('Service history selesai.')
     
-    if (confirm('Service history diselesaikan! Apakah ada unit tambahan (Buat SH baru) di lokasi ini?')) {
-      const newTimeIn = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`
-      // Warisi Project Name dari CS (lewati '-' peninggalan data lama).
-      const pickName = (...vals: any[]) => vals.map((v) => String(v || '').trim()).find((v) => v && v !== '-') || ''
-      const newDo = await resources.deliveryOrders.create({
-          do_type: 'service',
-          status: 'pending',
-          customer_id: item.value.customer_id,
-          customer_category: item.value.customer_category,
-          project_name: pickName(item.value.project_name),
-          delivery_address: item.value.delivery_address,
-          recipient_name: item.value.recipient_name,
-          recipient_phone: item.value.recipient_phone,
-          delivery_date: item.value.delivery_date || new Date().toISOString(),
-          technician_id: item.value.technician_id,
-          notes: item.value.notes,
-          time_in: newTimeIn,
-      })
-      toast.success('Service History baru dibuat.')
-      await store.refreshOnly(['deliveryOrders'])
-      router.push(`/technician/standalone-service-history/${(newDo as any).data.id}`)
-    } else {
-      router.push('/technician/standalone-service-history')
-    }
+    showNewSHConfirm.value = true
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menyelesaikan.')
+    isSaving.value = false
+  }
+}
+
+async function executeNewSH() {
+  showNewSHConfirm.value = false
+  isSaving.value = true
+  try {
+    const newTimeIn = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`
+    // Warisi Project Name dari CS (lewati '-' peninggalan data lama).
+    const pickName = (...vals: any[]) => vals.map((v) => String(v || '').trim()).find((v) => v && v !== '-') || ''
+    const newDo = await resources.deliveryOrders.create({
+        do_type: 'service',
+        status: 'pending',
+        customer_id: item.value.customer_id,
+        customer_category: item.value.customer_category,
+        project_name: pickName(item.value.project_name),
+        delivery_address: item.value.delivery_address,
+        recipient_name: item.value.recipient_name,
+        recipient_phone: item.value.recipient_phone,
+        delivery_date: item.value.delivery_date || new Date().toISOString(),
+        technician_id: item.value.technician_id,
+        notes: item.value.notes,
+        time_in: newTimeIn,
+    })
+    toast.success('Service History baru dibuat.')
+    await store.refreshOnly(['deliveryOrders'])
+    router.push(`/technician/standalone-service-history/${(newDo as any).data.id}`)
+  } catch (err: any) {
+    toast.error(err?.message || 'Gagal membuat SH baru.')
   } finally {
     isSaving.value = false
   }
+}
+
+function declineNewSH() {
+  showNewSHConfirm.value = false
+  isSaving.value = false
+  router.push('/technician/standalone-service-history')
 }
 
 function handlePrint() {
@@ -486,7 +507,7 @@ onMounted(async () => {
           {{ isSaving ? 'Menyimpan...' : 'Simpan Draft' }}
         </button>
         <button class="btn btn-outline" style="flex: 1;" @click="handlePrint">Print</button>
-        <button v-if="can('delivery_order:update')" class="btn btn-primary" style="flex: 2;" :disabled="isSaving || !isCompleted" @click="completeForm">
+        <button v-if="can('delivery_order:update')" class="btn btn-primary" style="flex: 2;" :disabled="isSaving || !isCompleted" @click="confirmCompleteForm">
           {{ isSaving ? 'Menyimpan...' : (isCompleted ? '✅ Selesaikan' : '🔒 Lengkapi Form Dulu') }}
         </button>
       </div>
@@ -556,6 +577,21 @@ onMounted(async () => {
         </div>
       </div>
     </FormModal>
+
+    <ConfirmDialog
+      :open="showCompleteConfirm"
+      title="Selesaikan Service History"
+      message="Selesaikan service history ini? Time out akan dicatat otomatis."
+      @close="showCompleteConfirm = false"
+      @confirm="executeCompleteForm"
+    />
+    <ConfirmDialog
+      :open="showNewSHConfirm"
+      title="Service history diselesaikan!"
+      message="Apakah ada unit tambahan (Buat SH baru) di lokasi ini?"
+      @close="declineNewSH"
+      @confirm="executeNewSH"
+    />
   </div>
   <div v-else class="card p-lg text-center text-muted">
     Data tidak ditemukan. <button class="btn btn-sm btn-outline" @click="router.back()">Kembali</button>

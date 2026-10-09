@@ -65,6 +65,14 @@ onActivated(() => {
   fetchJobs()
 })
 
+const mappedJobOrders = computed(() => {
+  return jobOrders.value.map(j => ({
+    ...j,
+    customer: getCustomerName(j),
+    unit: getUnitName(j)
+  }))
+})
+
 const customerOptions = computed(() =>
   store.customers.value.map((c: any) => ({ value: c.id, label: c.company_name || c.name }))
 )
@@ -296,7 +304,7 @@ async function exportToExcel() {
       </template>
     </PageHeader>
 
-    <DataTable :columns="columns" :data="jobOrders" search-placeholder="Search schedules..." @edit="openEdit" @row-click="openDetail">
+    <DataTable :columns="columns" :data="mappedJobOrders" search-placeholder="Search schedules..." @edit="openEdit" @row-click="openDetail">
       <template #cell-customer="{ row }">{{ getCustomerName(row) }}</template>
       <template #cell-unit="{ row }">{{ getUnitName(row) }}</template>
       <template #cell-scheduled_date="{ value }">
