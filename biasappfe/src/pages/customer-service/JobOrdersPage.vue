@@ -750,8 +750,8 @@ function cancelAssign() {
 async function confirmAssign() {
   if (!assignTarget.value || isAssigning.value) return;
 
-  if (!assignSignature.value) {
-    toast.error("Wajib tanda tangan sebelum assign.");
+  if (assignTarget.value.task.taskType === "do" && !assignSignature.value) {
+    toast.error("Wajib tanda tangan sebelum assign delivery order.");
     return;
   }
 
@@ -1821,7 +1821,7 @@ async function confirmAssign() {
           </p>
         </div>
 
-        <div class="form-group mt-lg">
+        <div class="form-group mt-lg" v-if="assignTarget?.task?.taskType === 'do'">
           <label class="form-label">Tanda Tangan CS / Admin <span class="text-danger">*</span></label>
           <SignaturePad v-model="assignSignature" height="160px" />
         </div>
