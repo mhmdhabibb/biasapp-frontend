@@ -71,6 +71,13 @@ onMounted(async () => {
   }
 })
 
+const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
+const isEditable = computed(() => {
+  if (isDeliveredOrCompleted.value) return false
+  if (currentUser.value?.role !== 'technician') return false
+  return true
+})
+
 function handlePhoto(event: Event, type: 'before' | 'after') {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
@@ -213,6 +220,7 @@ async function saveSignatures() {
     <div class="card p-lg mt-md">
       <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
       <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
+      <div v-else-if="!isEditable" class="text-center p-xl text-muted">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</div>
       <div v-else>
         <div class="wizard-steps" aria-label="Service report steps">
           <div v-for="(label, index) in ['Action', 'Sparepart', 'Signature']" :key="label" class="wizard-step" :class="{ active: currentStep === index + 1, complete: currentStep > index + 1 }">

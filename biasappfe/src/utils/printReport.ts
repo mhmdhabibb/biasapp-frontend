@@ -502,12 +502,12 @@ function photoDokumentasiBody(items: any[]): string {
     const repairAction = item.repair_action || item.action || "-";
 
     const photoBefore = item.photo_before
-      ? `<img src="${item.photo_before}" style="max-width:100%; max-height:160px; object-fit:contain; display:block; margin:0 auto;" />`
-      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0;">No Photo</div>`;
+      ? `<img src="${item.photo_before}" style="width:160px; height:120px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
+      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:160px; height:120px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
     const photoAfter = item.photo_after
-      ? `<img src="${item.photo_after}" style="max-width:100%; max-height:160px; object-fit:contain; display:block; margin:0 auto;" />`
-      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0;">No Photo</div>`;
+      ? `<img src="${item.photo_after}" style="width:160px; height:120px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
+      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:160px; height:120px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
     return `
       <tr>

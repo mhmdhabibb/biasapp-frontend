@@ -103,12 +103,25 @@ function initForm() {
   isInit.value = true
 }
 
+function formatTimeWithDate(timeStr: string, dateStr: string) {
+  if (!timeStr) return '';
+  if (!dateStr) return timeStr;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return timeStr;
+    const formattedDate = d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
+    return `${formattedDate}, ${timeStr}`;
+  } catch {
+    return timeStr;
+  }
+}
+
 // Aturan: 1 form Stand Alone = 1 produk. Tombol tambah hanya muncul bila
 // belum ada item, dan Selesaikan mensyaratkan minimal 1 item.
 const hasItem = computed(() => ((item.value as any)?.delivery_order_items || []).length > 0)
 
 const isCompleted = computed(() =>
-  !!(form.action || '').trim() && form.is_tested && form.is_completed && !!form.customer_signature && !!form.technician_signature && !!(form.customer_name || '').trim() && !!form.photo_before && hasItem.value,
+  !!(form.action || '').trim() && !!form.customer_signature && !!form.technician_signature && !!(form.customer_name || '').trim() && !!form.photo_before && hasItem.value,
 )
 
 function handlePhotoFile(e: Event, type: 'before' | 'after') {
@@ -278,6 +291,12 @@ const isPending = computed(() => String((item.value as any)?.status || '').toLow
 const isInProgress = computed(() => String((item.value as any)?.status || '').toLowerCase() === 'in_progress')
 const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String((item.value as any)?.status || '').toLowerCase()))
 
+const isEditable = computed(() => {
+  if (isDeliveredOrCompleted.value) return false
+  if (currentUser.value?.role !== 'technician') return false
+  return true
+})
+
 async function startJob() {
   isSaving.value = true
   try {
@@ -331,7 +350,7 @@ function initFormRefresh() {
 
 function confirmCompleteForm() {
   if (!isCompleted.value) {
-    toast.warning('Lengkapi dulu: 1 produk + action, tested, completed + tanda tangan + foto awal & akhir.')
+    toast.warning('Lengkapi dulu: 1 produk + action + tanda tangan + foto awal.')
     return
   }
   showCompleteConfirm.value = true
@@ -345,8 +364,49 @@ async function executeCompleteForm() {
     const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     form.time_out = form.time_out || hm
     await api.patch(`/delivery-orders/${id}`, { ...form, status: 'completed' })
+    
+    // Create follow-up job if unit is not fixed
+    if (!form.is_completed) {
+      const doRes = await api.get(`/delivery-orders/${id}`)
+      const doData = doRes.data
+      const newDo = await resources.deliveryOrders.create({
+        do_type: 'service',
+        status: 'pending',
+        customer_id: item.value.customer_id,
+        customer_category: item.value.customer_category,
+        project_name: item.value.project_name || '',
+        delivery_address: item.value.delivery_address,
+        recipient_name: item.value.recipient_name,
+        recipient_phone: item.value.recipient_phone,
+        delivery_date: new Date().toISOString(),
+        technician_id: item.value.technician_id,
+        notes: `Lanjutan dari perbaikan ${item.value.do_number || ''}`,
+      })
+      
+      const newDoId = (newDo as any).data.id
+      if (doData.delivery_order_items && doData.delivery_order_items.length > 0) {
+        for (const doi of doData.delivery_order_items) {
+           await resources.deliveryOrderItems.create({
+             delivery_order_id: newDoId,
+             unit_id: doi.unit_id,
+             product_id: doi.product_id,
+             brand_id: doi.brand_id,
+             unit_type_id: doi.unit_type_id,
+             model: doi.model,
+             serial_no: doi.serial_no,
+             warranty_status: doi.warranty_status,
+             warranty_expired_date: doi.warranty_expired_date,
+             qty: doi.qty,
+             remarks: doi.remarks
+           })
+        }
+      }
+      toast.success('Kunjungan selesai & Job Follow Up otomatis dibuat.')
+    } else {
+      toast.success('Service history selesai.')
+    }
+    
     await store.refreshOnly(['deliveryOrders'])
-    toast.success('Service history selesai.')
     
     showNewSHConfirm.value = true
   } catch (err: any) {
@@ -447,7 +507,7 @@ onMounted(async () => {
         </span>
       </div>
 
-      <div v-if="isPending" class="text-center py-xl">
+      <div v-if="isEditable && isPending" class="text-center py-xl">
         <p class="mb-lg text-muted">Mulai pekerjaan untuk mencatat waktu (Time In) dan mengisi form detail servis.</p>
         <button class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSaving" @click="startJob">
           {{ isSaving ? 'Memproses...' : 'Mulai Pekerjaan (Start Job)' }}
@@ -459,13 +519,13 @@ onMounted(async () => {
       <div class="items-box mb-lg">
         <div class="items-head">
           <strong>Unit / Product ({{ (item.delivery_order_items || []).length }})</strong>
-          <button v-if="can('delivery_order:update') && !hasItem" class="btn btn-sm btn-outline" @click="openItemModal">+ Tambah Item</button>
+          <button v-if="isEditable && can('delivery_order:update') && !hasItem" class="btn btn-sm btn-outline" @click="openItemModal">+ Tambah Item</button>
           <span v-else-if="hasItem" class="text-sm text-muted">1 form = 1 produk</span>
         </div>
         <div v-if="(item.delivery_order_items || []).length" class="mt-sm">
           <div v-for="it in item.delivery_order_items" :key="it.id" class="item-row">
             <span>{{ itemLabel(it) }} <span class="text-muted">x{{ it.qty || 1 }}</span><span v-if="it.remarks" class="text-muted"> — {{ it.remarks }}</span></span>
-            <button v-if="can('delivery_order:update')" class="btn btn-sm btn-outline btn-danger" @click="removeItem(it.id)">Hapus</button>
+            <button v-if="isEditable && can('delivery_order:update')" class="btn btn-sm btn-outline btn-danger" @click="removeItem(it.id)">Hapus</button>
           </div>
         </div>
         <p v-else class="text-sm text-muted mt-sm">Belum ada produk. Tambahkan 1 unit/mesin atau product yang dikerjakan.</p>
@@ -473,73 +533,79 @@ onMounted(async () => {
 
       <div class="form-group">
         <label class="form-label">Problem</label>
-        <textarea v-model="form.problem" class="form-textarea" rows="3" placeholder="Deskripsikan problem..."></textarea>
+        <textarea v-model="form.problem" class="form-textarea" rows="3" placeholder="Deskripsikan problem..." :disabled="!isEditable"></textarea>
       </div>
       <div class="form-group">
         <label class="form-label">Action / Repair <span class="text-danger">*</span></label>
-        <textarea v-model="form.action" class="form-textarea" rows="3" placeholder="Tindakan yang dilakukan..."></textarea>
+        <textarea v-model="form.action" class="form-textarea" rows="3" placeholder="Tindakan yang dilakukan..." :disabled="!isEditable"></textarea>
       </div>
       <div class="responsive-flex mb-md">
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Foto Awal (Sebelum Dikerjakan) <span class="text-danger">*</span></label>
-          <input ref="fileInputBefore" type="file" accept="image/*" capture="environment" class="form-input" @change="handlePhotoFile($event, 'before')" />
+          <input v-if="isEditable" ref="fileInputBefore" type="file" accept="image/*" capture="environment" class="form-input" @change="handlePhotoFile($event, 'before')" />
           <div v-if="form.photo_before" class="photo-preview">
             <img :src="form.photo_before" alt="Foto Awal" />
-            <button type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('before')">Hapus</button>
+            <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('before')">Hapus</button>
           </div>
         </div>
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Foto Akhir (Sesudah Dikerjakan)</label>
-          <input ref="fileInputAfter" type="file" accept="image/*" capture="environment" class="form-input" @change="handlePhotoFile($event, 'after')" />
+          <input v-if="isEditable" ref="fileInputAfter" type="file" accept="image/*" capture="environment" class="form-input" @change="handlePhotoFile($event, 'after')" />
           <div v-if="form.photo_after" class="photo-preview">
             <img :src="form.photo_after" alt="Foto Akhir" />
-            <button type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('after')">Hapus</button>
+            <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('after')">Hapus</button>
           </div>
         </div>
       </div>
       <div class="responsive-flex mb-md">
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Time In <span class="text-muted" style="font-weight: 400;">(otomatis saat form dibuat)</span></label>
-          <input v-model="form.time_in" type="time" class="form-input" readonly disabled />
+          <input v-if="currentUser?.role === 'technician' || isEditable" v-model="form.time_in" type="time" class="form-input" readonly disabled />
+          <input v-else :value="formatTimeWithDate(form.time_in, item?.created_at)" type="text" class="form-input" readonly disabled />
         </div>
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Time Out <span class="text-muted" style="font-weight: 400;">(otomatis saat selesai)</span></label>
-          <input v-model="form.time_out" type="time" class="form-input" readonly disabled placeholder="Otomatis" />
+          <input v-if="currentUser?.role === 'technician' || isEditable" v-model="form.time_out" type="time" class="form-input" readonly disabled placeholder="Otomatis" />
+          <input v-else :value="formatTimeWithDate(form.time_out, item?.updated_at)" type="text" class="form-input" readonly disabled />
         </div>
       </div>
       <div class="responsive-flex mb-md align-center">
-        <label style="display: flex; align-items: center; gap: 0.5rem;">
-          <input type="checkbox" v-model="form.is_tested" /> Is Tested?
+        <label style="display: flex; align-items: center; gap: 0.5rem;" :style="{ opacity: isEditable ? 1 : 0.7, pointerEvents: isEditable ? 'auto' : 'none' }">
+          <input type="checkbox" v-model="form.is_tested" :disabled="!isEditable" /> Is Tested?
         </label>
-        <label style="display: flex; align-items: center; gap: 0.5rem;">
-          <input type="checkbox" v-model="form.is_completed" /> Is Completed?
+        <label style="display: flex; align-items: center; gap: 0.5rem;" :style="{ opacity: isEditable ? 1 : 0.7, pointerEvents: isEditable ? 'auto' : 'none' }">
+          <input type="checkbox" v-model="form.is_completed" :disabled="!isEditable" /> Is Completed?
         </label>
       </div>
       <div class="responsive-flex mt-md">
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Technician Name</label>
           <input v-model="form.technician_name" type="text" class="form-input" readonly disabled />
-          <label class="form-label mt-sm">Technician Signature <span class="text-danger">*</span></label>
-          <SignaturePad v-model="form.technician_signature" height="150px" />
+          <label class="form-label mt-sm">Technician Signature <span v-if="isEditable" class="text-danger">*</span></label>
+          <div :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+            <SignaturePad v-model="form.technician_signature" height="150px" />
+          </div>
         </div>
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Customer / PIC Name <span class="text-danger">*</span></label>
-          <input v-model="form.customer_name" type="text" class="form-input" placeholder="Nama PIC customer" />
-          <label class="form-label mt-sm">Customer Signature <span class="text-danger">*</span></label>
-          <SignaturePad v-model="form.customer_signature" height="150px" />
+          <label class="form-label">Customer / PIC Name <span v-if="isEditable" class="text-danger">*</span></label>
+          <input v-model="form.customer_name" type="text" class="form-input" placeholder="Nama PIC customer" :disabled="!isEditable" />
+          <label class="form-label mt-sm">Customer Signature <span v-if="isEditable" class="text-danger">*</span></label>
+          <div :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+            <SignaturePad v-model="form.customer_signature" height="150px" />
+          </div>
         </div>
       </div>
 
       <div class="mt-lg responsive-flex">
-        <button v-if="can('delivery_order:update')" class="btn btn-outline" style="flex: 1;" :disabled="isSaving" @click="saveDraft">
+        <button v-if="isEditable && can('delivery_order:update')" class="btn btn-outline" style="flex: 1;" :disabled="isSaving" @click="saveDraft">
           {{ isSaving ? 'Menyimpan...' : 'Simpan Draft' }}
         </button>
         <button class="btn btn-outline" style="flex: 1;" @click="handlePrint">Print</button>
-        <button v-if="can('delivery_order:update')" class="btn btn-primary" style="flex: 2;" :disabled="isSaving || !isCompleted" @click="confirmCompleteForm">
+        <button v-if="isEditable && can('delivery_order:update')" class="btn btn-primary" style="flex: 2;" :disabled="isSaving || !isCompleted" @click="confirmCompleteForm">
           {{ isSaving ? 'Menyimpan...' : (isCompleted ? '✅ Selesaikan' : '🔒 Lengkapi Form Dulu') }}
         </button>
       </div>
-      <div v-if="can('delivery_order:delete') && isPending" class="mt-md text-center">
+      <div v-if="isEditable && can('delivery_order:delete') && isPending" class="mt-md text-center">
         <button class="btn btn-sm btn-outline btn-danger" :disabled="isSaving" @click="removeForm">
           Hapus form ini (masih pending)
         </button>
@@ -609,8 +675,8 @@ onMounted(async () => {
 
     <ConfirmDialog
       :open="showCompleteConfirm"
-      title="Selesaikan Service History"
-      message="Selesaikan service history ini? Time out akan dicatat otomatis."
+      title="Konfirmasi Selesai Kunjungan"
+      :message="form.is_completed ? 'Unit sudah selesai diperbaiki. Anda yakin ingin menutup job ini?' : 'Unit BELUM selesai diperbaiki (Completed tidak dicentang). Sistem akan menutup kunjungan ini dan otomatis membuat job lanjutan (Follow Up) dengan status Pending. Lanjutkan?'"
       @close="showCompleteConfirm = false"
       @confirm="executeCompleteForm"
     />

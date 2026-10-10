@@ -98,10 +98,21 @@ const customerFilterOptions = computed(() => [
   })),
 ])
 
+import { useRoute } from 'vue-router'
+
 function matchesCustomer(id: any): boolean {
   if (!customerFilter.value) return true
   return String(id) === customerFilter.value
 }
+
+const route = useRoute()
+import { onMounted } from 'vue'
+
+onMounted(() => {
+  if (route.query.customer_id) {
+    customerFilter.value = String(route.query.customer_id)
+  }
+})
 
 // Sparepart request tidak menyimpan customer_id langsung — ditelusuri
 // lewat service_report_id → service report → customer_id.

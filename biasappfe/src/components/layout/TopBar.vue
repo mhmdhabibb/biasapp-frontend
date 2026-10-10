@@ -9,7 +9,7 @@ defineProps<{ title: string; hideHamburger?: boolean }>();
 defineEmits<{ (e: "toggle-sidebar"): void }>();
 
 const router = useRouter();
-const { notifications, fetchAll, markRead } = useNotificationsStore();
+const { notifications, fetchAll, markRead, clearAll } = useNotificationsStore();
 const { currentUser } = useAuth();
 const showNotif = ref(false);
 
@@ -118,8 +118,16 @@ async function openNotification(notification: Notification) {
         </button>
 
         <div v-if="showNotif" class="notif-dropdown">
-          <div class="notif-header">
+          <div class="notif-header" style="display: flex; justify-content: space-between; align-items: center;">
             <h4>Notifications</h4>
+            <button
+              v-if="filteredNotifications.length"
+              class="btn btn-sm btn-outline text-danger"
+              @click="clearAll"
+              style="padding: 2px 8px; font-size: 12px; border: none; background: transparent; text-decoration: underline;"
+            >
+              Clear All
+            </button>
           </div>
           <div class="notif-body">
             <div v-if="!filteredNotifications.length" class="notif-empty">
@@ -134,9 +142,7 @@ async function openNotification(notification: Notification) {
                 stroke-linejoin="round"
                 style="color: var(--color-text-muted); margin-bottom: 8px"
               >
-                <path
-                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-                ></path>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
                 <line x1="9" y1="15" x2="15" y2="15"></line>
               </svg>
@@ -149,11 +155,17 @@ async function openNotification(notification: Notification) {
               :class="{ 'notif-item-unread': !notification.is_read }"
               @click="openNotification(notification)"
             >
-              <span class="notif-item-title">{{ notification.title }}</span>
-              <span class="notif-item-message">{{ notification.message }}</span>
-              <time>{{
-                new Date(notification.created_at).toLocaleString("id-ID")
-              }}</time>
+              <div class="notif-icon-wrapper" style="background: rgba(var(--color-primary-rgb, 59, 130, 246), 0.1); color: var(--color-primary); padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 01-3.46 0"></path>
+                </svg>
+              </div>
+              <div class="notif-content" style="flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 2px;">
+                <span class="notif-item-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ notification.title }}</span>
+                <span class="notif-item-message" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">{{ notification.message }}</span>
+                <time style="margin-top: 4px;">{{ new Date(notification.created_at).toLocaleString("id-ID") }}</time>
+              </div>
             </button>
           </div>
         </div>
@@ -281,6 +293,9 @@ async function openNotification(notification: Notification) {
   right: -8px;
   width: 320px;
   max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -293,6 +308,7 @@ async function openNotification(notification: Notification) {
   padding: 16px;
   border-bottom: 1px solid var(--color-border-light);
   background: var(--color-surface);
+  flex-shrink: 0;
 }
 
 .notif-header h4 {
@@ -303,9 +319,10 @@ async function openNotification(notification: Notification) {
 }
 
 .notif-body {
-  max-height: 320px;
+  max-height: 400px;
   overflow-y: auto;
   background: var(--color-surface-sunken);
+  flex-grow: 1;
 }
 
 .notif-empty {
@@ -331,9 +348,10 @@ async function openNotification(notification: Notification) {
 }
 
 .notif-item {
-  display: grid;
+  display: flex;
+  align-items: flex-start;
   width: 100%;
-  gap: 5px;
+  gap: 12px;
   padding: 12px 16px;
   border: 0;
   border-bottom: 1px solid var(--color-border-light);

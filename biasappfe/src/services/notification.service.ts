@@ -22,4 +22,7 @@ export const notificationService = {
   hardRemove(id: string) {
     return api.delete<ApiResponse<null>>(`/notifications/${id}?permanent=true`);
   },
+  clearAll() {
+    return api.delete<ApiResponse<null>>(`/notifications/`);
+  },
 };

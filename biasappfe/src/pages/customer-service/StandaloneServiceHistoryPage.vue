@@ -268,8 +268,7 @@ function handlePrint(row: any) {
         </span>
       </template>
       <template #actions="{ row }">
-        <button v-if="can('delivery_order:update')" class="btn btn-sm btn-outline" @click="openEdit(row)">Edit Customer</button>
-        <button v-if="can('delivery_order:read') && hasDeliveryHistory(row)" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="handlePrint(row)">Print</button>
+        <button v-if="can('delivery_order:read') && row.status !== 'pending' && hasDeliveryHistory(row)" class="btn btn-sm btn-outline" @click="handlePrint(row)">Print</button>
         <button v-if="can('delivery_order:delete')" class="btn btn-sm btn-outline btn-danger" style="margin-left: 0.5rem;" @click="openDelete(row)">Hapus</button>
       </template>
     </DataTable>

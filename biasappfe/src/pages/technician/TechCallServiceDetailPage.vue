@@ -75,6 +75,12 @@ const contract = computed(() => {
 })
 
 // ── Delivery jobs (JO dari delivery order) ──
+const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
+const isEditable = computed(() => {
+  if (isDeliveredOrCompleted.value) return false
+  if (currentUser.value?.role !== 'technician') return false
+  return true
+})
 // Hanya job yang benar-benar terhubung ke delivery order (bukan sekadar
 // label job_type) yang menampilkan Service History Form.
 function hasDeliveryOrder(j: any): boolean {
@@ -139,6 +145,19 @@ function standaloneStatusClass(st: any): string {
   if (st?.status === 'delivered') return 'badge-success'
   if (st?.status === 'in_transit') return 'badge-info'
   return 'badge-warning'
+}
+
+function formatTimeWithDate(timeStr: string, dateStr: string) {
+  if (!timeStr) return '';
+  if (!dateStr) return timeStr;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return timeStr;
+    const formattedDate = d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
+    return `${formattedDate}, ${timeStr}`;
+  } catch {
+    return timeStr;
+  }
 }
 
 const doForm = ref({
@@ -702,7 +721,7 @@ async function createStandalone() {
 
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
           <p class="mb-lg text-muted">You have not accepted this delivery yet.</p>
-          <button v-if="can('delivery_order:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="initAcceptDeliveryJob">
+          <button v-if="isEditable && can('delivery_order:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="initAcceptDeliveryJob">
             {{ isSavingDoForm ? 'Accepting...' : 'Accept Delivery Job' }}
           </button>
         </div>
@@ -710,7 +729,7 @@ async function createStandalone() {
         <div v-else-if="job.status === 'in_progress'">
           <div class="form-group">
             <label class="form-label">Problem</label>
-            <textarea v-model="doForm.problem" class="form-textarea" rows="3" placeholder="Describe the problem..."></textarea>
+            <textarea v-model="doForm.problem" class="form-textarea" rows="3" placeholder="Describe the problem..." :disabled="!isEditable"></textarea>
           </div>
           <div class="form-group">
             <label class="form-label">Customer Type</label>
@@ -718,36 +737,38 @@ async function createStandalone() {
           </div>
           <div class="form-group">
             <label class="form-label">Action / Repair <span class="text-danger">*</span></label>
-            <textarea v-model="doForm.action" class="form-textarea" rows="3" placeholder="Action taken..."></textarea>
+            <textarea v-model="doForm.action" class="form-textarea" rows="3" placeholder="Action taken..." :disabled="!isEditable"></textarea>
           </div>
           <div class="responsive-flex mb-md">
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Time In (Auto)</label>
-              <input v-model="doForm.time_in" type="time" class="form-input" readonly disabled>
+              <input v-if="currentUser?.role === 'technician' || isEditable" v-model="doForm.time_in" type="time" class="form-input" readonly disabled>
+              <input v-else :value="formatTimeWithDate(doForm.time_in, job?.created_at)" type="text" class="form-input" readonly disabled />
             </div>
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Time Out (Auto)</label>
-              <input v-model="doForm.time_out" type="time" class="form-input" readonly disabled placeholder="Auto at completion">
+              <input v-if="currentUser?.role === 'technician' || isEditable" v-model="doForm.time_out" type="time" class="form-input" readonly disabled placeholder="Auto at completion">
+              <input v-else :value="formatTimeWithDate(doForm.time_out, job?.updated_at)" type="text" class="form-input" readonly disabled />
             </div>
           </div>
           <div class="responsive-flex mb-md align-center">
-            <label style="display: flex; align-items: center; gap: 0.5rem;">
-              <input type="checkbox" v-model="doForm.is_tested"> Is Tested?
+            <label style="display: flex; align-items: center; gap: 0.5rem;" :style="{ opacity: isEditable ? 1 : 0.7, pointerEvents: isEditable ? 'auto' : 'none' }">
+              <input type="checkbox" v-model="doForm.is_tested" :disabled="!isEditable"> Is Tested?
             </label>
-            <label style="display: flex; align-items: center; gap: 0.5rem;">
-              <input type="checkbox" v-model="doForm.is_completed"> Is Completed?
+            <label style="display: flex; align-items: center; gap: 0.5rem;" :style="{ opacity: isEditable ? 1 : 0.7, pointerEvents: isEditable ? 'auto' : 'none' }">
+              <input type="checkbox" v-model="doForm.is_completed" :disabled="!isEditable"> Is Completed?
             </label>
           </div>
           <div class="form-group mt-md">
             <label class="form-label">Foto Sesudah Pengantaran</label>
             <div class="photo-upload-wrapper" style="border: 2px dashed var(--color-border); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
-              <div v-if="!doForm.photo_after">
+              <div v-if="!doForm.photo_after && isEditable">
                 <p class="text-sm text-muted mb-sm">Gunakan kamera atau pilih file gambar</p>
                 <input type="file" accept="image/*" capture="environment" @change="handlePhotoFile" ref="fileInputAfter" class="form-input" style="max-width: 300px; margin: 0 auto;">
               </div>
-              <div v-else style="position: relative; display: inline-block;">
+              <div v-else-if="doForm.photo_after" style="position: relative; display: inline-block;">
                 <img :src="doForm.photo_after" alt="Foto Sesudah" style="max-height: 200px; border-radius: 8px; object-fit: contain;">
-                <button class="btn btn-danger btn-sm" style="position: absolute; top: -10px; right: -10px; border-radius: 50%; width: 30px; height: 30px; padding: 0;" @click="clearPhoto" title="Hapus foto">×</button>
+                <button v-if="isEditable" class="btn btn-danger btn-sm" style="position: absolute; top: -10px; right: -10px; border-radius: 50%; width: 30px; height: 30px; padding: 0;" @click="clearPhoto" title="Hapus foto">×</button>
               </div>
             </div>
           </div>
@@ -755,21 +776,25 @@ async function createStandalone() {
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Technician Name</label>
               <input v-model="doForm.technician_name" type="text" class="form-input" readonly disabled>
-              <label class="form-label mt-sm">Technician Signature <span class="text-danger">*</span></label>
-              <SignaturePad v-model="doForm.technician_signature" height="150px" />
+              <label class="form-label mt-sm">Technician Signature <span v-if="isEditable" class="text-danger">*</span></label>
+              <div :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+                <SignaturePad v-model="doForm.technician_signature" height="150px" />
+              </div>
             </div>
             <div class="form-group" style="flex: 1;">
-              <label class="form-label">Customer / PIC Name <span class="text-danger">*</span></label>
-              <input v-model="doForm.customer_name" type="text" class="form-input" placeholder="Customer PIC name">
-              <label class="form-label mt-sm">Customer Signature <span class="text-danger">*</span></label>
-              <SignaturePad v-model="doForm.customer_signature" height="150px" />
+              <label class="form-label">Customer / PIC Name <span v-if="isEditable" class="text-danger">*</span></label>
+              <input v-model="doForm.customer_name" type="text" class="form-input" placeholder="Customer PIC name" :disabled="!isEditable">
+              <label class="form-label mt-sm">Customer Signature <span v-if="isEditable" class="text-danger">*</span></label>
+              <div :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+                <SignaturePad v-model="doForm.customer_signature" height="150px" />
+              </div>
             </div>
           </div>
           <div class="mt-lg responsive-flex">
-            <button v-if="can('delivery_order:update')" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
+            <button v-if="isEditable && can('delivery_order:update')" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
               {{ isSavingDoForm ? 'Saving...' : 'Save Draft' }}
             </button>
-            <button v-if="can('delivery_order:update')" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
+            <button v-if="isEditable && can('delivery_order:update')" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
               {{ isSavingDoForm ? 'Saving...' : (isDeliveryFormCompleted ? '✅ Complete Delivery' : '🔒 Complete Form First') }}
             </button>
           </div>
@@ -868,7 +893,7 @@ async function createStandalone() {
 
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
           <p class="mb-lg text-muted">You have not accepted this job yet.</p>
-          <button v-if="can('service_report:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptJob">
+          <button v-if="isEditable && can('service_report:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptJob">
             {{ isPreparingForm ? 'Preparing form...' : 'Accept Job' }}
           </button>
         </div>
@@ -876,7 +901,7 @@ async function createStandalone() {
         <div v-else-if="job.status === 'in_progress'">
           <div v-if="!serviceReport" class="mb-lg p-md text-center text-muted" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
             <p class="text-sm mb-sm">Inspection form is not available yet.</p>
-            <button v-if="can('service_report:update')" class="btn btn-outline" :disabled="isPreparingForm" @click="acceptJob">
+            <button v-if="isEditable && can('service_report:update')" class="btn btn-outline" :disabled="isPreparingForm" @click="acceptJob">
               {{ isPreparingForm ? 'Preparing form...' : 'Try Preparing Form' }}
             </button>
           </div>
@@ -930,10 +955,10 @@ async function createStandalone() {
                 <span>></span>
               </button>
             </div>
-            <button class="btn btn-outline w-full mb-md" style="padding: var(--space-md); font-size: 16px; border-color: var(--color-primary); color: var(--color-primary);" :disabled="isCreatingStandalone" @click="createStandalone">
+            <button v-if="isEditable" class="btn btn-outline w-full mb-md" style="padding: var(--space-md); font-size: 16px; border-color: var(--color-primary); color: var(--color-primary);" :disabled="isCreatingStandalone" @click="createStandalone">
               {{ isCreatingStandalone ? 'Membuat form...' : '➕ Tambah Unit Bermasalah (Stand Alone)' }}
             </button>
-            <button v-if="can('service_report:update')" class="btn btn-primary w-full" :disabled="!isAllFormsCompleted" style="padding: var(--space-md); font-size: 16px;" @click="completeJob">
+            <button v-if="isEditable && can('service_report:update')" class="btn btn-primary w-full" :disabled="!isAllFormsCompleted" style="padding: var(--space-md); font-size: 16px;" @click="completeJob">
               {{ isAllFormsCompleted ? '✅ Complete Service' : '🔒 Complete Forms First' }}
             </button>
           </div>

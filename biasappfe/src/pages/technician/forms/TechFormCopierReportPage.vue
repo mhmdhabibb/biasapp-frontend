@@ -85,6 +85,13 @@ const form = ref({
 const isLoading = ref(true)
 const isSaving = ref(false)
 
+const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
+const isEditable = computed(() => {
+  if (isDeliveredOrCompleted.value) return false
+  if (currentUser.value?.role !== 'technician') return false
+  return true
+})
+
 const copyQualityOptions = [
   { value: 'Good', label: 'Good' },
   { value: 'Fair', label: 'Fair' },
@@ -380,6 +387,7 @@ async function saveForm() {
     <div class="card p-lg mt-md">
       <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
       <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
+      <div v-else-if="!isEditable" class="text-center p-xl text-muted">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</div>
       <template v-else>
       <template v-if="meterSections.length > 0">
         <div v-for="sec in meterSections" :key="sec.paper_size_id || 'general'" class="size-card">

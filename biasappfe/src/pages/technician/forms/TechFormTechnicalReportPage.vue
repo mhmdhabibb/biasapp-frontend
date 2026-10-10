@@ -71,6 +71,13 @@ onMounted(async () => {
   }
 })
 
+const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
+const isEditable = computed(() => {
+  if (isDeliveredOrCompleted.value) return false
+  if (currentUser.value?.role !== 'technician') return false
+  return true
+})
+
 const fileInputBefore = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
 
@@ -202,6 +209,7 @@ async function saveForm() {
     <div class="card p-lg mt-md">
       <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
       <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
+      <div v-else-if="!isEditable" class="text-center p-xl text-muted">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</div>
       <template v-else>
       <!-- 1. Customer Type -->
       <div class="form-group">

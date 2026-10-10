@@ -49,6 +49,11 @@ export function useNotificationsStore() {
     await fetchAll();
   }
 
+  async function clearAll() {
+    await notificationService.clearAll();
+    await fetchAll();
+  }
+
   return {
     notifications,
     isLoading,
@@ -58,6 +63,7 @@ export function useNotificationsStore() {
     update,
     remove,
     hardRemove,
+    clearAll,
     markRead,
   };
 }
