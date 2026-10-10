@@ -70,6 +70,8 @@ const deletingItem = ref<Unit | null>(null)
 // type_id is the json key expected by backend, frontend had unit_type_id
 const form = reactive({
   serial_no: '',
+  serial_numbers: [] as string[],
+  temp_serial: '',
   brand_id: null as string | null,
   type_id: null as string | null,
   uom_id: '' as string | null,
@@ -112,7 +114,7 @@ watch([() => form.brand_id, () => form.model], ([newBrand, newModel]) => {
 })
 
 function openAdd() {
-  Object.assign(form, { serial_no: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', price: null, is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, free_quota_bw: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
+  Object.assign(form, { serial_no: '', serial_numbers: [], temp_serial: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', price: null, is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, free_quota_bw: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
   showModal.value = true
 }
 
@@ -120,6 +122,8 @@ function openEdit(item: any) {
   editingItem.value = item
   Object.assign(form, {
     serial_no: item.serial_no,
+    serial_numbers: [],
+    temp_serial: '',
     brand_id: item.brand_id,
     type_id: item.type_id,
     uom_id: item.uom_id ?? '',
@@ -147,7 +151,11 @@ function openEdit(item: any) {
 }
 
 async function handleSubmit() {
-  if (!form.brand_id || !form.type_id || !form.name.trim() || !form.serial_no.trim()) {
+  if (form.temp_serial.trim()) {
+    addSerialNumber()
+  }
+
+  if (!form.brand_id || !form.type_id || !form.name.trim() || (editingItem.value && !form.serial_no.trim())) {
     toast.warning('Please complete all required fields (Unit Name, Brand, Type, Serial Number).')
     return
   }
@@ -160,8 +168,17 @@ async function handleSubmit() {
       await resources.units.update(String(editingItem.value.id), payload)
       toast.success("Unit updated successfully!")
     } else {
-      await resources.units.create(payload)
-      toast.success("Unit saved successfully!")
+      const serials = form.serial_numbers
+      if (serials.length === 0) {
+        toast.warning('Please provide at least one valid Serial Number.')
+        return
+      }
+      
+      const promises = serials.map(sn => {
+         return resources.units.create({ ...payload, serial_no: sn })
+      })
+      await Promise.all(promises)
+      toast.success(serials.length > 1 ? `${serials.length} units saved successfully!` : "Unit saved successfully!")
     }
     await fetchData()
     showModal.value = false
@@ -169,6 +186,14 @@ async function handleSubmit() {
     console.error('Failed to save unit:', error)
     toast.error('Failed to save Unit data: ' + (error.message || 'An error occurred'))
   }
+}
+
+function addSerialNumber() {
+  const sn = form.temp_serial.trim().toUpperCase()
+  if (sn && !form.serial_numbers.includes(sn)) {
+    form.serial_numbers.push(sn)
+  }
+  form.temp_serial = ''
 }
 
 function openDelete(item: Unit) { deletingItem.value = item; showConfirm.value = true }
@@ -294,8 +319,28 @@ const badgeFalse = {
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'"
       @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="unit-serial" class="form-label">Serial Number</label>
-        <input id="unit-serial" v-model="form.serial_no" @input="form.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input" style="text-transform: uppercase;"
+        <label for="unit-serial" class="form-label">
+          Serial Number 
+          <span v-if="!editingItem" style="font-weight:normal; font-size: 0.85em; color: var(--color-text-light);">(Tekan enter atau koma untuk menambah)</span>
+        </label>
+        
+        <div v-if="!editingItem" class="tags-input-container" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; border: 1px solid var(--color-border); border-radius: 6px; min-height: 42px; align-items: center; background: var(--color-surface); transition: border-color 0.2s;">
+          <span v-for="(sn, index) in form.serial_numbers" :key="index" class="badge" style="background-color: var(--color-primary); color: white; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">
+            {{ sn }}
+            <button type="button" @click="form.serial_numbers.splice(index, 1)" style="background: transparent; border: none; color: white; cursor: pointer; padding: 0; display: flex; align-items: center; font-size: 1.1rem; line-height: 1;">&times;</button>
+          </span>
+          <input 
+            type="text" 
+            v-model="form.temp_serial" 
+            @keydown.enter.prevent="addSerialNumber"
+            @keydown.comma.prevent="addSerialNumber"
+            @blur="addSerialNumber"
+            style="flex: 1; min-width: 140px; border: none; outline: none; background: transparent; text-transform: uppercase; padding: 2px 0; font-size: 0.875rem; color: var(--color-text);"
+            placeholder="Ketik SN lalu tekan Enter"
+          />
+        </div>
+        
+        <input v-else id="unit-serial" v-model="form.serial_no" @input="form.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input" style="text-transform: uppercase;"
           placeholder="Unit serial number">
       </div>
       <div class="form-group">

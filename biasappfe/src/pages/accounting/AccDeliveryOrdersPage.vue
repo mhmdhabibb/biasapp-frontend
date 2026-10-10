@@ -10,6 +10,7 @@ import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import type { ProcurementDeliveryOrder, TableColumn } from '@/types'
 import { reactive, ref } from 'vue'
+import { printDeliveryOrder } from '@/utils/printDeliveryOrder'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -207,6 +208,18 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
               <path d="M8 6V4h8v2" />
               <path d="m19 6-1 14H6L5 6" />
               <path d="M10 11v5M14 11v5" />
+            </svg>
+          </button>
+          <button
+            class="action-btn action-btn--print"
+            title="Print Delivery Order"
+            aria-label="Print delivery order"
+            @click="printDeliveryOrder(row)"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
             </svg>
           </button>
           <button

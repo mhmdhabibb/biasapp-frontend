@@ -205,26 +205,54 @@ function generateSingleInvoiceHtml(item: any) {
 
   let itemsHtml = ''
   if (item.sale_items && item.sale_items.length > 0) {
-    itemsHtml = item.sale_items.map((si: any, idx: number) => {
-      const p = si.product_id ? findProduct(si.product_id) : null
-      let pName = p ? p.name : (si.product_id ? 'Product ID: ' + si.product_id : 'Unit Only')
-      if (si.unit_id) {
-        const u = findUnit(si.unit_id)
-        if (u) {
-          pName += ` - ${u.name} ${u.serial_no ? `(SN: ${u.serial_no})` : ''}`
-        }
+    const groupedItems: any[] = []
+    item.sale_items.forEach((si: any) => {
+      let pName = ''
+      let serialNo = ''
+      if (si.product_id) {
+         const p = findProduct(si.product_id)
+         pName = p ? p.name : ('Product ID: ' + si.product_id)
+      } else if (si.unit_id) {
+         const u = findUnit(si.unit_id)
+         pName = u ? (u.name || u.model) : 'Unit Only' 
+         if (u && u.serial_no) {
+             serialNo = u.serial_no
+         }
       }
-      if (si.description) {
-        pName += `<br><span style="font-size: 10px; color: #555;">${si.description}</span>`
+      const uPrice = si.unit_price || si.price || 0
+      const qty = si.qty || 1
+      
+      const existing = groupedItems.find(gi => gi.name === pName && gi.price === uPrice && gi.description === si.description)
+      if (existing) {
+        existing.qty += qty
+        if (serialNo) existing.serial_numbers.push(serialNo)
+      } else {
+        groupedItems.push({
+           name: pName,
+           price: uPrice,
+           qty: qty,
+           description: si.description,
+           serial_numbers: serialNo ? [serialNo] : []
+        })
+      }
+    })
+
+    itemsHtml = groupedItems.map((gi: any, idx: number) => {
+      let dispName = gi.name
+      if (gi.qty === 1 && gi.serial_numbers && gi.serial_numbers.length === 1) {
+        dispName += ` (SN: ${gi.serial_numbers[0]})`
+      }
+      if (gi.description) {
+        dispName += `<br><span style="font-size: 10px; color: #555;">${gi.description}</span>`
       }
       return `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
-          <td>${pName}</td>
-          <td style="text-align: center;">${si.qty || 1}</td>
+          <td>${dispName}</td>
+          <td style="text-align: center;">${gi.qty}</td>
           <td style="text-align: center;">unit</td>
-          <td class="rp-col">Rp</td><td class="val-col">${(si.unit_price || si.price || 0).toLocaleString('id-ID')}</td>
-          <td class="rp-col">Rp</td><td class="val-col">${((si.unit_price || si.price || 0) * (si.qty || 1)).toLocaleString('id-ID')}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${(gi.price).toLocaleString('id-ID')}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${(gi.price * gi.qty).toLocaleString('id-ID')}</td>
         </tr>
       `
     }).join('')
@@ -406,20 +434,49 @@ function exportMonthToExcel() {
     csvContent += `No;Product / Item Description;Qty;UOM;Unit Price (Rp);Total Amount (Rp)\n`
 
     if (item.sale_items && item.sale_items.length > 0) {
-      item.sale_items.forEach((si: any, sIdx: number) => {
-        const p = si.product_id ? findProduct(si.product_id) : null
-        let pName = (p ? p.name : (si.product_id ? 'Product ID: ' + si.product_id : 'Unit Only'))
-        if (si.unit_id) {
-          const u = findUnit(si.unit_id)
-          if (u) {
-            pName += ` - ${u.name} ${u.serial_no ? `(SN: ${u.serial_no})` : ''}`
-          }
+      const groupedItems: any[] = []
+      item.sale_items.forEach((si: any) => {
+        let pName = ''
+        let serialNo = ''
+        if (si.product_id) {
+           const p = findProduct(si.product_id)
+           pName = p ? p.name : ('Product ID: ' + si.product_id)
+        } else if (si.unit_id) {
+           const u = findUnit(si.unit_id)
+           pName = u ? (u.name || u.model) : 'Unit Only' 
+           if (u && u.serial_no) {
+               serialNo = u.serial_no
+           }
         }
-        pName = pName.replace(/;/g, ',')
-        const qty = si.qty || 1
         const uPrice = si.unit_price || si.price || 0
-        const itemTotal = uPrice * qty
-        csvContent += `${sIdx + 1};"${pName}";${qty};unit;${uPrice};${itemTotal}\n`
+        const qty = si.qty || 1
+        
+        const existing = groupedItems.find(gi => gi.name === pName && gi.price === uPrice && gi.description === si.description)
+        if (existing) {
+          existing.qty += qty
+          if (serialNo) existing.serial_numbers.push(serialNo)
+        } else {
+          groupedItems.push({
+             name: pName,
+             price: uPrice,
+             qty: qty,
+             description: si.description,
+             serial_numbers: serialNo ? [serialNo] : []
+          })
+        }
+      })
+
+      groupedItems.forEach((gi: any, sIdx: number) => {
+        let dispName = gi.name
+        if (gi.qty === 1 && gi.serial_numbers && gi.serial_numbers.length === 1) {
+          dispName += ` (SN: ${gi.serial_numbers[0]})`
+        }
+        if (gi.description) {
+          dispName += ` - ${gi.description}`
+        }
+        dispName = dispName.replace(/;/g, ',')
+        const itemTotal = gi.price * gi.qty
+        csvContent += `${sIdx + 1};"${dispName}";${gi.qty};unit;${gi.price};${itemTotal}\n`
       })
     } else {
       csvContent += `1;"Goods / Services";1;unit;${subtotal};${subtotal}\n`
@@ -1023,9 +1080,26 @@ const combinedItemOptions = computed(() => {
   products.value.forEach(p => {
     opts.push({ value: `P_${p.id}`, label: `[Product] ${p.name}` })
   })
+
+  const groupedUnits: { [key: string]: any[] } = {}
   units.value.filter(u => u.status !== 'sold').forEach(u => {
-    opts.push({ value: `U_${u.id}`, label: `[Unit] ${u.name} ${u.serial_no ? '(SN: ' + u.serial_no + ')' : ''}` })
+    const key = u.name || u.model || 'Unknown'
+    if (!groupedUnits[key]) {
+      groupedUnits[key] = []
+    }
+    groupedUnits[key].push(u)
   })
+
+  Object.values(groupedUnits).forEach(group => {
+    if (group.length === 1) {
+      const u = group[0]
+      opts.push({ value: `U_${u.id}`, label: `[Unit] ${u.name} ${u.serial_no ? '(SN: ' + u.serial_no + ')' : ''}` })
+    } else if (group.length > 1) {
+      const u = group[0]
+      opts.push({ value: `U_${u.id}`, label: `[Unit] ${u.name}` })
+    }
+  })
+
   return opts
 })
 
@@ -1175,7 +1249,7 @@ const combinedItemOptions = computed(() => {
           <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
         </div>
         <div class="form-group sale-item-price">
-          <input v-model.number="item.unit_price" type="number" class="form-input" min="0" placeholder="Price" readonly style="background: var(--color-surface-raised); cursor: not-allowed;">
+          <input :value="(item.unit_price || 0).toLocaleString('id-ID')" type="text" class="form-input" min="0" placeholder="Price" readonly style="background: var(--color-surface-raised); cursor: not-allowed;">
         </div>
         <button type="button" class="btn-remove-item" title="Remove item" @click="removeSaleItem(idx)">✕</button>
 
