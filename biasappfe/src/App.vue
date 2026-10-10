@@ -33,9 +33,7 @@ onUnmounted(() => {
 <template>
   <AdminLayout v-if="!isPublicPage">
     <router-view v-slot="{ Component }">
-      <keep-alive :max="8">
-        <component :is="Component" />
-      </keep-alive>
+      <component :is="Component" />
     </router-view>
   </AdminLayout>
   <router-view v-else />

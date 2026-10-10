@@ -76,7 +76,6 @@ const form = reactive({
 const isInit = ref(false)
 const isSaving = ref(false)
 const fileInputBefore = ref<HTMLInputElement | null>(null)
-const fileInputBefore = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
 const showCompleteConfirm = ref(false)
 const showNewSHConfirm = ref(false)
@@ -99,10 +98,8 @@ function initForm() {
     photo_before: item.value.photo_before || '',
     photo_after: item.value.photo_after || '',
   })
-  // Auto-save time_in if it was just generated
-  if (!item.value.time_in && form.time_in) {
-    api.patch(`/delivery-orders/${id}`, { time_in: form.time_in }).catch(() => {})
-  }
+  // time_in will be explicitly set when clicking Start Job
+
   isInit.value = true
 }
 
@@ -111,7 +108,7 @@ function initForm() {
 const hasItem = computed(() => ((item.value as any)?.delivery_order_items || []).length > 0)
 
 const isCompleted = computed(() =>
-  !!(form.action || '').trim() && form.is_tested && form.is_completed && !!form.customer_signature && !!form.technician_signature && !!(form.customer_name || '').trim() && !!form.photo_before && !!form.photo_after && hasItem.value,
+  !!(form.action || '').trim() && form.is_tested && form.is_completed && !!form.customer_signature && !!form.technician_signature && !!(form.customer_name || '').trim() && !!form.photo_before && hasItem.value,
 )
 
 function handlePhotoFile(e: Event, type: 'before' | 'after') {
@@ -278,6 +275,24 @@ async function removeItem(itemId: string) {
 }
 
 const isPending = computed(() => String((item.value as any)?.status || '').toLowerCase() === 'pending')
+const isInProgress = computed(() => String((item.value as any)?.status || '').toLowerCase() === 'in_progress')
+const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String((item.value as any)?.status || '').toLowerCase()))
+
+async function startJob() {
+  isSaving.value = true
+  try {
+    const now = new Date()
+    const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    form.time_in = hm
+    await api.patch(`/delivery-orders/${id}`, { status: 'in_progress', time_in: hm })
+    await store.refreshOnly(['deliveryOrders'])
+    toast.success('Pekerjaan dimulai (Time In dicatat).')
+  } catch (err: any) {
+    toast.error(err?.message || 'Gagal memulai pekerjaan.')
+  } finally {
+    isSaving.value = false
+  }
+}
 
 async function removeForm() {
   if (!isPending.value) return
@@ -329,7 +344,7 @@ async function executeCompleteForm() {
     const now = new Date()
     const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     form.time_out = form.time_out || hm
-    await api.patch(`/delivery-orders/${id}`, { ...form, status: 'delivered' })
+    await api.patch(`/delivery-orders/${id}`, { ...form, status: 'completed' })
     await store.refreshOnly(['deliveryOrders'])
     toast.success('Service history selesai.')
     
@@ -424,9 +439,22 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- PRODUCT DETAIL (diisi teknisi) -->
     <div class="card p-lg">
-      <h2 class="card-title mb-md">Product Detail <span class="badge badge-warning">diisi Teknisi</span></h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 class="card-title mb-0">Product Detail <span class="badge badge-warning">diisi Teknisi</span></h2>
+        <span class="badge" :class="isPending ? 'badge-warning' : isInProgress ? 'badge-info' : 'badge-success'" style="font-size: 14px; padding: 6px 12px;">
+          Status: {{ (item.status || 'pending').toUpperCase().replace('_', ' ') }}
+        </span>
+      </div>
+
+      <div v-if="isPending" class="text-center py-xl">
+        <p class="mb-lg text-muted">Mulai pekerjaan untuk mencatat waktu (Time In) dan mengisi form detail servis.</p>
+        <button class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSaving" @click="startJob">
+          {{ isSaving ? 'Memproses...' : 'Mulai Pekerjaan (Start Job)' }}
+        </button>
+      </div>
+
+      <template v-else>
 
       <div class="items-box mb-lg">
         <div class="items-head">
@@ -461,7 +489,7 @@ onMounted(async () => {
           </div>
         </div>
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Foto Akhir (Sesudah Dikerjakan) <span class="text-danger">*</span></label>
+          <label class="form-label">Foto Akhir (Sesudah Dikerjakan)</label>
           <input ref="fileInputAfter" type="file" accept="image/*" capture="environment" class="form-input" @change="handlePhotoFile($event, 'after')" />
           <div v-if="form.photo_after" class="photo-preview">
             <img :src="form.photo_after" alt="Foto Akhir" />
@@ -516,6 +544,7 @@ onMounted(async () => {
           Hapus form ini (masih pending)
         </button>
       </div>
+      </template>
     </div>
 
     <!-- Modal tambah item (v-if agar CustomSelect tidak di-mount saat tertutup) -->

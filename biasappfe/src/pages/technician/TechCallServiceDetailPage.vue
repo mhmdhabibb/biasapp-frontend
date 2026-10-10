@@ -200,7 +200,7 @@ watchEffect(() => {
 
 const isDeliveryFormCompleted = computed(() => {
   const f = doForm.value
-  return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature && !!(f.customer_name || '').trim() && !!f.photo_after
+  return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature && !!(f.customer_name || '').trim()
 })
 
 function handlePhotoFile(e: Event) {
@@ -739,7 +739,7 @@ async function createStandalone() {
             </label>
           </div>
           <div class="form-group mt-md">
-            <label class="form-label">Foto Sesudah Pengantaran <span class="text-danger">*</span></label>
+            <label class="form-label">Foto Sesudah Pengantaran</label>
             <div class="photo-upload-wrapper" style="border: 2px dashed var(--color-border); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
               <div v-if="!doForm.photo_after">
                 <p class="text-sm text-muted mb-sm">Gunakan kamera atau pilih file gambar</p>

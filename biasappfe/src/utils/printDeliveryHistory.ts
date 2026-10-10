@@ -194,20 +194,6 @@ export function printDeliveryServiceHistory(item: any): boolean {
             </tr>
           </table>
 
-          ${item.photo_before || item.photo_after ? `
-          <div class="section-title">DOKUMENTASI FOTO</div>
-          <div style="display: flex; gap: 10px; padding: 10px; border-bottom: 2px solid #000;">
-            ${item.photo_before ? `
-            <div style="flex: 1; text-align: center;">
-              <div style="font-weight: bold; margin-bottom: 5px;">FOTO AWAL</div>
-              <img src="${item.photo_before}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
-            </div>` : ""}
-            ${item.photo_after ? `
-            <div style="flex: 1; text-align: center;">
-              <div style="font-weight: bold; margin-bottom: 5px;">FOTO AKHIR</div>
-              <img src="${item.photo_after}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
-            </div>` : ""}
-          </div>` : ""}
 
           <div style="border-top: 2px solid #000; padding: 10px 20px 24px; font-weight: bold;">
             <div style="display: flex; justify-content: space-between; gap: 48px;">

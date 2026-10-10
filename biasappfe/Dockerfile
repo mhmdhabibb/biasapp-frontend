@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Copy package files & install dependencies
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy seluruh source code (diabaikan oleh .dockerignore untuk node_modules)
 COPY . .

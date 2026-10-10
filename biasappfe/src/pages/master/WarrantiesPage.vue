@@ -123,7 +123,11 @@ const saleOptions = computed(() =>
   customerSales.value.map((s: any) => ({ value: String(s.id), label: s.sale_no || `Sale #${s.id}` }))
 )
 
-function getCustomerName(id: any) {
+function getCustomerName(row: any) {
+  if (row.customer) {
+    return row.customer.company_name || row.customer.name || '-'
+  }
+  const id = row.customer_id
   const c = customers.value.find((c: any) => String(c.id) === String(id))
   return (c as any)?.company_name || (c as any)?.name || '-'
 }
@@ -276,8 +280,8 @@ async function handleDelete() {
 
     <DataTable :columns="columns" :data="data" search-placeholder="Search warranties..." permission="warranty"
       @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
-      <template #cell-customer_id="{ value }">
-        {{ getCustomerName(value) }}
+      <template #cell-customer_id="{ row }">
+        {{ getCustomerName(row) }}
       </template>
       <template #cell-unit_id="{ row }">
         {{ getUnitOrProductName(row) }}

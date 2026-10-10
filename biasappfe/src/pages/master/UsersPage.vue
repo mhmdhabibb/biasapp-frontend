@@ -117,7 +117,15 @@ function openEdit(item: User) {
 }
 
 async function handleSubmit() {
-  if (!form.name.trim() || !form.username.trim()) return
+  if (!form.name.trim() || !form.username.trim()) {
+    toast.warning('Nama dan Username harus diisi.')
+    return
+  }
+
+  if (/[A-Z\s]/.test(form.username)) {
+    toast.warning('Username hanya boleh huruf kecil, angka, dan simbol (tanpa spasi).')
+    return
+  }
 
   // Pertahanan lapis kedua: cegah role superadmin lolos via manipulasi client.
   const chosenRole = roles.value.find((r: any) => String(r.id) === String(form.role_id))
@@ -263,7 +271,7 @@ async function handleDelete() {
       </div>
       <div class="form-group">
         <label for="user-username" class="form-label">Username</label>
-        <input id="user-username" v-model="form.username" type="text" class="form-input" placeholder="Login username">
+        <input id="user-username" v-model="form.username" type="text" class="form-input" placeholder="Login username" @input="form.username = form.username.toLowerCase().replace(/\s/g, '')">
       </div>
       <div class="form-group">
         <label for="user-phone" class="form-label">Phone</label>
