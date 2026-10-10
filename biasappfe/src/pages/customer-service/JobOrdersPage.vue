@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import FormModal from "@/components/ui/FormModal.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
+import SignaturePad from "@/components/ui/SignaturePad.vue";
+import { useAuthStore } from "@/stores/auth.store";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
@@ -8,6 +10,7 @@ import { isCopierReport } from "@/utils/copierReport";
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref } from "vue";
 
 const toast = useToast();
+const authStore = useAuthStore();
 const { technicians, units, products, serviceReports, refreshOnly } =
   useMasterStore();
 
@@ -679,6 +682,7 @@ const assignTarget = ref<{ task: any; techId: string | number } | null>(null);
 const assignDeliveryDate = ref("");
 const assignScheduledDate = ref("");
 const assignVisitDate = ref("");
+const assignSignature = ref("");
 const isAssigning = ref(false);
 
 function toLocalDatetimeStr(d?: string | Date) {
@@ -740,13 +744,20 @@ async function onDrop(techId: string | number) {
 function cancelAssign() {
   showAssignModal.value = false;
   assignTarget.value = null;
+  assignSignature.value = "";
 }
 
 async function confirmAssign() {
   if (!assignTarget.value || isAssigning.value) return;
-  isAssigning.value = true;
 
+  if (!assignSignature.value) {
+    toast.error("Wajib tanda tangan sebelum assign.");
+    return;
+  }
+
+  isAssigning.value = true;
   const { task, techId } = assignTarget.value;
+  const assignerName = authStore.currentUser.value?.name || "Admin/CS";
 
   if (task.taskType === "visit") {
     const dateObj = new Date(assignVisitDate.value);
@@ -762,6 +773,8 @@ async function confirmAssign() {
       technician_id: techId,
       scheduled_date: dateObj.toISOString(),
       status: "scheduled",
+      assigner_signature: assignSignature.value,
+      assigner_name: assignerName,
     };
     try {
       await apiRequest({ url: `/job-orders/${task.id}`, method: "PUT", data: payload });
@@ -777,6 +790,8 @@ async function confirmAssign() {
         technician_id: techId,
         scheduled_date: new Date(assignScheduledDate.value).toISOString(),
         status: "scheduled",
+        assigner_signature: assignSignature.value,
+        assigner_name: assignerName,
       };
       try {
         const res = await fetch(
@@ -808,6 +823,8 @@ async function confirmAssign() {
         technician_id: techId,
         scheduled_date: new Date(assignScheduledDate.value).toISOString(),
         instructions: task.problem_description || "Rutin Maintenance",
+        assigner_signature: assignSignature.value,
+        assigner_name: assignerName,
       };
       try {
         const res = await fetch(
@@ -840,6 +857,8 @@ async function confirmAssign() {
       technician_id: techId,
       scheduled_date: new Date(assignDeliveryDate.value).toISOString(),
       instructions: task.notes || `Delivery ${task.do_number || ""}`.trim(),
+      assigner_signature: assignSignature.value,
+      assigner_name: assignerName,
     };
     try {
       const res = await fetch(
@@ -872,6 +891,8 @@ async function confirmAssign() {
       technician_id: techId,
       scheduled_date: new Date(assignScheduledDate.value).toISOString(),
       instructions: task.problem_description || "Please check the unit",
+      assigner_signature: assignSignature.value,
+      assigner_name: assignerName,
     };
 
     try {
@@ -900,6 +921,7 @@ async function confirmAssign() {
 
   showAssignModal.value = false;
   assignTarget.value = null;
+  assignSignature.value = "";
   isAssigning.value = false;
 }
 </script>
@@ -1797,6 +1819,11 @@ async function confirmAssign() {
           <p class="assign-hint">
             Atur tanggal dan waktu penjadwalan servis. Default: hari ini.
           </p>
+        </div>
+
+        <div class="form-group mt-lg">
+          <label class="form-label">Tanda Tangan CS / Admin <span class="text-danger">*</span></label>
+          <SignaturePad v-model="assignSignature" height="160px" />
         </div>
       </div>
 

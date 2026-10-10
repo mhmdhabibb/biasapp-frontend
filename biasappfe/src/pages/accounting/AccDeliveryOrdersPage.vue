@@ -281,6 +281,36 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
             </table>
           </div>
         </section>
+
+        <section class="detail-items" style="margin-top: 16px;">
+          <h4>Signatures</h4>
+          <div class="detail-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+            <div class="detail-field">
+              <span>Admin / CS</span>
+              <div v-if="detailItem.assigner_signature">
+                <img :src="detailItem.assigner_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px;" />
+                <div style="font-size: 0.8rem; margin-top: 4px; font-weight: bold;">{{ detailItem.assigner_name }}</div>
+              </div>
+              <div v-else class="text-muted" style="margin-top: 8px;">-</div>
+            </div>
+            <div class="detail-field">
+              <span>Technician</span>
+              <div v-if="detailItem.technician_signature">
+                <img :src="detailItem.technician_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px;" />
+                <div style="font-size: 0.8rem; margin-top: 4px; font-weight: bold;">{{ detailItem.technician_name || '-' }}</div>
+              </div>
+              <div v-else class="text-muted" style="margin-top: 8px;">-</div>
+            </div>
+            <div class="detail-field">
+              <span>Customer / Recipient</span>
+              <div v-if="detailItem.customer_signature">
+                <img :src="detailItem.customer_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px;" />
+                <div style="font-size: 0.8rem; margin-top: 4px; font-weight: bold;">{{ detailItem.customer_name || detailItem.recipient_name || '-' }}</div>
+              </div>
+              <div v-else class="text-muted" style="margin-top: 8px;">-</div>
+            </div>
+          </div>
+        </section>
       </template>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="showDetail = false">Close</button>

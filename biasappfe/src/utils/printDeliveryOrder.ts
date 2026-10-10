@@ -42,7 +42,7 @@ export function printDeliveryOrder(item: any): boolean {
     if (doi.unit_id) {
       const u = masterStore.findUnit(doi.unit_id);
       if (!doi.product_id) {
-        pName = u ? u.model || u.name : "Unit Only";
+        pName = u ? u.name || u.model : "Unit Only";
       }
       serialNo = u ? u.serial_no : "-";
     }
@@ -217,16 +217,23 @@ export function printDeliveryOrder(item: any): boolean {
           </table>
           
           <div class="signatures">
-            <div class="sig-box" style="text-align: left;">
+            <div class="sig-box" style="text-align: center;">
               PT BIAS SURYA TEKNOLOGI
+              ${item.assigner_signature ? `<div style="height: 70px; display: flex; align-items: flex-end; justify-content: center;"><img src="${item.assigner_signature}" style="max-height: 60px; object-fit: contain;" /></div>` : '<div style="height: 70px;"></div>'}
+              <div style="border-bottom: 1px solid #000; margin: 5px auto; width: 80%;"></div>
+              <div style="font-weight: normal;">${item.assigner_name || ""}</div>
             </div>
-            <div class="sig-box">
+            <div class="sig-box" style="text-align: center;">
               Delivered By,
-              <div class="sig-line"></div>
+              ${item.technician_signature ? `<div style="height: 70px; display: flex; align-items: flex-end; justify-content: center;"><img src="${item.technician_signature}" style="max-height: 60px; object-fit: contain;" /></div>` : '<div style="height: 70px;"></div>'}
+              <div style="border-bottom: 1px solid #000; margin: 5px auto; width: 80%;"></div>
+              <div style="font-weight: normal;">${item.technician_name || ""}</div>
             </div>
-            <div class="sig-box">
+            <div class="sig-box" style="text-align: center;">
               Received By,
-              <div class="sig-line"></div>
+              ${item.customer_signature ? `<div style="height: 70px; display: flex; align-items: flex-end; justify-content: center;"><img src="${item.customer_signature}" style="max-height: 60px; object-fit: contain;" /></div>` : '<div style="height: 70px;"></div>'}
+              <div style="border-bottom: 1px solid #000; margin: 5px auto; width: 80%;"></div>
+              <div style="font-weight: normal;">${item.customer_name || item.recipient_name || ""}</div>
             </div>
           </div>
         </div>

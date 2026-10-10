@@ -13,6 +13,7 @@ import { useResourcesStore } from '@/stores/resources.store'
 import { useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
+import { printDeliveryOrder } from '@/utils/printDeliveryOrder'
 import type { TableColumn, ServiceReport, SparepartRequest } from '@/types'
 
 const { can } = usePermission()
@@ -248,9 +249,11 @@ function printDO(item: any) {
 // ── DO Detail Modal ─────────────────────────────────────────────────────────
 const showDoDetail = ref(false)
 const doDetailItem = ref<any>(null)
+const doDetailTab = ref<'info'|'items'|'signatures'>('info')
 
 function openDoDetail(row: any) {
   doDetailItem.value = row
+  doDetailTab.value = 'info'
   showDoDetail.value = true
 }
 
@@ -615,11 +618,20 @@ function printTable() {
         </span>
       </template>
       <template #actions="{ row }">
-        <button v-if="can('delivery_order:read')" class="action-btn" title="Print Service History" @click="printDO(row)" style="color: var(--color-primary); border-color: transparent;">
+        <button v-if="can('delivery_order:read') && row.status === 'delivered'" class="action-btn" title="Print Delivery Order" @click="printDeliveryOrder(row)" style="color: var(--color-primary); border-color: transparent; margin-right: 4px;">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 6 2 18 2 18 9"></polyline>
             <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
             <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+        </button>
+        <button v-if="can('delivery_order:read') && row.status === 'delivered'" class="action-btn" title="Print Service History" @click="printDO(row)" style="color: var(--color-info); border-color: transparent;">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
         </button>
       </template>
@@ -750,7 +762,13 @@ function printTable() {
     <!-- DO Detail Modal -->
     <FormModal :open="showDoDetail" :title="doDetailItem ? `Detail ${doDetailItem.do_number}` : 'Detail Delivery Order'" max-width="640px" @close="showDoDetail = false">
       <template v-if="doDetailItem">
-        <div class="detail-grid">
+        <div style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--color-border-light); padding-bottom: 8px; overflow-x: auto;">
+          <button class="btn btn-sm" :class="doDetailTab === 'info' ? 'btn-primary' : 'btn-outline'" @click="doDetailTab = 'info'">DO Info</button>
+          <button class="btn btn-sm" :class="doDetailTab === 'items' ? 'btn-primary' : 'btn-outline'" @click="doDetailTab = 'items'">Items & Photos</button>
+          <button class="btn btn-sm" :class="doDetailTab === 'signatures' ? 'btn-primary' : 'btn-outline'" @click="doDetailTab = 'signatures'">Signatures</button>
+        </div>
+
+        <div v-show="doDetailTab === 'info'" class="detail-grid">
           <div class="detail-field">
             <span>DO Number</span>
             <strong>{{ doDetailItem.do_number }}</strong>
@@ -796,33 +814,70 @@ function printTable() {
             <strong>{{ doDetailItem.notes }}</strong>
           </div>
         </div>
-        <section class="detail-items">
-          <h4>Products / Items</h4>
-          <div class="detail-items-table-wrap">
-            <table class="detail-items-table">
-              <thead>
-                <tr><th>Item</th><th>Qty</th><th>Remarks</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="(item, index) in doDetailItem.delivery_order_items || []" :key="item.id || index">
-                  <td>{{ getDoItemName(item) }}</td>
-                  <td>{{ item.qty || 1 }}</td>
-                  <td>{{ item.remarks || '-' }}</td>
-                </tr>
-                <tr v-if="!doDetailItem.delivery_order_items?.length">
-                  <td colspan="3" class="detail-items-empty">No delivery items</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+        
+        <div v-show="doDetailTab === 'items'">
+          <section class="detail-items" style="margin-top: 0;">
+            <h4>Products / Items</h4>
+            <div class="detail-items-table-wrap">
+              <table class="detail-items-table">
+                <thead>
+                  <tr><th>Item</th><th>Qty</th><th>Remarks</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(item, index) in doDetailItem.delivery_order_items || []" :key="item.id || index">
+                    <td>{{ getDoItemName(item) }}</td>
+                    <td>{{ item.qty || 1 }}</td>
+                    <td>{{ item.remarks || '-' }}</td>
+                  </tr>
+                  <tr v-if="!doDetailItem.delivery_order_items?.length">
+                    <td colspan="3" class="detail-items-empty">No delivery items</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-        <section class="detail-items" v-if="doDetailItem?.photo_after" style="margin-top: 24px;">
-          <h4>Foto Sesudah Pengantaran</h4>
-          <div style="margin-top: 12px; text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md);">
-            <img :src="doDetailItem.photo_after" alt="Foto Sesudah" style="max-height: 250px; max-width: 100%; border-radius: 8px; object-fit: contain; border: 1px solid var(--color-border-light);">
+          <section class="detail-items" v-if="doDetailItem?.photo_after" style="margin-top: 24px;">
+            <h4>Foto Sesudah Pengantaran</h4>
+            <div style="margin-top: 12px; text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md);">
+              <img :src="doDetailItem.photo_after" alt="Foto Sesudah" style="max-height: 250px; max-width: 100%; border-radius: 8px; object-fit: contain; border: 1px solid var(--color-border-light);">
+            </div>
+          </section>
+        </div>
+
+        <div v-show="doDetailTab === 'signatures'">
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div style="border: 1px solid var(--color-border-light); padding: 12px; border-radius: 8px;">
+              <h4 style="margin: 0 0 8px; font-size: 14px; text-align: center;">PT BIAS SURYA TEKNOLOGI</h4>
+              <div v-if="doDetailItem.assigner_signature" style="text-align: center; height: 80px; display: flex; align-items: flex-end; justify-content: center;">
+                <img :src="doDetailItem.assigner_signature" style="max-height: 70px; object-fit: contain;" />
+              </div>
+              <div v-else style="height: 80px; text-align: center; color: var(--color-text-muted); display: flex; align-items: center; justify-content: center;">(No Signature)</div>
+              <div style="border-bottom: 1px solid #000; margin: 8px auto; width: 80%;"></div>
+              <div style="text-align: center; font-weight: 500;">{{ doDetailItem.assigner_name || '-' }}</div>
+            </div>
+
+            <div style="border: 1px solid var(--color-border-light); padding: 12px; border-radius: 8px;">
+              <h4 style="margin: 0 0 8px; font-size: 14px; text-align: center;">Delivered By</h4>
+              <div v-if="doDetailItem.technician_signature" style="text-align: center; height: 80px; display: flex; align-items: flex-end; justify-content: center;">
+                <img :src="doDetailItem.technician_signature" style="max-height: 70px; object-fit: contain;" />
+              </div>
+              <div v-else style="height: 80px; text-align: center; color: var(--color-text-muted); display: flex; align-items: center; justify-content: center;">(No Signature)</div>
+              <div style="border-bottom: 1px solid #000; margin: 8px auto; width: 80%;"></div>
+              <div style="text-align: center; font-weight: 500;">{{ doDetailItem.technician_name || '-' }}</div>
+            </div>
+
+            <div style="border: 1px solid var(--color-border-light); padding: 12px; border-radius: 8px;">
+              <h4 style="margin: 0 0 8px; font-size: 14px; text-align: center;">Received By</h4>
+              <div v-if="doDetailItem.customer_signature" style="text-align: center; height: 80px; display: flex; align-items: flex-end; justify-content: center;">
+                <img :src="doDetailItem.customer_signature" style="max-height: 70px; object-fit: contain;" />
+              </div>
+              <div v-else style="height: 80px; text-align: center; color: var(--color-text-muted); display: flex; align-items: center; justify-content: center;">(No Signature)</div>
+              <div style="border-bottom: 1px solid #000; margin: 8px auto; width: 80%;"></div>
+              <div style="text-align: center; font-weight: 500;">{{ doDetailItem.customer_name || doDetailItem.recipient_name || '-' }}</div>
+            </div>
           </div>
-        </section>
+        </div>
       </template>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="showDoDetail = false">Close</button>
