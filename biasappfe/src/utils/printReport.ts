@@ -479,19 +479,34 @@ function photoDokumentasiBody(items: any[]): string {
   const masterStore = useMasterStore();
 
   const rows = items.map((item: any, idx: number) => {
-    const u: any = masterStore.findUnit(item.unit_id) || item.unit || {};
-    const brand: any = masterStore.findBrand(u.brand_id);
-    const modelType = [brand?.name, u.model].filter(Boolean).join(" ") || "-";
-    const serialNo = u.serial_no || u.serial_number || "-";
+    // Try to get unit from delivery_order_items if exists (Delivery Orders)
+    const doi = (item.delivery_order_items && item.delivery_order_items.length > 0) ? item.delivery_order_items[0] : null;
+    const unitId = item.unit_id || (doi ? doi.unit_id : null);
+    
+    let u: any = masterStore.findUnit(unitId) || item.unit || {};
+    
+    let modelType = "-";
+    let serialNo = "-";
+    
+    if (u && u.id) {
+      const brand: any = masterStore.findBrand(u.brand_id);
+      modelType = [brand?.name, u.model].filter(Boolean).join(" ") || "-";
+      serialNo = u.serial_no || u.serial_number || "-";
+    } else if (doi && (doi.model || doi.serial_no)) {
+      const brand: any = masterStore.findBrand(doi.brand_id);
+      modelType = [brand?.name, doi.model].filter(Boolean).join(" ") || "-";
+      serialNo = doi.serial_no || "-";
+    }
+
     const projectName = item.project_name || "-";
-    const repairAction = item.repair_action || "-";
+    const repairAction = item.repair_action || item.action || "-";
 
     const photoBefore = item.photo_before
-      ? `<img src="${item.photo_before}" style="max-width:100%; max-height:120px; object-fit:cover; display:block; margin:0 auto;" />`
+      ? `<img src="${item.photo_before}" style="max-width:100%; max-height:160px; object-fit:contain; display:block; margin:0 auto;" />`
       : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0;">No Photo</div>`;
 
     const photoAfter = item.photo_after
-      ? `<img src="${item.photo_after}" style="max-width:100%; max-height:120px; object-fit:cover; display:block; margin:0 auto;" />`
+      ? `<img src="${item.photo_after}" style="max-width:100%; max-height:160px; object-fit:contain; display:block; margin:0 auto;" />`
       : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0;">No Photo</div>`;
 
     return `
@@ -508,7 +523,7 @@ function photoDokumentasiBody(items: any[]): string {
 
   // Get surat pesanan no from first item if available
   const firstItem = items[0] || {};
-  const spNo = firstItem.report_no || firstItem.service_report_no || "";
+  const spNo = firstItem.report_no || firstItem.service_report_no || firstItem.do_number || "";
 
   return `
     <div class="pd-container">

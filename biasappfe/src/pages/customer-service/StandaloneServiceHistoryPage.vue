@@ -21,14 +21,33 @@ const { can } = usePermission()
 const store = useMasterStore()
 const resources = useResourcesStore()
 
+const filterTechnician = ref<any>(null)
+
+const filterTechnicianOptions = computed(() => [
+  { value: null as any, label: 'Semua Teknisi' },
+  { value: 'unassigned', label: 'Belum Ditunjuk / Tanpa Teknisi' },
+  ...(store.technicians.value as any[]).map((t: any) => ({
+    value: t.id,
+    label: t.user?.name || t.name || `Teknisi ${t.id}`,
+  })),
+])
+
 // Hanya DO mandiri bertipe service (bukan rental/sale/inbound, bukan yang ditempel job).
-const standaloneList = computed(() =>
-  (store.deliveryOrders.value as any[]).filter(
+const standaloneList = computed(() => {
+  let list = (store.deliveryOrders.value as any[]).filter(
     (d: any) => String(d.do_type || '').toLowerCase() === 'service',
-  ).sort((a: any, b: any) =>
+  )
+  if (filterTechnician.value) {
+    if (filterTechnician.value === 'unassigned') {
+      list = list.filter((d: any) => !d.technician_id)
+    } else {
+      list = list.filter((d: any) => String(d.technician_id) === String(filterTechnician.value))
+    }
+  }
+  return list.sort((a: any, b: any) =>
     String(b.created_at || b.delivery_date || '').localeCompare(String(a.created_at || a.delivery_date || '')),
-  ),
-)
+  )
+})
 
 const columns: TableColumn[] = [
   { key: 'do_number', label: 'No. Service' },
@@ -184,6 +203,14 @@ function openDelete(row: any) {
   deletingItem.value = row
   showDelete.value = true
 }
+
+const showDetailModal = ref(false)
+const detailItem = ref<any>(null)
+
+function openDetail(row: any) {
+  detailItem.value = row
+  showDetailModal.value = true
+}
 async function handleDelete() {
   if (!deletingItem.value) return
   try {
@@ -221,10 +248,15 @@ function handlePrint(row: any) {
       <span>Form tersendiri <strong>tanpa assign job</strong>. CS mengisi <strong>Customer Detail</strong>, teknisi mengisi <strong>Product Detail</strong> di menu teknisi.</span>
     </div>
 
+    <div class="filter-bar mb-4" style="display: flex; gap: 1rem; align-items: center; background: var(--color-surface, #fff); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--color-border-light);">
+      <div style="font-size: 13px; font-weight: 600;">Filter Teknisi:</div>
+      <CustomSelect v-model="filterTechnician" :options="filterTechnicianOptions" class="form-select" style="max-width: 300px; flex: 1;" />
+    </div>
+
     <DataTable :columns="columns" :data="standaloneList" search-placeholder="Cari no. service / customer...">
       <template #cell-customer_id="{ value, row }">
         <div class="font-medium">{{ customerName(value) }}</div>
-        <div class="text-xs text-muted">{{ productSummary(row) }}</div>
+        <div class="text-xs text-muted product-summary-link" @click="openDetail(row)" title="Klik untuk melihat detail pekerjaan">{{ productSummary(row) }}</div>
       </template>
       <template #cell-delivery_date="{ value }">
         {{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}
@@ -293,7 +325,63 @@ function handlePrint(row: any) {
       </template>
     </FormModal>
 
-    <ConfirmDialog :open="showDelete" title="Hapus Service History" :message="`Hapus '${deletingItem?.do_number || ''}'?`" @close="showDelete = false" @confirm="handleDelete" />
+    <FormModal :open="showDelete" title="Hapus Service History" :message="`Hapus '${deletingItem?.do_number || ''}'?`" @close="showDelete = false" @confirm="handleDelete" />
+
+    <FormModal :open="showDetailModal" title="Detail Pekerjaan Teknisi" max-width="500px" @close="showDetailModal = false">
+      <div v-if="detailItem" class="detail-content">
+        <div class="info-group">
+          <label>Unit / Product:</label>
+          <div style="font-weight: 500;">{{ productSummary(detailItem) }}</div>
+        </div>
+        <div class="info-group mt-sm">
+          <label>Problem / Kendala:</label>
+          <div class="box">{{ detailItem.problem || '-' }}</div>
+        </div>
+        <div class="info-group mt-sm">
+          <label>Action / Repair:</label>
+          <div class="box">{{ detailItem.action || '-' }}</div>
+        </div>
+        <div class="form-row mt-sm">
+          <div class="info-group">
+            <label>Time In:</label>
+            <div style="font-weight: 500;">{{ detailItem.time_in || '-' }}</div>
+          </div>
+          <div class="info-group">
+            <label>Time Out:</label>
+            <div style="font-weight: 500;">{{ detailItem.time_out || '-' }}</div>
+          </div>
+        </div>
+        <div class="form-row mt-sm">
+          <div class="info-group">
+            <label>Tested:</label>
+            <div style="font-weight: 500;" :class="detailItem.is_tested ? 'text-success' : ''">{{ detailItem.is_tested ? 'YES' : 'NO' }}</div>
+          </div>
+          <div class="info-group">
+            <label>Completed:</label>
+            <div style="font-weight: 500;" :class="detailItem.is_completed ? 'text-success' : ''">{{ detailItem.is_completed ? 'YES' : 'NO' }}</div>
+          </div>
+        </div>
+        <div v-if="detailItem.photo_before || detailItem.photo_after" class="form-row mt-sm">
+          <div class="info-group">
+            <label>Foto Awal:</label>
+            <div v-if="detailItem.photo_before" class="photo-preview">
+              <img :src="detailItem.photo_before" alt="Foto Awal" />
+            </div>
+            <div v-else class="text-muted text-xs">Tidak ada</div>
+          </div>
+          <div class="info-group">
+            <label>Foto Akhir:</label>
+            <div v-if="detailItem.photo_after" class="photo-preview">
+              <img :src="detailItem.photo_after" alt="Foto Akhir" />
+            </div>
+            <div v-else class="text-muted text-xs">Tidak ada</div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" style="width: 100%;" @click="showDetailModal = false">Tutup</button>
+      </template>
+    </FormModal>
   </div>
 </template>
 
@@ -336,5 +424,41 @@ function handlePrint(row: any) {
 .btn-danger { color: var(--color-danger, #dc2626); }
 @media (max-width: 640px) {
   .form-row { grid-template-columns: 1fr; }
+}
+
+.product-summary-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+.product-summary-link:hover {
+  color: var(--color-primary, #2563eb);
+}
+.info-group label {
+  display: block;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 4px;
+}
+.box {
+  background: var(--color-surface-sunken, #f8fafc);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: pre-wrap;
+  border: 1px solid var(--color-border-light);
+}
+.mt-sm { margin-top: 16px; }
+.text-success { color: #16a34a; }
+.photo-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: var(--color-surface-sunken, #f8fafc);
+  border: 1px solid var(--color-border-light);
 }
 </style>
