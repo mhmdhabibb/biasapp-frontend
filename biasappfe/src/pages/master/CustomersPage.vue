@@ -169,9 +169,63 @@ const customerHistory = computed(() => {
   })
 })
 
-function openHistory(customer: Customer) {
+async function openHistory(customer: Customer) {
   historyModalCustomer.value = customer
-  masterStore.refreshOnly(['serviceReports', 'deliveryOrders', 'technicians'])
+  await masterStore.refreshOnly(['serviceReports', 'deliveryOrders', 'technicians'])
+}
+
+function getHistoryTechnicianName(item: any): string {
+  if (!item) return '-'
+
+  // 1. Direct technician object on item (if preloaded)
+  if (item.technician) {
+    const name = item.technician.user?.name || item.technician.user?.username || item.technician.name
+    if (name && name.trim() && name.trim() !== '-') return name.trim()
+  }
+
+  // 2. Direct string names on item
+  const directNames = [
+    item.technician_name,
+    item.technician_name_copier,
+    item.technician_name_technical
+  ]
+  for (const n of directNames) {
+    if (n && typeof n === 'string' && n.trim() && n.trim() !== '-') {
+      return n.trim()
+    }
+  }
+
+  // 3. Lookup in masterStore.technicians by technician_id or user_id
+  const techId = item.technician_id || item.user_id
+  if (techId != null) {
+    const str = String(techId).trim().toLowerCase()
+    const tech: any = (masterStore.technicians.value as any[] || []).find(
+      (t: any) => String(t.id).trim().toLowerCase() === str || String(t.user_id || '').trim().toLowerCase() === str
+    ) || masterStore.findTechnician(techId)
+    if (tech) {
+      const name = tech.name || tech.user?.name || tech.user?.username
+      if (name && name.trim() && name.trim() !== '-') return name.trim()
+    }
+  }
+
+  return '-'
+}
+
+function getHistoryProblem(item: any): string {
+  if (!item) return '-'
+  const candidates = [
+    item.machine_problem,
+    item.problem,
+    item.complaint,
+    item.remarks,
+    item.notes
+  ]
+  for (const c of candidates) {
+    if (c && typeof c === 'string' && c.trim() && c.trim() !== '-') {
+      return c.trim()
+    }
+  }
+  return '-'
 }
 
 function getCustomerHistoryCount(cid: any) {
@@ -328,14 +382,14 @@ function goToForm(item: any) {
                 </a>
               </td>
               <td style="padding: 10px 12px;">{{ item._type === 'service' ? 'Service Report' : 'Stand Alone' }}</td>
-              <td style="padding: 10px 12px;">{{ masterStore.findTechnician(item.technician_id)?.name || item.technician_name || '-' }}</td>
+              <td style="padding: 10px 12px;">{{ getHistoryTechnicianName(item) }}</td>
               <td style="padding: 10px 12px;">
                 <span class="badge" :class="item.status === 'completed' || item.status === 'delivered' ? 'badge-success' : 'badge-warning'" style="font-size: 11px;">
                   {{ (item.status || 'pending').toUpperCase().replace('_', ' ') }}
                 </span>
               </td>
-              <td style="padding: 10px 12px; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="item.problem || item.complaint || '-'">
-                 {{ item.problem || item.complaint || '-' }}
+              <td style="padding: 10px 12px; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="getHistoryProblem(item)">
+                 {{ getHistoryProblem(item) }}
               </td>
             </tr>
           </tbody>

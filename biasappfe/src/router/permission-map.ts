@@ -64,7 +64,7 @@ export const routeNamesByMenuOrder: string[] = [
   'contractItems', 'serviceRequests', 'jobOrders', 'csMaintenanceSchedules', 'serviceReports', 'csStandaloneServiceHistory', 'copierReports', 'monthlyMeterReadings',
   'rentals', 'sales', 'csSparepartRequest', 'accPurchaseOrders', 'accDeliveryOrders',
   'rentalInvoices', 'salesInvoices', 'payments', 'warrantyClaims',
-  'csMonitoringService', 'csDelivery',
+  'csMonitoringService',
 ]
 
 export function permissionKeysFor(routeName: string | null | undefined): string[] | null {

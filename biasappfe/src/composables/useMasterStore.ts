@@ -102,13 +102,18 @@ export function useMasterStore() {
     return {
       customers: () =>
         safeFetch(
-          fetchAll("customers"),
+          fetchAll("customers", DROPDOWN_LIMIT),
           (items) => (store.customers = items || []),
         ),
       technicians: () =>
         safeFetch(
-          fetchAll("technicians"),
-          (items) => (store.technicians = items || []),
+          fetchAll("technicians", DROPDOWN_LIMIT),
+          (items) => {
+            store.technicians = (items || []).map((t: any) => ({
+              ...t,
+              name: t.name || t.user?.name || t.user?.username || "",
+            }));
+          },
         ),
       brands: () =>
         safeFetch(
@@ -132,68 +137,71 @@ export function useMasterStore() {
         ),
       warranties: () =>
         safeFetch(
-          fetchAll("warranties"),
+          fetchAll("warranties", DROPDOWN_LIMIT),
           (items) => (store.warranties = items || []),
         ),
       contractItems: () =>
         safeFetch(
-          fetchAll("contractItems"),
+          fetchAll("contractItems", DROPDOWN_LIMIT),
           (items) => (store.contractItems = items || []),
         ),
       serviceReports: () =>
         safeFetch(
-          fetchAll("serviceReports"),
+          fetchAll("serviceReports", DROPDOWN_LIMIT),
           (items) => (store.serviceReports = items || []),
         ),
       serviceRequests: () =>
         safeFetch(
-          fetchAll("serviceRequests"),
+          fetchAll("serviceRequests", DROPDOWN_LIMIT),
           (items) => (store.serviceRequests = items || []),
         ),
       jobOrders: () =>
         safeFetch(
-          fetchAll("jobOrders"),
+          fetchAll("jobOrders", DROPDOWN_LIMIT),
           (items) => (store.jobOrders = items || []),
         ),
       monthlyMeterReadings: () =>
         safeFetch(
-          fetchAll("monthlyMeterReadings"),
+          fetchAll("monthlyMeterReadings", DROPDOWN_LIMIT),
           (items) => (store.monthlyMeterReadings = items || []),
         ),
       sales: () =>
-        safeFetch(fetchAll("sales"), (items) => (store.sales = items || [])),
+        safeFetch(
+          fetchAll("sales", DROPDOWN_LIMIT),
+          (items) => (store.sales = items || []),
+        ),
       rentalInvoices: () =>
         safeFetch(
-          fetchAll("rentalInvoices"),
+          fetchAll("rentalInvoices", DROPDOWN_LIMIT),
           (items) => (store.rentalInvoices = items || []),
         ),
       salesInvoices: () =>
         safeFetch(
-          fetchAll("salesInvoices"),
+          fetchAll("salesInvoices", DROPDOWN_LIMIT),
           (items) => (store.salesInvoices = items || []),
         ),
       payments: () =>
         safeFetch(
-          fetchAll("payments"),
+          fetchAll("payments", DROPDOWN_LIMIT),
           (items) => (store.payments = items || []),
         ),
       warrantyClaims: () =>
         safeFetch(
-          fetchAll("warrantyClaims"),
+          fetchAll("warrantyClaims", DROPDOWN_LIMIT),
           (items) => (store.warrantyClaims = items || []),
         ),
       serviceSpareparts: () =>
         safeFetch(
-          fetchAll("serviceSpareparts"),
+          fetchAll("serviceSpareparts", DROPDOWN_LIMIT),
           (items) => (store.sparepartRequests = items || []),
         ),
       purchaseOrders: () =>
         safeFetch(
-          fetchAll("purchaseOrders"),
+          fetchAll("purchaseOrders", DROPDOWN_LIMIT),
           (items) => (store.purchaseOrders = items || []),
         ),
       deliveryOrders: () =>
-        safeFetch(fetchAll("deliveryOrders"), (items) => {
+        safeFetch(fetchAll("deliveryOrders", DROPDOWN_LIMIT), (items) => {
           const validItems = items || [];
           store.deliveryOrders = validItems;
           store.procurementDeliveryOrders = validItems.filter(
@@ -235,9 +243,11 @@ export function useMasterStore() {
   }
 
   /** Refresh ringan: hanya resource yang disebut, selalu silent (tanpa loading). */
-  function refreshOnly(names: string[]) {
+  async function refreshOnly(names: string[]) {
     if (!names || names.length === 0) return refreshInBackground();
-    return runSyncTasks(names, false);
+    const registry = buildSyncTasks(false);
+    const tasks = names.map((name) => registry[name]).filter(Boolean);
+    await Promise.all(tasks.map((task) => task()));
   }
 
   /**
@@ -251,53 +261,83 @@ export function useMasterStore() {
   syncFromApi();
 
   function findCustomer(id: number | string | null): Customer | undefined {
-    return (store.customers || []).find((c) => (c.id as any) == id);
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.customers || []).find((c) => String(c.id).trim().toLowerCase() === str);
   }
 
   function findTechnician(id: number | string | null): Technician | undefined {
-    return (store.technicians || []).find((t) => (t.id as any) == id);
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    const found: any = (store.technicians || []).find(
+      (t: any) =>
+        String(t.id).trim().toLowerCase() === str ||
+        String(t.user_id || "").trim().toLowerCase() === str,
+    );
+    if (found && !found.name && found.user?.name) {
+      found.name = found.user.name;
+    }
+    return found;
   }
 
   function findUnit(id: number | string | null): Unit | undefined {
-    return (store.units || []).find((u) => (u.id as any) == id);
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.units || []).find((u) => String(u.id).trim().toLowerCase() === str);
   }
 
   function findBrand(
     id: number | string | null | undefined,
   ): Brand | undefined {
     if (id == null) return undefined;
-    return (store.brands || []).find((b) => (b.id as any) == id);
+    const str = String(id).trim().toLowerCase();
+    return (store.brands || []).find((b) => String(b.id).trim().toLowerCase() === str);
   }
 
   function findUnitType(
     id: number | string | null | undefined,
   ): UnitType | undefined {
     if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
     return ((store.unitTypes as UnitType[]) || []).find(
-      (u) => (u.id as any) == id,
+      (u) => String(u.id).trim().toLowerCase() === str,
     );
   }
 
   function findProduct(id: number | string | null): Product | undefined {
-    return (store.products || []).find((p) => (p.id as any) == id);
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.products || []).find((p) => String(p.id).trim().toLowerCase() === str);
   }
 
   function findWarranty(id: number | string | null): Warranty | undefined {
-    return (store.warranties || []).find((w) => (w.id as any) == id);
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.warranties || []).find((w) => String(w.id).trim().toLowerCase() === str);
   }
 
   function findContractItem(
     id: number | string | null | undefined,
   ): ContractItem | undefined {
     if (id == null) return undefined;
-    return (store.contractItems || []).find((ci) => (ci.id as any) == id);
+    const str = String(id).trim().toLowerCase();
+    return (store.contractItems || []).find((ci) => String(ci.id).trim().toLowerCase() === str);
   }
 
   function findServiceReport(
     id: number | string | null,
   ): ServiceReport | undefined {
-    const idNum = typeof id === "string" ? parseInt(id, 10) : id;
-    return (store.serviceReports || []).find((sr) => sr.id === idNum);
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.serviceReports || []).find((sr) => String(sr.id).trim().toLowerCase() === str);
+  }
+
+  function findSparepartRequest(
+    id: number | string | null,
+  ): SparepartRequest | undefined {
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.sparepartRequests || []).find((r) => String(r.id).trim().toLowerCase() === str);
   }
 
   function findRentalInvoice(id: number | null): RentalInvoice | undefined {
@@ -386,6 +426,7 @@ export function useMasterStore() {
     findWarranty,
     findContractItem,
     findServiceReport,
+    findSparepartRequest,
     findRentalInvoice,
     findSale,
     findSalesInvoice,

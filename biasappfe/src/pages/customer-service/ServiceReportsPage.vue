@@ -183,7 +183,7 @@ function closeCreatePOModal() {
 }
 
 async function handleCreatePO() {
-  const request = poTarget.value
+  const request = poTarget.value as any
   if (!request || creatingId.value !== null) return
   const reason = poForm.reason.trim()
   if (!reason || !poForm.installation_date) {
@@ -192,15 +192,37 @@ async function handleCreatePO() {
   }
   creatingId.value = request.id
   try {
+    const store = useMasterStore()
+    const sr = (store.serviceReports.value as any[]).find((s: any) => String(s.id) === String(request.service_report_id))
+      || request.service_report
+    const customerId = sr?.customer_id || null
+    const unitId = sr?.unit_id || null
+    const serviceReportId = request.service_report_id || sr?.id || null
+    const prod = request.product || store.findProduct(request.product_id)
+    const unitPrice = request.unit_price || prod?.price || 0
+    const qty = request.qty || 1
+
     await resources.create('purchaseOrders', {
       sparepart_request_id: request.id,
+      service_report_id: serviceReportId,
+      customer_id: customerId,
+      unit_id: unitId,
       order_date: new Date().toISOString(),
       status: 'draft',
       reason,
       // Date input gives YYYY-MM-DD; pin to local midnight (WIB) so the day doesn't shift.
       installation_date: `${poForm.installation_date}T00:00:00+07:00`,
+      purchase_order_items: [
+        {
+          item_name: request.item_name || prod?.name || 'Sparepart',
+          product_id: request.product_id,
+          qty,
+          unit_price: unitPrice,
+          total_price: qty * unitPrice,
+        }
+      ]
     })
-    await useMasterStore().refreshInBackground()
+    await store.refreshInBackground()
     toast.success(`Purchase order created for ${request.request_no}`)
     showCreatePOModal.value = false
     poTarget.value = null

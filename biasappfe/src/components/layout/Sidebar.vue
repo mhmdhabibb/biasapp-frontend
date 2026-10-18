@@ -73,6 +73,26 @@ async function submitPwdChange() {
 
 const allMenuGroups: MenuGroup[] = [
   {
+    title: "sidebar.dashboard",
+    items: [
+      {
+        label: "sidebar.cs_dashboard",
+        icon: "grid",
+        route: "/customer-service/dashboard",
+      },
+      {
+        label: "sidebar.tech_dashboard",
+        icon: "grid",
+        route: "/technician/dashboard",
+      },
+      {
+        label: "sidebar.acc_dashboard",
+        icon: "grid",
+        route: "/accounting/dashboard",
+      },
+    ],
+  },
+  {
     title: "sidebar.master_data",
     items: [
       { label: "sidebar.users", icon: "users", route: "/master/users" },
@@ -217,29 +237,9 @@ const allMenuGroups: MenuGroup[] = [
     title: "sidebar.monitoring",
     items: [
       {
-        label: "sidebar.cs_dashboard",
-        icon: "grid",
-        route: "/customer-service/dashboard",
-      },
-      {
-        label: "sidebar.tech_dashboard",
-        icon: "grid",
-        route: "/technician/dashboard",
-      },
-      {
-        label: "sidebar.acc_dashboard",
-        icon: "grid",
-        route: "/accounting/dashboard",
-      },
-      {
         label: "sidebar.monitoring_service",
         icon: "activity",
         route: "/customer-service/monitoring-service",
-      },
-      {
-        label: "sidebar.delivery_monitoring",
-        icon: "truck",
-        route: "/customer-service/delivery",
       },
     ],
   },

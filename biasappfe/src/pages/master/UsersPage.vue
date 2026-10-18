@@ -9,12 +9,19 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
+import { usePermission } from '@/composables/usePermission'
 import { useHardDelete } from '@/composables/useHardDelete'
 import type { TableColumn, User } from '@/types'
 import { resources } from '@/services/resource.service'
 
 const toast = useToast()
 const { currentUser } = useAuth()
+const { can } = usePermission()
+
+const isCurrentUserSuperadmin = computed(() => {
+  const role = String(currentUser.value?.role || '').toLowerCase()
+  return role === 'superadmin'
+})
 
 const isPrivileged = computed(() => {
   const role = String(currentUser.value?.role || '').toLowerCase()
@@ -36,6 +43,10 @@ function rowRoleName(row: any): string {
   ).toLowerCase()
 }
 
+function isTargetSuperadmin(row: any): boolean {
+  return rowRoleName(row) === 'superadmin'
+}
+
 function roleBadgeClass(role: string | null | undefined): string {
   const r = String(role || '').toLowerCase()
   if (r.includes('superadmin')) return 'badge-danger'
@@ -53,10 +64,20 @@ function formatRole(role: string | null | undefined): string {
     .join(' ')
 }
 
-// CS boleh reset password karyawan lain, kecuali yang ber-role superadmin.
+// User dengan role di luar superadmin TIDAK BOLEH mengubah/reset user superadmin
 function canReset(row: any): boolean {
-  if (isPrivileged.value) return true
-  return rowRoleName(row) !== 'superadmin'
+  if (isTargetSuperadmin(row)) return isCurrentUserSuperadmin.value
+  return true
+}
+
+function canEditRow(row: any): boolean {
+  if (isTargetSuperadmin(row)) return isCurrentUserSuperadmin.value
+  return can('user:update')
+}
+
+function canDeleteRow(row: any): boolean {
+  if (isTargetSuperadmin(row)) return isCurrentUserSuperadmin.value
+  return can('user:delete')
 }
 
 const columns: TableColumn[] = [
@@ -111,6 +132,10 @@ function openAdd() {
 }
 
 function openEdit(item: User) {
+  if (isTargetSuperadmin(item) && !isCurrentUserSuperadmin.value) {
+    toast.error('User dengan role Superadmin tidak dapat diubah oleh user lain.')
+    return
+  }
   editingItem.value = item
   Object.assign(form, { name: item.name, username: item.username, phone: item.phone, role_id: item.role_id, password: '' })
   showModal.value = true
@@ -130,10 +155,10 @@ async function handleSubmit() {
   // Pertahanan lapis kedua: cegah role superadmin lolos via manipulasi client.
   const chosenRole = roles.value.find((r: any) => String(r.id) === String(form.role_id))
   if (
-    !isPrivileged.value &&
+    !isCurrentUserSuperadmin.value &&
     String(chosenRole?.name || '').toLowerCase() === 'superadmin'
   ) {
-    toast.error('CS tidak diizinkan membuat user superadmin.')
+    toast.error('User selain superadmin tidak diizinkan membuat user superadmin.')
     return
   }
 
@@ -153,6 +178,10 @@ async function handleSubmit() {
 }
 
 function openDelete(item: User) {
+  if (isTargetSuperadmin(item) && !isCurrentUserSuperadmin.value) {
+    toast.error('User dengan role Superadmin tidak dapat dihapus oleh user lain.')
+    return
+  }
   deletingItem.value = item
   showConfirm.value = true
 }
@@ -165,6 +194,10 @@ const showResetPwd = ref(false)
 const resetForm = reactive({ new_password: '' })
 
 function openReset(item: User & { role_name?: string }) {
+  if (isTargetSuperadmin(item) && !isCurrentUserSuperadmin.value) {
+    toast.error('User selain Superadmin tidak boleh mereset password Superadmin.')
+    return
+  }
   resetTarget.value = item
   resetForm.new_password = ''
   showResetPwd.value = false
@@ -174,7 +207,7 @@ function openReset(item: User & { role_name?: string }) {
 async function submitReset() {
   if (!resetTarget.value) return
   if (!canReset(resetTarget.value)) {
-    toast.error('Hanya admin yang boleh mereset password superadmin.')
+    toast.error('Hanya superadmin yang boleh mereset password superadmin.')
     return
   }
   if (!resetForm.new_password || resetForm.new_password.length < 6) {
@@ -227,31 +260,74 @@ async function handleDelete() {
         </span>
       </template>
       <template #actions="{ row }">
-        <button
-          v-if="canReset(row)"
-          class="action-btn"
-          title="Reset password"
-          aria-label="Reset password"
-          @click.stop="openReset(row)"
+        <!-- Kasus 1: User target adalah Superadmin dan yang login BUKAN superadmin -->
+        <!-- Jangan tampilkan tombol edit, delete, atau reset, melainkan indikator proteksi -->
+        <span
+          v-if="isTargetSuperadmin(row) && !isCurrentUserSuperadmin"
+          class="action-protected"
+          title="User Superadmin dilindungi dan tidak dapat diubah atau dihapus"
+          style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--color-text-muted); opacity: 0.6;"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0110 0v4"></path>
           </svg>
-        </button>
-        <button
-          v-if="hardDelete.isSuperadmin"
-          class="action-btn action-btn--hard"
-          title="Hapus permanen dari database (superadmin)"
-          aria-label="Hapus permanen"
-          @click.stop="hardDelete.open(row)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-            <line x1="12" y1="11" x2="12" y2="17"></line>
-          </svg>
-        </button>
+        </span>
+
+        <!-- Kasus 2: Semua kasus lainnya (non-superadmin row, atau superadmin yang login) -->
+        <template v-else>
+          <button
+            v-if="canReset(row)"
+            class="action-btn"
+            title="Reset password"
+            aria-label="Reset password"
+            @click.stop="openReset(row)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0110 0v4"></path>
+            </svg>
+          </button>
+          <button
+            v-if="canEditRow(row)"
+            class="action-btn action-btn--edit"
+            title="Edit"
+            aria-label="Edit"
+            @click.stop="openEdit(row)"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+          <button
+            v-if="canDeleteRow(row)"
+            class="action-btn action-btn--delete"
+            title="Delete"
+            aria-label="Delete"
+            @click.stop="openDelete(row)"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          </button>
+          <button
+            v-if="hardDelete.isSuperadmin"
+            class="action-btn action-btn--hard"
+            title="Hapus permanen dari database (superadmin)"
+            aria-label="Hapus permanen"
+            @click.stop="hardDelete.open(row)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <line x1="12" y1="11" x2="12" y2="17"></line>
+            </svg>
+          </button>
+        </template>
       </template>
     </DataTable>
 

@@ -57,6 +57,7 @@ const messages = {
       extend_failed: 'Failed to extend rental: {error}',
     },
     sidebar: {
+      dashboard: 'Dashboard',
       master_data: 'Master Data',
       users: 'Users',
       roles: 'Roles',
@@ -167,6 +168,7 @@ const messages = {
       extend_failed: 'Gagal memperpanjang kontrak: {error}',
     },
     sidebar: {
+      dashboard: 'Dashboard',
       master_data: 'Data Master',
       users: 'Pengguna',
       roles: 'Peran',
