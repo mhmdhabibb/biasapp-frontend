@@ -32,10 +32,35 @@ onUnmounted(() => {
 
 <template>
   <AdminLayout v-if="!isPublicPage">
-    <router-view v-slot="{ Component }">
-      <component :is="Component" />
+    <router-view v-slot="{ Component, route: currentRoute }">
+      <transition name="page-fade" mode="out-in">
+        <component :is="Component" :key="currentRoute.path" />
+      </transition>
     </router-view>
   </AdminLayout>
   <router-view v-else />
   <ToastHost />
 </template>
+
+<style>
+/* Page Transition - Smooth, Lightweight & GPU-Accelerated */
+.page-fade-enter-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.page-fade-leave-active {
+  transition: opacity 0.12s ease-in;
+  will-change: opacity;
+}
+
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.page-fade-leave-to {
+  opacity: 0;
+}
+</style>

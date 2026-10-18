@@ -287,7 +287,25 @@ const menuGroups = computed(() => {
       title: group.title.includes(".") ? t(group.title) : group.title,
       items: group.items
         .filter((item) => {
-          // 1. Superadmin (admin) sees everything
+          const routeName = String(router.resolve(item.route).name || "");
+
+          // Hilangkan tech dashboard jika rolenya bukan technician
+          if (
+            (routeName === "techDashboard" || item.route === "/technician/dashboard") &&
+            role !== "technician"
+          ) {
+            return false;
+          }
+
+          // Hilangkan acc dashboard jika rolenya bukan accounting
+          if (
+            (routeName === "accDashboard" || item.route === "/accounting/dashboard") &&
+            role !== "accounting"
+          ) {
+            return false;
+          }
+
+          // 1. Superadmin (admin) sees everything else
           if (role === "admin") return true;
 
           // 2. Explicit module gate (e.g. maintenance): the menu hides when
@@ -303,7 +321,6 @@ const menuGroups = computed(() => {
           // 3. Role-restricted items (technician menu): role decides, no permission checks
           if (item.roles) return item.roles.includes(role);
 
-          const routeName = String(router.resolve(item.route).name || "");
           const permissions = currentUser.value?.permissions || [];
 
           // 3. Dashboards are pinned: each built-in role keeps its own dashboard.
@@ -701,29 +718,45 @@ const iconPaths: Record<string, string> = {
   font-weight: var(--font-weight-medium);
   border-radius: var(--radius-full);
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
+    background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.16s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   text-align: left;
 }
 
 .menu-item:hover {
   background: var(--color-surface-sunken);
   color: var(--color-text);
+  transform: translateX(3px);
+}
+
+.menu-item:active {
+  transform: scale(0.98);
 }
 
 .menu-item-active {
   background: var(--color-primary);
   color: #fff;
   font-weight: var(--font-weight-semibold);
+  box-shadow: 0 2px 8px rgba(48, 92, 255, 0.25);
+  transform: translateX(0);
 }
 
 .menu-icon {
   flex-shrink: 0;
   opacity: 0.72;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+}
+
+.menu-item:hover .menu-icon {
+  opacity: 0.95;
+  transform: scale(1.08);
 }
 
 .menu-item-active .menu-icon {
   opacity: 1;
+  transform: scale(1);
 }
 
 .sidebar-footer {
