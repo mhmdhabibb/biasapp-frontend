@@ -76,5 +76,6 @@ export function permissionKeysFor(routeName: string | null | undefined): string[
 export function canView(routeName: string | null | undefined, permissions: string[]): boolean {
   const keys = permissionKeysFor(routeName)
   if (!keys) return true
-  return keys.some(key => permissions.includes(`${key}:view`))
+  const lowerPerms = (permissions || []).map((p) => String(p).toLowerCase())
+  return keys.some((key) => lowerPerms.includes(`${key.toLowerCase()}:view`))
 }
