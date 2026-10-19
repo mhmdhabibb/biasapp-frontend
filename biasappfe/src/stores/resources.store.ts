@@ -24,7 +24,13 @@ export function useResourcesStore() {
     if (tracksLoading) loading[name] = true;
     if (tracksLoading) errors[name] = "";
     try {
-      data[name] = (await resources[name].list(query, tracksLoading)).data;
+      const res = await resources[name].list(query, tracksLoading);
+      const items = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res)
+          ? res
+          : [];
+      data[name] = items;
       return data[name];
     } catch (reason) {
       if (tracksLoading) {
@@ -33,6 +39,7 @@ export function useResourcesStore() {
             ? reason.message
             : "Failed to load data from the server";
       }
+      data[name] = [];
       return [];
     } finally {
       if (tracksLoading) loading[name] = false;

@@ -87,12 +87,14 @@ export function useAuthStore() {
     if (!token.value) return;
     try {
       const response = await authService.me();
-      const me = (response.data as any);
-      const role = me.role === "superadmin" ? "admin" : me.role || "";
-      const perms: string[] = me.permissions || [];
+      const me = ((response as any)?.data ?? response) as any;
+      if (!me || typeof me !== "object") return;
+
+      const role = me.role === "superadmin" ? "admin" : (me.role || "");
+      const perms: string[] = Array.isArray(me.permissions) ? me.permissions : [];
 
       currentUser.value = {
-        id: me.id,
+        id: me.id ?? currentUser.value?.id,
         name: me.name || currentUser.value?.name || "User",
         username: me.username || currentUser.value?.username || "",
         role,

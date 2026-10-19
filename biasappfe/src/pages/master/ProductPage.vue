@@ -41,7 +41,7 @@ const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.n
 async function fetchData() {
   try {
     const res = await resources.products.list();
-    data.value = res.data as any;
+    data.value = Array.isArray(res.data) ? (res.data as any) : [];
   } catch (error) {
     console.error("Failed to fetch products:", error);
     toast.error("Failed to fetch data: " + ((error as any).message || "Error"));
@@ -51,7 +51,7 @@ async function fetchData() {
 async function fetchCategories() {
   try {
     const res = await resources.productCategories.list();
-    categories.value = res.data as any;
+    categories.value = Array.isArray(res.data) ? (res.data as any) : [];
   } catch (error) {
     console.error("Failed to fetch categories:", error);
     toast.error("Failed to fetch data: " + ((error as any).message || "Error"));
@@ -61,7 +61,7 @@ async function fetchCategories() {
 async function fetchUoms() {
   try {
     const res = await resources.uoms.list();
-    uoms.value = res.data as any;
+    uoms.value = Array.isArray(res.data) ? (res.data as any) : [];
   } catch (error) {
     console.error("Failed to fetch UOMs:", error);
     toast.error(
