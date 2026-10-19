@@ -333,7 +333,7 @@ const menuGroups = computed(() => {
           //    the module is deactivated in Master > Modules. Applies to
           //    role-restricted items too.
           if (item.module) {
-            const mod = modules.value.find(
+            const mod = (modules.value || []).find(
               (m) => moduleKey(String(m.name)) === item.module,
             );
             if (mod && !mod.is_active) return false;
@@ -360,7 +360,7 @@ const menuGroups = computed(() => {
           // Module names are display names ("Job Order") while permission keys use
           // snake_case ("job_order"), so normalize before comparing.
           const permKeys = permissionKeysFor(routeName) || [];
-          const matches = modules.value.filter((m) =>
+          const matches = (modules.value || []).filter((m) =>
             permKeys.includes(moduleKey(String(m.name))),
           );
           if (matches.length > 0 && !matches.some((m) => m.is_active))
@@ -425,7 +425,7 @@ watch(
   () => route.path,
   (currentPath) => {
     menuGroups.value.forEach((group) => {
-      if (group.items.some((item) => item.route === currentPath)) {
+      if ((group?.items || []).some((item) => item.route === currentPath)) {
         expandedGroups.value.add(group.title);
       }
     });

@@ -3,15 +3,24 @@ import { usePermission } from "@/composables/usePermission";
 import type { TableColumn } from "@/types";
 import { computed, ref, useSlots } from "vue";
 
-const props = defineProps<{
-  columns: TableColumn[];
-  data: any[];
-  searchPlaceholder?: string;
-  /** Backend module key (e.g. "customer") used to gate default edit/delete buttons */
-  permission?: string;
-  /** Show the permanent-delete button (parent must gate this to superadmin) */
-  showHardDelete?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    columns?: TableColumn[];
+    data?: any[];
+    searchPlaceholder?: string;
+    /** Backend module key (e.g. "customer") used to gate default edit/delete buttons */
+    permission?: string;
+    /** Show the permanent-delete button (parent must gate this to superadmin) */
+    showHardDelete?: boolean;
+  }>(),
+  {
+    columns: () => [],
+    data: () => [],
+    searchPlaceholder: "",
+    permission: "",
+    showHardDelete: false,
+  },
+);
 
 defineEmits<{
   (e: "edit", item: any): void;
@@ -40,12 +49,14 @@ const searchQuery = ref("");
 const currentPage = ref(1);
 const perPage = 10;
 
-const filteredData = computed(() => {
-  if (!searchQuery.value.trim()) return props.data;
+const filteredData = computed<any[]>(() => {
+  const list = Array.isArray(props.data) ? props.data : [];
+  if (!searchQuery.value.trim()) return list;
   const q = searchQuery.value.toLowerCase();
-  return props.data.filter((row) =>
-    props.columns.some((col) => {
-      const val = row[col.key];
+  const cols = Array.isArray(props.columns) ? props.columns : [];
+  return list.filter((row) =>
+    cols.some((col) => {
+      const val = row?.[col.key];
       if (val == null) return false;
       return String(val).toLowerCase().includes(q);
     }),
@@ -53,11 +64,11 @@ const filteredData = computed(() => {
 });
 
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil(filteredData.value.length / perPage)),
+  Math.max(1, Math.ceil((filteredData.value?.length || 0) / perPage)),
 );
-const paginatedData = computed(() => {
+const paginatedData = computed<any[]>(() => {
   const start = (currentPage.value - 1) * perPage;
-  return filteredData.value.slice(start, start + perPage);
+  return (filteredData.value || []).slice(start, start + perPage);
 });
 
 function goToPage(page: number) {
@@ -109,12 +120,12 @@ const visiblePages = computed(() => {
       <div class="toolbar-right">
         <slot name="toolbar"></slot>
         <span class="data-count" aria-live="polite">
-          {{ `${filteredData.length} items` }}
+          {{ `${filteredData?.length || 0} items` }}
         </span>
       </div>
     </div>
 
-    <div v-if="data.length === 0" class="empty-state">
+    <div v-if="!data || data.length === 0" class="empty-state">
       <svg
         width="48"
         height="48"
@@ -132,7 +143,7 @@ const visiblePages = computed(() => {
     </div>
 
     <div
-      v-else-if="filteredData.length === 0 && searchQuery"
+      v-else-if="(filteredData?.length || 0) === 0 && searchQuery"
       class="empty-state"
     >
       <svg
@@ -257,7 +268,7 @@ const visiblePages = computed(() => {
       </table>
     </div>
 
-    <div v-if="filteredData.length > perPage" class="pagination">
+    <div v-if="(filteredData?.length || 0) > perPage" class="pagination">
       <button
         class="btn btn-outline btn-sm"
         :disabled="currentPage === 1"

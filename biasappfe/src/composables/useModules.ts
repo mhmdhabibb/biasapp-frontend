@@ -4,10 +4,20 @@ import { ref } from "vue";
 
 const modules = ref<Module[]>([]);
 
+function toModuleArray(items: unknown): Module[] {
+  if (Array.isArray(items)) return items as Module[];
+  if (items && typeof items === "object" && Array.isArray((items as any).data)) {
+    return (items as any).data as Module[];
+  }
+  return [];
+}
+
 export function useModules() {
   const resources = useResourcesStore();
   resources.fetchAll("modules").then((items) => {
-    modules.value = items as unknown as Module[];
+    modules.value = toModuleArray(items);
+  }).catch(() => {
+    modules.value = [];
   });
 
   async function addModule(mod: Module) {
@@ -16,7 +26,7 @@ export function useModules() {
       mod as unknown as Record<string, unknown>,
     );
     await resources.fetchAll("modules").then((items) => {
-      modules.value = items as unknown as Module[];
+      modules.value = toModuleArray(items);
     });
   }
 
@@ -27,14 +37,14 @@ export function useModules() {
       data as unknown as Record<string, unknown>,
     );
     await resources.fetchAll("modules").then((items) => {
-      modules.value = items as unknown as Module[];
+      modules.value = toModuleArray(items);
     });
   }
 
   async function removeModule(id: number) {
     await resources.remove("modules", String(id));
     await resources.fetchAll("modules").then((items) => {
-      modules.value = items as unknown as Module[];
+      modules.value = toModuleArray(items);
     });
   }
 
