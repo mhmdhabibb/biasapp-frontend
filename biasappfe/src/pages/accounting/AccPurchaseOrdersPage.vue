@@ -480,7 +480,7 @@ function detailTotals(po: PurchaseOrder | null) {
 }
 
 const columns: TableColumn[] = [
-  { key: 'po_no', label: 'PO Number' },
+  { key: 'po_no', label: 'Form Number' },
   { key: 'order_date', label: 'Date' },
   { key: 'sparepart_request_id', label: 'Request Ref' },
   { key: 'customer', label: 'Customer' },
@@ -616,7 +616,7 @@ const printInvoice = printPO
 
 <template>
   <div>
-    <PageHeader title="Purchase Orders" />
+    <PageHeader title="Request Form" />
 
     <div class="info-alert mb-4">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -624,10 +624,10 @@ const printInvoice = printPO
         <line x1="12" y1="16" x2="12" y2="12" />
         <line x1="12" y1="8" x2="12.01" y2="8" />
       </svg>
-      <span>Manage Purchase Orders generated from Sparepart Requests. Approved POs can be converted to Delivery Orders for receiving.</span>
+      <span>Manage Request Forms generated from Sparepart Requests. Approved Request Forms can be converted to Delivery Orders for receiving.</span>
     </div>
 
-    <DataTable :columns="columns" :data="store.purchaseOrders.value" search-placeholder="Search purchase orders...">
+    <DataTable :columns="columns" :data="store.purchaseOrders.value" search-placeholder="Search request forms...">
       <template #cell-order_date="{ value }">
         {{ value ? new Date(value).toLocaleDateString() : '-' }}
       </template>
@@ -702,7 +702,7 @@ const printInvoice = printPO
           <button
             v-if="(row.status === 'approved' || row.status === 'do_created' || row.status === 'completed') && can('purchase_order:read')"
             class="action-btn action-btn--edit"
-            title="Print Purchase Order"
+            title="Print Request Form"
             @click="printPO(row)"
             style="color: var(--color-primary); width: 36px; height: 36px;"
           >
@@ -733,7 +733,7 @@ const printInvoice = printPO
 
     <FormModal
       :open="showDetail"
-      :title="detailPO ? `Purchase Order ${detailPO.po_no}` : 'Purchase Order Detail'"
+      :title="detailPO ? `Request Form ${detailPO.po_no}` : 'Request Form Detail'"
       max-width="680px"
       @close="closeDetail"
     >
@@ -741,7 +741,7 @@ const printInvoice = printPO
         <div class="detail-panel">
           <div class="detail-grid">
             <div class="detail-field">
-              <span class="detail-label">PO Number</span>
+              <span class="detail-label">Form Number</span>
               <span class="detail-value font-mono">{{ detailPO.po_no }}</span>
             </div>
             <div class="detail-field">
@@ -846,7 +846,7 @@ const printInvoice = printPO
           class="btn btn-accent"
           @click="printPO(detailPO)"
         >
-          Print Purchase Order
+          Print Request Form
         </button>
       </template>
     </FormModal>

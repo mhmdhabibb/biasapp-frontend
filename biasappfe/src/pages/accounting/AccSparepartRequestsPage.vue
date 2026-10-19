@@ -119,12 +119,12 @@ async function handleCreatePO() {
       ]
     })
     await store.refreshInBackground()
-    toast.success(`Purchase order created for ${request.request_no}`)
+    toast.success(`Request form created for ${request.request_no}`)
     showCreatePOModal.value = false
     poTarget.value = null
     router.push('/accounting/purchase-orders')
   } catch (err) {
-    toast.error(toast.fromError(err, 'Failed to create purchase order'))
+    toast.error(toast.fromError(err, 'Failed to create request form'))
   } finally {
     creatingId.value = null
   }
@@ -155,14 +155,14 @@ async function handleCreatePO() {
       <template #cell-actions="{ row }">
         <button v-if="row.status === 'pending' && can('purchase_order:create')" class="btn btn-sm btn-primary"
           :disabled="creatingId !== null" @click="openCreatePOModal(row)">
-          {{ creatingId === row.id ? 'Creating...' : 'Create PO' }}
+          {{ creatingId === row.id ? 'Creating...' : 'Create Request Form' }}
         </button>
         <span v-else class="text-muted text-sm">Processed</span>
       </template>
     </DataTable>
 
-    <!-- Create PO Modal -->
-    <FormModal :open="showCreatePOModal" title="Create Purchase Order" @close="closeCreatePOModal" @submit="handleCreatePO">
+    <!-- Create Request Form Modal -->
+    <FormModal :open="showCreatePOModal" title="Create Request Form" @close="closeCreatePOModal" @submit="handleCreatePO">
       <div class="form-group" style="margin-bottom: var(--space-md);">
         <label class="form-label" style="display: block; font-size: var(--font-size-sm); font-weight: 500; margin-bottom: 6px;">
           Reason <span style="color: var(--color-danger, #ef4444);">*</span>
@@ -172,7 +172,7 @@ async function handleCreatePO() {
           class="form-input"
           rows="3"
           required
-          placeholder="Alasan pembuatan PO (misal: penggantian drum rusak sesuai rekomendasi teknisi)"
+          placeholder="Alasan pembuatan Request Form (misal: penggantian drum rusak sesuai rekomendasi teknisi)"
           style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-family: inherit; font-size: var(--font-size-sm);"
         ></textarea>
       </div>

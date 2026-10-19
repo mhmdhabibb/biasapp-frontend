@@ -67,7 +67,6 @@ async function removeStandalone(row: any) {
         <table class="table">
           <thead>
             <tr>
-              <th>No. Service</th>
               <th>Customer</th>
               <th>Tanggal</th>
               <th>Status Produk</th>
@@ -76,9 +75,8 @@ async function removeStandalone(row: any) {
           </thead>
           <tbody>
             <tr v-for="row in standaloneList" :key="row.id">
-              <td class="font-bold">{{ row.do_number || '-' }}</td>
               <td>
-                <div>{{ customerName(row.customer_id) }}</div>
+                <div class="font-bold">{{ customerName(row.customer_id) }}</div>
                 <div class="text-xs text-muted">{{ row.delivery_address || '-' }}</div>
               </td>
               <td>{{ row.delivery_date ? new Date(row.delivery_date).toLocaleDateString('en-GB') : '-' }}</td>

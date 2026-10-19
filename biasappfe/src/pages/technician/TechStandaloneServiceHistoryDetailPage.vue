@@ -43,8 +43,7 @@ const unitOptions = computed(() => {
 const productOptions = computed(() => {
   if (!showItemModal.value) return []
   return ((store.products.value ?? []) as any[])
-    .filter((p: any) => p.is_sparepart)
-    .map((p: any) => ({ value: p.id, label: p.name }))
+    .map((p: any) => ({ value: p.id, label: `${p.name}${p.sku ? ` (SN: ${p.sku})` : ''}` }))
 })
 const brandOptions = computed(() => {
   if (!showItemModal.value) return []
@@ -167,7 +166,7 @@ function clearPhoto(type: 'before' | 'after') {
 
 // ── Items form state ──
 const itemForm = reactive({
-  kind: 'external',
+  kind: 'unit',
   unit_id: null as any,
   product_id: null as any,
   brand_id: null as any,
@@ -180,10 +179,37 @@ const itemForm = reactive({
   remarks: ''
 })
 const kindOptions = [
-  { value: 'external', label: 'Barang External' },
-  { value: 'unit', label: 'Unit / Mesin Internal' },
-  { value: 'product', label: 'Product / Sparepart Internal' },
+  { value: 'unit', label: 'Unit / Product (Pilih dari Database)' },
+  { value: 'product', label: 'Consumable / Sparepart (Pilih dari Database)' },
+  { value: 'external', label: 'Barang External (Input Manual)' },
 ]
+
+function openItemModal() {
+  Object.assign(itemForm, {
+    kind: 'unit',
+    unit_id: null,
+    product_id: null,
+    brand_id: null,
+    unit_type_id: null,
+    model: '',
+    serial_no: '',
+    warranty_status: '',
+    warranty_expired_date: '',
+    qty: 1,
+    remarks: ''
+  })
+  showItemModal.value = true
+  const needsUnits = ((store.units.value ?? []) as any[]).length === 0
+  const needsProducts = ((store.products.value ?? []) as any[]).length === 0
+  const needsBrands = ((store.brands.value ?? []) as any[]).length === 0
+  const needsUnitTypes = (((store as any).unitTypes?.value ?? []) as any[]).length === 0
+  const names: string[] = []
+  if (needsUnits) names.push('units')
+  if (needsProducts) names.push('products')
+  if (needsBrands) names.push('brands')
+  if (needsUnitTypes) names.push('unitTypes')
+  if (names.length) void store.refreshOnly(names)
+}
 
 function itemLabel(it: any): string {
   if (it.unit_id) {
@@ -456,22 +482,6 @@ function handlePrint() {
   if (item.value) printDeliveryServiceHistory(item.value)
 }
 
-function openItemModal() {
-  showItemModal.value = true
-  // Preload dropdown master di background; tidak block modal muncul.
-  // Kalau masih kosong (mis. user langsung klik), refresh silent.
-  const needsUnits = ((store.units.value ?? []) as any[]).length === 0
-  const needsProducts = ((store.products.value ?? []) as any[]).length === 0
-  const needsBrands = ((store.brands.value ?? []) as any[]).length === 0
-  const needsUnitTypes = (((store as any).unitTypes?.value ?? []) as any[]).length === 0
-  const names: string[] = []
-  if (needsUnits) names.push('units')
-  if (needsProducts) names.push('products')
-  if (needsBrands) names.push('brands')
-  if (needsUnitTypes) names.push('unitTypes')
-  if (names.length) void store.refreshOnly(names)
-}
-
 onMounted(async () => {
   await store.refreshOnly(['deliveryOrders'])
   initForm()
@@ -488,7 +498,6 @@ onMounted(async () => {
     <div class="card p-lg mb-lg">
       <h2 class="card-title mb-md">Customer Detail <span class="badge badge-info">diisi CS</span></h2>
       <div class="info-list">
-        <div class="info-item"><span class="info-label">No. Service</span><span class="info-value font-bold">{{ item.do_number || '-' }}</span></div>
         <div class="info-item"><span class="info-label">Customer</span><span class="info-value">{{ customer?.company_name || customer?.name || '-' }}</span></div>
         <div class="info-item"><span class="info-label">Tipe Customer</span><span class="info-value">{{ item.customer_category || customer?.category || '-' }}</span></div>
         <div class="info-item"><span class="info-label">Project Name</span><span class="info-value font-bold">{{ item.project_name || '-' }}</span></div>
@@ -621,12 +630,12 @@ onMounted(async () => {
       </div>
 
       <div v-if="itemForm.kind === 'unit'" class="form-group mt-3">
-        <label class="form-label">Pilih Unit / Mesin</label>
-        <CustomSelect v-model="itemForm.unit_id" :options="unitOptions" placeholder="-- Pilih Unit --" />
+        <label class="form-label">Pilih Unit / Product <span class="text-danger">*</span></label>
+        <CustomSelect v-model="itemForm.unit_id" :options="unitOptions" placeholder="-- Pilih Unit / Product --" />
       </div>
       <div v-else-if="itemForm.kind === 'product'" class="form-group mt-3">
-        <label class="form-label">Pilih Product</label>
-        <CustomSelect v-model="itemForm.product_id" :options="productOptions" placeholder="-- Pilih Product --" />
+        <label class="form-label">Pilih Consumable / Sparepart <span class="text-danger">*</span></label>
+        <CustomSelect v-model="itemForm.product_id" :options="productOptions" placeholder="-- Pilih Consumable / Sparepart --" />
       </div>
       <template v-if="itemForm.kind === 'external'">
         <div class="form-row mt-3">

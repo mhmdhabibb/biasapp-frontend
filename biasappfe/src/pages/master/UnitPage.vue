@@ -18,12 +18,12 @@ const { currentUser } = useAuth()
 const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Unit Name' },
+  { key: 'name', label: 'Product Name' },
   { key: 'brand_id', label: 'Brand' },
   { key: 'model', label: 'Model' },
   { key: 'price', label: 'Price' },
   { key: 'uom.name', label: 'UOM' },
-  { key: 'serial_no', label: 'Serial Number' },
+  { key: 'serial_no', label: 'SN' },
   { key: 'status', label: 'Status' },
   { key: 'is_computer', label: 'Computer' },
   { key: 'is_copier', label: 'Copier' },
@@ -74,6 +74,7 @@ const form = reactive({
   temp_serial: '',
   brand_id: null as string | null,
   type_id: null as string | null,
+  print_tech: '' as string,
   uom_id: '' as string | null,
   model: '',
   name: '',
@@ -96,6 +97,65 @@ const form = reactive({
   },
 })
 
+const printTechOptions = [
+  { value: 'Laser', label: 'Laser' },
+  { value: 'Inject', label: 'Inject' },
+]
+
+function getTypeName(id: string | null): string {
+  if (!id) return ''
+  const t = unitTypes.value.find(t => String(t.id) === String(id))
+  return t ? t.name : ''
+}
+
+const isPrinterOrCopier = computed(() => {
+  const tName = getTypeName(form.type_id).toLowerCase().trim()
+  return (
+    tName === 'printer' ||
+    tName.includes('printer') ||
+    tName === 'photocopy machine' ||
+    tName.includes('photocopy') ||
+    tName.includes('copier') ||
+    Boolean(form.is_copier)
+  )
+})
+
+function computeUnitName(typeId: string | null, printTech: string, brandId: string | null, model: string, isCopier = false): string {
+  const typeName = getTypeName(typeId).trim()
+  const brandName = getBrandName(brandId)
+  const validBrand = (brandName && brandName !== '-') ? brandName.trim() : ''
+  const validModel = (model || '').trim()
+
+  const tLower = typeName.toLowerCase()
+  const isPrintOrCopy = tLower.includes('printer') || tLower.includes('copier') || tLower.includes('photocopy') || isCopier
+
+  if (isPrintOrCopy) {
+    const tech = (printTech || '').trim()
+    return [typeName, tech, validBrand, validModel].filter(Boolean).join(' ').trim()
+  } else {
+    return [typeName, validBrand, validModel].filter(Boolean).join(' ').trim()
+  }
+}
+
+function formatUnitDisplayName(row: any): string {
+  const calculated = computeUnitName(row.type_id, row.print_tech, row.brand_id, row.model, row.is_copier)
+  const tName = getTypeName(row.type_id)
+  if (tName && calculated) {
+    return calculated
+  }
+  return row.name || '-'
+}
+
+watch(
+  [() => form.type_id, () => form.print_tech, () => form.brand_id, () => form.model, () => form.is_copier],
+  ([newType, newTech, newBrand, newModel, newCopier]) => {
+    if (!isPrinterOrCopier.value && form.print_tech) {
+      form.print_tech = ''
+    }
+    form.name = computeUnitName(newType, form.print_tech, newBrand, newModel, newCopier)
+  }
+)
+
 function addRate() {
   form.rates.push({ paper_size_id: '', paper_type_id: null, rate_per_page_bw: 0, rate_per_page_color: 0, free_quota_bw: 0, free_quota_color: 0, quota_applies_to: 'color' })
 }
@@ -104,28 +164,32 @@ function removeRate(index: number) {
   form.rates.splice(index, 1)
 }
 
-watch([() => form.brand_id, () => form.model], ([newBrand, newModel]) => {
-  const brandName = getBrandName(newBrand)
-  if (brandName && brandName !== '-') {
-    form.name = `${brandName} ${newModel || ''}`.trim()
-  } else {
-    form.name = newModel || ''
-  }
-})
-
 function openAdd() {
-  Object.assign(form, { serial_no: '', serial_numbers: [], temp_serial: '', brand_id: null, type_id: null, uom_id: '', model: '', name: '', price: null, is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, free_quota_bw: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
+  Object.assign(form, { serial_no: '', serial_numbers: [], temp_serial: '', brand_id: null, type_id: null, print_tech: '', uom_id: '', model: '', name: '', price: null, is_copier: false, is_computer: false, current_meter_bw: 0, current_meter_color: 0, free_quota_color: 0, free_quota_bw: 0, rates: [], specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' } })
   showModal.value = true
 }
 
 function openEdit(item: any) {
   editingItem.value = item
+  let detectedTech = item.print_tech || ''
+  if (!detectedTech && item.specs) {
+    try {
+      const s = typeof item.specs === 'string' ? JSON.parse(item.specs) : item.specs
+      detectedTech = s.print_tech || ''
+    } catch {}
+  }
+  if (!detectedTech && item.name) {
+    if (/\bLaser\b/i.test(item.name)) detectedTech = 'Laser'
+    else if (/\bInject\b/i.test(item.name) || /\bInkjet\b/i.test(item.name)) detectedTech = 'Inject'
+  }
+
   Object.assign(form, {
     serial_no: item.serial_no,
     serial_numbers: [],
     temp_serial: '',
     brand_id: item.brand_id,
     type_id: item.type_id,
+    print_tech: detectedTech,
     uom_id: item.uom_id ?? '',
     model: item.model,
     name: item.name || '',
@@ -155,14 +219,24 @@ async function handleSubmit() {
     addSerialNumber()
   }
 
-  if (!form.brand_id || !form.type_id || !form.name.trim() || (editingItem.value && !form.serial_no.trim())) {
-    toast.warning('Please complete all required fields (Unit Name, Brand, Type, Serial Number).')
+  if (!form.brand_id || !form.type_id || (editingItem.value && !form.serial_no.trim())) {
+    toast.warning('Please complete all required fields (Brand, Unit Type, Serial Number).')
     return
   }
+
+  if (isPrinterOrCopier.value && !form.print_tech) {
+    toast.warning('Silakan pilih tipe Laser atau Inject untuk Printer / Copier Machine.')
+    return
+  }
+
   try {
     const payload = {
       ...form,
-      specs: form.is_computer ? JSON.stringify(form.specsData) : ''
+      print_tech: form.print_tech || undefined,
+      specs: JSON.stringify({
+        ...(form.is_computer ? form.specsData : {}),
+        print_tech: form.print_tech || undefined,
+      })
     }
     if (editingItem.value) {
       await resources.units.update(String(editingItem.value.id), payload)
@@ -276,16 +350,16 @@ const badgeFalse = {
 
 <template>
   <div>
-    <PageHeader title="Units" :button-label="isTechnician ? undefined : 'Add Unit'" permission="unit:create"
+    <PageHeader title="Products" :button-label="isTechnician ? undefined : 'Add Product'" permission="unit:create"
       @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search units..." permission="unit" @edit="openEdit"
+    <DataTable :columns="columns" :data="data" search-placeholder="Search products..." permission="unit" @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #toolbar>
         <ExcelImportButtons master-key="unit" @imported="fetchData" />
       </template>
       <template #cell-name="{ row }">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span>{{ row.name }}</span>
+          <span>{{ formatUnitDisplayName(row) }}</span>
           <span v-if="row.is_external" class="badge badge-warning" style="font-size: 10px; padding: 2px 6px;">External</span>
         </div>
       </template>
@@ -316,11 +390,11 @@ const badgeFalse = {
         </span>
       </template>
     </DataTable>
-    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Unit' : 'Add Unit'"
+    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'"
       @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="unit-serial" class="form-label">
-          Serial Number 
+          SN (Serial Number)
           <span v-if="!editingItem" style="font-weight:normal; font-size: 0.85em; color: var(--color-text-light);">(Tekan enter atau koma untuk menambah)</span>
         </label>
         
@@ -332,6 +406,7 @@ const badgeFalse = {
           <input 
             type="text" 
             v-model="form.temp_serial" 
+            @input="form.temp_serial = ($event.target as HTMLInputElement).value.toUpperCase()"
             @keydown.enter.prevent="addSerialNumber"
             @keydown.comma.prevent="addSerialNumber"
             @blur="addSerialNumber"
@@ -341,10 +416,10 @@ const badgeFalse = {
         </div>
         
         <input v-else id="unit-serial" v-model="form.serial_no" @input="form.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input" style="text-transform: uppercase;"
-          placeholder="Unit serial number">
+          placeholder="Product serial number (SN)">
       </div>
       <div class="form-group">
-        <label for="unit-name" class="form-label">Unit Name</label>
+        <label for="unit-name" class="form-label">Product Name</label>
         <input id="unit-name" v-model="form.name" type="text" class="form-input" placeholder="Auto-generated" disabled
           style="background-color: var(--color-surface-hover); cursor: not-allowed;">
       </div>
@@ -355,6 +430,17 @@ const badgeFalse = {
       <div class="form-group" style="position: relative;">
         <label for="unit-type" class="form-label">Unit Type</label>
         <CustomSelect id="unit-type" v-model="form.type_id" :options="typeOptions" placeholder="Select unit type" />
+      </div>
+      <div v-if="isPrinterOrCopier" class="form-group" style="position: relative;">
+        <label for="unit-print-tech" class="form-label">
+          Kategori Cetak (Laser / Inject) <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <CustomSelect
+          id="unit-print-tech"
+          v-model="form.print_tech"
+          :options="printTechOptions"
+          placeholder="-- Pilih Laser atau Inject --"
+        />
       </div>
           <div class="form-group" style="position: relative;">
         <label for="uom" class="form-label">Unit Of Measure</label>
@@ -419,9 +505,9 @@ const badgeFalse = {
         </div>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Unit" :message="`Are you sure you want to delete this unit?`"
+    <ConfirmDialog :open="showConfirm" title="Delete Product" :message="`Are you sure you want to delete this product?`"
       @close="showConfirm = false" @confirm="handleDelete" />
-    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Unit" :item-label="hardDelete.expected"
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Product" :item-label="hardDelete.expected"
       :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>

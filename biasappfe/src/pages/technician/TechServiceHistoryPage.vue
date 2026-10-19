@@ -7,6 +7,7 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { isCopierReport } from '@/utils/copierReport'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
+import FormModal from '@/components/ui/FormModal.vue'
 import { useToast } from '@/composables/useToast'
 import html2pdf from 'html2pdf.js'
 import * as XLSX from 'xlsx'
@@ -14,6 +15,13 @@ import * as XLSX from 'xlsx'
 const router = useRouter()
 const toast = useToast()
 const { currentUser } = useAuth()
+const showDetailModal = ref(false)
+const selectedHistory = ref<any>(null)
+
+function openDetail(job: any) {
+  selectedHistory.value = job
+  showDetailModal.value = true
+}
 const {
   serviceReports,
   findCustomer,
@@ -246,6 +254,7 @@ function exportToExcel() {
               <th>Action / Result</th>
               <th>Photos</th>
               <th>Technician</th>
+              <th style="text-align: center;">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -272,14 +281,86 @@ function exportToExcel() {
                 </div>
               </td>
               <td>{{ getTechName(job.technician_id) }}</td>
+              <td style="text-align: center;">
+                <button type="button" class="btn btn-sm btn-outline" @click="openDetail(job)" title="Lihat Detail Service History">
+                  Detail
+                </button>
+              </td>
             </tr>
             <tr v-if="filteredHistory.length === 0">
-              <td colspan="7" class="text-center py-lg text-muted">No service history matching the filter.</td>
+              <td colspan="8" class="text-center py-lg text-muted">No service history matching the filter.</td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <!-- Modal Detail Service History -->
+    <FormModal
+      :open="showDetailModal"
+      :title="selectedHistory ? `Service History — ${selectedHistory.report_no || 'Detail'}` : 'Service History Detail'"
+      max-width="600px"
+      @close="showDetailModal = false"
+    >
+      <div v-if="selectedHistory" style="display: flex; flex-direction: column; gap: 14px; font-size: 13px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: var(--color-surface-raised, #f8fafc); padding: 12px; border-radius: 8px;">
+          <div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Customer</div>
+            <div style="font-weight: 600;">{{ getCustomerName(selectedHistory.customer_id) }}</div>
+          </div>
+          <div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Unit & Serial No</div>
+            <div style="font-weight: 600;">{{ getUnitName(selectedHistory.unit_id) }}</div>
+          </div>
+          <div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Tanggal Selesai</div>
+            <div>{{ selectedHistory.time_out ? new Date(selectedHistory.time_out).toLocaleString('en-GB') : '-' }}</div>
+          </div>
+          <div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Tipe Service</div>
+            <div>{{ getServiceTypeLabel(selectedHistory.service_type) }}</div>
+          </div>
+          <div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Teknisi</div>
+            <div>{{ getTechName(selectedHistory.technician_id) }}</div>
+          </div>
+          <div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Status</div>
+            <span class="badge badge-success">{{ String(selectedHistory.status || 'COMPLETED').toUpperCase() }}</span>
+          </div>
+        </div>
+
+        <div>
+          <label style="font-weight: 600; display: block; margin-bottom: 4px;">Problem / Masalah Mesin:</label>
+          <div style="background: var(--color-surface-sunken, #f1f5f9); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap;">
+            {{ selectedHistory.machine_problem || '-' }}
+          </div>
+        </div>
+
+        <div>
+          <label style="font-weight: 600; display: block; margin-bottom: 4px;">Action / Tindakan Perbaikan:</label>
+          <div style="background: var(--color-surface-sunken, #f1f5f9); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap;">
+            {{ selectedHistory.repair_action || '-' }}
+          </div>
+        </div>
+
+        <div v-if="selectedHistory.photo_before || selectedHistory.photo_after" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Foto Awal:</label>
+            <img v-if="selectedHistory.photo_before" :src="selectedHistory.photo_before" alt="Foto Awal" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
+            <span v-else class="text-muted text-xs">Tidak ada foto</span>
+          </div>
+          <div>
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Foto Akhir:</label>
+            <img v-if="selectedHistory.photo_after" :src="selectedHistory.photo_after" alt="Foto Akhir" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
+            <span v-else class="text-muted text-xs">Tidak ada foto</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" style="width: 100%;" @click="showDetailModal = false">Tutup</button>
+      </template>
+    </FormModal>
   </div>
 </template>
 

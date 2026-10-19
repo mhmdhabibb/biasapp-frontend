@@ -589,7 +589,7 @@ function exportMonthToPdf() {
   }
 }
 
-const saleItems = ref<{ product_id: number | null; unit_id: string | null; _combined_id: string | null; qty: number; unit_price: number; is_computer: boolean; specs: { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string; }; description: string; }[]>([])
+const saleItems = ref<{ product_id: string | null; unit_id: string | null; _combined_id: string | null; qty: number; unit_price: number; is_computer: boolean; specs: { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string; }; description: string; }[]>([])
 
 const form = reactive({
   sale_no: '',
@@ -625,7 +625,7 @@ const calcDiscount = computed(() => Math.max(0, Number(form.discount) || 0))
 const calcTotal = computed(() => Math.max(0, calcSubtotal.value - calcDiscount.value))
 
 function addSaleItem() {
-  saleItems.value.push({ product_id: null as any, unit_id: null, _combined_id: null, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' })
+  saleItems.value.push({ product_id: null, unit_id: null, _combined_id: null, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' })
 }
 
 function removeSaleItem(idx: number) {
@@ -634,7 +634,14 @@ function removeSaleItem(idx: number) {
 
 function onCombinedItemChange(idx: number) {
   const item = saleItems.value[idx]
-  if (!item || !item._combined_id) return
+  if (!item) return
+  if (!item._combined_id) {
+    item.product_id = null
+    item.unit_id = null
+    item.unit_price = 0
+    item.is_computer = false
+    return
+  }
 
   const parseSpecs = (raw: any) => {
     const blank = { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }
@@ -646,7 +653,7 @@ function onCombinedItemChange(idx: number) {
   }
 
   if (item._combined_id.startsWith('P_')) {
-    item.product_id = parseInt(item._combined_id.replace('P_', ''))
+    item.product_id = item._combined_id.replace('P_', '')
     item.unit_id = null
     const prod = findProduct(item.product_id)
     if (prod) {
@@ -737,10 +744,24 @@ function openEdit(item: any) {
 }
 
 async function handleSubmit() {
-  if (!form.customer_id) return
+  if (!form.customer_id) {
+    toast.warning('Customer is required.')
+    return
+  }
   if (!form.installation_address.trim()) {
     toast.warning('Installation/delivery address is required.')
     return
+  }
+  if (!saleItems.value || saleItems.value.length === 0) {
+    toast.warning('At least 1 item is required.')
+    return
+  }
+  for (let i = 0; i < saleItems.value.length; i++) {
+    const it = saleItems.value[i]
+    if (!it.product_id && !it.unit_id) {
+      toast.warning(`Please select a product or unit for item #${i + 1}.`)
+      return
+    }
   }
 
   // Konversi expired date -> duration

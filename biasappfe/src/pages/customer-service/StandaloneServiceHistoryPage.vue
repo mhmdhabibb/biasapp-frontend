@@ -15,11 +15,22 @@ import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import type { TableColumn } from '@/types'
+import * as XLSX from 'xlsx'
+import html2pdf from 'html2pdf.js'
 
 const toast = useToast()
 const { can } = usePermission()
 const store = useMasterStore()
 const resources = useResourcesStore()
+
+const filterCustomer = ref<any>(null)
+const filterCustomerOptions = computed(() => [
+  { value: null as any, label: 'Semua Customer' },
+  ...(store.customers.value as any[]).map((c: any) => ({
+    value: c.id,
+    label: c.company_name || c.name || `Customer ${c.id}`,
+  })),
+])
 
 const filterTechnician = ref<any>(null)
 
@@ -37,6 +48,9 @@ const standaloneList = computed(() => {
   let list = (store.deliveryOrders.value as any[]).filter(
     (d: any) => String(d.do_type || '').toLowerCase() === 'service',
   )
+  if (filterCustomer.value) {
+    list = list.filter((d: any) => String(d.customer_id) === String(filterCustomer.value))
+  }
   if (filterTechnician.value) {
     if (filterTechnician.value === 'unassigned') {
       list = list.filter((d: any) => !d.technician_id)
@@ -49,8 +63,8 @@ const standaloneList = computed(() => {
   )
 })
 
+// Hide nomor DO pada tabel Service History
 const columns: TableColumn[] = [
-  { key: 'do_number', label: 'No. Service' },
   { key: 'customer_id', label: 'Customer' },
   { key: 'delivery_date', label: 'Tanggal' },
   { key: 'technician_id', label: 'Teknisi' },
@@ -228,6 +242,75 @@ async function handleDelete() {
 function handlePrint(row: any) {
   printDeliveryServiceHistory(row)
 }
+
+function exportExcel() {
+  if (!standaloneList.value.length) {
+    toast.error('Tidak ada data untuk diexport.')
+    return
+  }
+  const rows = standaloneList.value.map((d: any) => ({
+    'Customer': customerName(d.customer_id),
+    'Unit / Product': productSummary(d),
+    'Tanggal': d.delivery_date ? new Date(d.delivery_date).toLocaleDateString('en-GB') : '-',
+    'Teknisi': technicianName(d.technician_id),
+    'Problem': d.problem || d.notes || '-',
+    'Action': d.action || '-',
+    'Status': String(d.status || '-').toUpperCase().replace('_', ' ')
+  }))
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Service History")
+  const custName = filterCustomer.value ? `_${customerName(filterCustomer.value).replace(/[^a-zA-Z0-9]/g, '_')}` : ''
+  XLSX.writeFile(wb, `Service_History${custName}_${Date.now()}.xlsx`)
+}
+
+function exportPdf() {
+  if (!standaloneList.value.length) {
+    toast.error('Tidak ada data untuk diexport.')
+    return
+  }
+  const custName = filterCustomer.value ? customerName(filterCustomer.value) : 'Semua Customer'
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2 style="margin-bottom: 4px;">Laporan Service History Mandiri</h2>
+      <p style="color: #666; margin-top: 0; font-size: 13px;">Customer: <strong>${custName}</strong> | Tanggal Export: ${new Date().toLocaleDateString('en-GB')}</p>
+      <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px;">
+        <thead>
+          <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+            <th style="padding: 8px; text-align: left; border: 1px solid #e2e8f0;">Tanggal</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #e2e8f0;">Customer</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #e2e8f0;">Unit / Product</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #e2e8f0;">Problem</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #e2e8f0;">Action</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #e2e8f0;">Teknisi</th>
+            <th style="padding: 8px; text-align: left; border: 1px solid #e2e8f0;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${standaloneList.value.map((d: any) => `
+            <tr>
+              <td style="padding: 8px; border: 1px solid #e2e8f0;">${d.delivery_date ? new Date(d.delivery_date).toLocaleDateString('en-GB') : '-'}</td>
+              <td style="padding: 8px; border: 1px solid #e2e8f0;">${customerName(d.customer_id)}</td>
+              <td style="padding: 8px; border: 1px solid #e2e8f0;">${productSummary(d)}</td>
+              <td style="padding: 8px; border: 1px solid #e2e8f0;">${d.problem || d.notes || '-'}</td>
+              <td style="padding: 8px; border: 1px solid #e2e8f0;">${d.action || '-'}</td>
+              <td style="padding: 8px; border: 1px solid #e2e8f0;">${technicianName(d.technician_id)}</td>
+              <td style="padding: 8px; border: 1px solid #e2e8f0;">${String(d.status || '-').toUpperCase().replace('_', ' ')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `
+  const opt = {
+    margin: 0.3,
+    filename: `Service_History_${Date.now()}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+  }
+  html2pdf().set(opt).from(htmlContent).save()
+}
 </script>
 
 <template>
@@ -237,7 +320,18 @@ function handlePrint(row: any) {
       button-label="Buat Form Baru"
       permission="delivery_order:create"
       @add="openAdd"
-    />
+    >
+      <template #actions>
+        <button class="btn btn-outline" @click="exportPdf" style="display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Export PDF
+        </button>
+        <button class="btn btn-outline" @click="exportExcel" style="display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="17"></line><line x1="16" y1="13" x2="8" y2="17"></line></svg>
+          Export Excel
+        </button>
+      </template>
+    </PageHeader>
 
     <div class="info-alert mb-4">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -248,12 +342,18 @@ function handlePrint(row: any) {
       <span>Form tersendiri <strong>tanpa assign job</strong>. CS mengisi <strong>Customer Detail</strong>, teknisi mengisi <strong>Product Detail</strong> di menu teknisi.</span>
     </div>
 
-    <div class="filter-bar mb-4" style="display: flex; gap: 1rem; align-items: center; background: var(--color-surface, #fff); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--color-border-light);">
-      <div style="font-size: 13px; font-weight: 600;">Filter Teknisi:</div>
-      <CustomSelect v-model="filterTechnician" :options="filterTechnicianOptions" class="form-select" style="max-width: 300px; flex: 1;" />
+    <div class="filter-bar mb-4" style="display: flex; gap: 1rem; align-items: center; background: var(--color-surface, #fff); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--color-border-light); flex-wrap: wrap;">
+      <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 260px;">
+        <span style="font-size: 13px; font-weight: 600; white-space: nowrap;">Filter Customer:</span>
+        <CustomSelect v-model="filterCustomer" :options="filterCustomerOptions" class="form-select" style="flex: 1;" />
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 260px;">
+        <span style="font-size: 13px; font-weight: 600; white-space: nowrap;">Filter Teknisi:</span>
+        <CustomSelect v-model="filterTechnician" :options="filterTechnicianOptions" class="form-select" style="flex: 1;" />
+      </div>
     </div>
 
-    <DataTable :columns="columns" :data="standaloneList" search-placeholder="Cari no. service / customer...">
+    <DataTable :columns="columns" :data="standaloneList" search-placeholder="Cari customer / tanggal...">
       <template #cell-customer_id="{ value, row }">
         <div class="font-medium">{{ customerName(value) }}</div>
         <div class="text-xs text-muted product-summary-link" @click="openDetail(row)" title="Klik untuk melihat detail pekerjaan">{{ productSummary(row) }}</div>
@@ -268,7 +368,8 @@ function handlePrint(row: any) {
         </span>
       </template>
       <template #actions="{ row }">
-        <button v-if="can('delivery_order:read') && row.status !== 'pending' && hasDeliveryHistory(row)" class="btn btn-sm btn-outline" @click="handlePrint(row)">Print</button>
+        <button class="btn btn-sm btn-outline" @click="openDetail(row)" title="Lihat Detail Pekerjaan">Detail</button>
+        <button v-if="can('delivery_order:read') && row.status !== 'pending' && hasDeliveryHistory(row)" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="handlePrint(row)">Print</button>
         <button v-if="can('delivery_order:delete')" class="btn btn-sm btn-outline btn-danger" style="margin-left: 0.5rem;" @click="openDelete(row)">Hapus</button>
       </template>
     </DataTable>

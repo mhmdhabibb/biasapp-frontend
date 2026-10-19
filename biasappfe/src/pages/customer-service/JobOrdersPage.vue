@@ -68,15 +68,15 @@ async function fetchJobOrders() {
       if (isDelivery) taskType = "do";
       else if (isMaintenance) taskType = "maintenance";
       else if (isVisit) taskType = "visit";
+      const doNum = j.delivery_order?.do_number || j.do_number;
       return {
         ...j,
         taskType,
+        do_number: doNum || j.do_number,
         service_request_no:
-          sr?.request_no ||
-          j.delivery_order?.do_number ||
-          srpt?.report_no ||
-          j.job_order_no ||
-          "-",
+          isDelivery
+            ? (doNum || j.job_order_no || "-")
+            : (sr?.request_no || srpt?.report_no || j.job_order_no || "-"),
         customer_name: customer?.company_name || customer?.name || "-",
         problem:
           sr?.problem_description ||
@@ -668,6 +668,26 @@ function doItemLabel(item: any): string {
   return `Item x${item?.qty || 1}`;
 }
 
+function jobDisplayNo(job: any): string {
+  if (!job) return "-";
+  if (isDeliveryJob(job)) {
+    return (
+      job.delivery_order?.do_number ||
+      job.do_number ||
+      job.service_request_no ||
+      job.job_order_no ||
+      "-"
+    );
+  }
+  return (
+    job.service_request_no ||
+    job.job_order_no ||
+    job.service_request?.request_no ||
+    job.report_no ||
+    "-"
+  );
+}
+
 function onDragOver(techId: string | number) {
   dragOverTechId.value = techId;
 }
@@ -684,6 +704,22 @@ const assignScheduledDate = ref("");
 const assignVisitDate = ref("");
 const assignSignature = ref("");
 const isAssigning = ref(false);
+const sigFileInput = ref<HTMLInputElement | null>(null);
+
+function handleSignatureFileUpload(ev: Event) {
+  const target = ev.target as HTMLInputElement;
+  const file = target?.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    toast.error("File harus berupa gambar (JPG, PNG, atau WEBP)");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    assignSignature.value = (e.target?.result as string) || "";
+  };
+  reader.readAsDataURL(file);
+}
 
 function toLocalDatetimeStr(d?: string | Date) {
   const date = d ? new Date(d) : new Date();
@@ -745,13 +781,14 @@ function cancelAssign() {
   showAssignModal.value = false;
   assignTarget.value = null;
   assignSignature.value = "";
+  if (sigFileInput.value) sigFileInput.value.value = "";
 }
 
 async function confirmAssign() {
   if (!assignTarget.value || isAssigning.value) return;
 
   if (assignTarget.value.task.taskType === "do" && !assignSignature.value) {
-    toast.error("Wajib tanda tangan sebelum assign delivery order.");
+    toast.error("Wajib upload gambar tanda tangan sebelum assign delivery order.");
     return;
   }
 
@@ -851,12 +888,14 @@ async function confirmAssign() {
   } else if (task.taskType === "do") {
     // Buat baris job_orders bertipe delivery; backend ikut update
     // delivery_orders.technician_id + status jadi issued.
+    const doNumber = task.do_number || task.delivery_order?.do_number;
     const payload = {
+      job_order_no: doNumber || `DO-${Date.now().toString().slice(-6)}`,
       delivery_order_id: task.id,
       job_type: "delivery",
       technician_id: techId,
       scheduled_date: new Date(assignDeliveryDate.value).toISOString(),
-      instructions: task.notes || `Delivery ${task.do_number || ""}`.trim(),
+      instructions: task.notes || `Delivery ${doNumber || ""}`.trim(),
       assigner_signature: assignSignature.value,
       assigner_name: assignerName,
     };
@@ -1327,10 +1366,7 @@ async function confirmAssign() {
                 tabindex="0" @click="openJobDetail(job)" @keydown.enter="openJobDetail(job)">
                 <div class="ac-row">
                   <span class="ref-no">{{
-                    job.service_request_no ||
-                    job.job_order_no ||
-                    job.do_number ||
-                    job.report_no
+                    jobDisplayNo(job)
                   }}</span>
                   <span class="badge" :class="statusBadgeClass(job.status)">
                     {{ String(job.status || "new").replace("_", " ") }}
@@ -1420,9 +1456,7 @@ async function confirmAssign() {
         <div class="detail-hero">
           <div class="detail-hero-main">
             <span class="detail-hero-id">{{
-              selectedJob.job_order_no ||
-              selectedJob.do_number ||
-              selectedJob.report_no
+              jobDisplayNo(selectedJob)
             }}</span>
             <span class="badge" :class="statusBadgeClass(selectedJob.status)">
               {{ String(selectedJob.status || "new").replace("_", " ") }}
@@ -1822,8 +1856,33 @@ async function confirmAssign() {
         </div>
 
         <div class="form-group mt-lg" v-if="assignTarget?.task?.taskType === 'do'">
-          <label class="form-label">Tanda Tangan CS / Admin <span class="text-danger">*</span></label>
-          <SignaturePad v-model="assignSignature" height="160px" />
+          <label class="form-label" style="display: block; font-weight: 500; font-size: 13px; margin-bottom: 6px;">
+            Upload Tanda Tangan CS / Admin (Gambar) <span class="text-danger">*</span>
+          </label>
+          <div v-if="assignSignature" class="sig-preview-wrapper" style="border: 1px dashed var(--color-border); border-radius: var(--radius-md); padding: 12px; text-align: center; background: var(--color-surface-raised, #f8fafc);">
+            <img :src="assignSignature" alt="Preview Tanda Tangan" style="max-height: 120px; max-width: 100%; object-fit: contain; margin-bottom: 8px; display: inline-block;" />
+            <div>
+              <button type="button" class="btn btn-sm btn-outline text-danger" @click="assignSignature = ''; if (sigFileInput) sigFileInput.value = ''">
+                Hapus / Ganti Gambar
+              </button>
+            </div>
+          </div>
+          <div v-else class="sig-upload-box" style="border: 2px dashed var(--color-border); border-radius: var(--radius-md); padding: 20px; text-align: center; background: var(--color-surface-sunken, #f1f5f9); cursor: pointer;" @click="sigFileInput?.click()">
+            <input
+              ref="sigFileInput"
+              type="file"
+              accept="image/*"
+              style="display: none;"
+              @change="handleSignatureFileUpload"
+            />
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="margin: 0 auto 8px; color: var(--color-text-muted); display: block;">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <div style="font-weight: 500; font-size: 13px; color: var(--color-text);">Klik untuk upload gambar tanda tangan</div>
+            <div style="font-size: 11px; color: var(--color-text-muted); margin-top: 4px;">Format JPG, PNG, atau WEBP</div>
+          </div>
         </div>
       </div>
 
