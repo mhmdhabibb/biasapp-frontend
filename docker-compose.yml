@@ -11,5 +11,10 @@ services:
       - ./biasappfe/.env # <-- Arahkan ke file .env di dalam biasappfe
     ports:
       - "3000:80"
-    environment:
-      - NODE_ENV=production
+    networks:
+      - vps_infra_net
+
+networks:
+  vps_infra_net:
+    external: true
+    name: vps-infra_default
