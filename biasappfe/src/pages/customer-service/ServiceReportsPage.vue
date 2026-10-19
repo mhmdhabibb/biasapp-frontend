@@ -137,10 +137,12 @@ const sprColumns: TableColumn[] = [
 const creatingId = ref<string | number | null>(null)
 
 function getProduct(row: any) {
+  if (row?.item_name) return row.item_name
   const id = row?.product_id ?? row
   return (
     (row as any)?.product?.name ||
     findProduct(id as any)?.name ||
+    row?.item_name ||
     '-'
   )
 }
@@ -223,12 +225,12 @@ async function handleCreatePO() {
       ]
     })
     await store.refreshInBackground()
-    toast.success(`Purchase order created for ${request.request_no}`)
+    toast.success(`Request form created for ${request.request_no}`)
     showCreatePOModal.value = false
     poTarget.value = null
     router.push('/accounting/purchase-orders')
   } catch (err) {
-    toast.error(toast.fromError(err, 'Failed to create purchase order'))
+    toast.error(toast.fromError(err, 'Failed to create request form'))
   } finally {
     creatingId.value = null
   }

@@ -161,7 +161,7 @@ async function submitForm() {
       const srPayload = {
         request_no: `MT-${Date.now().toString().slice(-6)}`,
         customer_id: form.value.customer_id,
-        unit_id: form.value.unit_id,
+        unit_id: form.value.unit_id || null,
         project_name: form.value.project_name,
         problem_description: `[MAINTENANCE_VISIT] ${form.value.problem || form.value.instructions}`,
         request_date: new Date().toISOString(),

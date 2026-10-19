@@ -156,21 +156,31 @@ function openAdd() {
   showModal.value = true
 }
 
+const lastDetailKey = ref<string | null>(null)
+
 function openEdit(item: any) {
   editingItem.value = item
+  lastDetailKey.value = detailKey.value
   showDetail.value = false
-  detailKey.value = null
   Object.assign(form, {
     service_report_id: item.service_report_id || null,
     contract_item_id: item.contract_item_id || null,
     unit_id: item.unit_id || null,
     paper_size_id: item.paper_size_id || null,
     color_mode: item.color_mode === 'color' ? 'color' : 'bw',
-    start_meter: item.start_meter || 0,
-    end_meter: item.end_meter || 0,
+    start_meter: item.start_meter ?? 0,
+    end_meter: item.end_meter ?? 0,
     reading_date: String(item.reading_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
   })
   showModal.value = true
+}
+
+function handleCloseModal() {
+  showModal.value = false
+  if (lastDetailKey.value) {
+    detailKey.value = lastDetailKey.value
+    showDetail.value = true
+  }
 }
 
 async function handleSubmit() {
@@ -209,6 +219,10 @@ async function handleSubmit() {
     }
     await master.refreshInBackground()
     showModal.value = false
+    if (lastDetailKey.value) {
+      detailKey.value = lastDetailKey.value
+      showDetail.value = true
+    }
   } catch (err: any) {
     toast.error(err?.message || 'Failed to save meter reading!')
   }
@@ -354,6 +368,109 @@ function recordedBy(row: any): string {
         <button class="btn btn-outline" @click="showDetail = false">Close</button>
       </template>
     </FormModal>
+
+    <!-- Modal Edit / Add Meter Reading -->
+    <FormModal
+      :open="showModal"
+      :title="editingItem ? 'Edit Meter Reading' : 'Add Meter Reading'"
+      max-width="560px"
+      @close="handleCloseModal"
+      @submit="handleSubmit"
+    >
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div v-if="editingItem" style="padding: 10px 14px; background: var(--color-surface-raised, #f8fafc); border-radius: var(--radius-sm); font-size: var(--font-size-sm); border: 1px solid var(--color-border-light);">
+          <div style="color: var(--color-text-muted); font-size: var(--font-size-xs); margin-bottom: 2px;">Target Unit / Contract:</div>
+          <div style="font-weight: 600;">{{ unitName(form.unit_id) }} &bull; {{ contractNo(form.contract_item_id) }}</div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" style="font-weight: 500; font-size: 13px; margin-bottom: 4px; display: block;">
+              Start Meter <span style="color: var(--color-danger, #ef4444);">*</span>
+            </label>
+            <input
+              v-model.number="form.start_meter"
+              type="number"
+              min="0"
+              class="form-input"
+              required
+              placeholder="0"
+              style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="font-weight: 500; font-size: 13px; margin-bottom: 4px; display: block;">
+              End Meter <span style="color: var(--color-danger, #ef4444);">*</span>
+            </label>
+            <input
+              v-model.number="form.end_meter"
+              type="number"
+              min="0"
+              class="form-input"
+              required
+              placeholder="0"
+              style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);"
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" style="font-weight: 500; font-size: 13px; margin-bottom: 4px; display: block;">
+              Total Usage (Kalkulasi)
+            </label>
+            <input
+              :value="Math.max(0, Number(form.end_meter || 0) - Number(form.start_meter || 0))"
+              type="number"
+              class="form-input"
+              disabled
+              style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-raised, #f1f5f9);"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="font-weight: 500; font-size: 13px; margin-bottom: 4px; display: block;">
+              Reading Date <span style="color: var(--color-danger, #ef4444);">*</span>
+            </label>
+            <input
+              v-model="form.reading_date"
+              type="date"
+              class="form-input"
+              required
+              style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);"
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" style="font-weight: 500; font-size: 13px; margin-bottom: 4px; display: block;">
+              Ukuran Kertas
+            </label>
+            <select
+              v-model="form.paper_size_id"
+              class="form-input"
+              style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);"
+            >
+              <option :value="null">Pilih Ukuran Kertas</option>
+              <option v-for="opt in paperSizeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="font-weight: 500; font-size: 13px; margin-bottom: 4px; display: block;">
+              Color Mode
+            </label>
+            <select
+              v-model="form.color_mode"
+              class="form-input"
+              style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);"
+            >
+              <option v-for="opt in colorModeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </FormModal>
+
     <ConfirmDialog :open="showConfirm" title="Delete Meter Reading" :message="`Are you sure you want to delete this meter reading?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
 </template>

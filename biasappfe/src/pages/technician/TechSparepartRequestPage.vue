@@ -49,15 +49,19 @@ const sparepartOptions = computed(() =>
   availableSpareparts.value.map((p: any) => ({ value: p.id, label: `${p.name} (Stock: ${p.stock})` })),
 )
 
+const inputMode = ref<'db' | 'manual'>('db')
+
 const form = ref({
   service_report_id: serviceId,
   product_id: null as any,
+  item_name: '',
   qty: 1
 })
 
-function getProductName(id: any) {
-  const p = products.value.find((x: any) => String(x.id) === String(id))
-  return p ? p.name : 'Unknown Product'
+function getSparepartDisplayName(req: any) {
+  if (req.item_name) return req.item_name
+  const p = products.value.find((x: any) => String(x.id) === String(req.product_id))
+  return p ? p.name : (req.product?.name || 'Sparepart')
 }
 
 function getServiceReportNo(id: any) {
@@ -67,7 +71,23 @@ function getServiceReportNo(id: any) {
 
 async function submitRequest() {
   if (!form.value.service_report_id) return toast.warning('Select a job first!')
-  if (!form.value.product_id) return toast.warning('Select a sparepart!')
+  
+  let finalProductId = form.value.product_id || null
+  let finalItemName = (form.value.item_name || '').trim()
+
+  if (inputMode.value === 'db') {
+    if (!finalProductId) return toast.warning('Select a sparepart from database!')
+    const p = products.value.find((x: any) => String(x.id) === String(finalProductId))
+    if (p) finalItemName = p.name
+  } else {
+    if (!finalItemName) return toast.warning('Please enter sparepart name!')
+    // Match with existing product in db if possible
+    const match = products.value.find((x: any) => x.name?.toLowerCase().trim() === finalItemName.toLowerCase())
+    if (match) {
+      finalProductId = match.id
+    }
+  }
+
   if (form.value.qty < 1) return toast.warning('Quantity must be at least 1!')
 
   if (confirm('Submit sparepart request?')) {
@@ -75,7 +95,8 @@ async function submitRequest() {
       await api.post('/service-spareparts/', {
         service_report_id: form.value.service_report_id,
         technician_id: myTechId.value,
-        product_id: form.value.product_id,
+        product_id: finalProductId,
+        item_name: finalItemName,
         qty: Number(form.value.qty)
       })
       await refreshInBackground()
@@ -83,6 +104,7 @@ async function submitRequest() {
       
       // Reset form and return to list
       form.value.product_id = null
+      form.value.item_name = ''
       form.value.qty = 1
       showForm.value = false
     } catch (err: any) {
@@ -121,7 +143,7 @@ async function submitRequest() {
             <tr v-for="req in myRequests" :key="req.id">
               <td>{{ new Date(req.created_at || '').toLocaleDateString() }}</td>
               <td>{{ getServiceReportNo(req.service_report_id) }}</td>
-              <td>{{ getProductName(req.product_id) }}</td>
+              <td>{{ getSparepartDisplayName(req) }}</td>
               <td>{{ req.qty }}</td>
               <td>
                 <span class="badge" :class="req.status === 'approved' ? 'badge-success' : req.status === 'rejected' ? 'badge-danger' : 'badge-warning'">
@@ -143,8 +165,35 @@ async function submitRequest() {
       </div>
 
       <div class="form-group">
-        <label class="form-label">Sparepart <span class="text-danger">*</span></label>
+        <label class="form-label">Metode Input Sparepart</label>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="inputMode === 'db' ? 'btn-primary' : 'btn-outline'"
+            @click="inputMode = 'db'"
+          >
+            Tarik dari Database
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="inputMode === 'manual' ? 'btn-primary' : 'btn-outline'"
+            @click="inputMode = 'manual'"
+          >
+            Isi Sendiri (Manual)
+          </button>
+        </div>
+      </div>
+
+      <div v-if="inputMode === 'db'" class="form-group">
+        <label class="form-label">Pilih dari Database <span class="text-danger">*</span></label>
         <CustomSelect v-model="form.product_id" class="form-select" :options="sparepartOptions" placeholder="-- Select Sparepart --" />
+      </div>
+
+      <div v-else class="form-group">
+        <label class="form-label">Nama Sparepart (Manual) <span class="text-danger">*</span></label>
+        <input v-model="form.item_name" type="text" class="form-input" placeholder="Ketik nama sparepart..." />
       </div>
 
       <div class="form-group">

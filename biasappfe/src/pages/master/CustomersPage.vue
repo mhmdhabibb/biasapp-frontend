@@ -169,9 +169,59 @@ const customerHistory = computed(() => {
   })
 })
 
+const selectedUnitTab = ref<string>('all')
+
+function getItemUnit(item: any): { id: string; name: string } {
+  if (item._type === 'service') {
+    const u = item.unit || masterStore.findUnit(item.unit_id)
+    if (u) {
+      const label = `${u.model || u.name || 'Product'}${u.serial_no ? ` (${u.serial_no})` : ''}`
+      return { id: String(u.id), name: label }
+    }
+  } else if (item._type === 'delivery') {
+    const doi = item.delivery_order_items || []
+    if (doi.length > 0) {
+      const first = doi[0]
+      if (first.unit_id) {
+        const u = first.unit || masterStore.findUnit(first.unit_id)
+        if (u) {
+          const label = `${u.model || u.name || 'Product'}${u.serial_no ? ` (${u.serial_no})` : ''}`
+          return { id: String(u.id), name: label }
+        }
+      }
+      if (first.model) {
+        return { id: `ext-${first.model}`, name: `${first.model}${first.serial_no ? ` (${first.serial_no})` : ''}` }
+      }
+      if (first.product_id) {
+        const p = first.product || masterStore.findProduct(first.product_id)
+        if (p) return { id: `prod-${p.id}`, name: p.name }
+      }
+    }
+  }
+  return { id: 'other', name: 'Lainnya / Tanpa Product' }
+}
+
+const productTabs = computed(() => {
+  const tabsMap = new Map<string, { id: string; name: string; count: number }>()
+  for (const item of customerHistory.value) {
+    const u = getItemUnit(item)
+    if (!tabsMap.has(u.id)) {
+      tabsMap.set(u.id, { id: u.id, name: u.name, count: 0 })
+    }
+    tabsMap.get(u.id)!.count++
+  }
+  return Array.from(tabsMap.values())
+})
+
+const activeFilteredCustomerHistory = computed(() => {
+  if (selectedUnitTab.value === 'all') return customerHistory.value
+  return customerHistory.value.filter((item) => getItemUnit(item).id === selectedUnitTab.value)
+})
+
 async function openHistory(customer: Customer) {
   historyModalCustomer.value = customer
-  await masterStore.refreshOnly(['serviceReports', 'deliveryOrders', 'technicians'])
+  selectedUnitTab.value = 'all'
+  await masterStore.refreshOnly(['serviceReports', 'deliveryOrders', 'technicians', 'units', 'products'])
 }
 
 function getHistoryTechnicianName(item: any): string {
@@ -357,43 +407,69 @@ function goToForm(item: any) {
       :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
 
-    <FormModal :open="!!historyModalCustomer" :title="'Riwayat Pekerjaan: ' + (historyModalCustomer?.company_name || historyModalCustomer?.name || '')" max-width="900px" @close="historyModalCustomer = null">
+    <FormModal :open="!!historyModalCustomer" :title="'Riwayat Pekerjaan: ' + (historyModalCustomer?.company_name || historyModalCustomer?.name || '')" max-width="960px" @close="historyModalCustomer = null">
       <div v-if="customerHistory.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
         Belum ada riwayat pengerjaan untuk customer ini.
       </div>
-      <div v-else class="table-scroll" style="max-height: 400px; overflow-y: auto;">
-        <table class="data-table" style="width: 100%; text-align: left; border-collapse: collapse;">
-          <thead>
-            <tr style="border-bottom: 1px solid var(--color-border-light);">
-              <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tanggal</th>
-              <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">No. Form</th>
-              <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tipe</th>
-              <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Teknisi</th>
-              <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Status</th>
-              <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Problem / Keluhan</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="item in customerHistory" :key="item._type + '-' + item.id" style="border-bottom: 1px solid var(--color-border-light); font-size: 13px;">
-              <td style="padding: 10px 12px;">{{ item.service_date || item.delivery_date ? new Date(item.service_date || item.delivery_date).toLocaleDateString('en-GB') : '-' }}</td>
-              <td style="padding: 10px 12px; font-weight: 500;">
-                <a href="#" @click.prevent="goToForm(item)" style="color: var(--color-primary); text-decoration: underline;">
-                  {{ item.report_no || item.do_number || '-' }}
-                </a>
-              </td>
-              <td style="padding: 10px 12px;">{{ item._type === 'service' ? 'Service Report' : 'Stand Alone' }}</td>
-              <td style="padding: 10px 12px;">{{ getHistoryTechnicianName(item) }}</td>
-              <td style="padding: 10px 12px;">
-                <span class="badge" :class="item.status === 'completed' || item.status === 'delivered' ? 'badge-success' : 'badge-warning'" style="font-size: 11px;">
-                  {{ (item.status || 'pending').toUpperCase().replace('_', ' ') }}
-                </span>
-              </td>
-              <td style="padding: 10px 12px; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="getHistoryProblem(item)">
-                 {{ getHistoryProblem(item) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-else>
+        <!-- Tab per product (unit) -->
+        <div v-if="productTabs.length > 0" class="history-tabs mb-3" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid var(--color-border-light); padding-bottom: 10px;">
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="selectedUnitTab === 'all' ? 'btn-primary' : 'btn-outline'"
+            @click="selectedUnitTab = 'all'"
+          >
+            Semua Product ({{ customerHistory.length }})
+          </button>
+          <button
+            v-for="tab in productTabs"
+            :key="tab.id"
+            type="button"
+            class="btn btn-sm"
+            :class="selectedUnitTab === tab.id ? 'btn-primary' : 'btn-outline'"
+            @click="selectedUnitTab = tab.id"
+          >
+            {{ tab.name }} ({{ tab.count }})
+          </button>
+        </div>
+
+        <div class="table-scroll" style="max-height: 400px; overflow-y: auto;">
+          <table class="data-table" style="width: 100%; text-align: left; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--color-border-light);">
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tanggal</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Form</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Product</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tipe</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Teknisi</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Status</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Problem / Keluhan</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in activeFilteredCustomerHistory" :key="item._type + '-' + item.id" style="border-bottom: 1px solid var(--color-border-light); font-size: 13px;">
+                <td style="padding: 10px 12px;">{{ item.service_date || item.delivery_date ? new Date(item.service_date || item.delivery_date).toLocaleDateString('en-GB') : '-' }}</td>
+                <td style="padding: 10px 12px; font-weight: 500;">
+                  <a href="#" @click.prevent="goToForm(item)" style="color: var(--color-primary); text-decoration: underline;">
+                    {{ item._type === 'service' ? (item.report_no || 'Service Report') : 'Service History' }}
+                  </a>
+                </td>
+                <td style="padding: 10px 12px; font-weight: 500;">{{ getItemUnit(item).name }}</td>
+                <td style="padding: 10px 12px;">{{ item._type === 'service' ? 'Service Report' : 'Stand Alone' }}</td>
+                <td style="padding: 10px 12px;">{{ getHistoryTechnicianName(item) }}</td>
+                <td style="padding: 10px 12px;">
+                  <span class="badge" :class="item.status === 'completed' || item.status === 'delivered' ? 'badge-success' : 'badge-warning'" style="font-size: 11px;">
+                    {{ (item.status || 'pending').toUpperCase().replace('_', ' ') }}
+                  </span>
+                </td>
+                <td style="padding: 10px 12px; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="getHistoryProblem(item)">
+                   {{ getHistoryProblem(item) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" style="width: 100%;" @click="historyModalCustomer = null">Tutup Riwayat</button>

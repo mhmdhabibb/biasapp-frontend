@@ -116,6 +116,7 @@ export interface Product {
   name: string;
   sku: string;
   category_id: string | number | null;
+  category?: ProductCategory | null;
   brand_id: string | number | null;
   uom_id: string | number | null;
   uom?: UOM | null;

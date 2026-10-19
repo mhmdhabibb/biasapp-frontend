@@ -93,68 +93,78 @@ const allMenuGroups: MenuGroup[] = [
     ],
   },
   {
-    title: "sidebar.master_data",
+    title: "sidebar.sales_group",
     items: [
-      { label: "sidebar.users", icon: "users", route: "/master/users" },
-      { label: "sidebar.roles", icon: "shield", route: "/master/roles" },
-      {
-        label: "sidebar.permissions",
-        icon: "key",
-        route: "/master/permissions",
-      },
-      { label: "sidebar.modules", icon: "grid", route: "/master/modules" },
       {
         label: "sidebar.customers",
         icon: "building",
         route: "/master/customers",
       },
-      // { label: 'sidebar.technicians', icon: 'wrench', route: '/master/technicians' },
-      // { label: 'sidebar.suppliers', icon: 'truck', route: '/master/suppliers' },
       {
-        label: "sidebar.unit_types",
-        icon: "layers",
-        route: "/master/unit-types",
-      },
-      { label: "sidebar.brands", icon: "tag", route: "/master/brands" },
-      {
-        label: "sidebar.paper_size",
-        icon: "file",
-        route: "/master/paper-size",
+        label: "sidebar.products",
+        icon: "box",
+        route: "/master/products",
       },
       {
-        label: "sidebar.paper_type",
-        icon: "file-text",
-        route: "/master/paper-type",
+        label: "sidebar.sales",
+        icon: "shopping-cart",
+        route: "/customer-service/sales",
       },
       {
-        label: "sidebar.product_categories",
-        icon: "folder",
-        route: "/master/product-categories",
+        label: "sidebar.sales_invoices",
+        icon: "receipt",
+        route: "/customer-service/sales-invoices",
       },
-      { label: "sidebar.uoms", icon: "ruler", route: "/master/uoms" },
-      { label: "sidebar.products", icon: "box", route: "/master/products" },
-      { label: "sidebar.units", icon: "printer", route: "/master/units" },
       {
         label: "sidebar.warranties",
         icon: "shield-check",
         route: "/master/warranties",
       },
       {
-        label: "sidebar.excel_templates",
-        icon: "upload",
-        route: "/master/excel-templates",
-        roles: ["admin"],
+        label: "sidebar.warranty_claims",
+        icon: "alert-circle",
+        route: "/customer-service/warranty-claims",
       },
     ],
   },
   {
-    title: "sidebar.transaction",
+    title: "sidebar.rental_group",
     items: [
+      {
+        label: "sidebar.units",
+        icon: "printer",
+        route: "/master/units",
+      },
       {
         label: "sidebar.contract_items",
         icon: "clipboard",
         route: "/customer-service/contract-items",
       },
+      {
+        label: "sidebar.rentals",
+        icon: "box",
+        route: "/customer-service/rentals",
+      },
+      {
+        label: "sidebar.meter_readings",
+        icon: "activity",
+        route: "/customer-service/monthly-meter-readings",
+      },
+      {
+        label: "sidebar.rental_invoices",
+        icon: "file-invoice",
+        route: "/customer-service/rental-invoices",
+      },
+      {
+        label: "Copier Reports",
+        icon: "file-text",
+        route: "/customer-service/copier-reports",
+      },
+    ],
+  },
+  {
+    title: "sidebar.service_group",
+    items: [
       {
         label: "sidebar.service_requests",
         icon: "alert-circle",
@@ -182,25 +192,15 @@ const allMenuGroups: MenuGroup[] = [
         route: "/customer-service/standalone-service-history",
       },
       {
-        label: "Copier Reports",
-        icon: "file-text",
-        route: "/customer-service/copier-reports",
-      },
-      {
-        label: "sidebar.meter_readings",
+        label: "sidebar.monitoring_service",
         icon: "activity",
-        route: "/customer-service/monthly-meter-readings",
+        route: "/customer-service/monitoring-service",
       },
-      {
-        label: "sidebar.rentals",
-        icon: "box",
-        route: "/customer-service/rentals",
-      },
-      {
-        label: "sidebar.sales",
-        icon: "shopping-cart",
-        route: "/customer-service/sales",
-      },
+    ],
+  },
+  {
+    title: "sidebar.finance_group",
+    items: [
       {
         label: "sidebar.purchase_orders",
         icon: "clipboard",
@@ -212,35 +212,56 @@ const allMenuGroups: MenuGroup[] = [
         route: "/accounting/delivery-orders",
       },
       {
-        label: "sidebar.rental_invoices",
-        icon: "file-invoice",
-        route: "/customer-service/rental-invoices",
-      },
-      {
-        label: "sidebar.sales_invoices",
-        icon: "receipt",
-        route: "/customer-service/sales-invoices",
-      },
-      {
         label: "sidebar.payments",
         icon: "credit-card",
         route: "/customer-service/payments",
       },
+    ],
+  },
+  {
+    title: "sidebar.master_data",
+    items: [
       {
-        label: "sidebar.warranty_claims",
-        icon: "alert-circle",
-        route: "/customer-service/warranty-claims",
+        label: "sidebar.product_categories",
+        icon: "folder",
+        route: "/master/product-categories",
+      },
+      { label: "sidebar.brands", icon: "tag", route: "/master/brands" },
+      {
+        label: "sidebar.unit_types",
+        icon: "layers",
+        route: "/master/unit-types",
+      },
+      { label: "sidebar.uoms", icon: "ruler", route: "/master/uoms" },
+      {
+        label: "sidebar.paper_size",
+        icon: "file",
+        route: "/master/paper-size",
+      },
+      {
+        label: "sidebar.paper_type",
+        icon: "file-text",
+        route: "/master/paper-type",
+      },
+      {
+        label: "sidebar.excel_templates",
+        icon: "upload",
+        route: "/master/excel-templates",
+        roles: ["admin"],
       },
     ],
   },
   {
-    title: "sidebar.monitoring",
+    title: "sidebar.system",
     items: [
+      { label: "sidebar.users", icon: "users", route: "/master/users" },
+      { label: "sidebar.roles", icon: "shield", route: "/master/roles" },
       {
-        label: "sidebar.monitoring_service",
-        icon: "activity",
-        route: "/customer-service/monitoring-service",
+        label: "sidebar.permissions",
+        icon: "key",
+        route: "/master/permissions",
       },
+      { label: "sidebar.modules", icon: "grid", route: "/master/modules" },
     ],
   },
   {
@@ -402,11 +423,17 @@ function handleLogout() {
 
 watch(
   () => route.path,
-  () => {
+  (currentPath) => {
+    menuGroups.value.forEach((group) => {
+      if (group.items.some((item) => item.route === currentPath)) {
+        expandedGroups.value.add(group.title);
+      }
+    });
     if (window.innerWidth < 769) {
       emit("close");
     }
   },
+  { immediate: true }
 );
 
 const iconPaths: Record<string, string> = {
@@ -451,6 +478,8 @@ const iconPaths: Record<string, string> = {
   bell: "M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0",
   upload: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M17 8l-5-5-5 5 M12 3v12",
   download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M7 10l5 5 5-5 M12 15V3",
+  calendar:
+    "M19 4H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2z M16 2v4 M8 2v4 M3 10h18",
 };
 </script>
 

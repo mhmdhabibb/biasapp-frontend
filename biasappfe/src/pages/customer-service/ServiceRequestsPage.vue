@@ -512,7 +512,7 @@ async function handleSubmit() {
   const payload = {
     request_no: form.request_no,
     customer_id: form.customer_id,
-    unit_id: form.unit_ids.length > 0 ? form.unit_ids[0] : null,
+    unit_id: form.unit_ids.length > 0 && form.unit_ids[0] ? form.unit_ids[0] : null,
     project_name: form.project_name,
     problem_description: form.problem_description,
     request_date: new Date(form.request_date).toISOString(),
@@ -915,7 +915,7 @@ onMounted(() => {
           <div class="form-row external-unit-fields">
             <div class="form-group">
               <label class="form-label form-label-sm">Serial Number</label>
-              <input v-model="form.external_serial_no" type="text" class="form-input text-uppercase "
+              <input v-model="form.external_serial_no" @input="form.external_serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input text-uppercase"
                 placeholder="Opsional — auto-generate bila kosong" />
             </div>
             <div class="form-group">
