@@ -1,5 +1,7 @@
 // @ts-nocheck
 import { useMasterStore } from "@/composables/useMasterStore";
+import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import biasLogoUrl from "@/assets/bias-logo.png";
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({
@@ -457,22 +459,37 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
         display: flex;
         justify-content: space-between;
         clear: both;
-        padding-top: 50px;
+        margin-top: 40px;
         text-align: center;
-        font-weight: bold;
       }
       .sig-box {
-        width: 250px;
+        width: 220px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .sig-title {
+        font-weight: bold;
+        font-size: 11px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .sig-space {
+        height: 65px;
+        width: 100%;
       }
       .sig-line {
-        margin-top: 80px;
         border-bottom: 1px solid #000;
-        padding-bottom: 5px;
+        width: 85%;
+        margin: 2px auto 6px auto;
       }
       .sig-name {
-        margin-top: 60px;
-        font-weight: bold;
-        color: #000;
+        font-weight: normal;
+        font-size: 11px;
+        min-height: 18px;
+        word-break: break-word;
       }
     </style>
   </head>
@@ -483,11 +500,7 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
         <tr>
           <td class="logo-col">
             <div class="logo-container">
-              <svg class="logo" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="50" cy="50" r="40" stroke="#003366" stroke-width="12"/>
-                <path d="M50 10 A40 40 0 0 1 90 50" stroke="#F4B042" stroke-width="12" fill="none"/>
-                <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#F4B042" font-weight="bold" font-size="22">BiAS</text>
-              </svg>
+              <img src="${BIAS_LOGO_DATA_URL || biasLogoUrl}" class="logo" alt="BiAS Logo" />
               <div class="company-details">
                 <h1>PT. BIAS SURYA</h1>
                 <h1>TEKNOLOGI</h1>
@@ -602,13 +615,16 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
       <!-- Signatures -->
       <div class="signatures">
         <div class="sig-box">
-          Received By,
+          <div class="sig-title">Received By,</div>
+          <div class="sig-space"></div>
           <div class="sig-line"></div>
+          <div class="sig-name">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</div>
         </div>
         <div class="sig-box">
-          Sincerely,
-          <div class="sig-name">${signer}</div>
-          <div class="sig-line" style="margin-top: 10px;"></div>
+          <div class="sig-title">Sincerely,</div>
+          <div class="sig-space"></div>
+          <div class="sig-line"></div>
+          <div class="sig-name">${signer || "( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )"}</div>
         </div>
       </div>
     </div>
@@ -638,9 +654,10 @@ export async function printPurchaseOrder(po: any, currentUser?: any): Promise<bo
     try {
       const res = await resources.serviceSpareparts.get(String(targetId));
       if (res?.data) {
-        req = res.data;
-        if (res.data.service_report) sr = res.data.service_report;
-        if (res.data.service_report?.customer) customer = res.data.service_report.customer;
+        const d = res.data as any;
+        req = d;
+        if (d.service_report) sr = d.service_report;
+        if (d.service_report?.customer) customer = d.service_report.customer;
       }
     } catch {
       // fallback to service report

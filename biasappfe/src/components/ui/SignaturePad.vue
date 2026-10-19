@@ -41,7 +41,7 @@ function setup() {
   ctx = canvas.getContext("2d")!;
   ctx.scale(dpr, dpr);
   ctx.strokeStyle = "#111";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
@@ -53,7 +53,19 @@ function restoreFromModel() {
   ctx.clearRect(0, 0, canvasW, canvasH);
   if (props.modelValue?.startsWith("data:image")) {
     const img = new Image();
-    img.onload = () => ctx?.drawImage(img, 0, 0, canvasW, canvasH);
+    img.onload = () => {
+      if (!ctx) return;
+      const aspect = (img.width || 1) / (img.height || 1);
+      let drawW = canvasW * 0.85;
+      let drawH = drawW / aspect;
+      if (drawH > canvasH * 0.85) {
+        drawH = canvasH * 0.85;
+        drawW = drawH * aspect;
+      }
+      const drawX = (canvasW - drawW) / 2;
+      const drawY = (canvasH - drawH) / 2;
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    };
     img.src = props.modelValue;
   }
 }
@@ -96,19 +108,66 @@ function onMove(e: MouseEvent | TouchEvent) {
   ctx.stroke();
 }
 
+function getTrimmedDataUrl(): string {
+  if (!canvasRef.value || !ctx) return "";
+  const canvas = canvasRef.value;
+  const w = canvas.width;
+  const h = canvas.height;
+  if (!w || !h) return "";
+
+  try {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    let found = false;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const a = data[idx + 3] ?? 0;
+        const r = data[idx] ?? 255;
+        const g = data[idx + 1] ?? 255;
+        const b = data[idx + 2] ?? 255;
+        if (a > 30 && (r < 230 || g < 230 || b < 230)) {
+          found = true;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    if (!found || maxX <= minX || maxY <= minY) return "";
+
+    const pad = Math.round(8 * (window.devicePixelRatio || 1));
+    const cropX = Math.max(0, minX - pad);
+    const cropY = Math.max(0, minY - pad);
+    const cropW = Math.min(w - cropX, (maxX - minX) + pad * 2);
+    const cropH = Math.min(h - cropY, (maxY - minY) + pad * 2);
+
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = cropW;
+    cropCanvas.height = cropH;
+    const cropCtx = cropCanvas.getContext("2d");
+    if (!cropCtx) return canvas.toDataURL("image/png");
+
+    cropCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    return cropCanvas.toDataURL("image/png");
+  } catch {
+    return canvas.toDataURL("image/png");
+  }
+}
+
 function onUp() {
   if (!isDrawing) return;
   isDrawing = false;
   if (canvasRef.value && ctx) {
-    const currentFill = ctx.fillStyle;
-    ctx.globalCompositeOperation = "destination-over";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvasW, canvasH);
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = currentFill;
-
-    lastEmitted = canvasRef.value.toDataURL("image/jpeg", 0.5);
-    emit("update:modelValue", lastEmitted);
+    const trimmed = getTrimmedDataUrl();
+    if (trimmed) {
+      lastEmitted = trimmed;
+      emit("update:modelValue", lastEmitted);
+    }
   }
 }
 

@@ -97,6 +97,7 @@ export interface PaperType {
 export interface ProductCategory {
   id: string | number;
   name: string;
+  slug?: string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

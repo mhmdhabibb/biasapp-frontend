@@ -1,9 +1,93 @@
 // @ts-nocheck
 import { useMasterStore } from "@/composables/useMasterStore";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import biasLogoUrl from "@/assets/bias-logo.png";
 
-export function printDeliveryOrder(item: any): boolean {
+function trimSignature(dataUrl?: string): Promise<string> {
+  if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image")) {
+    return Promise.resolve(dataUrl || "");
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) return resolve(dataUrl);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) return resolve(dataUrl);
+
+        ctx.drawImage(img, 0, 0);
+        const imgData = ctx.getImageData(0, 0, w, h);
+        const data = imgData.data;
+
+        let minX = w, minY = h, maxX = 0, maxY = 0;
+        let found = false;
+
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 4;
+            const a = data[idx + 3] ?? 0;
+            const r = data[idx] ?? 255;
+            const g = data[idx + 1] ?? 255;
+            const b = data[idx + 2] ?? 255;
+
+            // Dark stroke pixel: has opacity and is not white background
+            if (a > 30 && (r < 235 || g < 235 || b < 235)) {
+              found = true;
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+
+        if (!found || maxX <= minX || maxY <= minY) {
+          return resolve(dataUrl);
+        }
+
+        const pad = 6;
+        const cropX = Math.max(0, minX - pad);
+        const cropY = Math.max(0, minY - pad);
+        const cropW = Math.min(w - cropX, (maxX - minX) + pad * 2);
+        const cropH = Math.min(h - cropY, (maxY - minY) + pad * 2);
+
+        const cropCanvas = document.createElement("canvas");
+        cropCanvas.width = cropW;
+        cropCanvas.height = cropH;
+        const cropCtx = cropCanvas.getContext("2d");
+        if (!cropCtx) return resolve(dataUrl);
+
+        cropCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        resolve(cropCanvas.toDataURL("image/png"));
+      } catch (e) {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+export async function printDeliveryOrder(item: any): Promise<boolean> {
   if (!item) return false;
+  // Open window synchronously to avoid popup blocker
+  const win = window.open("", "_blank");
+  if (!win) return false;
+
+  const [assignerSig, techSig, custSig] = await Promise.all([
+    trimSignature(item.assigner_signature),
+    trimSignature(item.technician_signature),
+    trimSignature(item.customer_signature),
+  ]);
+
   const masterStore = useMasterStore();
 
   const customer: any = masterStore.findCustomer(item.customer_id) || {};
@@ -116,10 +200,16 @@ export function printDeliveryOrder(item: any): boolean {
     itemsHtml = `<tr><td colspan="5" style="text-align: center; color: #666; padding: 10px;">No item data available</td></tr>`;
   }
 
+  const assignerName = item.assigner_name || item.user?.name || item.created_by?.name || "";
+  const techName = item.technician_name || (item.technician ? (item.technician.name || item.technician.full_name) : "");
+  const recipientName = item.customer_name || item.recipient_name || "";
+  const logoSrc = BIAS_LOGO_DATA_URL || biasLogoUrl;
+
   const html = `
     <!DOCTYPE html>
     <html>
       <head>
+        <meta charset="utf-8">
         <title>Delivery Order - ${item.do_number}</title>
         <style>
           @media print {
@@ -144,7 +234,7 @@ export function printDeliveryOrder(item: any): boolean {
           .header-title { font-weight: bold; text-align: center; border-bottom: 1px solid #0066cc; padding: 4px; }
           
           .logo-container { display: flex; align-items: center; padding: 10px; }
-          .logo { width: 70px; height: 70px; margin-right: 15px; flex-shrink: 0; }
+          .logo { width: 70px; height: 70px; margin-right: 15px; flex-shrink: 0; object-fit: contain; }
           
           .company-details h1 { margin: 0; font-size: 16px; font-weight: bold; }
           .company-details h2 { margin: 0; font-size: 12px; font-style: italic; font-weight: normal; margin-bottom: 5px; color: #333; }
@@ -160,9 +250,13 @@ export function printDeliveryOrder(item: any): boolean {
           .items-table th, .items-table td { border: 1px solid #0066cc; padding: 4px; vertical-align: top; }
           .items-table th { font-weight: bold; text-align: center; }
           
-          .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 40px; text-align: center; font-weight: bold; font-size: 10px; padding-left: 20px; padding-right: 20px;}
-          .sig-box { width: 200px; }
-          .sig-line { margin-top: 60px; border-bottom: 1px solid #000; padding-bottom: 5px; text-transform: uppercase; }
+          .signatures { display: flex; justify-content: space-between; clear: both; margin-top: 35px; text-align: center; font-size: 11px; padding: 0 10px; }
+          .sig-box { width: 220px; display: flex; flex-direction: column; align-items: center; }
+          .sig-title { font-weight: bold; font-size: 11px; height: 22px; display: flex; align-items: center; justify-content: center; text-transform: uppercase; }
+          .sig-space { height: 70px; width: 100%; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; }
+          .sig-img { max-height: 65px; max-width: 170px; object-fit: contain; display: block; margin: 0 auto; }
+          .sig-line { border-bottom: 1px solid #000; width: 85%; margin: 2px auto 6px auto; }
+          .sig-name { font-weight: normal; font-size: 11px; min-height: 18px; line-height: 1.2; word-break: break-word; }
         </style>
       </head>
       <body>
@@ -171,7 +265,7 @@ export function printDeliveryOrder(item: any): boolean {
             <div class="header-box">
               <div class="header-title">SHIPPER</div>
               <div class="logo-container">
-                <img src="${BIAS_LOGO_DATA_URL}" class="logo" alt="BiAS Logo" />
+                <img src="${logoSrc}" class="logo" alt="BiAS Logo" />
                 <div class="company-details">
                   <h1>PT. BIAS SURYA</h1>
                   <h1>TEKNOLOGI</h1>
@@ -217,23 +311,29 @@ export function printDeliveryOrder(item: any): boolean {
           </table>
           
           <div class="signatures">
-            <div class="sig-box" style="text-align: center;">
-              PT BIAS SURYA TEKNOLOGI
-              ${item.assigner_signature ? `<div style="height: 70px; display: flex; align-items: flex-end; justify-content: center;"><img src="${item.assigner_signature}" style="max-height: 60px; object-fit: contain;" /></div>` : '<div style="height: 70px;"></div>'}
-              <div style="border-bottom: 1px solid #000; margin: 5px auto; width: 80%;"></div>
-              <div style="font-weight: normal;">${item.assigner_name || ""}</div>
+            <div class="sig-box">
+              <div class="sig-title">PT BIAS SURYA TEKNOLOGI</div>
+              <div class="sig-space">
+                ${assignerSig ? `<img src="${assignerSig}" class="sig-img" alt="Signature" />` : ''}
+              </div>
+              <div class="sig-line"></div>
+              <div class="sig-name">${assignerName || '( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )'}</div>
             </div>
-            <div class="sig-box" style="text-align: center;">
-              Delivered By,
-              ${item.technician_signature ? `<div style="height: 70px; display: flex; align-items: flex-end; justify-content: center;"><img src="${item.technician_signature}" style="max-height: 60px; object-fit: contain;" /></div>` : '<div style="height: 70px;"></div>'}
-              <div style="border-bottom: 1px solid #000; margin: 5px auto; width: 80%;"></div>
-              <div style="font-weight: normal;">${item.technician_name || ""}</div>
+            <div class="sig-box">
+              <div class="sig-title">Delivered By,</div>
+              <div class="sig-space">
+                ${techSig ? `<img src="${techSig}" class="sig-img" alt="Signature" />` : ''}
+              </div>
+              <div class="sig-line"></div>
+              <div class="sig-name">${techName || '( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )'}</div>
             </div>
-            <div class="sig-box" style="text-align: center;">
-              Received By,
-              ${item.customer_signature ? `<div style="height: 70px; display: flex; align-items: flex-end; justify-content: center;"><img src="${item.customer_signature}" style="max-height: 60px; object-fit: contain;" /></div>` : '<div style="height: 70px;"></div>'}
-              <div style="border-bottom: 1px solid #000; margin: 5px auto; width: 80%;"></div>
-              <div style="font-weight: normal;">${item.customer_name || item.recipient_name || ""}</div>
+            <div class="sig-box">
+              <div class="sig-title">Received By,</div>
+              <div class="sig-space">
+                ${custSig ? `<img src="${custSig}" class="sig-img" alt="Signature" />` : ''}
+              </div>
+              <div class="sig-line"></div>
+              <div class="sig-name">${recipientName || '( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )'}</div>
             </div>
           </div>
         </div>
@@ -246,11 +346,8 @@ export function printDeliveryOrder(item: any): boolean {
     </html>
   `;
 
-  const win = window.open("", "_blank");
-  if (win) {
-    win.document.write(html);
-    win.document.close();
-    return true;
-  }
-  return false;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  return true;
 }
