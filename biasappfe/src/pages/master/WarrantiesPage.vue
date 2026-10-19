@@ -1,28 +1,46 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import CustomSelect from '@/components/ui/CustomSelect.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import { useMasterStore } from '@/composables/useMasterStore'
+import { useToast } from '@/composables/useToast'
+import { useHardDelete } from '@/composables/useHardDelete'
+import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Warranty } from '@/types'
 import { formatDateDDMMYYYY } from '@/utils/format'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+
+const toast = useToast()
+const { customers, units, products, sales } = useMasterStore()
 
 const columns: TableColumn[] = [
+  { key: 'customer_id', label: 'Customer' },
   { key: 'warranty_type', label: 'Warranty Type' },
-  { key: 'duration', label: 'Duration (months)' },
-  { key: 'start_date', label: 'Start Date' },
-  { key: 'end_date', label: 'End Date' },
+  { key: 'unit_id', label: 'Unit / Product' },
+  { key: 'source', label: 'Source' },
+  { key: 'start_date', label: 'Start' },
+  { key: 'end_date', label: 'End' },
   { key: 'status', label: 'Status' },
 ]
+
 const statusOptions = [
   { value: 'active', label: 'Active' },
   { value: 'expired', label: 'Expired' },
   { value: 'claimed', label: 'Claimed' },
+  { value: 'void', label: 'Void' },
+]
+
+const coverageOptions = [
+  { value: 'unit', label: 'Unit (Machine)' },
+  { value: 'product', label: 'Product / Spare Part' },
 ]
 
 const data = ref<Warranty[]>([])
+const rentals = ref<any[]>([])
 
 async function fetchData() {
   try {
@@ -30,43 +48,214 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch warranties:', error)
+    toast.error('Failed to fetch warranty data: ' + ((error as any).message || 'Error'))
   }
 }
 
-onMounted(fetchData)
+async function fetchRentals() {
+  try {
+    const res = await api.get<{ data: any[] }>('/rents')
+    rentals.value = res.data || []
+  } catch (error) {
+    console.error('Failed to fetch rentals for warranty source:', error)
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([fetchData(), fetchRentals()])
+})
 
 const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<Warranty | null>(null)
 const deletingItem = ref<Warranty | null>(null)
-const form = reactive({ warranty_type: '', duration: 12, start_date: '', end_date: '', status: 'active' })
+
+const form = reactive({
+  warranty_type: '',
+  customer_id: null as string | null,
+  sale_id: null as string | null,
+  coverage: 'unit' as 'unit' | 'product',
+  unit_id: null as string | null,
+  product_id: null as string | null,
+  duration_months: 12,
+  duration_days: 0,
+  start_date: '',
+  end_date: '',
+  terms_conditions: '',
+  status: 'active',
+})
+
+// Auto-compute end_date from start_date + duration
+watch([() => form.start_date, () => form.duration_months, () => form.duration_days], ([start, months, days]) => {
+  if (!start) return
+  const d = new Date(start)
+  d.setMonth(d.getMonth() + (months || 0))
+  d.setDate(d.getDate() + (days || 0))
+  form.end_date = d.toISOString().slice(0, 10)
+})
+
+// Reset unit/product when coverage type changes
+watch(() => form.coverage, () => {
+  form.unit_id = null
+  form.product_id = null
+})
+
+// Sales filtered by selected customer
+const customerSales = computed(() => {
+  if (!form.customer_id) return []
+  return (sales.value as any[]).filter(s => String(s.customer_id) === String(form.customer_id))
+})
+
+const customerOptions = computed(() =>
+  customers.value.map((c: any) => ({ value: String(c.id), label: c.company_name || c.name }))
+)
+const unitOptions = computed(() =>
+  units.value.map((u: any) => {
+    const st = String(u.status || '').toLowerCase()
+    const suffix = st && st !== 'available' ? ` — ${st}` : ''
+    return { value: String(u.id), label: `${u.name || u.model} (SN: ${u.serial_no || '-'})${suffix}` }
+  })
+)
+const productOptions = computed(() =>
+  products.value.map((p: any) => ({ value: String(p.id), label: p.name }))
+)
+const saleOptions = computed(() =>
+  customerSales.value.map((s: any) => ({ value: String(s.id), label: s.sale_no || `Sale #${s.id}` }))
+)
+
+function getCustomerName(row: any) {
+  if (row.customer) {
+    return row.customer.company_name || row.customer.name || '-'
+  }
+  const id = row.customer_id
+  const c = customers.value.find((c: any) => String(c.id) === String(id))
+  return (c as any)?.company_name || (c as any)?.name || '-'
+}
+
+function getUnitOrProductName(item: any) {
+  const embeddedUnit = item.unit
+  if (item.unit_id || embeddedUnit) {
+    const brand = embeddedUnit?.brand?.name
+    const model = embeddedUnit?.model || embeddedUnit?.name
+    if (model) return `${brand ? brand + ' ' : ''}${model} (SN: ${embeddedUnit?.serial_no || '-'})`
+    const u = units.value.find((u: any) => String(u.id) === String(item.unit_id))
+    if (u) {
+      const b = (u as any).brand?.name
+      return `${b ? b + ' ' : ''}${(u as any).name || (u as any).model} (SN: ${(u as any).serial_no || '-'})`
+    }
+    return item.unit_id ? `Unit #${String(item.unit_id).slice(0, 8)}` : '-'
+  }
+  const embeddedProduct = item.product
+  if (item.product_id || embeddedProduct) {
+    if (embeddedProduct?.name) return embeddedProduct.name
+    const p = products.value.find((p: any) => String(p.id) === String(item.product_id))
+    return p ? (p as any).name : (item.product_id ? `Product #${String(item.product_id).slice(0, 8)}` : '-')
+  }
+  return '-'
+}
+
+// Asal barang: transaksi penjualan (dijual) atau rental (di-rental).
+function getSource(item: any): string {
+  if (item.sale_id) {
+    const s = (sales.value as any[]).find((s: any) => String(s.id) === String(item.sale_id))
+    const no = s?.sale_no || item.sale?.sale_no
+    return no ? `Dijual — ${no}` : 'Dijual'
+  }
+  if (item.unit_id) {
+    for (const r of rentals.value) {
+      const items = r.rental_items || []
+      if (items.some((it: any) => String(it.unit_id) === String(item.unit_id))) {
+        return r.rental_no ? `Rental — ${r.rental_no}` : 'Rental'
+      }
+    }
+    const u = (units.value as any[]).find((u: any) => String(u.id) === String(item.unit_id))
+    const st = String(u?.status || item.unit?.status || '').toLowerCase()
+    if (st === 'rented') return 'Rental'
+    if (st === 'sold') return 'Dijual'
+  }
+  if (item.product_id) {
+    for (const s of sales.value as any[]) {
+      const items = s.sale_items || []
+      if (items.some((it: any) => String(it.product_id) === String(item.product_id))) {
+        return s.sale_no ? `Dijual — ${s.sale_no}` : 'Dijual'
+      }
+    }
+  }
+  return 'Manual'
+}
 
 function openAdd() {
   editingItem.value = null
-  Object.assign(form, { warranty_type: '', duration: 12, start_date: '', end_date: '', status: 'active' })
+  Object.assign(form, {
+    warranty_type: '',
+    customer_id: null,
+    sale_id: null,
+    coverage: 'unit',
+    unit_id: null,
+    product_id: null,
+    duration_months: 12,
+    duration_days: 0,
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: '',
+    terms_conditions: '',
+    status: 'active',
+  })
   showModal.value = true
 }
 
 function openEdit(item: Warranty) {
   editingItem.value = item
-  Object.assign(form, { warranty_type: item.warranty_type, duration: item.duration, start_date: item.start_date, end_date: item.end_date, status: item.status })
+  Object.assign(form, {
+    warranty_type: item.warranty_type,
+    customer_id: item.customer_id || null,
+    sale_id: item.sale_id || null,
+    coverage: item.unit_id ? 'unit' : 'product',
+    unit_id: item.unit_id || null,
+    product_id: item.product_id || null,
+    duration_months: item.duration_months ?? item.duration ?? 12,
+    duration_days: item.duration_days ?? 0,
+    start_date: item.start_date ? item.start_date.slice(0, 10) : '',
+    end_date: item.end_date ? item.end_date.slice(0, 10) : '',
+    terms_conditions: item.terms_conditions || '',
+    status: item.status,
+  })
   showModal.value = true
 }
 
 async function handleSubmit() {
-  if (!form.warranty_type.trim()) return
+  if (!form.warranty_type.trim() || !form.customer_id || !form.start_date) {
+    toast.warning('Please complete Warranty Type, Customer, and Start Date.')
+    return
+  }
+  const payload = {
+    warranty_type: form.warranty_type,
+    customer_id: form.customer_id,
+    sale_id: form.sale_id || null,
+    unit_id: form.coverage === 'unit' ? form.unit_id : null,
+    product_id: form.coverage === 'product' ? form.product_id : null,
+    duration_months: form.duration_months,
+    duration_days: form.duration_days,
+    start_date: form.start_date,
+    end_date: form.end_date,
+    terms_conditions: form.terms_conditions,
+    status: form.status,
+  }
   try {
     if (editingItem.value) {
-      await resources.warranties.update(String(editingItem.value.id), form)
+      await resources.warranties.update(String(editingItem.value.id), payload)
     } else {
-      await resources.warranties.create(form)
+      await resources.warranties.create(payload)
     }
     await fetchData()
     showModal.value = false
+    toast.success(editingItem.value ? 'Warranty updated successfully!' : 'Warranty saved successfully!')
   } catch (error) {
     console.error('Failed to save warranty:', error)
+    toast.error('Failed to save warranty: ' + ((error as any).message || 'Error'))
   }
 }
+
+const hardDelete = useHardDelete((id: string) => resources.warranties.hardRemove(id), fetchData)
 
 function openDelete(item: Warranty) { deletingItem.value = item; showConfirm.value = true }
 
@@ -75,8 +264,10 @@ async function handleDelete() {
     try {
       await resources.warranties.remove(String(deletingItem.value.id))
       await fetchData()
+      toast.success('Warranty deleted successfully!')
     } catch (error) {
       console.error('Failed to delete warranty:', error)
+      toast.error('Failed to delete warranty')
     }
   }
   showConfirm.value = false
@@ -85,8 +276,19 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Warranties" button-label="Add Warranty" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search warranties..." @edit="openEdit" @delete="openDelete">
+    <PageHeader title="Warranties"  />
+
+    <DataTable :columns="columns" :data="data" search-placeholder="Search warranties..." permission="warranty"
+      @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #cell-customer_id="{ row }">
+        {{ getCustomerName(row) }}
+      </template>
+      <template #cell-unit_id="{ row }">
+        {{ getUnitOrProductName(row) }}
+      </template>
+      <template #cell-source="{ row }">
+        {{ getSource(row) }}
+      </template>
       <template #cell-start_date="{ value }">
         {{ formatDateDDMMYYYY(value) }}
       </template>
@@ -99,34 +301,26 @@ async function handleDelete() {
         </span>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Warranty' : 'Add Warranty'" @close="showModal = false" @submit="handleSubmit">
-      <div class="form-group">
-        <label for="war-type" class="form-label">Warranty Type</label>
-        <input id="war-type" v-model="form.warranty_type" type="text" class="form-input" placeholder="e.g., Full Service, Spare Part Only">
-      </div>
-      <div class="form-group">
-        <label for="war-duration" class="form-label">Duration (months)</label>
-        <input id="war-duration" v-model.number="form.duration" type="number" class="form-input" placeholder="12" min="1">
-      </div>
-      <div class="form-group">
-        <label for="war-start" class="form-label">Start Date</label>
-        <input id="war-start" v-model="form.start_date" type="date" class="form-input">
-      </div>
-      <div class="form-group">
-        <label for="war-end" class="form-label">End Date</label>
-        <input id="war-end" v-model="form.end_date" type="date" class="form-input">
-      </div>
-      <div class="form-group" style="position: relative;">
-        <label for="war-status" class="form-label">Status</label>
-        <CustomSelect
-          id="war-status"
-          v-model="form.status"
-          :options="statusOptions"
-          placeholder="Select status"
-          :searchable="false"
-        />
-      </div>
-    </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Warranty" :message="`Are you sure you want to delete warranty '${deletingItem?.warranty_type}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+
+    
+
+    <ConfirmDialog :open="showConfirm" title="Delete Warranty"
+      :message="`Are you sure you want to delete warranty '${deletingItem?.warranty_type}'?`"
+      @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Warranty" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
+
+<style scoped>
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-base);
+}
+
+.required {
+  color: var(--color-danger);
+}
+</style>

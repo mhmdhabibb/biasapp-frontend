@@ -15,7 +15,7 @@ export function useBrandsStore() {
       brands.value = (await brandService.list()).data;
     } catch (reason) {
       error.value =
-        reason instanceof ApiError ? reason.message : "Gagal memuat data brand";
+        reason instanceof ApiError           ? reason.message : "Failed to load brand data";
     } finally {
       isLoading.value = false;
     }
@@ -36,5 +36,10 @@ export function useBrandsStore() {
     await fetchAll();
   }
 
-  return { brands, isLoading, error, fetchAll, create, update, remove };
+  async function hardRemove(id: string) {
+    await brandService.hardRemove(id);
+    await fetchAll();
+  }
+
+  return { brands, isLoading, error, fetchAll, create, update, remove, hardRemove };
 }

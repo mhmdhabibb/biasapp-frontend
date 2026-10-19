@@ -1,0 +1,1 @@
+export function useAutoReload(callback: () => void, interval = 30000) { let id: any; import('vue').then(({ onMounted, onUnmounted }) => { onMounted(() => { id = setInterval(callback, interval) }); onUnmounted(() => { clearInterval(id) }) }) }

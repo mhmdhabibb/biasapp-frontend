@@ -1,65 +1,102 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import type { TableColumn } from '@/types'
+import { usePermission } from "@/composables/usePermission";
+import type { TableColumn } from "@/types";
+import { computed, ref, useSlots } from "vue";
 
 const props = defineProps<{
-  columns: TableColumn[]
-  data: any[]
-  searchPlaceholder?: string
-}>()
+  columns: TableColumn[];
+  data: any[];
+  searchPlaceholder?: string;
+  /** Backend module key (e.g. "customer") used to gate default edit/delete buttons */
+  permission?: string;
+  /** Show the permanent-delete button (parent must gate this to superadmin) */
+  showHardDelete?: boolean;
+}>();
 
 defineEmits<{
-  (e: 'edit', item: any): void
-  (e: 'delete', item: any): void
-}>()
+  (e: "edit", item: any): void;
+  (e: "delete", item: any): void;
+  (e: "hard-delete", item: any): void;
+  (e: "row-click", item: any): void;
+}>();
 
-const searchQuery = ref('')
-const currentPage = ref(1)
-const perPage = 10
+const slots = useSlots();
+const { can } = usePermission();
+
+const showEdit = computed(
+  () => !props.permission || can(`${props.permission}:update`),
+);
+const showDelete = computed(
+  () => !props.permission || can(`${props.permission}:delete`),
+);
+const showDefaultActions = computed(() => showEdit.value || showDelete.value);
+// ACTION column: always shown when a custom #actions slot decides its own content,
+// otherwise only when at least one default action button is visible.
+const showActionsColumn = computed(
+  () => Boolean(slots.actions) || showDefaultActions.value,
+);
+
+const searchQuery = ref("");
+const currentPage = ref(1);
+const perPage = 10;
 
 const filteredData = computed(() => {
-  if (!searchQuery.value.trim()) return props.data
-  const q = searchQuery.value.toLowerCase()
+  if (!searchQuery.value.trim()) return props.data;
+  const q = searchQuery.value.toLowerCase();
   return props.data.filter((row) =>
     props.columns.some((col) => {
-      const val = row[col.key]
-      if (val == null) return false
-      return String(val).toLowerCase().includes(q)
-    })
-  )
-})
+      const val = row[col.key];
+      if (val == null) return false;
+      return String(val).toLowerCase().includes(q);
+    }),
+  );
+});
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredData.value.length / perPage)))
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(filteredData.value.length / perPage)),
+);
 const paginatedData = computed(() => {
-  const start = (currentPage.value - 1) * perPage
-  return filteredData.value.slice(start, start + perPage)
-})
+  const start = (currentPage.value - 1) * perPage;
+  return filteredData.value.slice(start, start + perPage);
+});
 
 function goToPage(page: number) {
   if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
+    currentPage.value = page;
   }
 }
 
 const visiblePages = computed(() => {
-  const pages: number[] = []
-  const total = totalPages.value
-  const current = currentPage.value
-  const delta = 2
-  for (let i = Math.max(1, current - delta); i <= Math.min(total, current + delta); i++) {
-    pages.push(i)
+  const pages: number[] = [];
+  const total = totalPages.value;
+  const current = currentPage.value;
+  const delta = 2;
+  for (
+    let i = Math.max(1, current - delta);
+    i <= Math.min(total, current + delta);
+    i++
+  ) {
+    pages.push(i);
   }
-  return pages
-})
+  return pages;
+});
 </script>
 
 <template>
   <div class="data-table-wrapper">
     <div class="data-table-toolbar">
       <div class="search-box">
-        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"/>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        <svg
+          class="search-icon"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
         <input
           v-model="searchQuery"
@@ -67,26 +104,48 @@ const visiblePages = computed(() => {
           class="form-input search-input"
           :placeholder="searchPlaceholder || 'Search data...'"
           @input="currentPage = 1"
-        >
+        />
       </div>
-      <span class="data-count">{{ filteredData.length }} items</span>
+      <div class="toolbar-right">
+        <slot name="toolbar"></slot>
+        <span class="data-count" aria-live="polite">
+          {{ `${filteredData.length} items` }}
+        </span>
+      </div>
     </div>
 
     <div v-if="data.length === 0" class="empty-state">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5">
-        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <line x1="9" y1="15" x2="15" y2="15"/>
+      <svg
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="var(--color-text-muted)"
+        stroke-width="1.5"
+      >
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="9" y1="15" x2="15" y2="15" />
       </svg>
       <p class="empty-title">No data yet</p>
       <p class="empty-desc">Data you add will appear here</p>
     </div>
 
-    <div v-else-if="filteredData.length === 0 && searchQuery" class="empty-state">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5">
-        <circle cx="11" cy="11" r="8"/>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        <line x1="8" y1="11" x2="14" y2="11"/>
+    <div
+      v-else-if="filteredData.length === 0 && searchQuery"
+      class="empty-state"
+    >
+      <svg
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="var(--color-text-muted)"
+        stroke-width="1.5"
+      >
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        <line x1="8" y1="11" x2="14" y2="11" />
       </svg>
       <p class="empty-title">Not found</p>
       <p class="empty-desc">No data matches "{{ searchQuery }}"</p>
@@ -104,39 +163,91 @@ const visiblePages = computed(() => {
             >
               {{ col.label }}
             </th>
-            <th class="th-actions">ACTION</th>
+            <th v-if="showActionsColumn" class="th-actions">ACTION</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, idx) in paginatedData" :key="row.id ?? idx">
+          <tr v-for="(row, idx) in paginatedData" :key="row.id ?? idx" @click="$emit('row-click', row)" style="cursor: pointer;">
             <td class="td-num">{{ (currentPage - 1) * perPage + idx + 1 }}</td>
             <td v-for="col in columns" :key="col.key">
               <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row">
-                {{ row[col.key] ?? '-' }}
+                {{ row[col.key] ?? "-" }}
               </slot>
             </td>
-            <td class="td-actions">
+            <td v-if="showActionsColumn" class="td-actions">
               <slot name="actions" :row="row">
                 <button
+                  v-if="showEdit"
                   class="action-btn action-btn--edit"
                   title="Edit"
-                  @click="$emit('edit', row)"
+                  @click.stop="$emit('edit', row)"
                 >
-                  <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  <svg
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
+                    ></path>
+                    <path
+                      d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
+                    ></path>
                   </svg>
                 </button>
                 <button
+                  v-if="showDelete"
                   class="action-btn action-btn--delete"
                   title="Delete"
-                  @click="$emit('delete', row)"
+                  @click.stop="$emit('delete', row)"
                 >
-                  <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
                     <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+                    <path
+                      d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                    ></path>
                     <line x1="10" y1="11" x2="10" y2="17"></line>
                     <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+                <button
+                  v-if="showHardDelete"
+                  class="action-btn action-btn--hard"
+                  title="Hapus permanen dari database (superadmin)"
+                  @click.stop="$emit('hard-delete', row)"
+                >
+                  <svg
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path
+                      d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                    ></path>
+                    <line x1="12" y1="11" x2="12" y2="17"></line>
                   </svg>
                 </button>
               </slot>
@@ -217,6 +328,13 @@ const visiblePages = computed(() => {
   white-space: nowrap;
 }
 
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -273,7 +391,8 @@ const visiblePages = computed(() => {
   border-bottom: none;
 }
 
-.th-num, .td-num {
+.th-num,
+.td-num {
   width: 48px;
   text-align: center;
   color: var(--color-text-muted);
@@ -299,31 +418,43 @@ const visiblePages = computed(() => {
   padding: 0;
   border-radius: 8px;
   cursor: pointer;
-  border: 1px solid var(--color-border-light);
-  background: transparent;
-  color: var(--color-text-muted);
+  border: none;
   transition:
     background var(--transition-fast),
     border-color var(--transition-fast),
     color var(--transition-fast),
-    transform var(--transition-fast);
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .action-btn:active {
   transform: scale(0.92);
 }
 
-.action-btn--edit:hover {
-  background: var(--color-primary-surface);
-  border-color: var(--color-primary-surface);
+.action-btn--edit {
+  background: rgba(48, 92, 255, 0.1);
   color: var(--color-primary);
 }
 
-.action-btn--delete:hover {
-  background: var(--color-danger-surface);
-  border-color: var(--color-danger-surface);
+.action-btn--edit:hover {
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(48, 92, 255, 0.3);
+}
+
+.action-btn--delete {
+  background: rgba(220, 38, 38, 0.1);
   color: var(--color-danger);
 }
+
+.action-btn--delete:hover {
+  background: var(--color-danger);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
+}
+
+/* .action-btn--hard lives in assets/main.css (global) so custom
+   #actions slots can reuse the same style. */
 
 .pagination {
   display: flex;

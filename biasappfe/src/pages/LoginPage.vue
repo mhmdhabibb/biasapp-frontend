@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth'
+import { useToast } from '@/composables/useToast'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const { login, loginError } = useAuth()
+const { success: toastSuccess } = useToast()
 
 const username = ref('')
 const password = ref('')
@@ -13,6 +15,7 @@ const showPassword = ref(false)
 async function handleSubmit() {
   const success = await login({ username: username.value, password: password.value })
   if (success) {
+    toastSuccess('Login successful')
     router.push('/')
   }
 }
@@ -28,9 +31,9 @@ async function handleSubmit() {
           src="@/assets/login-illustration.jpg"
           alt=""
         >
-        <h2 class="left-heading">Kelola Bisnis Anda dengan Lebih Efisien</h2>
+        <h2 class="left-heading">Manage Your Business More Efficiently</h2>
         <p class="left-subtext">
-          Satu platform untuk semua kebutuhan administrasi dan manajemen data perusahaan Anda.
+          One platform for all your company's administration and data management needs.
         </p>
       </div>
     </div>
@@ -40,8 +43,8 @@ async function handleSubmit() {
       <div class="login-form-wrapper">
         <div class="login-header">
           <img class="login-logo" src="@/assets/bias-logo.png" alt="BIAS">
-          <h1 class="login-title">Selamat Datang!</h1>
-          <p class="login-subtitle">Masuk ke akun Anda untuk melanjutkan</p>
+          <h1 class="login-title">Welcome!</h1>
+          <p class="login-subtitle">Sign in to your account to continue</p>
         </div>
 
         <form class="login-form" @submit.prevent="handleSubmit">
@@ -61,7 +64,7 @@ async function handleSubmit() {
                 v-model="username"
                 type="text"
                 class="form-input has-icon"
-                placeholder="Masukkan username"
+                placeholder="Enter username"
                 autocomplete="username"
                 autofocus
               >
@@ -80,13 +83,13 @@ async function handleSubmit() {
                 v-model="password"
                 :type="showPassword ? 'text' : 'password'"
                 class="form-input has-icon"
-                placeholder="Masukkan password"
+                placeholder="Enter password"
                 autocomplete="current-password"
               >
               <button
                 type="button"
                 class="password-toggle"
-                :aria-label="showPassword ? 'Sembunyikan password' : 'Tampilkan password'"
+                :aria-label="showPassword ? 'Hide password' : 'Show password'"
                 @click="showPassword = !showPassword"
               >
                 <svg v-if="!showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -343,17 +346,7 @@ async function handleSubmit() {
   }
 
   .login-left {
-    flex: none;
-    padding: var(--space-xl) var(--space-base);
-    min-height: 280px;
-  }
-
-  .left-illustration {
-    max-width: 240px;
-  }
-
-  .left-heading {
-    font-size: var(--font-size-xl);
+    display: none;
   }
 
   .login-right {

@@ -27,8 +27,11 @@ export function createResourceService<T extends ResourceRecord>(
 ) {
   const path = `/${resource}`;
   return {
-    list(query?: ResourceQuery) {
-      return api.get<PaginatedResponse<T>>(`${path}/?${toQueryString(query)}`);
+    list(query?: ResourceQuery, tracksLoading = true) {
+      return api.get<PaginatedResponse<T>>(
+        `${path}/?${toQueryString(query)}`,
+        tracksLoading,
+      );
     },
     get(id: string) {
       return api.get<ApiResponse<T>>(`${path}/${id}`);
@@ -41,6 +44,14 @@ export function createResourceService<T extends ResourceRecord>(
     },
     remove(id: string) {
       return api.delete<ApiResponse<null>>(`${path}/${id}`);
+    },
+    /**
+     * Permanent (hard) delete. Backend only honors this when
+     * `?permanent=true` is sent by a superadmin; other roles get 403
+     * and the row stays soft-deleted at most.
+     */
+    hardRemove(id: string) {
+      return api.delete<ApiResponse<null>>(`${path}/${id}?permanent=true`);
     },
   };
 }
@@ -88,6 +99,7 @@ export const resources = {
   salesInvoiceItems: createResourceService<ResourceRecord>(
     "sales-invoice-items",
   ),
+  excelTemplates: createResourceService<ResourceRecord>("excel-templates"),
   purchaseOrders: createResourceService<ResourceRecord>("purchase-orders"),
   purchaseOrderItems: createResourceService<ResourceRecord>(
     "purchase-order-items",

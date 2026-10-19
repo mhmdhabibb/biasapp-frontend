@@ -14,4 +14,7 @@ export const systemSettingService = {
   remove(id: string) {
     return api.delete<ApiResponse<null>>(`/system-settings/${id}`);
   },
+  hardRemove(id: string) {
+    return api.delete<ApiResponse<null>>(`/system-settings/${id}?permanent=true`);
+  },
 };

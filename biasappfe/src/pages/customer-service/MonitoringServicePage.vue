@@ -2,8 +2,11 @@
 import DataTable from '@/components/ui/DataTable.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import type { ServiceReport, TableColumn } from '@/types'
 import { ref } from 'vue'
+
+const { canApprove } = usePermission()
 
 const {
   serviceReports,
@@ -82,7 +85,7 @@ function formatSlaTime(report: ServiceReport) {
   <div>
     <PageHeader title="Monitoring Service" />
     
-    <DataTable :columns="columns" :data="serviceReports" search-placeholder="Search services...">
+    <DataTable :columns="columns" :data="serviceReports" permission="service_report" search-placeholder="Search services...">
       <template #cell-customer_id="{ value }">
         {{ getCustomerName(value) }}
       </template>

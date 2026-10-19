@@ -1,58 +1,92 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import PageHeader from '@/components/ui/PageHeader.vue'
+import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
+import { computed, ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+
+const toast = useToast()
+const { can } = usePermission()
 
 const route = useRoute()
 const router = useRouter()
 const { currentUser } = useAuth()
 const {
-  serviceReports,
   products,
-  sparepartRequests
-} = useMasterStore()
+  serviceReports,
+  sparepartRequests,
+  getTechnicianIdByUser, refreshInBackground } = useMasterStore()
 
-const serviceId = Number(route.query.service_id) || null
+const serviceId = String(route.query.service_id || '') || null
+const showForm = ref(!!serviceId)
+
+// service_report.technician_id references technicians.id, not users.id
+const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
+
+const myActiveReports = computed(() =>
+  serviceReports.value.filter(
+    s => String(s.technician_id) === String(myTechId.value) && s.status !== 'completed'
+  )
+)
+
+const myRequests = computed(() => 
+  sparepartRequests.value.filter(r => String(r.technician_id) === String(myTechId.value))
+)
 
 // In a real app, products would be filtered to spareparts category
 const availableSpareparts = computed(() => products.value)
 
+const serviceReportOptions = computed(() =>
+  myActiveReports.value.map((sr: any) => ({ value: sr.id, label: sr.report_no })),
+)
+
+const sparepartOptions = computed(() =>
+  availableSpareparts.value.map((p: any) => ({ value: p.id, label: `${p.name} (Stock: ${p.stock})` })),
+)
+
 const form = ref({
   service_report_id: serviceId,
   product_id: null as any,
-  qty: 1,
-  notes: ''
+  qty: 1
 })
 
-function submitRequest() {
-  if (!form.value.product_id) return alert('Pilih sparepart!')
-  if (form.value.qty < 1) return alert('Quantity harus minimal 1!')
-  
-  if (confirm('Submit request sparepart? Status pekerjaan akan menjadi Waiting Sparepart.')) {
-    const sr = serviceReports.value.find(s => s.id === form.value.service_report_id)
-    if (sr) {
-      sr.status = 'waiting_sparepart'
-    }
+function getProductName(id: any) {
+  const p = products.value.find((x: any) => String(x.id) === String(id))
+  return p ? p.name : 'Unknown Product'
+}
 
-    sparepartRequests.value.push({
-      id: Date.now(),
-      request_no: `SRQ-${Date.now().toString().slice(-6)}`,
-      service_report_id: form.value.service_report_id,
-      product_id: form.value.product_id,
-      qty: form.value.qty,
-      status: 'pending',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    })
+function getServiceReportNo(id: any) {
+  const s = serviceReports.value.find((x: any) => String(x.id) === String(id))
+  return s ? s.report_no : '-'
+}
 
-    alert('Request sparepart berhasil dikirim ke Admin/CS/Inventory.')
-    if (form.value.service_report_id) {
-      router.push(`/technician/call-services/${form.value.service_report_id}`)
-    } else {
-      router.push('/technician/dashboard')
+async function submitRequest() {
+  if (!form.value.service_report_id) return toast.warning('Select a job first!')
+  if (!form.value.product_id) return toast.warning('Select a sparepart!')
+  if (form.value.qty < 1) return toast.warning('Quantity must be at least 1!')
+
+  if (confirm('Submit sparepart request?')) {
+    try {
+      await api.post('/service-spareparts/', {
+        service_report_id: form.value.service_report_id,
+        technician_id: myTechId.value,
+        product_id: form.value.product_id,
+        qty: Number(form.value.qty)
+      })
+      await refreshInBackground()
+      toast.success('Sparepart request successfully sent to Admin/CS/Inventory.')
+      
+      // Reset form and return to list
+      form.value.product_id = null
+      form.value.qty = 1
+      showForm.value = false
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send sparepart request')
     }
   }
 }
@@ -60,29 +94,57 @@ function submitRequest() {
 
 <template>
   <div class="tech-sparepart">
-    <PageHeader title="Request Sparepart" :back-button="true" @back="router.back()" />
+    <PageHeader title="" :back-button="showForm" @back="showForm = false" />
 
-    <div class="card p-lg" style="max-width: 600px; margin: 0 auto;">
-      <h2 class="card-title mb-md">Form Request Sparepart</h2>
+    <div v-if="!showForm" class="card p-lg" style="max-width: 800px; margin: 0 auto;">
+      <div class="flex items-center justify-between mb-md" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 class="card-title m-0">My Requested Spareparts</h2>
+        <button v-if="can('service_sparepart:create')" class="btn btn-primary btn-sm" @click="showForm = true">+ New Request</button>
+      </div>
+
+      <div v-if="!myRequests.length" class="text-center text-muted py-lg">
+        You haven't requested any spareparts yet.
+      </div>
+      
+      <div v-else class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Service No</th>
+              <th>Sparepart</th>
+              <th>Qty</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="req in myRequests" :key="req.id">
+              <td>{{ new Date(req.created_at || '').toLocaleDateString() }}</td>
+              <td>{{ getServiceReportNo(req.service_report_id) }}</td>
+              <td>{{ getProductName(req.product_id) }}</td>
+              <td>{{ req.qty }}</td>
+              <td>
+                <span class="badge" :class="req.status === 'approved' ? 'badge-success' : req.status === 'rejected' ? 'badge-danger' : 'badge-warning'">
+                  {{ req.status || 'pending' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div v-else class="card p-lg" style="max-width: 600px; margin: 0 auto;">
+      <h2 class="card-title mb-md">Sparepart Request Form</h2>
 
       <div class="form-group">
-        <label class="form-label">Terkait Pekerjaan (Service No)</label>
-        <select v-model="form.service_report_id" class="form-select">
-          <option :value="null">-- Pilih Service Report --</option>
-          <option v-for="sr in serviceReports.filter(s => s.technician_id === currentUser?.id && s.status !== 'completed')" :key="sr.id" :value="sr.id">
-            {{ sr.service_report_no }}
-          </option>
-        </select>
+        <label class="form-label">Related Job (Service No)</label>
+        <CustomSelect v-model="form.service_report_id" class="form-select" :options="serviceReportOptions" placeholder="-- Select Service Report --" />
       </div>
 
       <div class="form-group">
         <label class="form-label">Sparepart <span class="text-danger">*</span></label>
-        <select v-model="form.product_id" class="form-select">
-          <option :value="null">-- Pilih Sparepart --</option>
-          <option v-for="p in availableSpareparts" :key="p.id" :value="p.id">
-            {{ p.name }} (Stok: {{ p.stock }})
-          </option>
-        </select>
+        <CustomSelect v-model="form.product_id" class="form-select" :options="sparepartOptions" placeholder="-- Select Sparepart --" />
       </div>
 
       <div class="form-group">
@@ -90,16 +152,13 @@ function submitRequest() {
         <input v-model.number="form.qty" type="number" min="1" class="form-input">
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Keterangan / Alasan</label>
-        <textarea v-model="form.notes" class="form-textarea" rows="3" placeholder="Contoh: Roller aus, drum bergaris, dll..."></textarea>
-      </div>
-
-      <div class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
-        <button class="btn btn-primary w-full" style="padding: var(--space-md); font-size: 16px;" @click="submitRequest">
+      <div class="mt-lg pt-md flex gap-sm" style="border-top: 1px solid var(--color-border-light); display: flex; gap: 8px;">
+        <button class="btn btn-outline w-full" style="padding: var(--space-md); flex: 1;" @click="showForm = false">Cancel</button>
+        <button v-if="can('service_sparepart:create')" class="btn btn-primary w-full" style="padding: var(--space-md); font-size: 16px; flex: 2;" @click="submitRequest">
           Submit Request
         </button>
       </div>
     </div>
   </div>
 </template>
+

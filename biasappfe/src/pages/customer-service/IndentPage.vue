@@ -2,9 +2,12 @@
 import DataTable from '@/components/ui/DataTable.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
 import type { TableColumn } from '@/types'
 
-const { indents, findProduct } = useMasterStore()
+const { canApprove } = usePermission()
+
+const { indents, findProduct, sparepartRequests } = useMasterStore()
 
 const columns: TableColumn[] = [
   { key: 'indent_no', label: 'Indent No' },
@@ -15,18 +18,31 @@ const columns: TableColumn[] = [
   { key: 'created_at', label: 'Date' },
 ]
 
-function getProduct(id: number | null) {
-  const p = findProduct(id as any)
-  return p ? p.name : '-'
+function getProduct(row: any) {
+  const id = row?.product_id ?? row
+  return (
+    (row as any)?.product?.name ||
+    findProduct(id as any)?.name ||
+    '-'
+  )
+}
+
+function getRequestRef(row: any) {
+  const nested = (row as any)?.sparepart_request
+  if (nested?.request_no) return nested.request_no
+  const req = (sparepartRequests.value as any[]).find(
+    (r: any) => String(r.id) === String(row?.sparepart_request_id),
+  )
+  return req?.request_no || '-'
 }
 </script>
 
 <template>
   <div>
     <PageHeader title="Indents (Backorders)" />
-    <DataTable :columns="columns" :data="indents" search-placeholder="Search indents...">
-      <template #cell-product_id="{ value }">{{ getProduct(value) }}</template>
-      <template #cell-sparepart_request_id="{ row }">REQ-{{ row.sparepart_request_id || '-' }}</template>
+    <DataTable :columns="columns" :data="indents" permission="service_sparepart" search-placeholder="Search indents...">
+      <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
+      <template #cell-sparepart_request_id="{ row }">{{ getRequestRef(row) }}</template>
       <template #cell-status="{ value }">
         <span class="badge" :class="value === 'arrived' ? 'badge-success' : 'badge-warning'">
           {{ value.toUpperCase() }}

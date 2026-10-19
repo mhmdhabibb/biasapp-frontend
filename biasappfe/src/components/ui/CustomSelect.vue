@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 export interface SelectOption {
   value: number | string
   label: string
+  disabled?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -11,10 +12,12 @@ const props = withDefaults(defineProps<{
   options: SelectOption[]
   placeholder?: string
   searchable?: boolean
+  disabled?: boolean
   id?: string
 }>(), {
-  placeholder: 'Pilih opsi',
+  placeholder: 'Select option',
   searchable: true,
+  disabled: false,
   id: '',
 })
 
@@ -35,17 +38,25 @@ const selectedLabel = computed(() => {
   return found ? found.label : ''
 })
 
+const MAX_VISIBLE_OPTIONS = 50
+
 const filteredOptions = computed(() => {
   if (!searchQuery.value.trim()) return props.options
   const q = searchQuery.value.toLowerCase()
   return props.options.filter(o => o.label.toLowerCase().includes(q))
 })
 
+// Batasi DOM yang di-render agar dropdown dengan ratusan opsi tidak freeze.
+// User bisa mengetik di search untuk memfilter.
+const visibleOptions = computed(() => filteredOptions.value.slice(0, MAX_VISIBLE_OPTIONS))
+
 function toggle() {
+  if (props.disabled) return
   isOpen.value ? close() : open()
 }
 
 function open() {
+  if (props.disabled) return
   isOpen.value = true
   searchQuery.value = ''
   highlightedIndex.value = -1
@@ -61,6 +72,7 @@ function close() {
 }
 
 function select(option: SelectOption) {
+  if (option.disabled) return
   emit('update:modelValue', option.value)
   close()
 }
@@ -77,7 +89,7 @@ function handleKeydown(e: KeyboardEvent) {
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault()
-      highlightedIndex.value = Math.min(highlightedIndex.value + 1, filteredOptions.value.length - 1)
+      highlightedIndex.value = Math.min(highlightedIndex.value + 1, visibleOptions.value.length - 1)
       scrollToHighlighted()
       break
     case 'ArrowUp':
@@ -87,9 +99,9 @@ function handleKeydown(e: KeyboardEvent) {
       break
     case 'Enter':
       e.preventDefault()
-      if (highlightedIndex.value >= 0 && highlightedIndex.value < filteredOptions.value.length) {
-        const highlightedOption = filteredOptions.value[highlightedIndex.value]
-        if (highlightedOption) select(highlightedOption)
+      if (highlightedIndex.value >= 0 && highlightedIndex.value < visibleOptions.value.length) {
+        const highlightedOption = visibleOptions.value[highlightedIndex.value]
+        if (highlightedOption && !highlightedOption.disabled) select(highlightedOption)
       }
       break
     case 'Escape':
@@ -116,7 +128,7 @@ onMounted(() => document.addEventListener('mousedown', handleClickOutside))
 onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside))
 
 watch(() => searchQuery.value, () => {
-  highlightedIndex.value = filteredOptions.value.length > 0 ? 0 : -1
+  highlightedIndex.value = visibleOptions.value.length >0 ? 0 : -1
 })
 </script>
 
@@ -128,6 +140,7 @@ watch(() => searchQuery.value, () => {
       :id="id"
       role="combobox"
       :aria-expanded="isOpen"
+      :disabled="disabled"
       aria-haspopup="listbox"
       @click="toggle"
       @keydown="handleKeydown"
@@ -154,21 +167,23 @@ watch(() => searchQuery.value, () => {
             v-model="searchQuery"
             type="text"
             class="custom-select__search"
-            placeholder="Cari..."
+            placeholder="Search..."
             @keydown="handleKeydown"
           >
         </div>
         <ul ref="listRef" class="custom-select__list" role="listbox">
           <li
-            v-for="(option, idx) in filteredOptions"
+            v-for="(option, idx) in visibleOptions"
             :key="option.value"
             class="custom-select__option"
             :class="{
               'is-selected': option.value === modelValue,
               'is-highlighted': idx === highlightedIndex,
+              'is-disabled': option.disabled,
             }"
             role="option"
             :aria-selected="option.value === modelValue"
+            :aria-disabled="option.disabled"
             @mouseenter="highlightedIndex = idx"
             @click="select(option)"
           >
@@ -178,7 +193,10 @@ watch(() => searchQuery.value, () => {
             </svg>
           </li>
           <li v-if="filteredOptions.length === 0" class="custom-select__empty">
-            Tidak ditemukan
+            Not found
+          </li>
+          <li v-else-if="filteredOptions.length > visibleOptions.length" class="custom-select__empty">
+            Menampilkan {{ visibleOptions.length }} dari {{ filteredOptions.length }} — ketik untuk memfilter
           </li>
         </ul>
       </div>
@@ -190,6 +208,16 @@ watch(() => searchQuery.value, () => {
 .custom-select {
   position: relative;
   width: 100%;
+}
+
+/* Pengaman: jika pemakai tak sengaja menambah class="form-select"
+   (yang ditujukan untuk native <select>), netralkan agar tidak
+   muncul border + panah ganda di root. */
+.custom-select.form-select {
+  border: none;
+  background: none;
+  padding: 0;
+  min-height: 0;
 }
 
 .custom-select__trigger {
@@ -216,6 +244,17 @@ watch(() => searchQuery.value, () => {
 
 .custom-select__trigger:hover {
   border-color: var(--color-text-muted);
+}
+
+.custom-select__trigger:disabled {
+  background: var(--color-surface-hover);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.custom-select__trigger:disabled:hover {
+  border-color: var(--color-border);
 }
 
 .custom-select.is-open .custom-select__trigger,
@@ -252,7 +291,10 @@ watch(() => searchQuery.value, () => {
 }
 
 .custom-select__dropdown {
-  position: relative;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
   margin-top: 6px;
   z-index: 50;
   background: var(--color-surface);
@@ -337,6 +379,12 @@ watch(() => searchQuery.value, () => {
 
 .custom-select__option.is-selected.is-highlighted {
   background: var(--color-primary-surface);
+}
+
+.custom-select__option.is-disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .custom-select__option:active {

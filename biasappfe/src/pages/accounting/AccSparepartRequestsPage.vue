@@ -1,17 +1,44 @@
 <script setup lang="ts">
 // @ts-nocheck
-import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { usePermission } from '@/composables/usePermission'
+import { useToast } from '@/composables/useToast'
+import { useResourcesStore } from '@/stores/resources.store'
+import type { SparepartRequest, TableColumn } from '@/types'
+import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import type { TableColumn, SparepartRequest } from '@/types'
+import FormModal from '@/components/ui/FormModal.vue'
 
+const { can } = usePermission()
 const store = useMasterStore()
+const resources = useResourcesStore()
+const toast = useToast()
 const router = useRouter()
+
+const creatingId = ref<string | number | null>(null)
+const showCreatePOModal = ref(false)
+const poTarget = ref<SparepartRequest | null>(null)
+const poForm = reactive({ reason: '', installation_date: '' })
+
+function openCreatePOModal(request: SparepartRequest) {
+  poTarget.value = request
+  poForm.reason = ''
+  poForm.installation_date = ''
+  showCreatePOModal.value = true
+}
+
+function closeCreatePOModal() {
+  if (creatingId.value !== null) return
+  showCreatePOModal.value = false
+  poTarget.value = null
+}
 
 const columns: TableColumn[] = [
   { key: 'request_no', label: 'Request No' },
   { key: 'service_report_id', label: 'Service No' },
+  { key: 'technician_id', label: 'Requested By' },
   { key: 'product_id', label: 'Sparepart' },
   { key: 'qty', label: 'Qty' },
   { key: 'status', label: 'Status' },
@@ -19,93 +46,149 @@ const columns: TableColumn[] = [
   { key: 'actions', label: 'Action' }
 ]
 
-function getProduct(id: number | null) {
-  const p = store.findProduct(id as any)
-  return p ? p.name : '-'
+function getProduct(row: any) {
+  const id = row?.product_id ?? row
+  return (
+    (row as any)?.product?.name ||
+    store.findProduct(id as any)?.name ||
+    '-'
+  )
 }
 
-function getSR(id: number | null) {
-  const sr = store.findServiceReport(id as any)
-  return sr ? sr.service_report_no : '-'
+function getSR(row: any) {
+  const id = row?.service_report_id ?? row
+  const sr = (row as any)?.service_report || store.findServiceReport(id as any)
+  return sr ? sr.report_no || (sr as any).service_report_no || '-' : '-'
 }
 
-function handleCreatePO(request: SparepartRequest) {
-  // Mock logic to create a PO from the request
-  const newPo = {
-    id: Date.now(),
-    po_no: `PO-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000)}`,
-    sparepart_request_id: request.id,
-    po_date: new Date().toISOString(),
-    status: 'draft',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-  
-  // Also create a PO item
-  const newPoItem = {
-    id: Date.now(),
-    purchase_order_id: newPo.id,
-    product_id: request.product_id,
-    qty: request.qty,
-    unit_price: 150000, // Mock price
-    total_price: 150000 * request.qty,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
+function techNameOf(tech: any): string {
+  if (!tech) return ''
+  return tech.user?.name || tech.user?.username || tech.name || ''
+}
 
-  store.purchaseOrders.value.push(newPo)
-  
-  // Update request status to po_created
-  const reqIdx = store.sparepartRequests.value.findIndex(r => r.id === request.id)
-  if (reqIdx !== -1) {
-    store.sparepartRequests.value[reqIdx].status = 'po_created'
-  }
+function getTechnician(row: any) {
+  const direct =
+    row?.technician ||
+    (row?.technician_id ? store.findTechnician(row.technician_id as any) : null)
+  const directName = techNameOf(direct)
+  if (directName) return directName
+  // Fallback: teknisi dari service report terkait.
+  const srTechId = row?.service_report?.technician_id
+  const srTech =
+    row?.service_report?.technician ||
+    (srTechId ? store.findTechnician(srTechId as any) : null)
+  return techNameOf(srTech) || '-'
+}
 
-  // Navigate to the PO page
-  router.push('/accounting/purchase-orders')
+async function handleCreatePO() {
+  const request = poTarget.value
+  if (!request || creatingId.value !== null) return
+  const reason = poForm.reason.trim()
+  if (!reason || !poForm.installation_date) {
+    toast.error('Reason and installation date are required')
+    return
+  }
+  creatingId.value = request.id
+  try {
+    const sr = (store.serviceReports.value as any[]).find((s: any) => String(s.id) === String(request.service_report_id))
+      || request.service_report
+    const customerId = sr?.customer_id || null
+    const unitId = sr?.unit_id || null
+    const serviceReportId = request.service_report_id || sr?.id || null
+    const prod = request.product || store.findProduct(request.product_id)
+    const unitPrice = request.unit_price || prod?.price || 0
+    const qty = request.qty || 1
+
+    await resources.create('purchaseOrders', {
+      sparepart_request_id: request.id,
+      service_report_id: serviceReportId,
+      customer_id: customerId,
+      unit_id: unitId,
+      order_date: new Date().toISOString(),
+      status: 'draft',
+      reason,
+      installation_date: `${poForm.installation_date}T00:00:00+07:00`,
+      purchase_order_items: [
+        {
+          item_name: request.item_name || prod?.name || 'Sparepart',
+          product_id: request.product_id,
+          qty,
+          unit_price: unitPrice,
+          total_price: qty * unitPrice,
+        }
+      ]
+    })
+    await store.refreshInBackground()
+    toast.success(`Purchase order created for ${request.request_no}`)
+    showCreatePOModal.value = false
+    poTarget.value = null
+    router.push('/accounting/purchase-orders')
+  } catch (err) {
+    toast.error(toast.fromError(err, 'Failed to create purchase order'))
+  } finally {
+    creatingId.value = null
+  }
 }
 </script>
 
 <template>
   <div>
     <PageHeader title="Sparepart Requests (Procurement)" />
-    
-    <div class="info-alert mb-4">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" y1="16" x2="12" y2="12" />
-        <line x1="12" y1="8" x2="12.01" y2="8" />
-      </svg>
-      <span>These requests come from Customer Service. You can generate Purchase Orders (PO) for pending requests.</span>
-    </div>
 
-    <DataTable :columns="columns" :data="store.sparepartRequests.value" search-placeholder="Search requests...">
-      <template #cell-product_id="{ value }">{{ getProduct(value) }}</template>
-      <template #cell-service_report_id="{ value }">{{ getSR(value) }}</template>
+    <DataTable :columns="columns" :data="store.sparepartRequests.value" permission="service_sparepart"
+      search-placeholder="Search requests...">
+      <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
+      <template #cell-service_report_id="{ row }">{{ getSR(row) }}</template>
+      <template #cell-technician_id="{ row }">{{ getTechnician(row) }}</template>
       <template #cell-status="{ value }">
-        <span class="badge" 
-              :class="{
-                'badge-warning': value === 'pending',
-                'badge-success': value === 'po_created' || value === 'completed',
-                'badge-danger': value === 'rejected'
-              }">
-          {{ value.toUpperCase() }}
+        <span class="badge" :class="{
+          'badge-warning': value === 'pending',
+          'badge-success': value === 'po_created' || value === 'completed',
+          'badge-danger': value === 'rejected'
+        }">
+          {{ value || 'pending' }}
         </span>
       </template>
       <template #cell-created_at="{ value }">
         {{ new Date(value).toLocaleDateString() }}
       </template>
       <template #cell-actions="{ row }">
-        <button 
-          v-if="row.status === 'pending'"
-          class="btn btn-sm btn-primary"
-          @click="handleCreatePO(row)"
-        >
-          Create PO
+        <button v-if="row.status === 'pending' && can('purchase_order:create')" class="btn btn-sm btn-primary"
+          :disabled="creatingId !== null" @click="openCreatePOModal(row)">
+          {{ creatingId === row.id ? 'Creating...' : 'Create PO' }}
         </button>
         <span v-else class="text-muted text-sm">Processed</span>
       </template>
     </DataTable>
+
+    <!-- Create PO Modal -->
+    <FormModal :open="showCreatePOModal" title="Create Purchase Order" @close="closeCreatePOModal" @submit="handleCreatePO">
+      <div class="form-group" style="margin-bottom: var(--space-md);">
+        <label class="form-label" style="display: block; font-size: var(--font-size-sm); font-weight: 500; margin-bottom: 6px;">
+          Reason <span style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <textarea
+          v-model="poForm.reason"
+          class="form-input"
+          rows="3"
+          required
+          placeholder="Alasan pembuatan PO (misal: penggantian drum rusak sesuai rekomendasi teknisi)"
+          style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-family: inherit; font-size: var(--font-size-sm);"
+        ></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="display: block; font-size: var(--font-size-sm); font-weight: 500; margin-bottom: 6px;">
+          Target Installation Date <span style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <input
+          v-model="poForm.installation_date"
+          type="date"
+          class="form-input"
+          required
+          style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-family: inherit; font-size: var(--font-size-sm);"
+        />
+      </div>
+    </FormModal>
   </div>
 </template>
 
@@ -133,6 +216,7 @@ function handleCreatePO(request: SparepartRequest) {
 .text-muted {
   color: var(--color-text-muted);
 }
+
 .text-sm {
   font-size: var(--font-size-xs);
 }

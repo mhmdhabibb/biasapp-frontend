@@ -47,7 +47,7 @@ export function useAuthStore() {
   async function login(credentials: LoginRequest): Promise<boolean> {
     error.value = "";
     if (!credentials.username.trim() || !credentials.password.trim()) {
-      error.value = "Username dan password harus diisi";
+      error.value = "Username and password are required";
       return false;
     }
 
@@ -68,7 +68,7 @@ export function useAuthStore() {
       error.value =
         reason instanceof ApiError
           ? reason.message
-          : "Tidak dapat terhubung ke server";
+          : "Cannot connect to the server";
       return false;
     } finally {
       isLoading.value = false;
@@ -83,12 +83,40 @@ export function useAuthStore() {
     sessionStorage.removeItem("bias_permissions");
   }
 
+  async function refreshPermissions(): Promise<void> {
+    if (!token.value) return;
+    try {
+      const response = await authService.me();
+      const me = (response.data as any);
+      const role = me.role === "superadmin" ? "admin" : me.role || "";
+      const perms: string[] = me.permissions || [];
+
+      currentUser.value = {
+        id: me.id,
+        name: me.name || currentUser.value?.name || "User",
+        username: me.username || currentUser.value?.username || "",
+        role,
+        permissions: perms,
+      };
+
+      sessionStorage.setItem("bias_user", JSON.stringify(currentUser.value));
+      sessionStorage.setItem("bias_permissions", JSON.stringify(perms));
+    } catch (reason) {
+      console.warn("Failed to refresh permissions:", reason);
+    }
+  }
+
   function hasPermission(permissionName: string): boolean {
     if (!currentUser.value) return false;
     // Superadmin has all permissions
     if (currentUser.value.role === "admin" || currentUser.value.role === "superadmin") return true;
-    
-    return currentUser.value.permissions.includes(permissionName);
+
+    // Case-insensitive: nama permission di DB bisa tertulis beda kapital
+    // (tampilan RolesPage selalu huruf besar).
+    const want = String(permissionName || "").toLowerCase();
+    return (currentUser.value.permissions || []).some(
+      (p) => String(p).toLowerCase() === want,
+    );
   }
 
   return {
@@ -100,5 +128,6 @@ export function useAuthStore() {
     login,
     logout,
     hasPermission,
+    refreshPermissions,
   };
 }
