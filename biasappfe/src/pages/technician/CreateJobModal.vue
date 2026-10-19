@@ -114,7 +114,7 @@ async function submitJob() {
     const srPayload = {
       request_no: `REQ-${Date.now().toString().slice(-6)}`,
       customer_id: form.customer_id,
-      unit_id: form.unit_id,
+      unit_id: form.unit_id || null,
       problem_description: `[${form.job_type.toUpperCase()}] ${form.instructions}`,
       request_date: new Date().toISOString()
     }

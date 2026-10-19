@@ -279,7 +279,7 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Invoice - ${escapeHtml(po.po_no)}</title>
+    <title>Request Form - ${escapeHtml(po.po_no)}</title>
     <style>
       @media print {
         @page { size: A4 portrait; margin: 10mm; }
@@ -516,10 +516,10 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
                 Website: www.biassuryateknologi.com
               </p>
             </div>
-            <div class="invoice-text">INVOICE</div>
+            <div class="invoice-text">REQUEST FORM</div>
           </td>
           <td class="info-col">
-            <div class="po-number-banner">PO NO.  :  ${escapeHtml(po.po_no)}</div>
+            <div class="po-number-banner">REQUEST FORM NO.  :  ${escapeHtml(po.po_no)}</div>
             <table class="meta-table">
               <tr>
                 <td class="label">Date :</td>

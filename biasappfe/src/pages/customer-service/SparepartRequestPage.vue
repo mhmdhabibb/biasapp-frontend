@@ -27,9 +27,11 @@ const columns: TableColumn[] = [
 
 const showModal = ref(false)
 const saving = ref(false)
+const inputMode = ref<'db' | 'manual'>('db')
 const form = reactive({
   service_report_id: '',
   product_id: '',
+  item_name: '',
   qty: 1
 })
 const defaultForm = { ...form }
@@ -49,20 +51,48 @@ const productOptions = computed(() =>
 )
 
 function openAdd() {
+  inputMode.value = 'db'
   Object.assign(form, defaultForm)
   showModal.value = true
 }
 
 async function handleSubmit() {
-  if (!form.service_report_id || !form.product_id || form.qty < 1) {
-    toast.warning('Select a service report and sparepart, enter a qty of at least 1')
+  if (!form.service_report_id) {
+    toast.warning('Select a service report first')
     return
   }
+  let finalProductId: string | null = form.product_id || null
+  let finalItemName = (form.item_name || '').trim()
+
+  if (inputMode.value === 'db') {
+    if (!finalProductId) {
+      toast.warning('Select a sparepart from database')
+      return
+    }
+    const p = (products.value as any[]).find((x: any) => String(x.id) === String(finalProductId))
+    if (p) finalItemName = p.name
+  } else {
+    if (!finalItemName) {
+      toast.warning('Please enter sparepart name')
+      return
+    }
+    const match = (products.value as any[]).find((x: any) => x.name?.toLowerCase().trim() === finalItemName.toLowerCase())
+    if (match) {
+      finalProductId = match.id
+    }
+  }
+
+  if (form.qty < 1) {
+    toast.warning('Quantity must be at least 1')
+    return
+  }
+
   saving.value = true
   try {
     await resources.create('serviceSpareparts', {
       service_report_id: form.service_report_id,
-      product_id: form.product_id,
+      product_id: finalProductId,
+      item_name: finalItemName,
       qty: Number(form.qty)
     })
     await master.refreshInBackground()
@@ -76,10 +106,12 @@ async function handleSubmit() {
 }
 
 function getProduct(row: any) {
+  if (row?.item_name) return row.item_name
   const id = row?.product_id ?? row
   return (
     (row as any)?.product?.name ||
     findProduct(id as any)?.name ||
+    row?.item_name ||
     '-'
   )
 }
@@ -138,12 +170,41 @@ function getTechnician(row: any) {
         <label class="form-label" for="sr">Service Report</label>
         <CustomSelect id="sr" v-model="form.service_report_id" :options="serviceReportOptions" placeholder="Select service report" class="form-select" />
       </div>
+
       <div class="form-group">
-        <label class="form-label" for="sp">Sparepart</label>
+        <label class="form-label">Metode Input Sparepart</label>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="inputMode === 'db' ? 'btn-primary' : 'btn-outline'"
+            @click="inputMode = 'db'"
+          >
+            Tarik dari Database
+          </button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="inputMode === 'manual' ? 'btn-primary' : 'btn-outline'"
+            @click="inputMode = 'manual'"
+          >
+            Isi Sendiri (Manual)
+          </button>
+        </div>
+      </div>
+
+      <div v-if="inputMode === 'db'" class="form-group">
+        <label class="form-label" for="sp">Pilih dari Database <span class="text-danger">*</span></label>
         <CustomSelect id="sp" v-model="form.product_id" :options="productOptions" placeholder="Select product" class="form-select" />
       </div>
+
+      <div v-else class="form-group">
+        <label class="form-label" for="sp_manual">Nama Sparepart (Manual) <span class="text-danger">*</span></label>
+        <input id="sp_manual" v-model="form.item_name" type="text" class="form-input" placeholder="Ketik nama sparepart manual..." />
+      </div>
+
       <div class="form-group">
-        <label class="form-label" for="qty">Qty</label>
+        <label class="form-label" for="qty">Qty <span class="text-danger">*</span></label>
         <input id="qty" v-model.number="form.qty" type="number" min="1" class="form-input" />
       </div>
       <template #footer>

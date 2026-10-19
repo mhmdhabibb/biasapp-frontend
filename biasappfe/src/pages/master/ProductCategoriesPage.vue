@@ -14,7 +14,7 @@ import { useHardDelete } from '@/composables/useHardDelete'
 const toast = useToast()
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Category Name' },
+  { key: 'name', label: 'Item Name' },
 ]
 
 const data = ref<ProductCategory[]>([])
@@ -88,20 +88,20 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Product Categories" button-label="Add Category" permission="product_category:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search categories..." permission="product_category" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+    <PageHeader title="Items" button-label="Add Item" permission="product_category:create" @add="openAdd" />
+    <DataTable :columns="columns" :data="data" search-placeholder="Search items..." permission="product_category" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #toolbar>
         <ExcelImportButtons master-key="product_category" @imported="fetchData" />
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Category' : 'Add Category'" @close="showModal = false" @submit="handleSubmit">
+    <FormModal :open="showModal" :title="editingItem ? 'Edit Item' : 'Add Item'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label for="cat-name" class="form-label">Category Name</label>
-        <input id="cat-name" v-model="form.name" type="text" class="form-input" placeholder="Example: Toner, Drum, Spare Part">
+        <label for="cat-name" class="form-label">Item Name</label>
+        <input id="cat-name" v-model="form.name" type="text" class="form-input" placeholder="Example: Toner, Drum, Sparepart">
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Category" :message="`Are you sure you want to delete category '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
-    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Category" :item-label="hardDelete.expected"
+    <ConfirmDialog :open="showConfirm" title="Delete Item" :message="`Are you sure you want to delete item '${deletingItem?.name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Item" :item-label="hardDelete.expected"
       :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>

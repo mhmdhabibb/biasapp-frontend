@@ -588,17 +588,23 @@ async function confirmCompleteJob() {
 
     toast.success('Job completed! Sparepart replacement data queued for Procurement.')
     await refresh(true)
-    
-    if (confirm('Job berhasil diselesaikan! Apakah ada tambahan servis unit lain (Buat SH Stand Alone) di lokasi ini?')) {
-      await createStandalone();
-    } else {
-      router.push('/technician/call-services')
-    }
+    showNewStandaloneConfirm.value = true
   } catch (err: any) {
     toast.error(err.message || 'Failed to complete job')
   } finally {
     isCompletingJob.value = false
   }
+}
+
+function standaloneTitle(st: any): string {
+  const items = st?.delivery_order_items || []
+  if (items.length > 0) {
+    const it = items[0]
+    if (it.unit?.model) return `${it.unit.model}${it.unit.serial_no ? ` (${it.unit.serial_no})` : ''}`
+    if (it.product?.name) return it.product.name
+    if (it.model) return `${it.model}${it.serial_no ? ` (${it.serial_no})` : ''}`
+  }
+  return st?.project_name || 'Stand Alone Service'
 }
 
 async function createStandalone() {
@@ -947,7 +953,7 @@ async function createStandalone() {
               >
                 <span class="font-bold">
                   <span v-if="hasDeliveryHistory(st)">✅</span><span v-else>📝</span>
-                  {{ st.do_number }}
+                  {{ standaloneTitle(st) }}
                   <span class="badge" :class="standaloneStatusClass(st)" style="margin-left: 6px;">
                     {{ String(st.status || '-').toUpperCase().replace('_', ' ') }}
                   </span>
@@ -1005,7 +1011,7 @@ async function createStandalone() {
             >
               <span class="font-bold">
                 <span v-if="hasDeliveryHistory(st)">✅</span><span v-else>📝</span>
-                {{ st.do_number }}
+                {{ standaloneTitle(st) }}
                 <span class="badge" :class="standaloneStatusClass(st)" style="margin-left: 6px;">
                   {{ String(st.status || '-').toUpperCase().replace('_', ' ') }}
                 </span>
@@ -1108,7 +1114,7 @@ async function createStandalone() {
     <FormModal :open="showAddUnitModal" title="Daftarkan Unit Baru (DO)" @close="showAddUnitModal = false" @submit="submitUnitForm">
       <div class="form-group">
         <label class="form-label">Serial Number <span class="text-danger">*</span></label>
-        <input v-model="unitForm.serial_no" type="text" class="form-input" placeholder="Masukkan Serial Number">
+        <input v-model="unitForm.serial_no" @input="unitForm.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input" style="text-transform: uppercase;" placeholder="Masukkan Serial Number">
       </div>
       <div class="form-group mt-sm">
         <label class="form-label">Brand <span class="text-danger">*</span></label>
@@ -1130,7 +1136,7 @@ async function createStandalone() {
     <FormModal :open="showEditSnModal" title="Edit Serial Number Unit" @close="showEditSnModal = false" @submit="submitEditSn">
       <div class="form-group">
         <label class="form-label">Serial Number Baru <span class="text-danger">*</span></label>
-        <input v-model="editSnForm.serial_no" type="text" class="form-input" placeholder="Masukkan Serial Number">
+        <input v-model="editSnForm.serial_no" @input="editSnForm.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input" style="text-transform: uppercase;" placeholder="Masukkan Serial Number">
       </div>
       <template #footer>
         <button class="btn btn-outline" @click="showEditSnModal = false">Batal</button>
