@@ -1555,11 +1555,11 @@ async function exportToPdf() {
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
-          <label class="form-label">Select Unit</label>
+          <label class="form-label">Select Product</label>
           <CustomSelect
             v-model="item.selected_item"
             :options="rentUnitOptions"
-            placeholder="-- Select Unit --"
+            placeholder="-- Select Product --"
             class="form-select"
             @update:modelValue="onItemSelectChange(item)"
           />
