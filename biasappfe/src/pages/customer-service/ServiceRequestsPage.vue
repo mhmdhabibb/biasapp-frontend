@@ -10,11 +10,18 @@ import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
 import type { TableColumn } from "@/types";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 
 const toast = useToast();
 const { can } = usePermission();
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
 const { customers, units, sales, brands, findProduct, getUnitsByCustomer, getContractsByCustomer, deliveryOrders } =
   useMasterStore();
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const columns: TableColumn[] = [
   { key: "request_no", label: "Request No" },

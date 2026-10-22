@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { computed, ref, reactive } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
@@ -11,6 +12,12 @@ import { usePermission } from '@/composables/usePermission'
 import type { TableColumn, WarrantyClaim } from '@/types'
 
 const { can, canApprove } = usePermission()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const {
   warrantyClaims: data,

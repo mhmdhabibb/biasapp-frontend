@@ -8,11 +8,14 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 const toast = useToast()
 const { can } = usePermission()
 const { currentUser } = useAuth()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
 const {
   jobOrders,
   serviceReports,
@@ -24,6 +27,10 @@ const {
   monthlyMeterReadings,
   refreshInBackground,
 } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
 

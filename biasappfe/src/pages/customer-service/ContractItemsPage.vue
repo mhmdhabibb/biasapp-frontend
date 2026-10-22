@@ -10,8 +10,15 @@ import { resources } from "@/services/resource.service";
 import type { ContractItem, TableColumn } from "@/types";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
 import { computed, onMounted, reactive, ref } from "vue";
+import { useRoute } from "vue-router";
 
 const { can } = usePermission();
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const {
   contractItems: data,

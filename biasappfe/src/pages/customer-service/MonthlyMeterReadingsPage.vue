@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -16,6 +17,12 @@ const toast = useToast()
 const { can } = usePermission()
 const master = useMasterStore()
 const resources = useResourcesStore()
+const route = useRoute()
+const { ensureResourcesLoaded } = master
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const {
   monthlyMeterReadings: data,

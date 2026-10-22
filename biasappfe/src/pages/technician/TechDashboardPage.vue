@@ -5,20 +5,14 @@ import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import CreateJobModal from "./CreateJobModal.vue";
-import { useRouter } from "vue-router";
-import { computed, ref } from "vue";
-
-useAutoRefresh(5000, [
-  "jobOrders",
-  "serviceReports",
-  "technicians",
-  "customers",
-  "units",
-]);
+import { useRouter, useRoute } from "vue-router";
+import { computed, ref, onMounted } from "vue";
 
 const router = useRouter();
+const route = useRoute()
 const { currentUser } = useAuth();
 const { canAny } = usePermission();
+const { ensureResourcesLoaded } = useMasterStore()
 const {
   jobOrders,
   serviceReports,
@@ -27,6 +21,18 @@ const {
   findUnit,
   refresh,
 } = useMasterStore();
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
+
+useAutoRefresh(5000, [
+  "jobOrders",
+  "serviceReports",
+  "technicians",
+  "customers",
+  "units",
+]);
 
 // Find the technician record that belongs to the current logged-in user
 const myTechnician = computed(() => {

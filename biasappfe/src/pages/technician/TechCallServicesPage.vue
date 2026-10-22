@@ -5,16 +5,22 @@ import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 
 const router = useRouter()
 const { currentUser } = useAuth()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
 const {
   jobOrders,
   getTechnicianIdByUser,
   findCustomer,
   findUnit } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 useAutoRefresh(5000, ["jobOrders", "serviceReports", "technicians", "customers", "units"])
 

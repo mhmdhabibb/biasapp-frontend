@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
@@ -12,6 +13,12 @@ import type { TableColumn } from '@/types'
 const toast = useToast()
 const master = useMasterStore()
 const resources = useResourcesStore()
+const route = useRoute()
+const { ensureResourcesLoaded } = master
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const { sparepartRequests, serviceReports, products, findProduct, findServiceReport, findTechnician } = master
 

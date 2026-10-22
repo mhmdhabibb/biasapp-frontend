@@ -9,13 +9,19 @@ import { api } from "@/services/api";
 import { resources } from "@/services/resource.service";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
+import { useRoute } from "vue-router";
 
 const toast = useToast();
 const { can } = usePermission();
-
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
 const { currentUser } = useAuth();
 const { monthlyMeterReadings, contractItems, findCustomer, findUnit, refreshInBackground } =
   useMasterStore();
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const data = computed(() => monthlyMeterReadings.value);
 

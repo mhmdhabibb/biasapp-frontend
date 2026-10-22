@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
@@ -11,6 +11,13 @@ import { usePermission } from '@/composables/usePermission'
 const toast = useToast()
 const { can } = usePermission()
 const router = useRouter()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
+
 const {
   customers,
   technicians,

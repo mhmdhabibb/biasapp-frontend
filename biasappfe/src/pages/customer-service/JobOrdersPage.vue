@@ -8,11 +8,18 @@ import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref } from "vue";
+import { useRoute } from "vue-router";
 
 const toast = useToast();
 const authStore = useAuthStore();
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
 const { technicians, units, products, serviceReports, refreshOnly } =
   useMasterStore();
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const jobOrders = ref<any[]>([]);
 const serviceRequests = ref<any[]>([]);

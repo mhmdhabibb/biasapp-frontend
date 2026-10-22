@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
@@ -18,8 +19,14 @@ import type { TableColumn, ServiceReport, SparepartRequest } from '@/types'
 
 const { can } = usePermission()
 const router = useRouter()
+const route = useRoute()
 const toast = useToast()
+const { ensureResourcesLoaded } = useMasterStore()
 const resources = useResourcesStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const {
   serviceReports: data,
@@ -99,15 +106,10 @@ const customerFilterOptions = computed(() => [
   })),
 ])
 
-import { useRoute } from 'vue-router'
-
 function matchesCustomer(id: any): boolean {
   if (!customerFilter.value) return true
   return String(id) === customerFilter.value
 }
-
-const route = useRoute()
-import { onMounted } from 'vue'
 
 onMounted(() => {
   if (route.query.customer_id) {

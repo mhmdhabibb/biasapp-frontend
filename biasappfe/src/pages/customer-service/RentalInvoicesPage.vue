@@ -13,9 +13,21 @@ import { api } from '@/services/api'
 import type { RentalInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_COUNT, NUMFMT_RP, NUMFMT_RP_RATE, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { printPaymentSlip, printPaymentStruk, paymentMethodOf, buildPaymentTimestamp, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 const toast = useToast()
+const route = useRoute()
+const { ensureResourcesLoaded, refreshIfStale } = useMasterStore()
+
+const isLoading = ref(false)
+
+onMounted(async () => {
+  isLoading.value = true
+  await ensureResourcesLoaded(route.path)
+  isLoading.value = false
+})
+
 const { can } = usePermission()
 const { currentUser } = useAuth()
 const {
@@ -84,10 +96,26 @@ function invoicePayments(item: any) {
 
 const showDetail = ref(false)
 const detailItem = ref<any>(null)
+const detailPayments = computed(() => detailItem.value ? invoicePayments(detailItem.value) : [])
 
-function openDetail(item: any) {
-  detailItem.value = item
-  showDetail.value = true
+const detailCustomer = computed(() => detailItem.value ? findCustomer(detailItem.value.customer_id) : null)
+const detailContract = computed(() => detailItem.value ? findContractItem(detailItem.value.contract_item_id) : null)
+const detailUnit = computed(() => detailContract.value ? findUnit(detailContract.value.unit_id) : null)
+
+const isLoadingDetail = ref(false)
+
+async function openDetail(item: any) {
+  isLoadingDetail.value = true
+  try {
+    const response = await api.get<{ data: any }>(`/rental-invoices/${item.id}`, false)
+    detailItem.value = response.data
+  } catch (error) {
+    console.warn('Failed to load full detail, using list data:', error)
+    detailItem.value = item
+  } finally {
+    isLoadingDetail.value = false
+    showDetail.value = true
+  }
 }
 
 const showModal = ref(false)
@@ -1236,8 +1264,11 @@ function printInvoice(item: any) {
       </div>
     </div>
 
-    <DataTable :columns="columns" :data="filteredData" search-placeholder="Search invoices..." @edit="openEdit"
-      @delete="openDelete">
+    <div v-if="isLoading" style="padding: 40px; text-align: center; color: var(--color-text-muted);">
+      Loading rental invoices...
+    </div>
+    <DataTable v-else :columns="columns" :data="filteredData" search-placeholder="Search invoices..." @edit="openEdit"
+      @delete="openDelete" :perPage="20">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-period_start="{ value }">{{ formatDate(value) }}</template>
@@ -1341,7 +1372,12 @@ function printInvoice(item: any) {
 
     <FormModal :open="showDetail" :title="detailItem ? `Invoice Details ${detailItem.invoice_no}` : 'Invoice Details'"
       @close="showDetail = false">
-      <template v-if="detailItem">
+      <template v-if="isLoadingDetail">
+        <div style="padding: 40px; text-align: center; color: var(--color-text-muted);">
+          Loading invoice details...
+        </div>
+      </template>
+      <template v-else-if="detailItem">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
           <div class="form-group">
             <label class="form-label">No. Invoice</label>
@@ -1349,11 +1385,11 @@ function printInvoice(item: any) {
           </div>
           <div class="form-group">
             <label class="form-label">Customer</label>
-            <div>{{ customerName(detailItem.customer_id) }}</div>
+            <div>{{ detailCustomer.value?.company_name || detailCustomer.value?.name || '-' }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Contract</label>
-            <div>{{ contractNo(detailItem.contract_item_id) }}</div>
+            <div>{{ detailContract.value?.contract_no || '-' }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Total Amount</label>
@@ -1378,7 +1414,7 @@ function printInvoice(item: any) {
         </div>
 
         <div class="form-section-title" style="margin-bottom: 8px;">Payment History</div>
-        <div v-if="invoicePayments(detailItem).length > 0"
+        <div v-if="detailPayments.length > 0"
           style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;">
           <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
             <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
@@ -1391,7 +1427,7 @@ function printInvoice(item: any) {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(pay, idx) in invoicePayments(detailItem)" :key="idx"
+              <tr v-for="(pay, idx) in detailPayments" :key="idx"
                 style="border-bottom: 1px solid var(--color-border-light);">
                 <td style="padding: 12px;">{{ pay.payment_no || '-' }}</td>
                 <td style="padding: 12px;">{{ pay.payment_date ? String(pay.payment_date).substring(0, 10) : '-' }}</td>

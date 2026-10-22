@@ -11,7 +11,8 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import type { Sale, TableColumn } from '@/types'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { buildPaymentTimestamp } from '@/utils/paymentReceipt'
 import { normalizeRole } from '@/router/role-access'
@@ -34,6 +35,13 @@ const canSeeAmount = computed(() => {
   if (isAdmin.value) return true
   const role = normalizeRole(currentUser.value?.role)
   return role === 'accounting' || role === 'admin'
+})
+
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
 })
 
 const {

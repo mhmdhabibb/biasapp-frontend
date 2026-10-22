@@ -24,7 +24,7 @@ import type {
   PurchaseOrderItem,
   ProcurementDeliveryOrder,
 } from "@/types";
-import { reactive, toRefs } from "vue";
+import { reactive, toRefs, ref } from "vue";
 
 const store = reactive({
   customers: [] as Customer[],
@@ -52,9 +52,65 @@ const store = reactive({
   procurementDeliveryOrders: [] as ProcurementDeliveryOrder[],
 });
 
+const loadedResources = ref<Set<string>>(new Set());
 let syncPromise: Promise<void> | null = null;
 let syncing = false;
 let lastFullSyncAt = 0;
+
+const CRITICAL_RESOURCES = [
+  "customers",
+  "technicians",
+  "brands",
+  "unitTypes",
+  "units",
+  "products",
+  "warranties",
+  "contractItems",
+] as const;
+
+const PAGE_RESOURCE_MAP: Record<string, string[]> = {
+  "/customer-service/rentals": ["rentalInvoices", "contractItems", "units", "customers"],
+  "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units"],
+  "/customer-service/sales": ["sales", "salesInvoices", "customers", "units"],
+  "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units"],
+  "/customer-service/service-reports": ["serviceReports", "technicians", "units", "customers"],
+  "/customer-service/contract-items": ["contractItems", "customers", "units", "brands", "unitTypes"],
+  "/customer-service/job-orders": ["jobOrders", "serviceRequests", "technicians", "units", "customers"],
+  "/customer-service/service-requests": ["serviceRequests", "customers", "units"],
+  "/customer-service/monthly-meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers"],
+  "/customer-service/payments": ["payments", "rentalInvoices", "salesInvoices", "customers"],
+  "/customer-service/warranty-claims": ["warrantyClaims", "units", "customers", "warranties"],
+  "/customer-service/sparepart-request": ["sparepartRequests", "serviceReports", "units", "customers"],
+  "/customer-service/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
+  "/customer-service/indent": ["indents", "products", "suppliers"],
+  "/customer-service/delivery": ["deliveryOrders", "purchaseOrders", "customers"],
+  "/accounting/purchase-orders": ["purchaseOrders", "suppliers", "products"],
+  "/accounting/delivery-orders": ["deliveryOrders", "purchaseOrders", "customers"],
+  "/master/users": ["users"],
+  "/master/roles": ["roles"],
+  "/master/permissions": ["permissions"],
+  "/master/modules": ["modules"],
+  "/master/customers": ["customers"],
+  "/master/technicians": ["technicians"],
+  "/master/unit-types": ["unitTypes"],
+  "/master/brands": ["brands"],
+  "/master/paper-size": ["paperSizes"],
+  "/master/paper-type": ["paperTypes"],
+  "/master/product-categories": ["productCategories"],
+  "/master/uoms": ["uoms"],
+  "/master/products": ["products"],
+  "/master/units": ["units", "customers", "contractItems", "brands", "unitTypes"],
+  "/master/warranties": ["warranties"],
+  "/master/excel-templates": ["excelTemplates"],
+  "/master/suppliers": ["suppliers"],
+  "/master/contracts": ["contracts", "contractItems", "customers"],
+  "/technician/call-services": ["serviceReports", "technicians", "units", "customers"],
+  "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
+  "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units"],
+  "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units"],
+  "/technician/service-history": ["serviceReports", "technicians", "units"],
+  "/technician/standalone-service-history": ["serviceReports", "technicians", "units"],
+};
 
 export function useMasterStore() {
   const resources = useResourcesStore();
@@ -208,6 +264,16 @@ export function useMasterStore() {
             (d: any) => d.purchase_order_id || d.do_type === "inbound",
           );
         }),
+      suppliers: () =>
+        safeFetch(
+          fetchAll("suppliers", DROPDOWN_LIMIT),
+          (items) => (store as any).suppliers = items || [],
+        ),
+      indents: () =>
+        safeFetch(
+          fetchAll("indents", DROPDOWN_LIMIT),
+          (items) => (store.indents = items || []),
+        ),
     };
   }
 
@@ -224,7 +290,9 @@ export function useMasterStore() {
     ) as Array<() => Promise<void>>;
 
     syncPromise = Promise.all(picked.map((task) => task()))
-      .then(() => undefined)
+      .then(() => {
+        if (names) names.forEach((n) => loadedResources.value.add(n));
+      })
       .finally(() => {
         syncing = false;
         if (isFullSync) lastFullSyncAt = Date.now();
@@ -237,28 +305,39 @@ export function useMasterStore() {
     return runSyncTasks(null, tracksLoading);
   }
 
-  // --- PEMBETULAN UTAMA: Deklarasi eksplisit fungsi internal agar tidak ReferenceError ---
+  function loadCriticalResources(tracksLoading = true) {
+    return runSyncTasks(CRITICAL_RESOURCES as string[], tracksLoading);
+  }
+
+  function loadResourcesForPage(path: string, tracksLoading = true) {
+    const needed = PAGE_RESOURCE_MAP[path] || [];
+    const notLoaded = needed.filter((r) => !loadedResources.value.has(r));
+    if (notLoaded.length === 0) return Promise.resolve();
+    return runSyncTasks(notLoaded, tracksLoading);
+  }
+
+  function ensureResourcesLoaded(path: string) {
+    return loadCriticalResources(false).then(() => loadResourcesForPage(path, false));
+  }
+
   function refreshInBackground() {
     return syncFromApi(true, false);
   }
 
-  /** Refresh ringan: hanya resource yang disebut, selalu silent (tanpa loading). */
   async function refreshOnly(names: string[]) {
     if (!names || names.length === 0) return refreshInBackground();
     const registry = buildSyncTasks(false);
     const tasks = names.map((name) => registry[name]).filter(Boolean);
     await Promise.all(tasks.map((task) => task()));
+    names.forEach((n) => loadedResources.value.add(n));
   }
 
-  /**
-   * Refresh hanya bila data terakhir sudah basi (lebih tua dari maxAgeMs).
-   */
   function refreshIfStale(maxAgeMs = 15000) {
     if (Date.now() - lastFullSyncAt < maxAgeMs) return Promise.resolve();
     return refreshInBackground();
   }
 
-  syncFromApi();
+  loadCriticalResources();
 
   function findCustomer(id: number | string | null): Customer | undefined {
     if (id == null) return undefined;
@@ -354,7 +433,6 @@ export function useMasterStore() {
 
   function getUnitsByCustomer(customerId: number | string | null): Unit[] {
     if (!customerId) return [];
-    // First find contracts by customer (support both direct customer_id and nested contract.customer_id)
     const relevantContracts = (store.contractItems || []).filter((c) => {
       const custIdStr = String(customerId);
       const cCustId = c.customer_id ? String(c.customer_id) : undefined;
@@ -363,7 +441,6 @@ export function useMasterStore() {
         : undefined;
       return cCustId === custIdStr || cCustIdNested === custIdStr;
     });
-    // Collect unique unit_ids from these contracts
     const unitIds = [
       ...new Set(
         relevantContracts
@@ -371,7 +448,6 @@ export function useMasterStore() {
           .filter((id): id is number | string => id != null),
       ),
     ];
-    // Return units matching those IDs
     if (unitIds.length === 0) return [];
     const allUnits = store.units || [];
     return allUnits.filter((u) => unitIds.includes(u.id as number | string));
@@ -391,7 +467,6 @@ export function useMasterStore() {
     });
   }
 
-  // service_report.technician_id references technicians.id (not users.id), so pages must resolve the logged-in user -> technicians row first.
   function getTechnicianIdByUser(
     userId: number | string | null,
   ): string | null {
@@ -417,6 +492,9 @@ export function useMasterStore() {
     refreshInBackground: () => syncFromApi(true, false),
     refreshOnly,
     refreshIfStale,
+    loadCriticalResources,
+    loadResourcesForPage,
+    ensureResourcesLoaded,
     findCustomer,
     findTechnician,
     findUnit,

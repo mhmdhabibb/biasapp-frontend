@@ -3,7 +3,8 @@
 // Standalone Service History — sisi CS.
 // Tanpa Job Order / assign job. CS hanya mengisi CUSTOMER DETAIL.
 // PRODUCT DETAIL diisi teknisi di halaman teknisi.
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -20,8 +21,14 @@ import html2pdf from 'html2pdf.js'
 
 const toast = useToast()
 const { can } = usePermission()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
 const store = useMasterStore()
 const resources = useResourcesStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const filterCustomer = ref<any>(null)
 const filterCustomerOptions = computed(() => [

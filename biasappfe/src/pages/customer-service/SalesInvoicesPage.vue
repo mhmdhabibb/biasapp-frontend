@@ -15,9 +15,16 @@ import type { SalesInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_RP, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { buildPaymentVerifyUrl, generatePaymentQrDataUrl, paymentMethodOf, printPaymentStruk } from '@/utils/paymentReceipt'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 const toast = useToast()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 const { can } = usePermission()
 const { currentUser } = useAuth()
 

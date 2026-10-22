@@ -24,6 +24,11 @@ const {
 
 const serviceId = String(route.query.service_id || '') || null
 const showForm = ref(!!serviceId)
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))

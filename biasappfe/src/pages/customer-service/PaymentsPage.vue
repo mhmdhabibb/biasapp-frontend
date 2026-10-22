@@ -28,6 +28,11 @@ const { can } = usePermission();
 const { currentUser } = useAuth();
 const route = useRoute();
 const pageRouter = useRouter();
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const {
   payments: data,

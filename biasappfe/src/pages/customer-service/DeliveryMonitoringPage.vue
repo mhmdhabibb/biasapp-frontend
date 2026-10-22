@@ -6,9 +6,18 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import type { TableColumn } from '@/types'
+import { onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 const toast = useToast()
 const { can } = usePermission()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
+
 const { deliveryOrders, findCustomer, findTechnician } = useMasterStore()
 
 const columns: TableColumn[] = [

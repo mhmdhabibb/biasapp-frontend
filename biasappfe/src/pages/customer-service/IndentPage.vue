@@ -4,8 +4,16 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import type { TableColumn } from '@/types'
+import { onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 const { canApprove } = usePermission()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const { indents, findProduct, sparepartRequests } = useMasterStore()
 

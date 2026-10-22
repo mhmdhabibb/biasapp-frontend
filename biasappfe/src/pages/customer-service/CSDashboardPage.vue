@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
+import { useRoute } from "vue-router";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
+
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 useAutoRefresh(15000, [
   "serviceRequests",

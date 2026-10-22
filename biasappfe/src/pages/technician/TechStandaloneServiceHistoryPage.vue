@@ -2,8 +2,8 @@
 // @ts-nocheck
 // Standalone Service History — sisi Teknisi (list).
 // Tanpa assign job: semua teknisi bisa melihat & mengisi PRODUCT DETAIL.
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
@@ -11,9 +11,15 @@ import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 
 const router = useRouter()
+const route = useRoute()
 const toast = useToast()
 const { can } = usePermission()
+const { ensureResourcesLoaded } = useMasterStore()
 const { deliveryOrders, findCustomer, findTechnician, refreshOnly } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 const deletingId = ref<string | null>(null)
 
 const standaloneList = computed(() =>

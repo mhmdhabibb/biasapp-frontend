@@ -9,13 +9,20 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import type { ProcurementDeliveryOrder, TableColumn } from '@/types'
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { printDeliveryOrder } from '@/utils/printDeliveryOrder'
 
 const toast = useToast()
 const { can } = usePermission()
 const store = useMasterStore()
 const resources = useResourcesStore()
+const route = useRoute()
+const { ensureResourcesLoaded } = store
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const busyId = ref<string | number | null>(null)
 const detailItem = ref<ProcurementDeliveryOrder | null>(null)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { isCopierReport } from '@/utils/copierReport'
@@ -13,8 +13,10 @@ import html2pdf from 'html2pdf.js'
 import * as XLSX from 'xlsx'
 
 const router = useRouter()
+const route = useRoute()
 const toast = useToast()
 const { currentUser } = useAuth()
+const { ensureResourcesLoaded } = useMasterStore()
 const showDetailModal = ref(false)
 const selectedHistory = ref<any>(null)
 
@@ -29,6 +31,10 @@ const {
   findTechnician,
   getTechnicianIdByUser,
 } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 // Draft copier yang di-assign ke teknisi login saja — teknisi lain tidak
 // bisa melihat. Yang belum di-assign hanya terlihat di CS/superadmin.

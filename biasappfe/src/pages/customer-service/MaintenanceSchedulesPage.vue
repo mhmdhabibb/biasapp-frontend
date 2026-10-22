@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onActivated, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -11,6 +12,12 @@ import type { TableColumn } from '@/types'
 
 const toast = useToast()
 const store = useMasterStore()
+const route = useRoute()
+const { ensureResourcesLoaded } = store
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const jobOrders = ref<any[]>([])
 const loading = ref(false)

@@ -12,6 +12,8 @@ const props = withDefaults(
     permission?: string;
     /** Show the permanent-delete button (parent must gate this to superadmin) */
     showHardDelete?: boolean;
+    /** Items per page for pagination (default: 10) */
+    perPage?: number;
   }>(),
   {
     columns: () => [],
@@ -19,6 +21,7 @@ const props = withDefaults(
     searchPlaceholder: "",
     permission: "",
     showHardDelete: false,
+    perPage: 10,
   },
 );
 
@@ -47,7 +50,6 @@ const showActionsColumn = computed(
 
 const searchQuery = ref("");
 const currentPage = ref(1);
-const perPage = 10;
 
 const filteredData = computed<any[]>(() => {
   const list = Array.isArray(props.data) ? props.data : [];
@@ -63,12 +65,13 @@ const filteredData = computed<any[]>(() => {
   );
 });
 
+const perPage = computed(() => props.perPage || 10);
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil((filteredData.value?.length || 0) / perPage)),
+  Math.max(1, Math.ceil((filteredData.value?.length || 0) / perPage.value)),
 );
 const paginatedData = computed<any[]>(() => {
-  const start = (currentPage.value - 1) * perPage;
-  return (filteredData.value || []).slice(start, start + perPage);
+  const start = (currentPage.value - 1) * perPage.value;
+  return (filteredData.value || []).slice(start, start + perPage.value);
 });
 
 function goToPage(page: number) {

@@ -13,11 +13,18 @@ import type { TableColumn } from '@/types'
 import { isCopierReport } from '@/utils/copierReport'
 import { printServiceReport } from '@/utils/printReport'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 
 const toast = useToast()
 const router = useRouter()
 const { can } = usePermission()
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
+
 const {
   serviceReports: data,
   customers,

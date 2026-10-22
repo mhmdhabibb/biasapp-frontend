@@ -22,6 +22,7 @@ import type { TableColumn } from "@/types";
 import type { PaymentReceiptData } from "@/utils/paymentReceipt";
 import { computed, onActivated, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRoute } from "vue-router";
 import { normalizeRole } from "@/router/role-access";
 
 const toast = useToast();
@@ -36,6 +37,12 @@ const canSeeAmount = computed(() => {
   return role === "accounting" || role === "admin";
 });
 const { t } = useI18n();
+const route = useRoute()
+const { ensureResourcesLoaded } = useMasterStore()
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const columns = computed<TableColumn[]>(() => [
   { key: "rental_no", label: t("rentals.no") },

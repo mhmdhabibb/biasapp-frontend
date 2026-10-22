@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import { ref, reactive, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -20,6 +21,12 @@ const resources = useResourcesStore()
 const toast = useToast()
 const router = useRouter()
 const { currentUser } = useAuth()
+const route = useRoute()
+const { ensureResourcesLoaded } = store
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+})
 
 const resolvedRequests = reactive<Record<string, any>>({})
 const resolvedServiceReports = reactive<Record<string, any>>({})
