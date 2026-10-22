@@ -6,7 +6,7 @@ import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import type { Contract, TableColumn } from '@/types'
 import { reactive, ref } from 'vue'
-import { useContracts } from '@/composables/useContracts'
+import { useContractsStore } from '@/stores/contracts.store'
 import { useToast } from '@/composables/useToast'
 import { useHardDelete } from '@/composables/useHardDelete'
 
@@ -18,7 +18,25 @@ const columns: TableColumn[] = [
   { key: 'terms_notes', label: 'Free Quota Terms' },
 ]
 
-const { contracts: data, fetchAll, create, update, remove, hardRemove, renew, error } = useContracts()
+const {
+  contracts: data,
+  fetchAll,
+  create,
+  update,
+  remove,
+  hardRemove,
+  renew,
+  error,
+  isLoading,
+  totalItems,
+  totalPages,
+  currentPage,
+  pageSize,
+  searchQuery,
+  setSearch,
+  setPage,
+  setPageSize,
+} = useContractsStore()
 fetchAll()
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -81,7 +99,18 @@ async function handleDelete() {
   <div>
     <PageHeader title="Contracts"/>
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Search..." permission="contract" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+    <DataTable
+      :columns="columns"
+      :data="data"
+      :search-placeholder="searchQuery"
+      permission="contract"
+      :show-hard-delete="hardDelete.isSuperadmin"
+      :total-pages="totalPages"
+      :current-page="currentPage"
+      @hard-delete="hardDelete.open"
+      @search="setSearch"
+      @page-change="setPage"
+    >
       <template #actions="{ row }">
         <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">Edit</button>
         <button class="action-btn" title="Perpanjang" @click="openRenew(row)">Perpanjang</button>
@@ -89,7 +118,7 @@ async function handleDelete() {
         <button v-if="hardDelete.isSuperadmin" class="action-btn action-btn--hard" title="Hapus permanen dari database (superadmin)" @click="hardDelete.open(row)">Hard Delete</button>
       </template>
     </DataTable>
- 
+  
     <FormModal :open="showRenewModal" title="Perpanjang Contract" @close="showRenewModal = false" @submit="handleRenew">
       <div class="form-group">
         <label class="form-label">End Date</label>

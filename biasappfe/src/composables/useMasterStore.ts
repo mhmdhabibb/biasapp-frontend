@@ -150,7 +150,7 @@ export function useMasterStore() {
   function buildSyncTasks(
     tracksLoading: boolean,
   ): Record<string, () => Promise<void>> {
-    const DROPDOWN_LIMIT = 1000;
+    const DROPDOWN_LIMIT = 200;
     const fetchAll = (name: keyof typeof resources, limit?: number) =>
       tracksLoading
         ? resources.fetchAll(name, limit ? { limit } : undefined, true)

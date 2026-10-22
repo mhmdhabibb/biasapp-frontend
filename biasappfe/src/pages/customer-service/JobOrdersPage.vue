@@ -54,8 +54,9 @@ function isVisitJob(job: any): boolean {
 
 async function fetchJobOrders() {
   try {
-    const data = await api.get<{ data: any[] }>("/job-orders");
+    const data = await api.get<{ data: any[] }>("/job-orders?page=1&limit=100");
     jobOrders.value = data.data.map((j: any) => {
+      invalidateJobsCache();
       const isDelivery =
         j.job_type === "delivery" ||
         !!j.delivery_order_id ||
@@ -100,8 +101,9 @@ async function fetchJobOrders() {
 
 async function fetchServiceRequests() {
   try {
-    const data = await api.get<{ data: any[] }>("/service-requests");
+    const data = await api.get<{ data: any[] }>("/service-requests?page=1&limit=100");
     serviceRequests.value = data.data;
+    invalidateJobsCache();
   } catch (error) {
     console.error("Failed to fetch data SR", error);
   }
@@ -109,12 +111,13 @@ async function fetchServiceRequests() {
 
 async function fetchDeliveryOrders() {
   try {
-    const data = await api.get<{ data: any[] }>("/delivery-orders");
+    const data = await api.get<{ data: any[] }>("/delivery-orders?page=1&limit=100");
     deliveryOrders.value = data.data.filter((d: any) =>
       ["rental", "sale", "inbound"].includes(
         String(d.do_type || "").toLowerCase(),
       ),
     );
+    invalidateJobsCache();
   } catch (error) {
     console.error("Failed to fetch data DO", error);
   }
@@ -130,7 +133,7 @@ async function fetchServiceReports() {
 // Interval + kembali dari tab lain: lewati saat tab tersembunyi,
 // saat drag berlangsung (agar drop tidak rusak), dan saat
 // request sebelumnya belum selesai.
-const AUTO_RELOAD_MS = 30000;
+const AUTO_RELOAD_MS = 60000; // Increased from 30s to 60s
 let autoReloadTimer: any = null;
 let autoReloadRunning = false;
 
@@ -337,7 +340,20 @@ const filteredTechs = computed(() => {
   );
 });
 
-function getJobsForTech(techId: string | number) {
+// Cache for getJobsForTech results
+const jobsForTechCache = ref<Map<string, any[]>>(new Map());
+const cacheVersion = ref(0);
+
+function invalidateJobsCache() {
+  jobsForTechCache.value.clear();
+  cacheVersion.value++;
+}
+
+function getJobsForTech(techId: string | number): any[] {
+  const key = String(techId);
+  const cached = jobsForTechCache.value.get(key);
+  if (cached) return cached;
+
   const jobs = jobOrders.value
     .filter((j) => String(j.technician_id) === String(techId))
     .map((j: any) => ({
@@ -380,7 +396,9 @@ function getJobsForTech(techId: string | number) {
         !(r.job_order_id && laneJobIds.has(String(r.job_order_id))),
     )
     .map((r: any) => ({ ...r, taskType: "visit" }));
-  return [...jobs, ...dos, ...visits];
+  const result = [...jobs, ...dos, ...visits];
+  jobsForTechCache.value.set(key, result);
+  return result;
 }
 
 function getJobKind(job: any): "sr" | "do" | "visit" | "maintenance" {
@@ -397,11 +415,11 @@ function getJobKind(job: any): "sr" | "do" | "visit" | "maintenance" {
   return isDeliveryJob(job) ? "do" : "sr";
 }
 
-function getFilteredJobsForTech(techId: string | number) {
+const getFilteredJobsForTech = (techId: string | number) => {
   const jobs = getJobsForTech(techId);
   if (jobTypeFilter.value === "all") return jobs;
   return jobs.filter((j) => getJobKind(j) === jobTypeFilter.value);
-}
+};
 
 function jobTypeLabel(kind: string) {
   switch (kind) {
@@ -969,6 +987,23 @@ async function confirmAssign() {
   assignTarget.value = null;
   assignSignature.value = "";
   isAssigning.value = false;
+}
+
+async function cancelJobAssignment(jobId: string) {
+  if (!confirm("Are you sure you want to cancel the technician assignment for this job?")) {
+    return;
+  }
+  try {
+    await apiRequest({
+      url: `/job-orders/${jobId}/cancel-assign`,
+      method: "POST",
+    });
+    toast.success("Technician assignment cancelled successfully");
+    fetchJobOrders();
+    closeDetail();
+  } catch (error) {
+    toast.error(toast.fromError(error, "Failed to cancel assignment"));
+  }
 }
 </script>
 
@@ -1798,6 +1833,7 @@ async function confirmAssign() {
 
       <template #footer>
         <button class="btn btn-outline" @click="closeDetail">Close</button>
+        <button v-if="selectedJob && selectedJob.technician_id" class="btn btn-danger" @click="cancelJobAssignment(selectedJob.id)">Cancel Assignment</button>
       </template>
     </FormModal>
 

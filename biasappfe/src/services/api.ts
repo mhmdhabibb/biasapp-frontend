@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import axios, { AxiosError, type AxiosRequestConfig } from "axios";
+import { getOrFetch, invalidateCache } from "@/utils/requestCache";
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || "http://localhost:4008/api"
@@ -67,27 +68,47 @@ async function request<T>(
   options: AxiosRequestConfig = {},
   tracksLoading = !options.method || options.method === "GET",
 ): Promise<T> {
-  if (tracksLoading) activeApiRequests.value++;
-  try {
+  const isGet = !options.method || options.method === "GET";
+  const cacheKey = isGet ? `GET:${path}` : "";
+
+  if (isGet && tracksLoading) activeApiRequests.value++;
+
+  const fetcher = async (): Promise<T> => {
     const response = await http.request<T>({ url: path, ...options });
     return response.data;
+  };
+
+  try {
+    const data = isGet && cacheKey
+      ? await getOrFetch<T>(cacheKey, fetcher)
+      : await fetcher();
+    return data;
   } catch (error) {
     throw toApiError(error);
   } finally {
-    if (tracksLoading) activeApiRequests.value--;
+    if (isGet && tracksLoading) activeApiRequests.value--;
   }
 }
 
 export const api = {
   get: <T>(path: string, tracksLoading = true) =>
     request<T>(path, {}, tracksLoading),
-  post: <T>(path: string, data: unknown) =>
-    request<T>(path, { method: "POST", data }),
-  put: <T>(path: string, data: unknown) =>
-    request<T>(path, { method: "PUT", data }),
-  patch: <T>(path: string, data: unknown) =>
-    request<T>(path, { method: "PATCH", data }),
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  post: <T>(path: string, data: unknown) => {
+    invalidateCache();
+    return request<T>(path, { method: "POST", data });
+  },
+  put: <T>(path: string, data: unknown) => {
+    invalidateCache();
+    return request<T>(path, { method: "PUT", data });
+  },
+  patch: <T>(path: string, data: unknown) => {
+    invalidateCache();
+    return request<T>(path, { method: "PATCH", data });
+  },
+  delete: <T>(path: string) => {
+    invalidateCache();
+    return request<T>(path, { method: "DELETE" });
+  },
 };
 
 /**
@@ -116,6 +137,7 @@ export async function uploadFile<T>(
     const response = await http.post<T>(path, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
+    invalidateCache();
     return response.data;
   } catch (error) {
     throw toApiError(error);

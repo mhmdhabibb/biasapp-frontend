@@ -1,9 +1,24 @@
 import type { Contract } from "@/types";
 import { api, type ApiResponse, type PaginatedResponse } from "./api";
 
+export interface ContractListParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  orderBy?: string;
+  orderDir?: "asc" | "desc";
+}
+
 export const contractService = {
-  list() {
-    return api.get<PaginatedResponse<Contract>>("/contracts/?page=1&limit=100");
+  list(params: ContractListParams = {}) {
+    const { page = 1, limit = 20, search, orderBy, orderDir } = params;
+    const query = new URLSearchParams();
+    query.set("page", String(page));
+    query.set("limit", String(limit));
+    if (search) query.set("search", search);
+    if (orderBy) query.set("order_by", orderBy);
+    if (orderDir) query.set("order_dir", orderDir);
+    return api.get<PaginatedResponse<Contract>>(`/contracts/?${query.toString()}`);
   },
   create(data: Partial<Contract>) {
     return api.post<ApiResponse<null>>("/contracts/", data);

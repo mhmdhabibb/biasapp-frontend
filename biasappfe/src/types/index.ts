@@ -593,3 +593,15 @@ export interface Notification {
   created_at: string;
   updated_at: string;
 }
+
+export interface PaginatedResponse<T> {
+  success: boolean;
+  message: string;
+  data: T[];
+  meta: {
+    page: number;
+    limit: number;
+    total_items: number;
+    total_pages: number;
+  };
+}

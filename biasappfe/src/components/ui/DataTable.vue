@@ -2,6 +2,7 @@
 import { usePermission } from "@/composables/usePermission";
 import type { TableColumn } from "@/types";
 import { computed, ref, useSlots } from "vue";
+import { debounce } from "@/utils/requestCache";
 
 const props = withDefaults(
   defineProps<{
@@ -14,6 +15,10 @@ const props = withDefaults(
     showHardDelete?: boolean;
     /** Items per page for pagination (default: 10) */
     perPage?: number;
+    /** Total pages for server-side pagination */
+    totalPages?: number;
+    /** Current page for server-side pagination */
+    currentPage?: number;
   }>(),
   {
     columns: () => [],
@@ -22,14 +27,18 @@ const props = withDefaults(
     permission: "",
     showHardDelete: false,
     perPage: 10,
+    totalPages: 1,
+    currentPage: 1,
   },
 );
 
-defineEmits<{
+const emit = defineEmits<{
   (e: "edit", item: any): void;
   (e: "delete", item: any): void;
   (e: "hard-delete", item: any): void;
   (e: "row-click", item: any): void;
+  (e: "search", query: string): void;
+  (e: "page-change", page: number): void;
 }>();
 
 const slots = useSlots();
@@ -49,40 +58,31 @@ const showActionsColumn = computed(
 );
 
 const searchQuery = ref("");
-const currentPage = ref(1);
+const currentPage = ref(props.currentPage || 1);
 
-const filteredData = computed<any[]>(() => {
-  const list = Array.isArray(props.data) ? props.data : [];
-  if (!searchQuery.value.trim()) return list;
-  const q = searchQuery.value.toLowerCase();
-  const cols = Array.isArray(props.columns) ? props.columns : [];
-  return list.filter((row) =>
-    cols.some((col) => {
-      const val = row?.[col.key];
-      if (val == null) return false;
-      return String(val).toLowerCase().includes(q);
-    }),
-  );
-});
+const emitSearch = debounce((query: string) => {
+  emit("search", query);
+}, 300);
+
+function handleSearchInput(query: string) {
+  searchQuery.value = query;
+  currentPage.value = 1;
+  emit("page-change", 1);
+  emitSearch(query);
+}
 
 const perPage = computed(() => props.perPage || 10);
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil((filteredData.value?.length || 0) / perPage.value)),
-);
-const paginatedData = computed<any[]>(() => {
-  const start = (currentPage.value - 1) * perPage.value;
-  return (filteredData.value || []).slice(start, start + perPage.value);
-});
 
 function goToPage(page: number) {
-  if (page >= 1 && page <= totalPages.value) {
+  if (page >= 1 && page <= (props.totalPages || 1)) {
     currentPage.value = page;
+    emit("page-change", page);
   }
 }
 
 const visiblePages = computed(() => {
   const pages: number[] = [];
-  const total = totalPages.value;
+  const total = props.totalPages || 1;
   const current = currentPage.value;
   const delta = 2;
   for (
@@ -117,13 +117,13 @@ const visiblePages = computed(() => {
           type="search"
           class="form-input search-input"
           :placeholder="searchPlaceholder || 'Search data...'"
-          @input="currentPage = 1"
+          @input="handleSearchInput(($event.target as HTMLInputElement).value)"
         />
       </div>
       <div class="toolbar-right">
         <slot name="toolbar"></slot>
         <span class="data-count" aria-live="polite">
-          {{ `${filteredData?.length || 0} items` }}
+          {{ `${data?.length || 0} items` }}
         </span>
       </div>
     </div>
@@ -146,7 +146,7 @@ const visiblePages = computed(() => {
     </div>
 
     <div
-      v-else-if="(filteredData?.length || 0) === 0 && searchQuery"
+      v-else-if="searchQuery && (!data || data.length === 0)"
       class="empty-state"
     >
       <svg
@@ -181,7 +181,7 @@ const visiblePages = computed(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, idx) in paginatedData" :key="row.id ?? idx" @click="$emit('row-click', row)" style="cursor: pointer;">
+          <tr v-for="(row, idx) in data" :key="row.id ?? idx" @click="$emit('row-click', row)" style="cursor: pointer;">
             <td class="td-num">{{ (currentPage - 1) * perPage + idx + 1 }}</td>
             <td v-for="col in columns" :key="col.key">
               <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row">
@@ -271,7 +271,7 @@ const visiblePages = computed(() => {
       </table>
     </div>
 
-    <div v-if="(filteredData?.length || 0) > perPage" class="pagination">
+    <div v-if="data?.length > perPage && (props.totalPages || 1) > 1" class="pagination">
       <button
         class="btn btn-outline btn-sm"
         :disabled="currentPage === 1"
@@ -290,7 +290,7 @@ const visiblePages = computed(() => {
       </button>
       <button
         class="btn btn-outline btn-sm"
-        :disabled="currentPage === totalPages"
+        :disabled="currentPage === (props.totalPages || 1)"
         @click="goToPage(currentPage + 1)"
       >
         Next
