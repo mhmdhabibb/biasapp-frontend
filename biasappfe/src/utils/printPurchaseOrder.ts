@@ -1,7 +1,5 @@
 // @ts-nocheck
 import { useMasterStore } from "@/composables/useMasterStore";
-import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
-import biasLogoUrl from "@/assets/bias-logo.png";
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({
@@ -86,7 +84,6 @@ function resolvePOCustomer(po: any, store: any) {
   const customers = store?.customers?.value || store?.customers || [];
   const requests = store?.sparepartRequests?.value || store?.sparepartRequests || [];
 
-  // 1. Direct po.customer_id
   if (po.customer_id) {
     const direct = store?.findCustomer ? store.findCustomer(po.customer_id) : null;
     if (direct) return direct;
@@ -94,7 +91,6 @@ function resolvePOCustomer(po: any, store: any) {
     if (direct2) return direct2;
   }
 
-  // 2. Via resolved sparepart request
   const req = resolvePORequest(po, store);
   if (req?.customer) return req.customer;
   if (req?.service_report?.customer) return req.service_report.customer;
@@ -105,7 +101,6 @@ function resolvePOCustomer(po: any, store: any) {
     if (viaReq) return viaReq;
   }
 
-  // 3. Via resolved service report
   const sr = resolvePOServiceReport(po, store);
   if (sr?.customer) return sr.customer;
   if (sr?.customer_id) {
@@ -114,7 +109,6 @@ function resolvePOCustomer(po: any, store: any) {
     if (viaSr) return viaSr;
   }
 
-  // 4. Check if po.sparepart_request_id matches a customer directly
   if (po.sparepart_request_id) {
     const sprIdStr = String(po.sparepart_request_id).trim().toLowerCase();
     const viaSpr = (store?.findCustomer ? store.findCustomer(sprIdStr) : null) ||
@@ -122,7 +116,6 @@ function resolvePOCustomer(po: any, store: any) {
     if (viaSpr) return viaSpr;
   }
 
-  // 5. Check if any sparepartRequest in store has customer matching PO
   const candidateIds = [po.sparepart_request_id, po.service_report_id].filter(Boolean).map((x) => String(x).toLowerCase().trim());
   for (const r of requests) {
     const rId = String(r.id || "").toLowerCase().trim();
@@ -137,7 +130,6 @@ function resolvePOCustomer(po: any, store: any) {
     }
   }
 
-  // 6. Customer name string fallback on service report
   if (sr?.customer_name || sr?.customer_name_copier || sr?.customer_name_technical) {
     const name = sr.customer_name || sr.customer_name_copier || sr.customer_name_technical;
     return {
@@ -151,17 +143,54 @@ function resolvePOCustomer(po: any, store: any) {
   return null;
 }
 
+function resolvePOTechnician(po: any, store: any) {
+  if (!po) return null;
+  const req = resolvePORequest(po, store);
+  const sr = resolvePOServiceReport(po, store);
+
+  if (req?.technician) return req.technician;
+  if (req?.technician_id && store?.findTechnician) {
+    const t = store.findTechnician(req.technician_id);
+    if (t) return t;
+  }
+  if (sr?.technician) return sr.technician;
+  if (sr?.technician_id && store?.findTechnician) {
+    const t = store.findTechnician(sr.technician_id);
+    if (t) return t;
+  }
+  return null;
+}
+
+function resolvePOUnit(po: any, store: any) {
+  if (!po) return null;
+  const sr = resolvePOServiceReport(po, store);
+  if (po.unit) return po.unit;
+  if (po.unit_id && store?.findUnit) {
+    const u = store.findUnit(po.unit_id);
+    if (u) return u;
+  }
+  if (sr?.unit) return sr.unit;
+  if (sr?.unit_id && store?.findUnit) {
+    const u = store.findUnit(sr.unit_id);
+    if (u) return u;
+  }
+  return null;
+}
+
 function resolvePOLineItems(po: any, store: any) {
-  if (po.purchase_order_items && po.purchase_order_items.length > 0) {
-    return po.purchase_order_items.map((item: any) => ({
+  const items = po.purchase_order_items || po.request_form_items;
+  if (items && items.length > 0) {
+    return items.map((item: any) => ({
       name:
         item.product?.name ||
         item.item_name ||
         (store?.findProduct ? store.findProduct(item.product_id)?.name : null) ||
         (po.reason ? `Sparepart (${po.reason})` : "Sparepart"),
       qty: item.qty || 1,
+      uom: item.uom || "Pcs",
       price: item.unit_price || 0,
       total: item.total_price || (item.qty || 1) * (item.unit_price || 0),
+      purpose: item.purpose || "",
     }));
   }
 
@@ -175,23 +204,15 @@ function resolvePOLineItems(po: any, store: any) {
       {
         name: req.item_name || product?.name || (po.reason ? `Sparepart (${po.reason})` : "Sparepart"),
         qty,
+        uom: req.uom || "Pcs",
         price,
         total: price * qty,
+        purpose: req.purpose || "",
       },
     ];
   }
 
   return [];
-}
-
-function poSignerName(po: any, currentUser?: any): string {
-  return (
-    po?.user?.name ||
-    po?.user?.username ||
-    currentUser?.value?.name ||
-    currentUser?.name ||
-    "testacc"
-  );
 }
 
 export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
@@ -200,431 +221,427 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
 
   const customer = resolvePOCustomer(po, store);
   const custName = escapeHtml(customer?.company_name || customer?.name || "-");
-  const custAddress = escapeHtml(customer?.address || "-");
-  const custPhone = escapeHtml(customer?.phone || "-");
-  const pic = customer?.pic_name || "-";
-  const gender = customer?.pic_gender;
-  let prefix = "Bapak/Ibu ";
-  if (gender === "L") prefix = "Bapak ";
-  if (gender === "P") prefix = "Ibu ";
-  const picDisplay = escapeHtml(pic && pic !== "-" ? prefix + pic : "-");
 
   const req = resolvePORequest(po, store);
   const sr = resolvePOServiceReport(po, store);
+  const tech = resolvePOTechnician(po, store);
+  const unit = resolvePOUnit(po, store);
 
-  let rawReqNo = req?.request_no || po.sparepart_request?.request_no;
-  if (!rawReqNo) {
-    if (sr?.service_spareparts?.[0]?.request_no) {
-      rawReqNo = sr.service_spareparts[0].request_no;
-    } else if (sr?.report_no) {
-      rawReqNo = sr.report_no;
-    } else if (po.sparepart_request_id) {
-      const s = String(po.sparepart_request_id).trim();
-      if (!isUuid(s)) {
-        rawReqNo = s.startsWith("SPR") ? s : `SPR-${s}`;
-      }
-    }
-  }
-  const requestNo = escapeHtml(rawReqNo && !isUuid(rawReqNo) ? rawReqNo : "-");
+  // 1. Request Form No.
+  const rawReqNo = po.po_no || po.request_form_no || req?.request_no || (po.id ? `Bi-MRF-${String(po.id).slice(-4)}` : "Bi-MRF-001");
+  const requestFormNo = escapeHtml(rawReqNo);
 
-  const signer = escapeHtml(poSignerName(po, currentUser));
-
+  // 2. Dates
   const orderDateRaw = po.order_date || po.created_at;
-  const orderDateStr = orderDateRaw
+  const tanggalPengajuan = orderDateRaw
     ? new Date(orderDateRaw).toLocaleDateString("en-GB", {
-        day: "numeric",
-        month: "long",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+  const installDateRaw = po.installation_date || req?.installation_date || po.order_date || po.created_at;
+  const tanggalDibutuhkan = installDateRaw
+    ? new Date(installDateRaw).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
         year: "numeric",
       })
     : "-";
 
-  const reasonStr = escapeHtml(
+  // 3. Pemohon Info
+  const namaPemohon = escapeHtml(
+    tech?.user?.name ||
+    tech?.user?.username ||
+    tech?.name ||
+    po.requester_name ||
+    currentUser?.value?.name ||
+    currentUser?.name ||
+    "tech"
+  );
+  const divisiDepartemen = escapeHtml(po.department || "Technical / Service");
+  const posisi = escapeHtml(po.requester_position || "Technician");
+  const idCard = escapeHtml(tech?.code || tech?.id_card || tech?.id ? String(tech.code || tech.id_card || tech.id) : "-");
+  const prioritas = escapeHtml(po.priority || "Normal / Mendesak");
+
+  // 4. Default Purpose
+  const defaultPurposeParts = [];
+  if (unit?.model) {
+    defaultPurposeParts.push(`Unit ${unit.model}${unit.serial_number ? ` (SN: ${unit.serial_number})` : ""}`);
+  }
+  if (custName && custName !== "-") {
+    defaultPurposeParts.push(custName);
+  }
+  if (sr?.report_no || sr?.service_report_no) {
+    defaultPurposeParts.push(`SR: ${sr.report_no || sr.service_report_no}`);
+  }
+  const defaultPurpose = defaultPurposeParts.join(" - ") || "Operasional / Service";
+
+  // 5. Line items
+  const lineItems = resolvePOLineItems(po, store);
+  let totalEstimasi = 0;
+
+  const itemRows = lineItems.map((item: any, idx: number) => {
+    totalEstimasi += item.total || 0;
+    const priceStr = item.price ? item.price.toLocaleString("id-ID") : "-";
+    const totalStr = item.total ? item.total.toLocaleString("id-ID") : "-";
+    const purposeStr = escapeHtml(item.purpose || defaultPurpose);
+
+    return `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td style="text-align: left;">${escapeHtml(item.name)}</td>
+        <td style="text-align: center;">${escapeHtml(item.qty)}</td>
+        <td style="text-align: center;">${escapeHtml(item.uom || "Pcs")}</td>
+        <td style="text-align: right;">${priceStr}</td>
+        <td style="text-align: right;">${totalStr}</td>
+        <td style="text-align: left;">${purposeStr}</td>
+      </tr>
+    `;
+  });
+
+  // Target exactly 10 rows in the items table as shown in the original physical PDF
+  const totalDisplayRows = 10;
+  const emptyRowsNeeded = Math.max(0, totalDisplayRows - lineItems.length);
+  const emptyRows = [];
+  for (let i = lineItems.length + 1; i <= lineItems.length + emptyRowsNeeded; i++) {
+    emptyRows.push(`
+      <tr>
+        <td style="text-align: center;">${i}</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    `);
+  }
+
+  const grandTotal = totalEstimasi || po.total_amount || 0;
+  const totalEstimasiStr = grandTotal > 0 ? grandTotal.toLocaleString("id-ID") : "-";
+
+  // 6. Justifikasi / Alasan
+  const reasonStr =
     po.reason && po.reason.trim() !== "-"
       ? po.reason.trim()
       : req?.reason && req.reason.trim() !== "-"
       ? req.reason.trim()
       : sr?.remarks && sr.remarks.trim() !== "-"
       ? sr.remarks.trim()
-      : "-"
-  );
+      : "-";
 
-  const items = resolvePOLineItems(po, store);
-  const subTotal = items.reduce((sum: number, item: any) => sum + item.total, 0);
-  const tax = subTotal * 0.11;
-  const grandTotal = subTotal + tax;
-
-  const itemsHtml =
-    items.length > 0
-      ? items
-          .map(
-            (item: any, idx: number) => `
-        <tr>
-          <td style="text-align: center;">${idx + 1}</td>
-          <td>${escapeHtml(item.name)}</td>
-          <td style="text-align: center;">${item.qty}</td>
-          <td style="text-align: center;">unit</td>
-          <td class="rp-col">Rp</td><td class="val-col">${(item.price || 0).toLocaleString("id-ID")}</td>
-          <td class="rp-col">Rp</td><td class="val-col">${(item.total || 0).toLocaleString("id-ID")}</td>
-        </tr>
-      `
-          )
-          .join("")
-      : `<tr><td colspan="8" style="text-align: center; color: #666; padding: 12px;">Item data unavailable</td></tr>`;
-
-  const subTotalStr = subTotal.toLocaleString("id-ID");
-  const taxStr = tax.toLocaleString("id-ID");
-  const amountStr = grandTotal.toLocaleString("id-ID");
+  // 7. Internal Verification
+  const isStockAvailable = po.warehouse_status === "tersedia" || po.warehouse_status === "Tersedia di Stok";
+  const isApproved = po.status === "approved" || po.status === "do_created" || po.status === "completed";
+  const isRejected = po.status === "rejected" || po.status === "cancelled";
+  const isPending = !isApproved && !isRejected;
+  const specialNotes = escapeHtml(po.special_notes || "");
 
   return `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Request Form - ${escapeHtml(po.po_no)}</title>
+    <title>Material Requisition Form - ${requestFormNo}</title>
     <style>
       @media print {
-        @page { size: A4 portrait; margin: 10mm; }
-        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        @page {
+          size: A4 portrait;
+          margin: 8mm 10mm;
+        }
+        body {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
       }
-      body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        padding: 0;
-        color: #000;
-        font-size: 12px;
-        margin: 0;
-        background: #fff;
-      }
-      .container {
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 20px;
+      * {
         box-sizing: border-box;
       }
-
-      /* Header Table */
-      .header-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 20px;
-      }
-      .header-table td {
-        vertical-align: top;
-        padding: 0;
-      }
-      .logo-col {
-        width: 50%;
-        padding-right: 20px;
-      }
-      .info-col {
-        width: 50%;
-      }
-
-      .logo-container {
-        display: flex;
-        align-items: center;
-        margin-bottom: 10px;
-      }
-      .logo {
-        width: 80px;
-        height: 80px;
-        margin-right: 15px;
-        flex-shrink: 0;
-      }
-
-      .company-details h1 {
-        margin: 0;
-        font-size: 22px;
-        font-weight: bold;
+      body {
+        font-family: Arial, Helvetica, sans-serif;
         color: #000;
-        line-height: 1.15;
-      }
-      .company-details h2 {
-        margin: 0;
-        font-size: 14px;
-        font-style: italic;
-        font-weight: normal;
-        margin-bottom: 10px;
-        color: #333;
-      }
-      .company-details p {
-        margin: 0;
         font-size: 11px;
-        line-height: 1.4;
-        color: #222;
+        margin: 0;
+        padding: 0;
+        background: #fff;
+      }
+      .page-container {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 15px 20px;
       }
 
-      .invoice-text {
-        font-size: 28px;
-        font-weight: bold;
+      /* Header */
+      .doc-header {
         text-align: center;
-        margin-top: 24px;
-        margin-bottom: 10px;
-        letter-spacing: 1px;
-        color: #000;
+        margin-bottom: 12px;
       }
-
-      .po-number-banner {
-        font-size: 20px;
+      .doc-title {
+        font-size: 17px;
         font-weight: bold;
-        text-align: right;
-        margin-bottom: 10px;
-        font-family: monospace;
-        color: #003366;
         letter-spacing: 0.5px;
+        color: #000;
+        text-transform: uppercase;
+      }
+      .doc-subtitle {
+        font-size: 11px;
+        font-style: italic;
+        color: #444;
+        margin-top: 3px;
       }
 
-      /* Meta Table */
-      .meta-table {
+      /* Section Banner */
+      .section-banner {
+        background-color: #1e4e79 !important;
+        color: #ffffff !important;
+        font-weight: bold;
+        font-size: 10.5px;
+        padding: 4px 8px;
+        margin-top: 10px;
+        letter-spacing: 0.3px;
+        border: 1px solid #1e4e79;
+      }
+
+      /* Form Table */
+      table.form-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 12px;
+        border: 1px solid #1e4e79;
+      }
+      table.form-table td {
         border: 1px solid #7ea8ce;
+        padding: 4px 7px;
+        font-size: 10.5px;
+        vertical-align: middle;
       }
-      .meta-table td, .meta-table th {
-        border: 1px solid #7ea8ce;
-        padding: 4px 8px;
+      .label-cell {
+        background-color: #f2f6fa !important;
+        color: #111;
+        font-weight: normal;
       }
-      .meta-table .bg-blue {
-        background-color: #003366;
-        color: white;
-        font-weight: bold;
-      }
-      .meta-table .label {
-        width: 90px;
-        font-weight: bold;
+      .value-cell {
+        background-color: #ffffff;
+        color: #000;
       }
 
       /* Items Table */
-      .items-table {
+      table.items-table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 10px;
+        border: 1px solid #1e4e79;
       }
-      .items-table th {
-        background-color: #003366;
-        color: white;
-        border: 1px solid #7ea8ce;
-        padding: 8px;
+      table.items-table th {
+        background-color: #1e4e79 !important;
+        color: #ffffff !important;
+        font-size: 9.5px;
+        font-weight: bold;
+        border: 1px solid #1e4e79;
+        padding: 5px 3px;
         text-align: center;
-        font-size: 12px;
+        vertical-align: middle;
       }
-      .items-table td {
+      table.items-table td {
         border: 1px solid #7ea8ce;
-        padding: 8px;
-        vertical-align: top;
-      }
-      .items-table .rp-col {
-        border-right: none;
-        width: 20px;
-        padding-right: 2px;
-        color: #333;
-      }
-      .items-table .val-col {
-        border-left: none;
-        text-align: right;
-      }
-
-      /* Summary Table */
-      .summary-table {
-        width: 350px;
-        float: right;
-        border-collapse: collapse;
-        margin-top: 0;
-        margin-bottom: 20px;
-      }
-      .summary-table td {
-        border: 1px solid #7ea8ce;
-        padding: 6px 8px;
-        background-color: #dbeaf4;
-        font-weight: bold;
-        font-size: 12px;
-      }
-      .summary-table .label {
-        text-align: right;
-        padding-right: 10px;
-      }
-
-      /* Payment Details */
-      .payment-info {
-        clear: left;
-        float: left;
-        margin-top: 10px;
-        font-size: 12px;
-        font-weight: bold;
-        line-height: 1.6;
-        color: #000;
-      }
-
-      /* Signatures Section */
-      .signatures {
-        display: flex;
-        justify-content: space-between;
-        clear: both;
-        margin-top: 40px;
-        text-align: center;
-      }
-      .sig-box {
-        width: 220px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
-      .sig-title {
-        font-weight: bold;
-        font-size: 11px;
+        padding: 3px 6px;
+        font-size: 10px;
         height: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        vertical-align: middle;
+      }
+      .total-row td {
+        background-color: #d9e1f2 !important;
+        font-weight: bold;
+        font-size: 10px;
+        border-top: 1px solid #1e4e79;
+      }
+
+      /* Justifikasi */
+      .justifikasi-box {
+        border: 1px solid #1e4e79;
+        padding: 6px 8px;
+        min-height: 46px;
+        background-color: #fff;
+      }
+      .justifikasi-sub {
+        font-size: 9px;
+        font-style: italic;
+        color: #555;
+        margin-bottom: 4px;
+      }
+      .justifikasi-text {
+        font-size: 10.5px;
+        color: #000;
+        line-height: 1.35;
+      }
+
+      /* Otorisasi */
+      table.otorisasi-table {
+        width: 100%;
+        border-collapse: collapse;
+        border: 1px solid #1e4e79;
+      }
+      table.otorisasi-table th {
+        border: 1px solid #7ea8ce;
+        background-color: #f2f6fa !important;
+        font-size: 10px;
+        font-weight: normal;
+        padding: 4px 6px;
+        text-align: left;
+      }
+      table.otorisasi-table td {
+        border: 1px solid #7ea8ce;
+        font-size: 10px;
       }
       .sig-space {
-        height: 65px;
-        width: 100%;
-      }
-      .sig-line {
-        border-bottom: 1px solid #000;
-        width: 85%;
-        margin: 2px auto 6px auto;
+        height: 52px;
       }
       .sig-name {
-        font-weight: normal;
-        font-size: 11px;
-        min-height: 18px;
-        word-break: break-word;
+        text-align: center;
+        padding: 4px;
+        font-size: 10px;
+      }
+
+      /* Verifikasi Internal */
+      .verifikasi-box {
+        border: 1px solid #1e4e79;
+        padding: 6px 8px;
+        background-color: #fff;
+      }
+      .verifikasi-grid {
+        display: flex;
+        justify-content: space-between;
+        font-size: 10px;
+      }
+      .checkbox-box {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 1px solid #333;
+        text-align: center;
+        line-height: 11px;
+        font-size: 9px;
+        font-weight: bold;
+        margin-right: 2px;
+        vertical-align: middle;
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <!-- Header Table -->
-      <table class="header-table">
+    <div class="page-container">
+      <!-- Document Header -->
+      <div class="doc-header">
+        <div class="doc-title">MATERIAL REQUISITION FORM</div>
+        <div class="doc-subtitle">Internal Request Form</div>
+      </div>
+
+      <!-- A. INFORMASI PEMOHON -->
+      <div class="section-banner">A. INFORMASI PEMOHON</div>
+      <table class="form-table">
         <tr>
-          <td class="logo-col">
-            <div class="logo-container">
-              <img src="${BIAS_LOGO_DATA_URL || biasLogoUrl}" class="logo" alt="BiAS Logo" />
-              <div class="company-details">
-                <h1>PT. BIAS SURYA</h1>
-                <h1>TEKNOLOGI</h1>
-                <h2>The shape of smart</h2>
-              </div>
-            </div>
-            <div class="company-details" style="padding-left: 95px;">
-              <p>
-                Ruko Purimas Blok A No.47 Kota Batam,<br>
-                Kepulauan Riau - Indonesia<br>
-                Phone: +62811 704 5657<br>
-                Email: admin@biasbst.com<br>
-                Website: www.biassuryateknologi.com
-              </p>
-            </div>
-            <div class="invoice-text">REQUEST FORM</div>
-          </td>
-          <td class="info-col">
-            <div class="po-number-banner">REQUEST FORM NO.  :  ${escapeHtml(po.po_no)}</div>
-            <table class="meta-table">
-              <tr>
-                <td class="label">Date :</td>
-                <td>${orderDateStr}</td>
-              </tr>
-              <tr>
-                <td class="label">Request :</td>
-                <td>${requestNo}</td>
-              </tr>
-              ${reasonStr !== "-" ? `
-              <tr>
-                <td class="label">Reason :</td>
-                <td>${reasonStr}</td>
-              </tr>` : ""}
-              <tr>
-                <td colspan="2" class="bg-blue">To :</td>
-              </tr>
-              <tr>
-                <td colspan="2" style="font-weight: bold; min-height: 35px; vertical-align: top; padding: 6px 8px;">${custName}</td>
-              </tr>
-              <tr>
-                <td colspan="2" class="bg-blue" style="height: 10px; padding: 4px 8px;">Address :</td>
-              </tr>
-              <tr>
-                <td colspan="2" style="min-height: 45px; vertical-align: top; padding: 6px 8px;">${custAddress}</td>
-              </tr>
-              <tr>
-                <td class="label">Phone :</td>
-                <td>${custPhone}</td>
-              </tr>
-              <tr>
-                <td class="label">Attn.:</td>
-                <td>${picDisplay}</td>
-              </tr>
-            </table>
-          </td>
+          <td class="label-cell" style="width: 14%;">Nomor</td>
+          <td class="value-cell" style="width: 36%; font-weight: bold;">${requestFormNo}</td>
+          <td class="label-cell" style="width: 22%;">Tanggal Pengajuan</td>
+          <td class="value-cell" style="width: 28%;">${tanggalPengajuan}</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Nama</td>
+          <td class="value-cell">${namaPemohon}</td>
+          <td class="label-cell">Divisi / Departemen</td>
+          <td class="value-cell">${divisiDepartemen}</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Posisi</td>
+          <td class="value-cell">${posisi}</td>
+          <td class="label-cell">Tanggal Dibutuhkan</td>
+          <td class="value-cell">${tanggalDibutuhkan}</td>
+        </tr>
+        <tr>
+          <td class="label-cell">ID CARD</td>
+          <td class="value-cell">${idCard}</td>
+          <td class="label-cell">Tingkat Prioritas</td>
+          <td class="value-cell">${prioritas}</td>
         </tr>
       </table>
 
-      <!-- Items Table -->
+      <!-- B. DETAIL BARANG YANG DIMINTA -->
+      <div class="section-banner">B. DETAIL BARANG YANG DIMINTA</div>
       <table class="items-table">
         <thead>
           <tr>
-            <th style="width: 40px;">No</th>
-            <th>Description</th>
-            <th style="width: 50px;">Qty</th>
-            <th style="width: 60px;">UOM</th>
-            <th colspan="2" style="width: 140px;">Unit Price</th>
-            <th colspan="2" style="width: 140px;">Amount</th>
+            <th style="width: 4%;">No</th>
+            <th style="width: 34%; text-align: left; padding-left: 6px;">Nama Barang &amp; Spesifikasi Teknis</th>
+            <th style="width: 7%;">Volume</th>
+            <th style="width: 7%;">Satuan</th>
+            <th style="width: 14%;">Estimasi Harga Satuan<br><span style="font-weight: normal; font-size: 8.5px;">(Rp)</span></th>
+            <th style="width: 14%;">Total Estimasi<br><span style="font-weight: normal; font-size: 8.5px;">(Rp)</span></th>
+            <th style="width: 20%;">Keperluan / Peruntukan</th>
           </tr>
         </thead>
         <tbody>
-          ${itemsHtml}
-          <tr style="height: 100px;">
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td class="rp-col"></td><td class="val-col"></td>
-            <td class="rp-col"></td><td class="val-col"></td>
+          ${itemRows.join("")}
+          ${emptyRows.join("")}
+          <tr class="total-row">
+            <td colspan="4" style="text-align: right; padding-right: 8px;">TOTAL ESTIMASI KESELURUHAN</td>
+            <td colspan="2" style="text-align: right; padding-right: 8px;">${totalEstimasiStr}</td>
+            <td style="text-align: center;">-</td>
           </tr>
         </tbody>
       </table>
 
-      <!-- Summary Table -->
-      <table class="summary-table">
+      <!-- JUSTIFIKASI / ALASAN KEBUTUHAN PENGADAAN -->
+      <div class="section-banner">JUSTIFIKASI / ALASAN KEBUTUHAN PENGADAAN</div>
+      <div class="justifikasi-box">
+        <div class="justifikasi-sub">Tuliskan alasan pengadaan barang (misal: penggantian inventaris lama rusak, penambahan kebutuhan staf baru, keperluan operasional proyek, dll):</div>
+        <div class="justifikasi-text">${escapeHtml(reasonStr)}</div>
+      </div>
+
+      <!-- OTORISASI -->
+      <div class="section-banner">OTORISASI</div>
+      <table class="otorisasi-table">
         <tr>
-          <td class="label">Sub Total</td>
-          <td class="rp-col" style="border-right: none; width: 30px; padding-right: 0;">Rp</td>
-          <td class="val-col" style="border-left: none; text-align: right; width: 110px;">${subTotalStr}</td>
+          <th style="width: 25%;">Dibuat Oleh:</th>
+          <th style="width: 25%;">Diajukan Oleh:</th>
+          <th style="width: 25%;">Dikeluarkan :</th>
+          <th style="width: 25%;">Disetujui :</th>
         </tr>
         <tr>
-          <td class="label">Tax (11%)</td>
-          <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
-          <td class="val-col" style="border-left: none; text-align: right;">${taxStr}</td>
+          <td class="sig-space"></td>
+          <td class="sig-space"></td>
+          <td class="sig-space"></td>
+          <td class="sig-space"></td>
         </tr>
         <tr>
-          <td class="label">Amount</td>
-          <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
-          <td class="val-col" style="border-left: none; text-align: right;">${amountStr}</td>
+          <td class="sig-name">( ${namaPemohon} )</td>
+          <td class="sig-name">( Admin Sales )</td>
+          <td class="sig-name">( STORE )</td>
+          <td class="sig-name">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</td>
         </tr>
       </table>
 
-      <!-- Payment Info -->
-      <div class="payment-info">
-        Payment via bank transfer to:<br>
-        BANK BRKSYARIAH Cabang Batam<br>
-        Account No. 106-08-85757<br>
-        Account Name : PT. BIAS SURYA TEKNOLOGI<br>
-        NPWP : 0941.8395.0822.5000
-      </div>
-
-      <!-- Signatures -->
-      <div class="signatures">
-        <div class="sig-box">
-          <div class="sig-title">Received By,</div>
-          <div class="sig-space"></div>
-          <div class="sig-line"></div>
-          <div class="sig-name">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</div>
-        </div>
-        <div class="sig-box">
-          <div class="sig-title">Sincerely,</div>
-          <div class="sig-space"></div>
-          <div class="sig-line"></div>
-          <div class="sig-name">${signer || "( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )"}</div>
+      <!-- VERIFIKASI INTERNAL -->
+      <div class="section-banner">VERIFIKASI INTERNAL</div>
+      <div class="verifikasi-box">
+        <div class="verifikasi-grid">
+          <div style="flex: 1; padding-right: 15px;">
+            <div style="margin-bottom: 5px;">
+              Status Stok Gudang : &nbsp;
+              <span class="checkbox-box">${isStockAvailable ? "&#10003;" : ""}</span> Tersedia di Stok &nbsp;&nbsp;
+              <span class="checkbox-box">${!isStockAvailable ? "&#10003;" : ""}</span> Pengadaan Baru
+            </div>
+            <div>
+              Status Pengajuan : &nbsp;
+              <span class="checkbox-box">${isApproved ? "&#10003;" : ""}</span> Disetujui &nbsp;&nbsp;
+              <span class="checkbox-box">${isPending ? "&#10003;" : ""}</span> Ditunda &nbsp;&nbsp;
+              <span class="checkbox-box">${isRejected ? "&#10003;" : ""}</span> Ditolak
+            </div>
+          </div>
+          <div style="flex: 1; border-left: 1px dotted #999; padding-left: 15px;">
+            Catatan Khusus : <span style="border-bottom: 1px dotted #333; display: inline-block; min-width: 180px;">${specialNotes}</span>
+          </div>
         </div>
       </div>
     </div>
