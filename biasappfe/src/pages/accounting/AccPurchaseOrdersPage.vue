@@ -700,7 +700,7 @@ const printInvoice = printPO
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
           <button
-            v-if="(row.status === 'approved' || row.status === 'do_created' || row.status === 'completed') && can('purchase_order:read')"
+            v-if="row.status !== 'rejected' && row.status !== 'cancelled' && can('purchase_order:read')"
             class="action-btn action-btn--edit"
             title="Print Request Form"
             @click="printPO(row)"
