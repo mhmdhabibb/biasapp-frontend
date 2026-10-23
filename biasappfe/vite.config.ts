@@ -4,49 +4,36 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
-    vueDevTools(),
-  ],
+    mode === 'development' ? vueDevTools() : undefined,
+  ].filter(Boolean),
   resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   server: {
     allowedHosts: true,
     proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:4008',
-        changeOrigin: true,
-      },
+      '/api': { target: 'http://127.0.0.1:4008', changeOrigin: true },
     },
   },
   build: {
-    minify: 'esbuild',
+    minify: 'oxc',
     cssCodeSplit: true,
-    reportCompressedSize: true,
-    chunkSizeWarningLimit: 1000,
-    rollupOptions: {
+    sourcemap: false,
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 900,
+    rolldownOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('vue') || id.includes('vue-router') || id.includes('vue-i18n') || id.includes('@vueuse')) {
-              return 'vendor-vue';
-            }
-            if (id.includes('axios') || id.includes('qrcode')) {
-              return 'vendor-utils';
-            }
-            if (id.includes('exceljs') || id.includes('xlsx')) {
-              return 'vendor-excel';
-            }
-            if (id.includes('html2pdf')) {
-              return 'vendor-pdf';
-            }
-            return 'vendor';
-          }
+          if (!id.includes('node_modules')) return
+          if (id.includes('exceljs') || id.includes('xlsx')) return 'vendor-excel'
+          if (id.includes('html2pdf') || id.includes('jspdf') || id.includes('html2canvas')) return 'vendor-pdf'
+          if (id.includes('qrcode')) return 'vendor-qrcode'
+          if (id.includes('axios')) return 'vendor-utils'
+          if (id.includes('vue') || id.includes('@vue')) return 'vendor-vue'
+          return 'vendor'
         },
       },
     },
@@ -55,4 +42,4 @@ export default defineConfig({
     include: ['vue', 'vue-router', 'vue-i18n', '@vueuse/core', 'axios'],
     exclude: ['exceljs', 'xlsx', 'html2pdf.js'],
   },
-})
+}))

@@ -1,18 +1,23 @@
 # Stage 1: Build Vue 3 App
-FROM node:20-alpine AS build-stage
+FROM node:22-alpine AS build-stage
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files & install dependencies
-COPY package*.json ./
-RUN npm install
+# Enable corepack for pnpm
+RUN corepack enable
 
-# Copy seluruh source code (diabaikan oleh .dockerignore untuk node_modules)
+# Copy package files & install dependencies
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN --mount=type=cache,target=/pnpm-store \
+    pnpm config set store-dir /pnpm-store && \
+    pnpm install --frozen-lockfile
+
+# Copy seluruh source code
 COPY . .
 
-# Build aplikasi Vue 3 untuk production
-RUN npm run build
+# Build aplikasi Vue 3 untuk production (vite only, no type-check)
+RUN pnpm exec vite build
 
 
 # Stage 2: Serve dengan Nginx
