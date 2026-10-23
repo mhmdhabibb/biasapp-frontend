@@ -861,7 +861,7 @@ async function confirmAssign() {
       };
       try {
         const res = await fetch(
-          `${import.meta.env.VITE_API_BASE_URL}/job-orders/${task.id}`,
+          `https://api-app.biassuryateknologi.com/api/job-orders/${task.id}`,
           {
             method: "PUT",
             headers: {
@@ -894,7 +894,7 @@ async function confirmAssign() {
       };
       try {
         const res = await fetch(
-          `${import.meta.env.VITE_API_BASE_URL}/job-orders`,
+          `https://api-app.biassuryateknologi.com/api/job-orders`,
           {
             method: "POST",
             headers: {
@@ -930,7 +930,7 @@ async function confirmAssign() {
     };
     try {
       const res = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/job-orders`,
+        `https://api-app.biassuryateknologi.com/api/job-orders`,
         {
           method: "POST",
           headers: {
@@ -965,7 +965,7 @@ async function confirmAssign() {
 
     try {
       const res = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/job-orders`,
+        `https://api-app.biassuryateknologi.com/api/job-orders`,
         {
           method: "POST",
           headers: {
