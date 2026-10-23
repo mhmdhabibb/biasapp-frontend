@@ -24,11 +24,17 @@ const { ensureResourcesLoaded } = useMasterStore();
 const { technicians, units, products, serviceReports, refreshOnly } =
   useMasterStore();
 
-onMounted(() => {
-  ensureResourcesLoaded(route.path);
-});
+// Helper untuk mengekstrak array apapun bentuk respon backend (Pagination/Raw array)
+function extractArray(res: any): any[] {
+  if (!res) return [];
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res.data)) return res.data;
+  if (Array.isArray(res.data?.items)) return res.data.items;
+  if (Array.isArray(res.data?.data)) return res.data.data;
+  if (Array.isArray(res.items)) return res.items;
+  return [];
+}
 
-// Gunakan tipe dinamis any[] untuk menampung data relasi dari backend
 const jobOrders = ref<any[]>([]);
 const serviceRequests = ref<any[]>([]);
 const deliveryOrders = ref<any[]>([]);
@@ -37,23 +43,12 @@ const draggedTask = ref<any | null>(null);
 
 const searchUnassigned = ref("");
 const searchTech = ref("");
-const techStatusFilter = ref("All");
-const techStatusOptions = [{ value: "All", label: "All" }];
 const dragOverTechId = ref<string | number | null>(null);
 
 // ── Job type filter for technician lanes ──
 const jobTypeFilter = ref<"all" | "sr" | "do" | "visit" | "maintenance">("all");
 const VISIT_JOB_TYPES = ["visit", "maintenance_visit", "meter_reading"];
 const VISIT_TERMINAL = ["completed", "done", "cancelled", "canceled"];
-
-// Cache for getJobsForTech results
-const jobsForTechCache = ref<Map<string, any[]>>(new Map());
-const cacheVersion = ref(0);
-
-function invalidateJobsCache() {
-  jobsForTechCache.value.clear();
-  cacheVersion.value++;
-}
 
 function visitUnitLabel(visit: any): string {
   const u = visit?.unit || visit?.service_report?.unit;
@@ -73,9 +68,11 @@ function isVisitJob(job: any): boolean {
 
 async function fetchJobOrders() {
   try {
-    const data = await api.get<{ data: any[] }>("/job-orders?page=1&limit=100");
-    invalidateJobsCache();
-    jobOrders.value = (data.data || []).map((j: any) => {
+    const res = await api.get<any>("/job-orders?page=1&limit=100");
+    const rawList = extractArray(res);
+    console.log("[DEBUG] Job Orders Raw:", rawList);
+
+    jobOrders.value = rawList.map((j: any) => {
       const isDelivery =
         j.job_type === "delivery" ||
         !!j.delivery_order_id ||
@@ -101,7 +98,7 @@ async function fetchJobOrders() {
       else if (isMaintenance) taskType = "maintenance";
       else if (isVisit) taskType = "visit";
 
-      const doNum = doObj?.do_number || j.do_number;
+      const doNum = doObj?.do_number || doObj?.delivery_no || j.do_number;
       return {
         ...j,
         taskType,
@@ -126,38 +123,32 @@ async function fetchJobOrders() {
       };
     });
   } catch (error) {
-    console.error("Failed to fetch data", error);
-    toast.error("Gagal memuat job orders. Silakan refresh halaman.");
+    console.error("Failed to fetch data JO", error);
+    toast.error("Gagal memuat job orders.");
   }
 }
 
 async function fetchServiceRequests() {
   try {
-    const data = await api.get<{ data: any[] }>(
-      "/service-requests?page=1&limit=100",
-    );
-    serviceRequests.value = data.data || [];
-    invalidateJobsCache();
+    const res = await api.get<any>("/service-requests?page=1&limit=100");
+    serviceRequests.value = extractArray(res);
   } catch (error) {
     console.error("Failed to fetch data SR", error);
-    toast.error("Gagal memuat service requests. Silakan refresh halaman.");
   }
 }
 
 async function fetchDeliveryOrders() {
   try {
-    const data = await api.get<{ data: any[] }>(
-      "/delivery-orders?page=1&limit=100",
-    );
-    deliveryOrders.value = (data.data || []).filter((d: any) =>
+    const res = await api.get<any>("/delivery-orders?page=1&limit=100");
+    const rawList = extractArray(res);
+    console.log("[DEBUG] Delivery Orders Raw:", rawList);
+    deliveryOrders.value = rawList.filter((d: any) =>
       ["rental", "sale", "inbound"].includes(
         String(d.do_type || d.delivery_type || "").toLowerCase(),
       ),
     );
-    invalidateJobsCache();
   } catch (error) {
     console.error("Failed to fetch data DO", error);
-    toast.error("Gagal memuat delivery orders. Silakan refresh halaman.");
   }
 }
 
@@ -205,11 +196,14 @@ function stopBoardAutoReload() {
   document.removeEventListener("visibilitychange", onBoardVisible);
 }
 
-onMounted(() => {
-  fetchJobOrders();
-  fetchServiceRequests();
-  fetchDeliveryOrders();
-  fetchServiceReports();
+onMounted(async () => {
+  await ensureResourcesLoaded(route.path);
+  await Promise.all([
+    fetchJobOrders(),
+    fetchServiceRequests(),
+    fetchDeliveryOrders(),
+    fetchServiceReports(),
+  ]);
   startBoardAutoReload();
 });
 
@@ -227,14 +221,16 @@ onUnmounted(() => {
 
 const unassignedRequests = computed<any[]>(() => {
   const assignedSrIds = new Set(
-    jobOrders.value.map((j: any) => j.service_request_id).filter(Boolean),
+    jobOrders.value
+      .map((j: any) => String(j.service_request_id || ""))
+      .filter(Boolean),
   );
   return serviceRequests.value
     .map((sr: any) => ({ ...sr, taskType: "sr" }))
     .filter(
       (sr: any) =>
         (sr.status === "pending" || sr.status === "open") &&
-        !assignedSrIds.has(sr.id) &&
+        !assignedSrIds.has(String(sr.id)) &&
         !(sr.problem_description || "").includes("[MAINTENANCE_VISIT]") &&
         ((sr.request_no || "")
           .toLowerCase()
@@ -343,13 +339,15 @@ const unassignedMaintenance = computed<any[]>(() => {
     }));
 
   const assignedSrIds = new Set(
-    jobOrders.value.map((j: any) => j.service_request_id).filter(Boolean),
+    jobOrders.value
+      .map((j: any) => String(j.service_request_id || ""))
+      .filter(Boolean),
   );
   const srMaintenance = serviceRequests.value
     .filter(
       (sr: any) =>
         (sr.status === "pending" || sr.status === "open") &&
-        !assignedSrIds.has(sr.id) &&
+        !assignedSrIds.has(String(sr.id)) &&
         (sr.problem_description || "").includes("[MAINTENANCE_VISIT]"),
     )
     .map((sr: any) => ({
@@ -387,34 +385,34 @@ const displayedUnassigned = computed<any[]>(() => {
 });
 
 const filteredTechs = computed(() => {
-  if (!searchTech.value) return technicians.value;
-  return technicians.value.filter(
+  const list = technicians.value || [];
+  if (!searchTech.value) return list;
+  return list.filter(
     (t: any) =>
       t &&
-      (t.name || (t.user && t.user.name) || "")
+      (t.name || t.user?.name || "")
         .toLowerCase()
         .includes(searchTech.value.toLowerCase()),
   );
 });
 
+// Deteksi seluruh kemungkinan ID teknisi
 function getJobsForTech(techId: string | number): any[] {
-  const key = String(techId);
-  const cached = jobsForTechCache.value.get(key);
-  if (cached) return cached;
-
-  const techObj = (technicians.value as any[]).find(
+  const techObj = ((technicians.value as any[]) || []).find(
     (t: any) => String(t?.id) === String(techId),
   );
+
   const validTechIds = new Set<string>(
     [
       String(techId),
-      techObj?.user_id ? String(techObj.user_id) : "",
-      techObj?.user?.id ? String(techObj.user.id) : "",
+      techObj?.user_id != null ? String(techObj.user_id) : "",
+      techObj?.user?.id != null ? String(techObj.user.id) : "",
+      techObj?.technician_id != null ? String(techObj.technician_id) : "",
     ].filter(Boolean),
   );
 
   const jobs = jobOrders.value
-    .filter((j: any) => validTechIds.has(String(j.technician_id)))
+    .filter((j: any) => validTechIds.has(String(j.technician_id || "")))
     .map((j: any) => ({
       ...j,
       taskType: j.taskType || (j.job_type === "delivery" ? "do" : "sr"),
@@ -430,7 +428,7 @@ function getJobsForTech(techId: string | number): any[] {
   const dos = deliveryOrders.value
     .filter(
       (d: any) =>
-        validTechIds.has(String(d.technician_id)) &&
+        validTechIds.has(String(d.technician_id || "")) &&
         !covered.has(String(d.id)) &&
         !assignedDeliveryIds.value.has(String(d.id)),
     )
@@ -444,7 +442,7 @@ function getJobsForTech(techId: string | number): any[] {
   );
   const laneJobIds = new Set(jobs.map((j: any) => String(j.id)));
 
-  const visits = serviceReports.value
+  const visits = (serviceReports.value || [])
     .filter(
       (r: any) =>
         isCopierReport(r) &&
@@ -455,9 +453,7 @@ function getJobsForTech(techId: string | number): any[] {
     )
     .map((r: any) => ({ ...r, taskType: "visit" }));
 
-  const result = [...jobs, ...dos, ...visits];
-  jobsForTechCache.value.set(key, result);
-  return result;
+  return [...jobs, ...dos, ...visits];
 }
 
 function getJobKind(job: any): "sr" | "do" | "visit" | "maintenance" {
@@ -500,7 +496,7 @@ function jobTypeLabel(kind: string) {
 const jobTypeCounts = computed(() => {
   const counts = { all: 0, sr: 0, do: 0, visit: 0, maintenance: 0 };
   const seen = new Set<string>();
-  for (const t of technicians.value as any[]) {
+  for (const t of (technicians.value as any[]) || []) {
     if (!t?.id) continue;
     for (const j of getJobsForTech(t.id)) {
       const key = String(j.id ?? `${j.job_order_no || j.do_number}-${t.id}`);
@@ -601,7 +597,7 @@ function closeDetail() {
 
 function technicianLabel(techId?: string | number) {
   if (!techId) return "Unassigned";
-  const t = (technicians.value as any[]).find(
+  const t = ((technicians.value as any[]) || []).find(
     (x: any) =>
       x &&
       (String(x.id) === String(techId) ||
@@ -659,30 +655,30 @@ function isTechnicianBusy(technicianId: string | number) {
   );
   if (!targetDate) return false;
 
-  const techObj = (technicians.value as any[]).find(
+  const techObj = ((technicians.value as any[]) || []).find(
     (t: any) => String(t?.id) === String(technicianId),
   );
   const validTechIds = new Set<string>(
     [
       String(technicianId),
-      techObj?.user_id ? String(techObj.user_id) : "",
-      techObj?.user?.id ? String(techObj.user.id) : "",
+      techObj?.user_id != null ? String(techObj.user_id) : "",
+      techObj?.user?.id != null ? String(techObj.user.id) : "",
     ].filter(Boolean),
   );
 
   const hasSameDayJob = jobOrders.value.some(
     (job: any) =>
-      validTechIds.has(String(job.technician_id)) &&
+      validTechIds.has(String(job.technician_id || "")) &&
       dateKey(job.scheduled_date) === targetDate &&
       !isTerminalStatus(job.status),
   );
   const hasSameDayDelivery = deliveryOrders.value.some(
     (delivery: any) =>
-      validTechIds.has(String(delivery.technician_id)) &&
+      validTechIds.has(String(delivery.technician_id || "")) &&
       dateKey(delivery.delivery_date) === targetDate &&
       !isTerminalStatus(delivery.status),
   );
-  const hasSameDayVisit = serviceReports.value.some(
+  const hasSameDayVisit = (serviceReports.value || []).some(
     (report: any) =>
       validTechIds.has(String(report.technician_id || "")) &&
       dateKey(report.service_date) === targetDate &&
@@ -708,16 +704,6 @@ function isDeliveryJob(job: any): boolean {
     job?.job_type === "delivery" ||
     !!job?.delivery_order_id ||
     !!job?.delivery_order
-  );
-}
-
-function jobDo(job: any): any {
-  return (
-    job?.delivery_order ||
-    (job?.taskType === "do" && (job?.do_number || job?.delivery_no)
-      ? job
-      : null) ||
-    null
   );
 }
 
@@ -771,7 +757,7 @@ function doItemsCount(job: any): number {
 
 function doItemLabel(item: any): string {
   if (item?.unit_id || item?.unit) {
-    const u = (units.value as any[]).find(
+    const u = ((units.value as any[]) || []).find(
       (x: any) => String(x.id) === String(item.unit_id),
     );
     const name = item.unit?.model || u?.model || "Unit";
@@ -779,7 +765,7 @@ function doItemLabel(item: any): string {
     return `${name}${sn ? ` (${sn})` : ""} x${item.qty || 1}`;
   }
   if (item?.product_id || item?.product) {
-    const p = (products.value as any[]).find(
+    const p = ((products.value as any[]) || []).find(
       (x: any) => String(x.id) === String(item.product_id),
     );
     return `${item.product?.name || p?.name || "Product"} x${item.qty || 1}`;
