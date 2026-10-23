@@ -7,24 +7,15 @@ import { useMasterStore } from "@/composables/useMasterStore";
 import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
-import {
-  computed,
-  onActivated,
-  onDeactivated,
-  onMounted,
-  onUnmounted,
-  ref,
-} from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 const toast = useToast();
 const authStore = useAuthStore();
 const route = useRoute();
-const { ensureResourcesLoaded } = useMasterStore();
-const { technicians, units, products, serviceReports, refreshOnly } =
-  useMasterStore();
+const masterStore = useMasterStore();
+const { technicians, units, products, serviceReports } = masterStore;
 
-// Helper untuk mengekstrak array apapun bentuk respon backend (Pagination/Raw array)
 function extractArray(res: any): any[] {
   if (!res) return [];
   if (Array.isArray(res)) return res;
@@ -45,7 +36,6 @@ const searchUnassigned = ref("");
 const searchTech = ref("");
 const dragOverTechId = ref<string | number | null>(null);
 
-// ── Job type filter for technician lanes ──
 const jobTypeFilter = ref<"all" | "sr" | "do" | "visit" | "maintenance">("all");
 const VISIT_JOB_TYPES = ["visit", "maintenance_visit", "meter_reading"];
 const VISIT_TERMINAL = ["completed", "done", "cancelled", "canceled"];
@@ -70,7 +60,6 @@ async function fetchJobOrders() {
   try {
     const res = await api.get<any>("/job-orders?page=1&limit=100");
     const rawList = extractArray(res);
-    console.log("[DEBUG] Job Orders Raw:", rawList);
 
     jobOrders.value = rawList.map((j: any) => {
       const isDelivery =
@@ -101,6 +90,7 @@ async function fetchJobOrders() {
       const doNum = doObj?.do_number || doObj?.delivery_no || j.do_number;
       return {
         ...j,
+        technician_id: j.technician_id,
         taskType,
         do_number: doNum || j.do_number,
         service_request_no: isDelivery
@@ -141,7 +131,6 @@ async function fetchDeliveryOrders() {
   try {
     const res = await api.get<any>("/delivery-orders?page=1&limit=100");
     const rawList = extractArray(res);
-    console.log("[DEBUG] Delivery Orders Raw:", rawList);
     deliveryOrders.value = rawList.filter((d: any) =>
       ["rental", "sale", "inbound"].includes(
         String(d.do_type || d.delivery_type || "").toLowerCase(),
@@ -152,71 +141,19 @@ async function fetchDeliveryOrders() {
   }
 }
 
-async function fetchServiceReports() {
-  await refreshOnly(["serviceReports"]);
-}
-
-// ── Silent auto-reload ──
-const AUTO_RELOAD_MS = 60000;
-let autoReloadTimer: any = null;
-let autoReloadRunning = false;
-
-async function silentReloadBoard() {
-  if (autoReloadRunning || document.hidden || draggedTask.value) return;
-  autoReloadRunning = true;
-  try {
-    await Promise.all([
-      fetchJobOrders(),
-      fetchServiceRequests(),
-      fetchDeliveryOrders(),
-      fetchServiceReports(),
-    ]);
-  } finally {
-    autoReloadRunning = false;
-  }
-}
-
-function onBoardVisible() {
-  if (document.visibilityState === "visible") void silentReloadBoard();
-}
-
-function startBoardAutoReload() {
-  if (autoReloadTimer) return;
-  autoReloadTimer = setInterval(() => {
-    void silentReloadBoard();
-  }, AUTO_RELOAD_MS);
-  document.addEventListener("visibilitychange", onBoardVisible);
-}
-
-function stopBoardAutoReload() {
-  if (autoReloadTimer) {
-    clearInterval(autoReloadTimer);
-    autoReloadTimer = null;
-  }
-  document.removeEventListener("visibilitychange", onBoardVisible);
-}
-
-onMounted(async () => {
-  await ensureResourcesLoaded(route.path);
+async function loadAllData() {
   await Promise.all([
     fetchJobOrders(),
     fetchServiceRequests(),
     fetchDeliveryOrders(),
-    fetchServiceReports(),
   ]);
-  startBoardAutoReload();
-});
+}
 
-onActivated(() => {
-  startBoardAutoReload();
-});
-
-onDeactivated(() => {
-  stopBoardAutoReload();
-});
-
-onUnmounted(() => {
-  stopBoardAutoReload();
+onMounted(async () => {
+  if (masterStore.ensureResourcesLoaded) {
+    await masterStore.ensureResourcesLoaded(route.path);
+  }
+  await loadAllData();
 });
 
 const unassignedRequests = computed<any[]>(() => {
@@ -396,7 +333,6 @@ const filteredTechs = computed(() => {
   );
 });
 
-// Deteksi seluruh kemungkinan ID teknisi
 function getJobsForTech(techId: string | number): any[] {
   const techObj = ((technicians.value as any[]) || []).find(
     (t: any) => String(t?.id) === String(techId),
@@ -568,7 +504,6 @@ function formatDateTime(d?: string) {
   return `${formatFullDate(d)} · ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-// Detail modal
 const selectedJob = ref<any | null>(null);
 const selectedRequest = ref<any | null>(null);
 let lastDragEnd = 0;
@@ -619,7 +554,6 @@ const detailCustomer = computed(() => {
   );
 });
 
-// Drag and drop logic
 let draggedRequest: any = null;
 
 function onDragStart(req: any) {
@@ -804,7 +738,6 @@ function onDragLeave() {
   dragOverTechId.value = null;
 }
 
-// ── Assign modal state ──
 const showAssignModal = ref(false);
 const assignTarget = ref<{ task: any; techId: string | number } | null>(null);
 const assignDeliveryDate = ref("");
@@ -1149,15 +1082,7 @@ async function cancelJobAssignment(jobId: string) {
           <button
             class="btn-icon refresh-btn"
             title="Refresh"
-            @click="
-              activeTab === 'sr'
-                ? fetchServiceRequests()
-                : activeTab === 'do'
-                  ? fetchDeliveryOrders()
-                  : activeTab === 'visit' || activeTab === 'maintenance'
-                    ? fetchJobOrders()
-                    : null
-            "
+            @click="loadAllData"
           >
             <svg
               width="16"
@@ -2566,7 +2491,6 @@ async function cancelJobAssignment(jobId: string) {
   gap: var(--space-base);
 }
 
-/* Page header */
 .jo-header {
   display: flex;
   align-items: flex-start;
@@ -2630,7 +2554,6 @@ async function cancelJobAssignment(jobId: string) {
   letter-spacing: 0.4px;
 }
 
-/* Board layout */
 .dashboard-layout {
   display: flex;
   height: calc(100vh - var(--topbar-height, 60px) - 140px);
@@ -2645,7 +2568,6 @@ async function cancelJobAssignment(jobId: string) {
   box-shadow: var(--shadow-sm);
 }
 
-/* Sidebar */
 .sidebar {
   width: 320px;
   flex-shrink: 0;
@@ -2736,7 +2658,6 @@ async function cancelJobAssignment(jobId: string) {
   margin-top: var(--space-xs);
 }
 
-/* Main board */
 .main-board {
   flex: 1;
   min-width: 0;
@@ -2905,7 +2826,6 @@ async function cancelJobAssignment(jobId: string) {
   font-weight: var(--font-weight-semibold);
 }
 
-/* Cards */
 .job-card {
   display: flex;
   align-items: flex-start;
@@ -3072,7 +2992,6 @@ async function cancelJobAssignment(jobId: string) {
   margin-top: 4px;
 }
 
-/* Detail modal */
 .detail-hero {
   display: flex;
   align-items: center;
@@ -3176,7 +3095,6 @@ async function cancelJobAssignment(jobId: string) {
   }
 }
 
-/* Assign modal */
 .assign-modal-body {
   display: flex;
   flex-direction: column;
