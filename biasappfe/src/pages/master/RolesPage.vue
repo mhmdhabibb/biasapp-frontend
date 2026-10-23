@@ -59,6 +59,7 @@ async function fetchData() {
     }
   } catch (error) {
     console.error('Failed to fetch data:', error)
+    toast.error('Gagal memuat data roles. Silakan refresh halaman.')
   } finally {
     isLoading.value = false
   }

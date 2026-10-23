@@ -497,13 +497,14 @@ async function fetchRequests() {
     });
   } catch (error) {
     console.error("Failed to fetch data", error);
+    toast.error("Gagal memuat service requests. Silakan refresh halaman.");
   }
 }
 
 async function handleSubmit() {
   if (!form.customer_id || !form.problem_description) return;
   // Pengaman frontend (backend juga menolak dengan 422 bila lolos dari sini).
-  const chosen = form.unit_ids.length > 0 ? form.unit_ids[0] : null;
+  const chosen = form.unit_ids.length > 0 ? form.unit_ids?.[0] : null;
   if (
     chosen &&
     !deliveredItemIds.value.unitIds.has(String(chosen)) &&
@@ -519,7 +520,7 @@ async function handleSubmit() {
   const payload = {
     request_no: form.request_no,
     customer_id: form.customer_id,
-    unit_id: form.unit_ids.length > 0 && form.unit_ids[0] ? form.unit_ids[0] : null,
+    unit_id: form.unit_ids.length > 0 && form.unit_ids?.[0] ? form.unit_ids[0] : null,
     project_name: form.project_name,
     problem_description: form.problem_description,
     request_date: new Date(form.request_date).toISOString(),

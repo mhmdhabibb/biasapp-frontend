@@ -3,7 +3,7 @@ import axios, { AxiosError, type AxiosRequestConfig } from "axios";
 import { getOrFetch, invalidateCache } from "@/utils/requestCache";
 
 const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:4008/api"
+  "https://api-app.biassuryateknologi.com/api"
 ).replace(/\/$/, "");
 
 export const activeApiRequests = ref(0);

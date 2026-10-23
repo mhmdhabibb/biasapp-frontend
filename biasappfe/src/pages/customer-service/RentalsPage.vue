@@ -469,6 +469,7 @@ async function fetchRentals() {
     });
   } catch (error) {
     console.error("Failed to fetch rentals data", error);
+    toast.error("Gagal memuat data rental. Silakan refresh halaman.");
   }
 }
 

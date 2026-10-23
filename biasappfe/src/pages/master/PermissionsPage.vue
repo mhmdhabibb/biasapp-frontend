@@ -92,6 +92,7 @@ async function fetchData() {
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch permissions:', error)
+    toast.error('Gagal memuat data permissions. Silakan refresh halaman.')
   }
 }
 

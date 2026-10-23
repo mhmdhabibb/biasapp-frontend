@@ -58,6 +58,7 @@ async function fetchRentals() {
     rentals.value = res.data || []
   } catch (error) {
     console.error('Failed to fetch rentals for warranty source:', error)
+    toast.error('Gagal memuat data rentals untuk sumber warranty.')
   }
 }
 

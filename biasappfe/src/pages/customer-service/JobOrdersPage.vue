@@ -9,6 +9,7 @@ import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
+import type { JobOrder, ServiceRequest, DeliveryOrder } from "@/types";
 
 const toast = useToast();
 const authStore = useAuthStore();
@@ -21,11 +22,11 @@ onMounted(() => {
   ensureResourcesLoaded(route.path)
 })
 
-const jobOrders = ref<any[]>([]);
-const serviceRequests = ref<any[]>([]);
-const deliveryOrders = ref<any[]>([]);
+const jobOrders = ref<JobOrder[]>([]);
+const serviceRequests = ref<ServiceRequest[]>([]);
+const deliveryOrders = ref<DeliveryOrder[]>([]);
 const activeTab = ref("sr");
-const draggedTask = ref<any | null>(null);
+const draggedTask = ref<JobOrder | ServiceRequest | DeliveryOrder | null>(null);
 
 const searchUnassigned = ref("");
 const searchTech = ref("");
@@ -96,6 +97,7 @@ async function fetchJobOrders() {
     });
   } catch (error) {
     console.error("Failed to fetch data", error);
+    toast.error("Gagal memuat job orders. Silakan refresh halaman.");
   }
 }
 
@@ -106,6 +108,7 @@ async function fetchServiceRequests() {
     invalidateJobsCache();
   } catch (error) {
     console.error("Failed to fetch data SR", error);
+    toast.error("Gagal memuat service requests. Silakan refresh halaman.");
   }
 }
 
@@ -120,6 +123,7 @@ async function fetchDeliveryOrders() {
     invalidateJobsCache();
   } catch (error) {
     console.error("Failed to fetch data DO", error);
+    toast.error("Gagal memuat delivery orders. Silakan refresh halaman.");
   }
 }
 
@@ -1112,15 +1116,19 @@ async function cancelJobAssignment(jobId: string) {
                 }}</span>
               </div>
               <div class="card-body">
+                <!-- Delivery Orders -->
                 <template v-if="req.taskType === 'do'">
-                  <div class="card-customer" v-if="doCustomerName(req)">
+                  <!-- Customer Name -->
+                  <div class="card-customer">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
-                    <span>{{ doCustomerName(req) }}</span>
+                    <span>{{ doCustomerName(req) || '-' }}</span>
                   </div>
+                  
+                  <!-- Delivery Address -->
                   <div class="card-address" v-if="req.delivery_address">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
@@ -1129,92 +1137,97 @@ async function cancelJobAssignment(jobId: string) {
                     </svg>
                     <span>{{ req.delivery_address }}</span>
                   </div>
-                  <div class="card-type" style="
-                      margin-top: 4px;
-                      display: flex;
-                      align-items: center;
-                      gap: 6px;
-                      font-size: 11px;
-                      color: var(--color-text-muted);
-                    ">
+                  
+                  <!-- Delivery Type & Items -->
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
                       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                       <line x1="8" y1="21" x2="16" y2="21" />
                       <line x1="12" y1="17" x2="12" y2="21" />
                     </svg>
-                    <span style="font-weight: 500; color: var(--color-primary)">{{ deliveryTypeLabel(req.do_type)
-                    }}</span>
+                    <span style="font-weight: 500; color: var(--color-primary)">{{ deliveryTypeLabel(req.do_type) }}</span>
+                    <template v-if="doItemsCount(req) > 0">
+                      <span>·</span>
+                      <span>{{ doItemsCount(req) }} item{{ doItemsCount(req) > 1 ? "s" : "" }}</span>
+                    </template>
                   </div>
-                  <div class="card-address" v-if="doItemsCount(req) > 0">
-                    <span>{{ doItemsCount(req) }} item{{
-                      doItemsCount(req) > 1 ? "s" : ""
-                    }} ·
-                      {{
-                        doItemLabel(
-                          (req.delivery_order_items ||
-                            req.delivery_order?.delivery_order_items ||
-                            [])[0],
-                        )
-                      }}</span>
-                  </div>
-                  <div class="problem-text" style="margin-top: 6px">
-                    {{ req.notes || req.problem || "No description" }}
+                  
+                  <!-- First Item Detail -->
+                  <div class="card-address" v-if="doItemsCount(req) > 0 && (req.delivery_order_items || req.delivery_order?.delivery_order_items || [])[0]" style="font-size: 11px; margin-top: 2px;">
+                    <span style="color: var(--color-text-muted)">{{ doItemLabel((req.delivery_order_items || req.delivery_order?.delivery_order_items || [])[0]) }}</span>
                   </div>
                 </template>
+                
+                <!-- Visit/Copier Reports -->
                 <template v-else-if="req.taskType === 'visit'">
-                  <div class="card-customer" v-if="req.customer_name">
+                  <!-- Customer Name -->
+                  <div class="card-customer">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
-                    <span>{{ req.customer_name }}</span>
+                    <span>{{ 
+                      req.customer_name || 
+                      req.customer?.company_name || 
+                      req.customer?.name ||
+                      req.service_report?.customer?.company_name ||
+                      req.service_report?.customer?.name ||
+                      "-" 
+                    }}</span>
                   </div>
-                  <div class="card-address" v-if="req.service_report?.unit">
+                  
+                  <!-- Unit Info -->
+                  <div class="card-address" v-if="req.service_report?.unit || req.unit">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
                       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                       <line x1="8" y1="21" x2="16" y2="21" />
                       <line x1="12" y1="17" x2="12" y2="21" />
                     </svg>
-                    <span>{{ req.service_report.unit.model
+                    <span>{{ 
+                      (req.service_report?.unit || req.unit)?.model || 'Unit'
                     }}{{
-                        req.service_report.unit.serial_no
-                          ? ` (${req.service_report.unit.serial_no})`
-                          : ""
-                      }}</span>
+                      (req.service_report?.unit || req.unit)?.serial_no 
+                        ? ` (${(req.service_report?.unit || req.unit).serial_no})` 
+                        : ""
+                    }}</span>
                   </div>
-                  <div class="card-type" style="
-                      margin-top: 4px;
-                      display: flex;
-                      align-items: center;
-                      gap: 6px;
-                      font-size: 11px;
-                      color: var(--color-text-muted);
-                    ">
+                  
+                  <!-- Address -->
+                  <div class="card-address" v-if="req.customer?.address || req.service_report?.customer?.address">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
-                      <path
-                        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z" />
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>{{ req.customer?.address || req.service_report?.customer?.address }}</span>
+                  </div>
+                  
+                  <!-- Visit Type -->
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z" />
                     </svg>
                     <span style="font-weight: 500; color: var(--color-primary)">Copier Visit</span>
                   </div>
-                  <div class="problem-text" style="margin-top: 6px">
-                    {{ req.problem }}
-                  </div>
                 </template>
+                
+                <!-- Maintenance -->
                 <template v-else-if="req.taskType === 'maintenance'">
-                  <div class="card-customer" v-if="req.customer || req.customer_name">
+                  <!-- Customer Name -->
+                  <div class="card-customer">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
-                    <span>{{
-                      req.customer?.company_name || req.customer?.name || req.customer_name
-                    }}</span>
+                    <span>{{ req.customer?.company_name || req.customer?.name || req.customer_name || '-' }}</span>
                   </div>
+                  
+                  <!-- Address -->
                   <div class="card-address" v-if="req.customer?.address || req.delivery_address">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
@@ -1223,33 +1236,35 @@ async function cancelJobAssignment(jobId: string) {
                     </svg>
                     <span>{{ req.customer?.address || req.delivery_address }}</span>
                   </div>
-                  <div class="card-type" style="
-                      margin-top: 4px;
-                      display: flex;
-                      align-items: center;
-                      gap: 6px;
-                      font-size: 11px;
-                      color: var(--color-text-muted);
-                    ">
+                  
+                  <!-- Maintenance Type -->
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6">
-                      </path>
+                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
                     </svg>
                     <span style="font-weight: 500; color: var(--color-primary)">Maintenance</span>
                   </div>
+                  
+                  <!-- Problem Description -->
+                  <div class="problem-text" style="margin-top: 6px; font-size: 11px; color: var(--color-text-muted);" v-if="req.problem || req.instructions">
+                    {{ (req.problem || req.instructions || 'Rutin Maintenance').replace('[MAINTENANCE_VISIT]', '').trim() }}
+                  </div>
                 </template>
+                
+                <!-- Service Requests -->
                 <template v-else>
-                  <div class="card-customer" v-if="req.customer">
+                  <!-- Customer Name -->
+                  <div class="card-customer">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                       <polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
-                    <span>{{
-                      req.customer.company_name || req.customer.name
-                    }}</span>
+                    <span>{{ req.customer?.company_name || req.customer?.name || '-' }}</span>
                   </div>
+                  
+                  <!-- Address -->
                   <div class="card-address" v-if="req.customer?.address">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
@@ -1258,67 +1273,19 @@ async function cancelJobAssignment(jobId: string) {
                     </svg>
                     <span>{{ req.customer.address }}</span>
                   </div>
-                  <div class="card-type" style="
-                      margin-top: 4px;
-                      display: flex;
-                      align-items: center;
-                      gap: 6px;
-                      font-size: 11px;
-                      color: var(--color-text-muted);
-                    ">
+                  
+                  <!-- Service Type -->
+                  <div class="card-type" style="margin-top: 4px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-muted);">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                       stroke-linecap="round" stroke-linejoin="round">
-                      <path
-                        d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z">
-                      </path>
+                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"></path>
                     </svg>
                     <span style="font-weight: 500; color: var(--color-primary)">Service Request</span>
                   </div>
-                  <div class="problem-text" style="margin-top: 6px">
+                  
+                  <!-- Problem Description -->
+                  <div class="problem-text" style="margin-top: 6px; font-size: 11px; color: var(--color-text-muted);">
                     {{ req.problem_description || "No description" }}
-                  </div>
-                </template>
-                <template v-if="req.taskType === 'visit' && (req.customer || req.unit)">
-                  <div class="card-customer" v-if="req.customer">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                      stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                      <polyline points="9 22 9 12 15 12 15 22" />
-                    </svg>
-                    <span>{{
-                      req.customer.company_name || req.customer.name
-                    }}</span>
-                  </div>
-                  <div class="card-address" v-if="req.unit">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                      stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                      <line x1="8" y1="21" x2="16" y2="21" />
-                      <line x1="12" y1="17" x2="12" y2="21" />
-                    </svg>
-                    <span>{{ req.unit.model || "Unit"
-                    }}{{
-                        req.unit.serial_no ? ` (${req.unit.serial_no})` : ""
-                      }}</span>
-                  </div>
-                  <div class="card-type" style="
-                      margin-top: 4px;
-                      display: flex;
-                      align-items: center;
-                      gap: 6px;
-                      font-size: 11px;
-                      color: var(--color-text-muted);
-                    ">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                      stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="3" y="4" width="18" height="17" rx="2" />
-                      <path d="M8 2v4M16 2v4M3 10h18" />
-                    </svg>
-                    <span style="font-weight: 500; color: var(--color-primary)">Visit · Copier Report</span>
-                  </div>
-                  <div class="problem-text" style="margin-top: 6px">
-                    Visit {{ formatFullDate(req.service_date) }} ·
-                    {{ String(req.status || "-").replace("_", " ") }}
                   </div>
                 </template>
               </div>
@@ -1414,17 +1381,9 @@ async function cancelJobAssignment(jobId: string) {
                     {{ String(job.status || "new").replace("_", " ") }}
                   </span>
                 </div>
-                <div class="ac-row muted">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="4" width="18" height="17" rx="2" />
-                    <path d="M8 2v4M16 2v4M3 10h18" />
-                  </svg>
-                  <span v-if="isDeliveryJob(job)">🚚 Delivery
-                    {{ formatFullDate(jobDeliveryDate(job)) }}</span>
-                  <span v-else-if="isVisitJob(job)">🔧 Visit {{ formatFullDate(visitDateOf(job)) }}</span>
-                  <span v-else>🗓 Scheduled {{ formatFullDate(job.scheduled_date) }}</span>
-                  <span class="ac-dot">·</span>
+                
+                <!-- Customer Name -->
+                <div class="ac-row muted" style="margin-top: 6px">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
                     stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -1435,30 +1394,16 @@ async function cancelJobAssignment(jobId: string) {
                     job.customer?.company_name ||
                     job.customer?.name ||
                     job.delivery_order?.customer?.company_name ||
+                    job.delivery_order?.customer?.name ||
+                    job.service_request?.customer?.company_name ||
+                    job.service_request?.customer?.name ||
+                    job.service_report?.customer?.company_name ||
+                    job.service_report?.customer?.name ||
                     "-"
                   }}</span>
                 </div>
-                <div class="ac-row muted" style="margin-top: 4px">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path v-if="isDeliveryJob(job)" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-                    <path v-if="isDeliveryJob(job)" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
-                    <path v-if="!isDeliveryJob(job)"
-                      d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z">
-                    </path>
-                  </svg>
-                  <span>{{
-                    isDeliveryJob(job)
-                      ? deliveryTypeLabel(jobDoType(job))
-                      : isVisitJob(job)
-                        ? "Visit · Copier Report"
-                        : "Service Request"
-                  }}</span>
-                  <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0" class="ac-dot">·</span>
-                  <span v-if="isDeliveryJob(job) && doItemsCount(job) > 0">{{ doItemsCount(job) }} item{{
-                    doItemsCount(job) > 1 ? "s" : ""
-                  }}</span>
-                </div>
+
+                <!-- Address for Delivery Orders -->
                 <div v-if="isDeliveryJob(job) && jobDoAddress(job)" class="ac-row muted" style="margin-top: 4px">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
                     stroke-linecap="round" stroke-linejoin="round">
@@ -1467,22 +1412,45 @@ async function cancelJobAssignment(jobId: string) {
                   </svg>
                   <span class="ac-company">{{ jobDoAddress(job) }}</span>
                 </div>
+
+                <!-- Product/Items Info for Delivery Orders -->
+                <div v-if="isDeliveryJob(job)" class="ac-row muted" style="margin-top: 4px">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                    <line x1="8" y1="21" x2="16" y2="21" />
+                    <line x1="12" y1="17" x2="12" y2="21" />
+                  </svg>
+                  <span v-if="doItemsCount(job) > 0">
+                    {{ doItemsCount(job) }} item{{ doItemsCount(job) > 1 ? "s" : "" }}
+                    <template v-if="(job.delivery_order?.delivery_order_items || job.delivery_order_items || [])[0]">
+                      · {{ doItemLabel((job.delivery_order?.delivery_order_items || job.delivery_order_items || [])[0]) }}
+                    </template>
+                  </span>
+                  <span v-else>{{ deliveryTypeLabel(jobDoType(job)) }}</span>
+                </div>
+
+                <!-- Unit Info for Visits -->
+                <div v-if="isVisitJob(job)" class="ac-row muted" style="margin-top: 4px">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                    <line x1="8" y1="21" x2="16" y2="21" />
+                    <line x1="12" y1="17" x2="12" y2="21" />
+                  </svg>
+                  <span>{{ visitUnitLabel(job) }}</span>
+                </div>
+
+                <!-- Date & Job Type -->
                 <div class="ac-row muted" style="margin-top: 4px">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
                     stroke-linecap="round" stroke-linejoin="round">
-                    <path v-if="job.taskType === 'do'" d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-                    <path v-if="job.taskType === 'do'" d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
-                    <path v-if="job.taskType === 'sr'"
-                      d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a1 1 0 0 1-1.4 0l-2.8-2.8a1 1 0 0 1 0-1.4l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z">
-                    </path>
+                    <rect x="3" y="4" width="18" height="17" rx="2" />
+                    <path d="M8 2v4M16 2v4M3 10h18" />
                   </svg>
-                  <span>{{
-                    job.taskType === "do"
-                      ? deliveryTypeLabel(job.do_type)
-                      : job.taskType === "visit"
-                        ? "Visit · Copier Report"
-                        : "Service Request"
-                  }}</span>
+                  <span v-if="isDeliveryJob(job)">Delivery {{ formatFullDate(jobDeliveryDate(job)) }}</span>
+                  <span v-else-if="isVisitJob(job)">Visit {{ formatFullDate(visitDateOf(job)) }}</span>
+                  <span v-else>Scheduled {{ formatFullDate(job.scheduled_date) }}</span>
                 </div>
               </div>
             </div>

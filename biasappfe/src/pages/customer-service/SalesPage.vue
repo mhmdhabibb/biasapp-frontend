@@ -710,15 +710,15 @@ function openEdit(item: any) {
     status: item.status || 'approved',
     has_warranty: item.has_warranty || (item.warranties && item.warranties.length > 0) || false,
     warranty: item.warranties && item.warranties.length > 0 ? {
-      warranty_type: item.warranties[0].warranty_type || 'machine',
+      warranty_type: item.warranties?.[0]?.warranty_type || 'machine',
       warranty_types: (() => {
         const list = item.warranties.map((w: any) => w.warranty_type).filter(Boolean)
         return list.length ? [...new Set(list)] : ['machine']
       })(),
-      duration_months: item.warranties[0].duration_months || 0,
-      duration_days: item.warranties[0].duration_days || 0,
-      expired_date: item.warranties[0].end_date ? String(item.warranties[0].end_date).substring(0, 10) : addMonthsISO(item.sale_date ? item.sale_date.slice(0, 10) : '', 12),
-      terms_conditions: item.warranties[0].terms_conditions || ''
+      duration_months: item.warranties?.[0]?.duration_months || 0,
+      duration_days: item.warranties?.[0]?.duration_days || 0,
+      expired_date: item.warranties?.[0]?.end_date ? String(item.warranties[0].end_date).substring(0, 10) : addMonthsISO(item.sale_date ? item.sale_date.slice(0, 10) : '', 12),
+      terms_conditions: item.warranties?.[0]?.terms_conditions || ''
     } : {
       warranty_type: 'machine',
       warranty_types: ['machine'],
@@ -794,7 +794,7 @@ async function handleSubmit() {
     warrantyPayload.start_date = formatToISO8601(form.sale_date)
     warrantyPayload.duration_months = 0
     warrantyPayload.duration_days = diffDays
-    warrantyPayload.warranty_type = types[0]
+    warrantyPayload.warranty_type = types?.[0] || 'machine'
     warrantyPayload.warranty_types = types
   }
 

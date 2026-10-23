@@ -16,6 +16,9 @@ RUN --mount=type=cache,target=/pnpm-store \
 # Copy seluruh source code
 COPY . .
 
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 # Build aplikasi Vue 3 untuk production (vite only, no type-check)
 RUN pnpm exec vite build
 

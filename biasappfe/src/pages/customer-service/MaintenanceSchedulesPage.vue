@@ -56,6 +56,7 @@ async function fetchJobs() {
     }))
   } catch (err) {
     console.error(err)
+    toast.error('Gagal memuat maintenance schedules. Silakan refresh halaman.')
   }
 }
 

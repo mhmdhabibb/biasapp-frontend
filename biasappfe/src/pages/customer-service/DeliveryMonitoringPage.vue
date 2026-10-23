@@ -89,7 +89,7 @@ async function handleSubmit() {
     showModal.value = false
   } catch (err) {
     console.error(err)
-    toast.error('Failed to update')
+    toast.error('Gagal mengupdate delivery order. Silakan coba lagi.')
   }
 }
 
@@ -102,7 +102,7 @@ async function markDelivered(row: any) {
     toast.success('Delivery order marked as delivered.')
   } catch (err) {
     console.error(err)
-    toast.error('Failed to update status')
+    toast.error('Gagal mengubah status menjadi delivered. Silakan coba lagi.')
   }
 }
 </script>
