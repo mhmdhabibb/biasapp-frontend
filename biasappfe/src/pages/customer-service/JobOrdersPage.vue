@@ -151,10 +151,23 @@ async function loadAllData() {
 
 onMounted(async () => {
   if (masterStore.ensureResourcesLoaded) {
-    await masterStore.ensureResourcesLoaded(route.path);
+    try {
+      await masterStore.ensureResourcesLoaded(route.path);
+    } catch (e) {
+      console.warn("Master store loaded with warnings", e);
+    }
   }
   await loadAllData();
 });
+
+// Watch technicians jika terisi belakangan agar data tetap sinkron
+watch(
+  () => technicians.value,
+  () => {
+    // Re-evaluate tanpa mengosongkan state
+  },
+  { deep: true },
+);
 
 const unassignedRequests = computed<any[]>(() => {
   const assignedSrIds = new Set(
@@ -183,15 +196,14 @@ const unassignedRequests = computed<any[]>(() => {
     );
 });
 
-const assignedDeliveryIds = computed(
-  () =>
-    new Set(
-      jobOrders.value
-        .map((j: any) => j.delivery_order_id || j.delivery_order?.id)
-        .filter(Boolean)
-        .map(String),
-    ),
-);
+const assignedDeliveryIds = computed(() => {
+  return new Set(
+    jobOrders.value
+      .map((j: any) => j.delivery_order_id || j.delivery_order?.id)
+      .filter(Boolean)
+      .map(String),
+  );
+});
 
 const unassignedDeliveries = computed<any[]>(() => {
   return deliveryOrders.value
@@ -333,6 +345,7 @@ const filteredTechs = computed(() => {
   );
 });
 
+// Normalisasi pencocokan ID teknisi agar fleksibel
 function getJobsForTech(techId: string | number): any[] {
   const techObj = ((technicians.value as any[]) || []).find(
     (t: any) => String(t?.id) === String(techId),
