@@ -5,6 +5,7 @@ import { useModules } from "@/composables/useModules";
 import { useToast } from "@/composables/useToast";
 import { canView, permissionKeysFor } from "@/router/permission-map";
 import {
+  allowedRouteNamesByRole,
   dashboardRouteByRole,
   dashboardRouteNames,
   normalizeRole,
@@ -329,7 +330,13 @@ const menuGroups = computed(() => {
           // 1. Superadmin (admin) sees everything else
           if (role === "admin") return true;
 
-          // 2. Explicit module gate (e.g. maintenance): the menu hides when
+          // 2. Role allowlist: restrict roles with explicit route allowlists (e.g., technician)
+          const allowedRoutes = allowedRouteNamesByRole[role];
+          if (allowedRoutes && !allowedRoutes.includes(routeName)) {
+            return false;
+          }
+
+          // 3. Explicit module gate (e.g. maintenance): the menu hides when
           //    the module is deactivated in Master > Modules. Applies to
           //    role-restricted items too.
           if (item.module) {

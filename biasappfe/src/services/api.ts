@@ -7,6 +7,7 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 
 export const activeApiRequests = ref(0);
+export const activeMutationRequests = ref(0);
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -94,22 +95,31 @@ export const api = {
   get: <T>(path: string, tracksLoading = true) =>
     request<T>(path, {}, tracksLoading),
   post: <T>(path: string, data: unknown) => {
-    invalidateCache();
-    return request<T>(path, { method: "POST", data });
+    return mutate<T>(path, { method: "POST", data });
   },
   put: <T>(path: string, data: unknown) => {
-    invalidateCache();
-    return request<T>(path, { method: "PUT", data });
+    return mutate<T>(path, { method: "PUT", data });
   },
   patch: <T>(path: string, data: unknown) => {
-    invalidateCache();
-    return request<T>(path, { method: "PATCH", data });
+    return mutate<T>(path, { method: "PATCH", data });
   },
   delete: <T>(path: string) => {
-    invalidateCache();
-    return request<T>(path, { method: "DELETE" });
+    return mutate<T>(path, { method: "DELETE" });
   },
 };
+
+async function mutate<T>(
+  path: string,
+  options: AxiosRequestConfig,
+): Promise<T> {
+  invalidateCache(path.split("?")[0]);
+  activeMutationRequests.value++;
+  try {
+    return await request<T>(path, options);
+  } finally {
+    activeMutationRequests.value--;
+  }
+}
 
 /**
  * Panggilan axios mentah (tanpa bungkus ApiResponse). Untuk endpoint yang

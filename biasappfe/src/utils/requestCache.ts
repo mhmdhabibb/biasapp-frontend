@@ -5,7 +5,7 @@ type CacheEntry<T> = {
 };
 
 const cache = new Map<string, CacheEntry<unknown>>();
-const CACHE_TTL = 30000;
+const CACHE_TTL = 300000; // 5 minutes for master data; use getOrFetch useCache=false for live data
 const inflight = new Map<string, Promise<unknown>>();
 
 export function getCached<T>(key: string): T | null {

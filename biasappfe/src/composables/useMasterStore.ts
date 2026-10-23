@@ -289,7 +289,19 @@ export function useMasterStore() {
         : Object.values(registry)
     ) as Array<() => Promise<void>>;
 
-    syncPromise = Promise.all(picked.map((task) => task()))
+    syncPromise = (async () => {
+      const concurrency = 5;
+      const queue = picked.slice();
+      const workers: Promise<void>[] = [];
+      async function worker() {
+        while (queue.length) {
+          const task = queue.shift();
+          if (task) await task();
+        }
+      }
+      for (let i = 0; i < Math.min(concurrency, queue.length); i++) workers.push(worker());
+      await Promise.all(workers);
+    })()
       .then(() => {
         if (names) names.forEach((n) => loadedResources.value.add(n));
       })
