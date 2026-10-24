@@ -32,7 +32,21 @@ const {
   getTechnicianIdByUser, refreshInBackground, refreshOnly } = useMasterStore()
 
 const serviceId = String(route.params.id)
-const job = computed(() => jobOrders.value.find(j => String(j.id) === serviceId))
+const directJobData = ref<any>(null)
+const job = computed(() => directJobData.value || jobOrders.value.find(j => String(j.id) === serviceId))
+
+async function fetchDirectJob() {
+  if (!serviceId) return
+  try {
+    const res: any = await api.get(`/job-orders/${serviceId}`, true, false)
+    const data = res?.data?.data || res?.data || res
+    if (data && data.id) {
+      directJobData.value = data
+    }
+  } catch (e) {
+    console.warn('Failed to fetch job directly:', e)
+  }
+}
 const serviceReportFromStore = computed(() => serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id)))
 const fullServiceReportData = ref<any>(null)
 
@@ -186,23 +200,23 @@ const customerCategoryOptions = [
   { value: 'Government', label: 'Government' },
 ]
 
-function initDoForm() {
+function initDoForm(force = false) {
   const d: any = deliveryOrder.value
-  if (!d || isDoFormInit.value) return
-  const theCustomer = doCustomer.value || customer.value
+  if (!d || (isDoFormInit.value && !force)) return
+  const theCustomer = doCustomer.value || customer.value || d.customer
   doForm.value = {
-    problem: d.problem || '',
-    action: d.action || '',
-    time_in: d.time_in || '',
-    time_out: d.time_out || '',
+    problem: d.problem || d.notes || (job.value as any)?.instructions || 'Pengantaran / Delivery barang',
+    action: d.action || (d.problem ? '' : 'Pengantaran barang sesuai surat jalan'),
+    time_in: d.time_in || doForm.value.time_in || '',
+    time_out: d.time_out || doForm.value.time_out || '',
     is_tested: !!d.is_tested,
     is_completed: !!d.is_completed,
-    customer_signature: d.customer_signature || '',
-    technician_signature: d.technician_signature || '',
-    customer_name: d.customer_name || (theCustomer?.pic_name || theCustomer?.name || ''),
+    customer_signature: d.customer_signature || doForm.value.customer_signature || '',
+    technician_signature: d.technician_signature || doForm.value.technician_signature || '',
+    customer_name: d.customer_name || d.recipient_name || theCustomer?.pic_name || theCustomer?.company_name || theCustomer?.name || '',
     technician_name: d.technician_name || currentUser.value?.name || '',
-    customer_category: d.customer_category || theCustomer?.category || '',
-    photo_after: d.photo_after || '',
+    customer_category: d.customer_category || theCustomer?.category || 'Corporate',
+    photo_after: d.photo_after || doForm.value.photo_after || '',
   }
   isDoFormInit.value = true
 }
@@ -275,8 +289,8 @@ async function executeAcceptDeliveryJob() {
     await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'in_transit', time_in: timeIn })
     doForm.value.time_in = timeIn
     toast.success('Delivery job accepted. Start time recorded.')
-    await refreshInBackground()
-    initDoForm()
+    await fetchDirectJob()
+    initDoForm(true)
   } catch (err: any) {
     toast.error(err.message || 'Failed to accept delivery job')
   } finally {
@@ -396,7 +410,8 @@ const isAllFormsCompleted = computed(() => {
 })
 
 onMounted(async () => {
-  await refreshInBackground()
+  await fetchDirectJob()
+  initDoForm(true)
   await fetchFullServiceReport()
 })
 
@@ -583,6 +598,14 @@ async function confirmCompleteJob() {
         status: 'completed',
         is_completed: true,
         time_out: now,
+      })
+    }
+
+    if (deliveryOrder.value) {
+      await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, {
+        status: 'delivered',
+        is_completed: true,
+        time_out: nowHM(),
       })
     }
 

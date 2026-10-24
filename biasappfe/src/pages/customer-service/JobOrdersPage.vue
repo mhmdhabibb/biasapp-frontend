@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
+import { invalidateCache } from "@/utils/requestCache";
 import { isCopierReport } from "@/utils/copierReport";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
@@ -58,7 +59,7 @@ function isVisitJob(job: any): boolean {
 
 async function fetchJobOrders(silent = false) {
   try {
-    const res = await api.get<any>("/job-orders?page=1&limit=100");
+    const res = await api.get<any>("/job-orders?page=1&limit=100", true, false);
     const rawList = extractArray(res);
 
     jobOrders.value = rawList.map((j: any) => {
@@ -139,7 +140,7 @@ async function fetchJobOrders(silent = false) {
 
 async function fetchServiceRequests() {
   try {
-    const res = await api.get<any>("/service-requests?page=1&limit=100");
+    const res = await api.get<any>("/service-requests?page=1&limit=100", true, false);
     serviceRequests.value = extractArray(res);
   } catch (error) {
     console.error("Failed to fetch data SR", error);
@@ -148,7 +149,7 @@ async function fetchServiceRequests() {
 
 async function fetchDeliveryOrders() {
   try {
-    const res = await api.get<any>("/delivery-orders?page=1&limit=100");
+    const res = await api.get<any>("/delivery-orders?page=1&limit=100", true, false);
     const rawList = extractArray(res);
     deliveryOrders.value = rawList.filter((d: any) =>
       ["rental", "sale", "inbound"].includes(
@@ -173,11 +174,7 @@ async function reloadSilently() {
   }
   isReloading.value = true;
   try {
-    await Promise.all([
-      fetchJobOrders(true),
-      fetchServiceRequests(),
-      fetchDeliveryOrders(),
-    ]);
+    await loadAllData(true);
   } catch (e) {
     console.warn("Auto-reload silent warning:", e);
   } finally {
@@ -191,11 +188,12 @@ function onVisibilityOrFocus() {
   }
 }
 
-async function loadAllData() {
+async function loadAllData(silent = false) {
+  // Ambil delivery orders terlebih dahulu agar relasi fullDo di jobOrders terisi
+  await fetchDeliveryOrders();
   await Promise.all([
-    fetchJobOrders(),
+    fetchJobOrders(silent),
     fetchServiceRequests(),
-    fetchDeliveryOrders(),
   ]);
 }
 
@@ -1000,7 +998,8 @@ async function confirmAssign() {
         method: "PUT",
         data: payload,
       });
-      await fetchJobOrders();
+      invalidateCache();
+      await loadAllData();
       toast.success("Visit assigned to technician.");
     } catch (error) {
       toast.error(toast.fromError(error, "Something went wrong"));
@@ -1020,7 +1019,8 @@ async function confirmAssign() {
           method: "PUT",
           data: payload,
         });
-        await fetchJobOrders();
+        invalidateCache();
+        await loadAllData();
         toast.success("Maintenance assigned to technician.");
       } catch (error) {
         toast.error("Something went wrong");
@@ -1037,8 +1037,8 @@ async function confirmAssign() {
       };
       try {
         await apiRequest({ url: `/job-orders`, method: "POST", data: payload });
-        await fetchJobOrders();
-        await fetchServiceRequests();
+        invalidateCache();
+        await loadAllData();
         toast.success(
           "Maintenance Job order successfully created and assigned.",
         );
@@ -1064,8 +1064,8 @@ async function confirmAssign() {
       };
       try {
         await apiRequest({ url: `/job-orders/${existingJob.id}`, method: "PUT", data: payload });
-        await fetchJobOrders();
-        await fetchDeliveryOrders();
+        invalidateCache();
+        await loadAllData();
         toast.success("Delivery order successfully assigned to technician.");
       } catch (error) {
         toast.error(toast.fromError(error, "Failed to assign delivery order"));
@@ -1083,8 +1083,8 @@ async function confirmAssign() {
       };
       try {
         await apiRequest({ url: `/job-orders`, method: "POST", data: payload });
-        await fetchJobOrders();
-        await fetchDeliveryOrders();
+        invalidateCache();
+        await loadAllData();
         toast.success("Delivery order successfully assigned to technician.");
       } catch (error) {
         toast.error(toast.fromError(error, "Failed to assign delivery order"));
@@ -1106,8 +1106,8 @@ async function confirmAssign() {
       };
       try {
         await apiRequest({ url: `/job-orders/${existingJob.id}`, method: "PUT", data: payload });
-        await fetchJobOrders();
-        await fetchServiceRequests();
+        invalidateCache();
+        await loadAllData();
         toast.success("Job order successfully assigned to technician.");
       } catch (error) {
         toast.error("Failed to assign job order");
@@ -1125,8 +1125,8 @@ async function confirmAssign() {
 
       try {
         await apiRequest({ url: `/job-orders`, method: "POST", data: payload });
-        await fetchJobOrders();
-        await fetchServiceRequests();
+        invalidateCache();
+        await loadAllData();
         toast.success("Job order successfully assigned to technician.");
       } catch (error) {
         toast.error("Failed to assign job order");
@@ -1154,11 +1154,8 @@ async function cancelJobAssignment(jobId: string) {
       method: "POST",
     });
     toast.success("Technician assignment cancelled successfully");
-    await Promise.all([
-      fetchJobOrders(),
-      fetchServiceRequests(),
-      fetchDeliveryOrders(),
-    ]);
+    invalidateCache();
+    await loadAllData();
     closeDetail();
   } catch (error) {
     toast.error(toast.fromError(error, "Failed to cancel assignment"));

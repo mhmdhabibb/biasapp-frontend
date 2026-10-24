@@ -73,7 +73,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units"],
   "/customer-service/sales": ["sales", "salesInvoices", "customers", "units"],
   "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units"],
-  "/customer-service/service-reports": ["serviceReports", "technicians", "units", "customers"],
+  "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "technicians", "units", "customers", "products"],
   "/customer-service/contract-items": ["contractItems", "customers", "units", "brands", "unitTypes"],
   "/customer-service/job-orders": ["jobOrders", "serviceRequests", "technicians", "units", "customers"],
   "/customer-service/service-requests": ["serviceRequests", "customers", "units"],
@@ -104,7 +104,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/master/excel-templates": ["excelTemplates"],
   "/master/suppliers": ["suppliers"],
   "/master/contracts": ["contracts", "contractItems", "customers"],
-  "/technician/call-services": ["serviceReports", "technicians", "units", "customers"],
+  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
   "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units"],
@@ -251,6 +251,11 @@ export function useMasterStore() {
           fetchAll("serviceSpareparts", DROPDOWN_LIMIT),
           (items) => (store.sparepartRequests = items || []),
         ),
+      sparepartRequests: () =>
+        safeFetch(
+          fetchAll("serviceSpareparts", DROPDOWN_LIMIT),
+          (items) => (store.sparepartRequests = items || []),
+        ),
       purchaseOrders: () =>
         safeFetch(
           fetchAll("purchaseOrders", DROPDOWN_LIMIT),
@@ -278,9 +283,6 @@ export function useMasterStore() {
   }
 
   function runSyncTasks(names: string[] | null, tracksLoading: boolean) {
-    if (syncing && syncPromise) return syncPromise;
-    syncing = true;
-
     const isFullSync = !names || names.length === 0;
     const registry = buildSyncTasks(tracksLoading);
     const picked = (
@@ -289,8 +291,10 @@ export function useMasterStore() {
         : Object.values(registry)
     ) as Array<() => Promise<void>>;
 
-    syncPromise = (async () => {
-      const concurrency = 5;
+    if (picked.length === 0) return Promise.resolve();
+
+    return (async () => {
+      const concurrency = 6;
       const queue = picked.slice();
       const workers: Promise<void>[] = [];
       async function worker() {
@@ -301,35 +305,58 @@ export function useMasterStore() {
       }
       for (let i = 0; i < Math.min(concurrency, queue.length); i++) workers.push(worker());
       await Promise.all(workers);
-    })()
-      .then(() => {
-        if (names) names.forEach((n) => loadedResources.value.add(n));
-      })
-      .finally(() => {
-        syncing = false;
-        if (isFullSync) lastFullSyncAt = Date.now();
-      });
-    return syncPromise;
+      if (names) names.forEach((n) => loadedResources.value.add(n));
+      if (isFullSync) lastFullSyncAt = Date.now();
+    })();
   }
 
   function syncFromApi(force = false, tracksLoading = true) {
-    if (syncPromise && !force) return syncPromise;
     return runSyncTasks(null, tracksLoading);
   }
 
-  function loadCriticalResources(tracksLoading = true) {
-    return runSyncTasks(CRITICAL_RESOURCES as string[], tracksLoading);
+  function loadCriticalResources(tracksLoading = true, force = false) {
+    const notLoaded = force
+      ? (CRITICAL_RESOURCES as unknown as string[])
+      : (CRITICAL_RESOURCES as unknown as string[]).filter(
+          (r) => !loadedResources.value.has(r),
+        );
+    if (notLoaded.length === 0) return Promise.resolve();
+    return runSyncTasks(notLoaded, tracksLoading);
   }
 
   function loadResourcesForPage(path: string, tracksLoading = true) {
-    const needed = PAGE_RESOURCE_MAP[path] || [];
+    let needed = PAGE_RESOURCE_MAP[path];
+    if (!needed || needed.length === 0) {
+      for (const [key, val] of Object.entries(PAGE_RESOURCE_MAP)) {
+        if (path.startsWith(key)) {
+          needed = val;
+          break;
+        }
+      }
+    }
+    if (!needed || needed.length === 0) return Promise.resolve();
     const notLoaded = needed.filter((r) => !loadedResources.value.has(r));
     if (notLoaded.length === 0) return Promise.resolve();
     return runSyncTasks(notLoaded, tracksLoading);
   }
 
   function ensureResourcesLoaded(path: string) {
-    return loadCriticalResources(false).then(() => loadResourcesForPage(path, false));
+    let needed = PAGE_RESOURCE_MAP[path];
+    if (!needed || needed.length === 0) {
+      for (const [key, val] of Object.entries(PAGE_RESOURCE_MAP)) {
+        if (path.startsWith(key)) {
+          needed = val;
+          break;
+        }
+      }
+    }
+    const combined = Array.from(new Set([
+      ...(CRITICAL_RESOURCES as unknown as string[]),
+      ...(needed || []),
+    ])).filter((r) => !loadedResources.value.has(r));
+
+    if (combined.length === 0) return Promise.resolve();
+    return runSyncTasks(combined, false);
   }
 
   function refreshInBackground() {
@@ -348,8 +375,6 @@ export function useMasterStore() {
     if (Date.now() - lastFullSyncAt < maxAgeMs) return Promise.resolve();
     return refreshInBackground();
   }
-
-  loadCriticalResources();
 
   function findCustomer(id: number | string | null): Customer | undefined {
     if (id == null) return undefined;

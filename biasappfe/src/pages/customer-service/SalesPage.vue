@@ -141,19 +141,25 @@ const doForm = reactive({
 })
 
 function hasActiveDO(sale: any): boolean {
-  if (!sale) return false
-  return Array.isArray(sale.delivery_orders) && sale.delivery_orders.length > 0
+  if (!sale || !Array.isArray(sale.delivery_orders) || sale.delivery_orders.length === 0) {
+    return false
+  }
+  return sale.delivery_orders.some((d: any) => d && d.status !== 'cancelled' && !d.deleted_at)
 }
 
 function getDONumber(sale: any): string {
-  if (!sale) return '-'
-  if (Array.isArray(sale.delivery_orders) && sale.delivery_orders.length > 0) {
-    return sale.delivery_orders[0].do_number || '-'
+  if (!sale || !Array.isArray(sale.delivery_orders) || sale.delivery_orders.length === 0) {
+    return '-'
   }
-  return '-'
+  const activeDO = sale.delivery_orders.find((d: any) => d && d.status !== 'cancelled' && !d.deleted_at)
+  return activeDO?.do_number || sale.delivery_orders[0]?.do_number || '-'
 }
 
 function openCreateDOModal(sale: any) {
+  if (hasActiveDO(sale)) {
+    toast.error('Surat Jalan (DO) sudah ada dan aktif untuk transaksi penjualan ini.')
+    return
+  }
   targetSaleForDO.value = sale
   const existingDONo = sale?.delivery_orders?.[0]?.do_number || ''
   const cust = sale?.customer || findCustomer(sale?.customer_id)
@@ -1286,10 +1292,11 @@ const combinedItemOptions = computed(() => {
           </button>
           <!-- Create / Restore Delivery Order Button -->
           <button
+            v-if="!hasActiveDO(row) && can('sale:update')"
             class="action-btn action-btn--edit"
-            :title="hasActiveDO(row) ? `DO: ${getDONumber(row)} (Klik untuk buat ulang/kelola)` : 'Buat Surat Jalan (DO)'"
+            title="Buat / Pulihkan Surat Jalan (DO)"
             @click="openCreateDOModal(row)"
-            :style="{ color: hasActiveDO(row) ? 'var(--color-primary)' : '#e67e22', width: '36px', height: '36px' }"
+            style="color: #e67e22; width: 36px; height: 36px;"
           >
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

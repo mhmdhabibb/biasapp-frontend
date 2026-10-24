@@ -22,12 +22,9 @@ const { can } = usePermission()
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
-const { ensureResourcesLoaded } = useMasterStore()
+const masterStore = useMasterStore()
+const { ensureResourcesLoaded } = masterStore
 const resources = useResourcesStore()
-
-onMounted(() => {
-  ensureResourcesLoaded(route.path)
-})
 
 const {
   serviceReports: data,
@@ -112,9 +109,21 @@ function matchesCustomer(id: any): boolean {
   return String(id) === customerFilter.value
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (route.query.customer_id) {
     customerFilter.value = String(route.query.customer_id)
+  }
+  await ensureResourcesLoaded(route.path)
+  if (!deliveryOrders.value?.length || !sparepartRequests.value?.length) {
+    void masterStore.refreshOnly(['deliveryOrders', 'sparepartRequests'])
+  }
+})
+
+watch(activeTab, (tab) => {
+  if (tab === 'delivery' && (!deliveryOrders.value || deliveryOrders.value.length === 0)) {
+    void masterStore.refreshOnly(['deliveryOrders'])
+  } else if (tab === 'sparepart' && (!sparepartRequests.value || sparepartRequests.value.length === 0)) {
+    void masterStore.refreshOnly(['sparepartRequests'])
   }
 })
 

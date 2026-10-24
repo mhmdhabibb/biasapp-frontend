@@ -55,8 +55,14 @@ export function invalidateCache(pattern?: string): void {
     cache.clear();
     return;
   }
+  const clean = pattern.split("?")[0].replace(/^\/+|\/+$/g, "");
+  const segments = clean.split("/");
+  const rootResource = segments[0] ? `/${segments[0]}` : "";
+
   for (const key of cache.keys()) {
-    if (key.includes(pattern)) cache.delete(key);
+    if (key.includes(pattern) || (rootResource && key.includes(rootResource))) {
+      cache.delete(key);
+    }
   }
 }
 

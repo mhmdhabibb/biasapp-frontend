@@ -68,6 +68,7 @@ async function request<T>(
   path: string,
   options: AxiosRequestConfig = {},
   tracksLoading = !options.method || options.method === "GET",
+  useCache = true,
 ): Promise<T> {
   const isGet = !options.method || options.method === "GET";
   const cacheKey = isGet ? `GET:${path}` : "";
@@ -80,8 +81,8 @@ async function request<T>(
   };
 
   try {
-    const data = isGet && cacheKey
-      ? await getOrFetch<T>(cacheKey, fetcher)
+    const data = isGet && cacheKey && useCache
+      ? await getOrFetch<T>(cacheKey, fetcher, true)
       : await fetcher();
     return data;
   } catch (error) {
@@ -92,8 +93,8 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string, tracksLoading = true) =>
-    request<T>(path, {}, tracksLoading),
+  get: <T>(path: string, tracksLoading = true, useCache = true) =>
+    request<T>(path, {}, tracksLoading, useCache),
   post: <T>(path: string, data: unknown) => {
     return mutate<T>(path, { method: "POST", data });
   },
@@ -128,8 +129,15 @@ async function mutate<T>(
 export async function apiRequest<T = any>(
   config: AxiosRequestConfig,
 ): Promise<T> {
+  const method = (config.method || "GET").toUpperCase();
+  if (method !== "GET" && config.url) {
+    invalidateCache(config.url);
+  }
   try {
     const response = await http.request<T>(config);
+    if (method !== "GET" && config.url) {
+      invalidateCache(config.url);
+    }
     return response.data;
   } catch (error) {
     throw toApiError(error);
