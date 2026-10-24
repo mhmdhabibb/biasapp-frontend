@@ -78,6 +78,7 @@ export const resources = {
   contracts: createResourceService<ResourceRecord>("contracts"),
   contractItems: createResourceService<ResourceRecord>("contract-items"),
   rents: createResourceService<ResourceRecord>("rents"),
+  rentals: createResourceService<ResourceRecord>("rents"),
   serviceRequests: createResourceService<ResourceRecord>("service-requests"),
   jobOrders: createResourceService<ResourceRecord>("job-orders"),
   serviceReports: createResourceService<ResourceRecord>("service-reports"),

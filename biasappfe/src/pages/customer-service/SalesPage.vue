@@ -4,12 +4,15 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
+import { resources as resourceService } from '@/services/resource.service'
 import type { Sale, TableColumn } from '@/types'
 import { computed, reactive, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
@@ -58,6 +61,11 @@ const {
 } = useMasterStore()
 
 const resources = useResourcesStore()
+
+const hardDelete = useHardDelete(
+  (id, cascade) => resourceService.sales.hardRemove(id, cascade),
+  () => useMasterStore().refreshInBackground(),
+)
 
 const customerOptions = computed(() => [
   { value: null, label: 'All Customers' },
@@ -1315,6 +1323,29 @@ const combinedItemOptions = computed(() => {
               <line x1="14" y1="11" x2="14" y2="17"></line>
             </svg>
           </button>
+          <button
+            v-if="hardDelete.isSuperadmin"
+            class="action-btn action-btn--hard"
+            title="Hapus permanen dari database (superadmin)"
+            @click="hardDelete.open(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <line x1="12" y1="11" x2="12" y2="17"></line>
+            </svg>
+          </button>
         </div>
       </template>
     </DataTable>
@@ -1858,6 +1889,28 @@ const combinedItemOptions = computed(() => {
         </div>
       </template>
     </FormModal>
+
+    <ConfirmDialog
+      :open="showConfirm"
+      title="Delete Sale"
+      :message="`Are you sure you want to delete sale '${deletingItem?.sale_no || deletingItem?.id}'?`"
+      @close="showConfirm = false"
+      @confirm="handleDelete"
+    />
+
+    <HardDeleteDialog
+      :open="hardDelete.show"
+      title="Hapus Permanen Penjualan (Sale)"
+      :item-label="hardDelete.expected"
+      :item-name="hardDelete.expected"
+      :confirm-input="hardDelete.input"
+      :is-valid="hardDelete.confirmed"
+      :cascade="hardDelete.cascade"
+      @update:confirm-input="hardDelete.input = $event"
+      @update:cascade="hardDelete.cascade = $event"
+      @confirm="hardDelete.confirm"
+      @cancel="hardDelete.close"
+    />
 
   </div>
 </template>

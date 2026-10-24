@@ -4,12 +4,15 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useAuth } from '@/composables/useAuth'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
+import { resources } from '@/services/resource.service'
 import type { RentalInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_COUNT, NUMFMT_RP, NUMFMT_RP_RATE, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { printPaymentSlip, printPaymentStruk, paymentMethodOf, buildPaymentTimestamp, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
@@ -122,6 +125,29 @@ const showModal = ref(false)
 const showConfirm = ref(false)
 const editingItem = ref<RentalInvoice | null>(null)
 const deletingItem = ref<RentalInvoice | null>(null)
+
+const hardDelete = useHardDelete(
+  (id, cascade) => resources.rentalInvoices.hardRemove(id, cascade),
+  () => useMasterStore().refreshInBackground(),
+)
+
+function openDelete(item: RentalInvoice) {
+  deletingItem.value = item
+  showConfirm.value = true
+}
+
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.rentalInvoices.remove(String(deletingItem.value.id))
+      await useMasterStore().refreshInBackground()
+      toast.success('Invoice deleted successfully!')
+    } catch (error: any) {
+      toast.error('Failed to delete invoice: ' + (error?.message || 'Error'))
+    }
+  }
+  showConfirm.value = false
+}
 
 // Date Range & Month Filters
 const startDateFilter = ref('')
@@ -821,11 +847,7 @@ function handleSubmit() {
   showModal.value = false
 }
 
-function openDelete(item: RentalInvoice) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
-  showConfirm.value = false
-}
+
 
 function customerName(id: any): string {
   const c = findCustomer(id as any)
@@ -1362,6 +1384,29 @@ function printInvoice(item: any) {
               <line x1="14" y1="11" x2="14" y2="17"></line>
             </svg>
           </button>
+          <button
+            v-if="hardDelete.isSuperadmin"
+            class="action-btn action-btn--hard"
+            title="Hapus permanen dari database (superadmin)"
+            @click="hardDelete.open(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <line x1="12" y1="11" x2="12" y2="17"></line>
+            </svg>
+          </button>
         </div>
       </template>
     </DataTable>
@@ -1369,6 +1414,20 @@ function printInvoice(item: any) {
     <ConfirmDialog :open="showConfirm" title="Delete Invoice"
       :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false"
       @confirm="handleDelete" />
+
+    <HardDeleteDialog
+      :open="hardDelete.show"
+      title="Hapus Permanen Rental Invoice"
+      :item-label="hardDelete.expected"
+      :item-name="hardDelete.expected"
+      :confirm-input="hardDelete.input"
+      :is-valid="hardDelete.confirmed"
+      :cascade="hardDelete.cascade"
+      @update:confirm-input="hardDelete.input = $event"
+      @update:cascade="hardDelete.cascade = $event"
+      @confirm="hardDelete.confirm"
+      @cancel="hardDelete.close"
+    />
 
     <FormModal :open="showDetail" :title="detailItem ? `Invoice Details ${detailItem.invoice_no}` : 'Invoice Details'"
       @close="showDetail = false">

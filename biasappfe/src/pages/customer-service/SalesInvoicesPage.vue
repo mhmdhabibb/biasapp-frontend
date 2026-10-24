@@ -4,12 +4,15 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
+import { resources as resourceService } from '@/services/resource.service'
 import { useResourcesStore } from '@/stores/resources.store'
 import type { SalesInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_RP, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
@@ -45,6 +48,11 @@ const {
 } = useMasterStore()
 
 const resources = useResourcesStore()
+
+const hardDelete = useHardDelete(
+  (id, cascade) => resourceService.salesInvoices.hardRemove(id, cascade),
+  () => useMasterStore().refreshInBackground(),
+)
 
 const columns: TableColumn[] = [
   { key: 'invoice_no', label: 'No. Invoice' },
@@ -926,6 +934,29 @@ async function printReceiptAsync(item: any, approved: any) {
               <line x1="14" y1="11" x2="14" y2="17"></line>
             </svg>
           </button>
+          <button
+            v-if="hardDelete.isSuperadmin"
+            class="action-btn action-btn--hard"
+            title="Hapus permanen dari database (superadmin)"
+            @click="hardDelete.open(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <line x1="12" y1="11" x2="12" y2="17"></line>
+            </svg>
+          </button>
         </div>
       </template>
     </DataTable>
@@ -973,6 +1004,20 @@ async function printReceiptAsync(item: any, approved: any) {
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Sales Invoice" :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+
+    <HardDeleteDialog
+      :open="hardDelete.show"
+      title="Hapus Permanen Sales Invoice"
+      :item-label="hardDelete.expected"
+      :item-name="hardDelete.expected"
+      :confirm-input="hardDelete.input"
+      :is-valid="hardDelete.confirmed"
+      :cascade="hardDelete.cascade"
+      @update:confirm-input="hardDelete.input = $event"
+      @update:cascade="hardDelete.cascade = $event"
+      @confirm="hardDelete.confirm"
+      @cancel="hardDelete.close"
+    />
 
     <FormModal :open="showDetail" :title="detailItem ? `Invoice Details ${detailItem.invoice_no}` : 'Invoice Details'" @close="showDetail = false">
       <template v-if="detailItem">

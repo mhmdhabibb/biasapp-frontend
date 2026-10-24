@@ -2,8 +2,10 @@
 import DataTable from "@/components/ui/DataTable.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
 import FormModal from "@/components/ui/FormModal.vue";
+import HardDeleteDialog from "@/components/ui/HardDeleteDialog.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAuth } from "@/composables/useAuth";
+import { useHardDelete } from "@/composables/useHardDelete";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
@@ -38,8 +40,24 @@ const canSeeAmount = computed(() => {
   return role === "accounting" || role === "admin";
 });
 const { t } = useI18n();
-const route = useRoute()
-const { ensureResourcesLoaded } = useMasterStore()
+const route = useRoute();
+const { ensureResourcesLoaded } = useMasterStore();
+
+const hardDelete = useHardDelete(
+  (id, cascade) => resources.rentals.hardRemove(id, cascade),
+  fetchRentals,
+);
+
+async function handleDeleteRental(row: any) {
+  if (!confirm(`Hapus rental ${row.rental_no || ''}?`)) return;
+  try {
+    await resources.rentals.remove(row.id);
+    toast.success("Rental berhasil dihapus.");
+    fetchRentals();
+  } catch (err: any) {
+    toast.error("Gagal menghapus rental: " + (err?.message || "Error"));
+  }
+}
 
 onMounted(() => {
   ensureResourcesLoaded(route.path)
@@ -939,7 +957,10 @@ async function exportToPdf() {
       :data="filteredRentals"
       :loading="isLoadingRentals"
       permission="rental"
+      :show-hard-delete="hardDelete.isSuperadmin"
       :search-placeholder="t('rentals.search')"
+      @delete="handleDeleteRental"
+      @hard-delete="hardDelete.open"
     >
       <template #cell-rental_no="{ row, value }">
         <a
@@ -991,6 +1012,20 @@ async function exportToPdf() {
         </button>
       </template>
     </DataTable>
+
+    <HardDeleteDialog
+      :open="hardDelete.show"
+      title="Hapus Permanen Rental"
+      :item-label="hardDelete.expected"
+      :item-name="hardDelete.expected"
+      :confirm-input="hardDelete.input"
+      :is-valid="hardDelete.confirmed"
+      :cascade="hardDelete.cascade"
+      @update:confirm-input="hardDelete.input = $event"
+      @update:cascade="hardDelete.cascade = $event"
+      @confirm="hardDelete.confirm"
+      @cancel="hardDelete.close"
+    />
 
     <!-- Modal Detail Rental Items -->
     <FormModal
