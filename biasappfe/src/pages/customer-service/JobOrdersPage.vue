@@ -308,7 +308,9 @@ const unassignedDeliveries = computed<any[]>(() => {
       (d: any) =>
         !assignedDeliveryIds.value.has(String(d.id)) &&
         !d.technician_id &&
-        (d.status === "pending" || d.status === "draft") &&
+        d.status !== "delivered" &&
+        d.status !== "completed" &&
+        d.status !== "cancelled" &&
         ((d.do_number || d.delivery_no || "")
           .toLowerCase()
           .includes(searchUnassigned.value.toLowerCase()) ||
