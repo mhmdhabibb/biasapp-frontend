@@ -7,7 +7,7 @@ import { useMasterStore } from "@/composables/useMasterStore";
 import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 const toast = useToast();
@@ -56,7 +56,7 @@ function isVisitJob(job: any): boolean {
   return job?.taskType === "visit";
 }
 
-async function fetchJobOrders() {
+async function fetchJobOrders(silent = false) {
   try {
     const res = await api.get<any>("/job-orders?page=1&limit=100");
     const rawList = extractArray(res);
@@ -131,7 +131,9 @@ async function fetchJobOrders() {
     });
   } catch (error) {
     console.error("Failed to fetch data JO", error);
-    toast.error("Gagal memuat job orders.");
+    if (!silent) {
+      toast.error("Gagal memuat job orders.");
+    }
   }
 }
 
@@ -158,23 +160,68 @@ async function fetchDeliveryOrders() {
   }
 }
 
+const AUTO_RELOAD_INTERVAL_MS = 10000; // 10 seconds auto-refresh
+let autoReloadTimer: any = null;
+const isReloading = ref(false);
+
+async function reloadSilently() {
+  if (isReloading.value || draggedRequest || showAssignModal.value || isAssigning.value) {
+    return;
+  }
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    return;
+  }
+  isReloading.value = true;
+  try {
+    await Promise.all([
+      fetchJobOrders(true),
+      fetchServiceRequests(),
+      fetchDeliveryOrders(),
+    ]);
+  } catch (e) {
+    console.warn("Auto-reload silent warning:", e);
+  } finally {
+    isReloading.value = false;
+  }
+}
+
+function onVisibilityOrFocus() {
+  if (typeof document !== "undefined" && document.visibilityState === "visible") {
+    void reloadSilently();
+  }
+}
+
 async function loadAllData() {
   await Promise.all([
+    fetchJobOrders(),
     fetchServiceRequests(),
     fetchDeliveryOrders(),
   ]);
-  await fetchJobOrders();
 }
 
-onMounted(async () => {
+onMounted(() => {
+  // Load data Kanban langsung secara paralel tanpa menunggu master store
+  void loadAllData();
+
   if (masterStore.ensureResourcesLoaded) {
-    try {
-      await masterStore.ensureResourcesLoaded(route.path);
-    } catch (e) {
+    masterStore.ensureResourcesLoaded(route.path).catch((e) => {
       console.warn("Master store loaded with warnings", e);
-    }
+    });
   }
-  await loadAllData();
+
+  // Setup auto-reload interval dan listener
+  autoReloadTimer = setInterval(reloadSilently, AUTO_RELOAD_INTERVAL_MS);
+  document.addEventListener("visibilitychange", onVisibilityOrFocus);
+  window.addEventListener("focus", onVisibilityOrFocus);
+});
+
+onUnmounted(() => {
+  if (autoReloadTimer) {
+    clearInterval(autoReloadTimer);
+    autoReloadTimer = null;
+  }
+  document.removeEventListener("visibilitychange", onVisibilityOrFocus);
+  window.removeEventListener("focus", onVisibilityOrFocus);
 });
 
 // Watch technicians jika terisi belakangan agar data tetap sinkron
@@ -1127,7 +1174,17 @@ async function cancelJobAssignment(jobId: string) {
           assign it
         </p>
       </div>
-      <div class="jo-summary">
+      <div class="jo-summary" style="display: flex; align-items: center; gap: 10px;">
+        <button
+          class="btn btn-outline btn-sm"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 0.82rem;"
+          :disabled="isReloading"
+          @click="reloadSilently"
+          title="Refresh Job Orders"
+        >
+          <span :style="{ display: 'inline-block', transform: isReloading ? 'rotate(360deg)' : 'none', transition: 'transform 0.5s ease' }">🔄</span>
+          <span>{{ isReloading ? 'Refreshing...' : 'Refresh' }}</span>
+        </button>
         <div class="summary-chip">
           <span class="summary-value">{{
             unassignedRequests.length +
