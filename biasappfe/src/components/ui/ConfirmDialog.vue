@@ -127,6 +127,7 @@ const config = computed(() => {
               {{ d }}
             </li>
           </ul>
+          <slot />
 
           <!-- Actions -->
           <div class="confirm-actions">

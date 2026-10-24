@@ -31,9 +31,9 @@ onMounted(() => {
   window.addEventListener("resize", handleResize);
   adminInterval = setInterval(() => {
     if (document.visibilityState === "visible") {
-      void refreshIfStale(60000);
+      void refreshIfStale(20000);
     }
-  }, 60000);
+  }, 20000);
   // Kembali dari tab browser lain / minimize: refresh silent bila data basi,
   // jadi tidak perlu reload manual agar angka & tabel muncul terbaru.
   document.addEventListener("visibilitychange", onVisibleTab);

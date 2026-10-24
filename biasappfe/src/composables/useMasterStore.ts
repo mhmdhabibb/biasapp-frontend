@@ -69,14 +69,20 @@ const CRITICAL_RESOURCES = [
 ] as const;
 
 const PAGE_RESOURCE_MAP: Record<string, string[]> = {
-  "/customer-service/rentals": ["rentalInvoices", "contractItems", "units", "customers"],
+  // Dashboards (All Roles)
+  "/customer-service/dashboard": ["serviceRequests", "jobOrders", "serviceReports", "contractItems", "serviceSpareparts", "warrantyClaims"],
+  "/accounting/dashboard": ["serviceSpareparts", "purchaseOrders", "deliveryOrders", "rentalInvoices", "salesInvoices", "payments"],
+  "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units"],
+
+  // Customer Service Operational Pages
+  "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments"],
   "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units"],
   "/customer-service/sales": ["sales", "salesInvoices", "customers", "units"],
   "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units"],
   "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "technicians", "units", "customers", "products"],
   "/customer-service/contract-items": ["contractItems", "customers", "units", "brands", "unitTypes"],
   "/customer-service/job-orders": ["jobOrders", "deliveryOrders", "serviceReports", "serviceRequests", "technicians", "units", "customers"],
-  "/customer-service/service-requests": ["serviceRequests", "customers", "units", "sales", "deliveryOrders", "jobOrders", "serviceReports"],
+  "/customer-service/service-requests": ["serviceRequests", "customers", "units", "sales", "deliveryOrders", "jobOrders", "serviceReports", "contractItems", "rents", "products"],
   "/customer-service/monthly-meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers"],
   "/customer-service/payments": ["payments", "rentalInvoices", "salesInvoices", "customers"],
   "/customer-service/warranty-claims": ["warrantyClaims", "units", "customers", "warranties"],
@@ -84,8 +90,24 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
   "/customer-service/indent": ["indents", "products", "suppliers"],
   "/customer-service/delivery": ["deliveryOrders", "purchaseOrders", "customers"],
+  "/customer-service/call-service": ["serviceRequests", "jobOrders", "technicians", "customers", "units"],
+  "/customer-service/monitoring-service": ["serviceRequests", "jobOrders", "serviceReports", "technicians", "customers", "units", "products"],
+  "/customer-service/copier-reports": ["serviceReports", "contractItems", "units", "customers", "monthlyMeterReadings"],
+  "/customer-service/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units", "customers"],
+
+  // Accounting Operational Pages
   "/accounting/purchase-orders": ["purchaseOrders", "suppliers", "products"],
   "/accounting/delivery-orders": ["deliveryOrders", "purchaseOrders", "customers"],
+
+  // Technician Operational Pages
+  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
+  "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
+  "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units"],
+  "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units"],
+  "/technician/service-history": ["serviceReports", "technicians", "units"],
+  "/technician/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units"],
+
+  // Master Data Pages
   "/master/users": ["users"],
   "/master/roles": ["roles"],
   "/master/permissions": ["permissions"],
@@ -104,12 +126,8 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/master/excel-templates": ["excelTemplates"],
   "/master/suppliers": ["suppliers"],
   "/master/contracts": ["contracts", "contractItems", "customers"],
-  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
-  "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
-  "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units"],
-  "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units"],
-  "/technician/service-history": ["serviceReports", "technicians", "units"],
-  "/technician/standalone-service-history": ["serviceReports", "technicians", "units"],
+  "/master/system-settings": ["systemSettings"],
+  "/master/notifications": ["notifications"],
 };
 
 export function useMasterStore() {
@@ -155,7 +173,7 @@ export function useMasterStore() {
       tracksLoading
         ? resources.fetchAll(name, limit ? { limit } : undefined, true)
         : resources.fetchAllSilent(name, limit ? { limit } : undefined);
-    return {
+    const baseTasks: Record<string, () => Promise<void>> = {
       customers: () =>
         safeFetch(
           fetchAll("customers", DROPDOWN_LIMIT),
@@ -280,6 +298,20 @@ export function useMasterStore() {
           (items) => (store.indents = items || []),
         ),
     };
+
+    return new Proxy(baseTasks, {
+      get(target, prop: string) {
+        if (prop in target) return (target as any)[prop];
+        if (prop in resources) {
+          return () =>
+            safeFetch(
+              fetchAll(prop as any, DROPDOWN_LIMIT),
+              (items) => ((store as any)[prop] = items || []),
+            );
+        }
+        return undefined;
+      },
+    });
   }
 
   function runSyncTasks(names: string[] | null, tracksLoading: boolean) {
@@ -340,7 +372,7 @@ export function useMasterStore() {
     return runSyncTasks(notLoaded, tracksLoading);
   }
 
-  function ensureResourcesLoaded(path: string) {
+  function getResourcesForPath(path: string): string[] {
     let needed = PAGE_RESOURCE_MAP[path];
     if (!needed || needed.length === 0) {
       for (const [key, val] of Object.entries(PAGE_RESOURCE_MAP)) {
@@ -350,13 +382,32 @@ export function useMasterStore() {
         }
       }
     }
+    return needed || [];
+  }
+
+  function ensureResourcesLoaded(path: string) {
+    const needed = getResourcesForPath(path);
     const combined = Array.from(new Set([
       ...(CRITICAL_RESOURCES as unknown as string[]),
-      ...(needed || []),
-    ])).filter((r) => !loadedResources.value.has(r));
+      ...needed,
+    ]));
 
-    if (combined.length === 0) return Promise.resolve();
-    return runSyncTasks(combined, false);
+    const notLoaded = combined.filter((r) => !loadedResources.value.has(r));
+    if (notLoaded.length > 0) {
+      // First visit: load not-yet-cached critical & needed resources
+      return runSyncTasks(notLoaded, false).then(() => {
+        if (needed.length > 0) {
+          void refreshOnly(needed);
+        }
+      });
+    }
+
+    // Resources already in memory: page renders INSTANTLY (0ms)
+    // SWR background refresh: silently revalidate the needed resources from the server
+    if (needed.length > 0) {
+      void refreshOnly(needed);
+    }
+    return Promise.resolve();
   }
 
   function refreshInBackground() {

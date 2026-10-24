@@ -686,6 +686,9 @@ onMounted(async () => {
       :open="showCompleteConfirm"
       title="Konfirmasi Selesai Kunjungan"
       :message="form.is_completed ? 'Unit sudah selesai diperbaiki. Anda yakin ingin menutup job ini?' : 'Unit BELUM selesai diperbaiki (Completed tidak dicentang). Sistem akan menutup kunjungan ini dan otomatis membuat job lanjutan (Follow Up) dengan status Pending. Lanjutkan?'"
+      :variant="form.is_completed ? 'success' : 'warning'"
+      :confirm-label="form.is_completed ? 'Ya, Selesaikan' : 'Ya, Lanjutkan'"
+      cancel-label="Batal"
       @close="showCompleteConfirm = false"
       @confirm="executeCompleteForm"
     />
@@ -693,6 +696,9 @@ onMounted(async () => {
       :open="showNewSHConfirm"
       title="Service history diselesaikan!"
       message="Apakah ada unit tambahan (Buat SH baru) di lokasi ini?"
+      variant="success"
+      confirm-label="Ya, Buat Baru"
+      cancel-label="Tidak, Selesai"
       @close="declineNewSH"
       @confirm="executeNewSH"
     />

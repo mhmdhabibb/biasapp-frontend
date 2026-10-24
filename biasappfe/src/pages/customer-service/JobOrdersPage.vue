@@ -59,7 +59,7 @@ function isVisitJob(job: any): boolean {
 
 async function fetchJobOrders(silent = false) {
   try {
-    const res = await api.get<any>("/job-orders?page=1&limit=100", true, false);
+    const res = await api.get<any>("/job-orders?page=1&limit=100", true, true);
     const rawList = extractArray(res);
 
     jobOrders.value = rawList.map((j: any) => {
@@ -140,7 +140,7 @@ async function fetchJobOrders(silent = false) {
 
 async function fetchServiceRequests() {
   try {
-    const res = await api.get<any>("/service-requests?page=1&limit=100", true, false);
+    const res = await api.get<any>("/service-requests?page=1&limit=100", true, true);
     serviceRequests.value = extractArray(res);
   } catch (error) {
     console.error("Failed to fetch data SR", error);
@@ -149,7 +149,7 @@ async function fetchServiceRequests() {
 
 async function fetchDeliveryOrders() {
   try {
-    const res = await api.get<any>("/delivery-orders?page=1&limit=100", true, false);
+    const res = await api.get<any>("/delivery-orders?page=1&limit=100", true, true);
     const rawList = extractArray(res);
     deliveryOrders.value = rawList.filter((d: any) =>
       ["rental", "sale", "inbound"].includes(
@@ -189,13 +189,100 @@ function onVisibilityOrFocus() {
 }
 
 async function loadAllData(silent = false) {
-  // Ambil delivery orders terlebih dahulu agar relasi fullDo di jobOrders terisi
-  await fetchDeliveryOrders();
-  await Promise.all([
-    fetchJobOrders(silent),
-    fetchServiceRequests(),
-    masterStore.refreshOnly(['serviceReports']),
-  ]);
+  try {
+    // Fetch all datasets in parallel for instant, flicker-free rendering
+    const [doRes, joRes, srRes] = await Promise.all([
+      api.get<any>("/delivery-orders?page=1&limit=100", true, true),
+      api.get<any>("/job-orders?page=1&limit=100", true, true),
+      api.get<any>("/service-requests?page=1&limit=100", true, true),
+      masterStore.refreshOnly(['serviceReports', 'technicians']),
+    ]);
+
+    const rawDos = extractArray(doRes);
+    const filteredDos = rawDos.filter((d: any) =>
+      ["rental", "sale", "inbound"].includes(
+        String(d.do_type || d.delivery_type || "").toLowerCase(),
+      ),
+    );
+
+    const rawJos = extractArray(joRes);
+    const mappedJos = rawJos.map((j: any) => {
+      const isDelivery =
+        j.job_type === "delivery" ||
+        !!j.delivery_order_id ||
+        !!j.delivery_order;
+      const isVisit =
+        j.job_type === "visit" ||
+        VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase());
+      const isMaintenance =
+        (j.job_type === "service" || j.job_type === "maintenance_visit") &&
+        (j.instructions?.includes("Rutin Maintenance") ||
+          j.service_request?.problem_description?.includes(
+            "[MAINTENANCE_VISIT]",
+          ));
+
+      const sr = j.service_request || null;
+      const srpt = j.service_report || null;
+      let doObj = j.delivery_order || null;
+      const doTargetId = j.delivery_order_id || doObj?.id;
+      if (doTargetId) {
+        const fullDo = filteredDos.find(
+          (d: any) => String(d.id) === String(doTargetId),
+        );
+        if (fullDo) {
+          doObj = { ...fullDo, ...doObj };
+        }
+      }
+      const customer =
+        sr?.customer || doObj?.customer || srpt?.customer || j.customer || null;
+
+      let taskType = "sr";
+      if (isDelivery) taskType = "do";
+      else if (isMaintenance) taskType = "maintenance";
+      else if (isVisit) taskType = "visit";
+
+      const doNum = doObj?.do_number || doObj?.delivery_no || j.do_number;
+      const resolvedTechId =
+        j.technician_id ||
+        j.technician?.id ||
+        j.technician?.technician_id ||
+        j.technician?.user_id ||
+        null;
+
+      return {
+        ...j,
+        technician_id: resolvedTechId,
+        taskType,
+        delivery_order: doObj || j.delivery_order,
+        do_number: doNum || j.do_number,
+        service_request_no: isDelivery
+          ? doNum || j.job_order_no || "-"
+          : sr?.request_no || srpt?.report_no || j.job_order_no || "-",
+        customer_name:
+          customer?.company_name ||
+          customer?.name ||
+          j.customer_name ||
+          doObj?.customer_name ||
+          doObj?.recipient_name ||
+          "-",
+        problem:
+          sr?.problem_description ||
+          doObj?.notes ||
+          j.notes ||
+          srpt?.machine_problem ||
+          j.instructions ||
+          "-",
+      };
+    });
+
+    // Atomic assignment: all collections update in the same render pass
+    deliveryOrders.value = filteredDos;
+    jobOrders.value = mappedJos;
+    serviceRequests.value = extractArray(srRes);
+  } catch (err) {
+    console.error("Failed to load kanban data", err);
+    if (!silent) toast.error("Gagal memuat job orders.");
+  }
 }
 
 onMounted(() => {

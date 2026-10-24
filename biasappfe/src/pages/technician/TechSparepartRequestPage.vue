@@ -43,6 +43,14 @@ const myRequests = computed(() =>
   sparepartRequests.value.filter(r => String(r.technician_id) === String(myTechId.value))
 )
 
+const currentPage = ref(1)
+const perPage = 10
+const totalPages = computed(() => Math.max(1, Math.ceil(myRequests.value.length / perPage)))
+const paginatedRequests = computed(() => {
+  const start = (currentPage.value - 1) * perPage
+  return myRequests.value.slice(start, start + perPage)
+})
+
 // In a real app, products would be filtered to spareparts category
 const availableSpareparts = computed(() => products.value)
 
@@ -145,7 +153,7 @@ async function submitRequest() {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="req in myRequests" :key="req.id">
+            <tr v-for="req in paginatedRequests" :key="req.id">
               <td>{{ new Date(req.created_at || '').toLocaleDateString() }}</td>
               <td>{{ getServiceReportNo(req.service_report_id) }}</td>
               <td>{{ getSparepartDisplayName(req) }}</td>
@@ -158,6 +166,17 @@ async function submitRequest() {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
+        <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
+          Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, myRequests.length) }} dari {{ myRequests.length }} data
+        </div>
+        <div class="pagination-buttons" style="display: flex; gap: 6px;">
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === 1" @click="currentPage--">Prev</button>
+          <button v-for="p in totalPages" :key="p" class="btn btn-sm" :class="p === currentPage ? 'btn-primary' : 'btn-outline'" @click="currentPage = p">{{ p }}</button>
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
+        </div>
       </div>
     </div>
 

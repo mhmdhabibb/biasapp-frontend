@@ -110,8 +110,6 @@ function openEdit(item: Customer) {
 
 const hardDelete = useHardDelete((id: string) => resources.customers.hardRemove(id), fetchData)
 
-function openDelete(item: Customer) { deletingItem.value = item; showConfirm.value = true }
-
 const masterStore = useMasterStore()
 
 async function handleSubmit() {
@@ -139,16 +137,25 @@ async function handleSubmit() {
   }
 }
 
+const deleteCascade = ref(false)
+
+function openDelete(item: Customer) {
+  deletingItem.value = item
+  deleteCascade.value = false
+  showConfirm.value = true
+}
+
 async function handleDelete() {
   if (deletingItem.value) {
     try {
-      await resources.customers.remove(String(deletingItem.value.id))
+      const cascade = hardDelete.isSuperadmin ? deleteCascade.value : false
+      await resources.customers.remove(String(deletingItem.value.id), cascade)
       await fetchData()
       masterStore.refreshInBackground()
-      toast.success('Customer deleted successfully!')
+      toast.success(cascade ? 'Customer beserta seluruh data relasi berhasil dihapus!' : 'Customer berhasil dihapus!')
     } catch (error) {
       console.error('Failed to delete customer:', error)
-      toast.error('Failed to delete customer')
+      toast.error('Failed to delete customer: ' + ((error as any).message || 'Error'))
     }
   }
   showConfirm.value = false
@@ -169,14 +176,32 @@ const customerHistory = computed(() => {
   })
 })
 
-const selectedUnitTab = ref<string>('all')
+const selectedTargetTab = ref<string>('all')
 
-function getItemUnit(item: any): { id: string; name: string } {
+interface HistoryTarget {
+  id: string
+  name: string
+  kind: 'unit' | 'product' | 'other'
+  badge: string
+}
+
+function getItemTarget(item: any): HistoryTarget {
   if (item._type === 'service') {
     const u = item.unit || masterStore.findUnit(item.unit_id)
     if (u) {
-      const label = `${u.model || u.name || 'Product'}${u.serial_no ? ` (${u.serial_no})` : ''}`
-      return { id: String(u.id), name: label }
+      const label = `${u.model || u.name || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}`
+      return {
+        id: `unit_${u.id}`,
+        name: label,
+        kind: 'unit',
+        badge: 'Unit / Mesin'
+      }
+    }
+    return {
+      id: item.unit_id ? `unit_${item.unit_id}` : 'other',
+      name: item.unit_id ? `Unit (${item.unit_id})` : 'Tanpa Unit',
+      kind: 'unit',
+      badge: 'Unit / Mesin'
     }
   } else if (item._type === 'delivery') {
     const doi = item.delivery_order_items || []
@@ -185,42 +210,82 @@ function getItemUnit(item: any): { id: string; name: string } {
       if (first.unit_id) {
         const u = first.unit || masterStore.findUnit(first.unit_id)
         if (u) {
-          const label = `${u.model || u.name || 'Product'}${u.serial_no ? ` (${u.serial_no})` : ''}`
-          return { id: String(u.id), name: label }
+          const label = `${u.model || u.name || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}`
+          return {
+            id: `unit_${u.id || first.unit_id}`,
+            name: label,
+            kind: 'unit',
+            badge: 'Unit / Mesin'
+          }
         }
-      }
-      if (first.model) {
-        return { id: `ext-${first.model}`, name: `${first.model}${first.serial_no ? ` (${first.serial_no})` : ''}` }
+        const label = `${first.model || 'Unit'}${first.serial_no ? ` (${first.serial_no})` : ''}`
+        return {
+          id: `unit_${first.unit_id}`,
+          name: label,
+          kind: 'unit',
+          badge: 'Unit / Mesin'
+        }
       }
       if (first.product_id) {
         const p = first.product || masterStore.findProduct(first.product_id)
-        if (p) return { id: `prod-${p.id}`, name: p.name }
+        return {
+          id: `prod_${p?.id || first.product_id}`,
+          name: p?.name || 'Produk / Sparepart',
+          kind: 'product',
+          badge: 'Produk / Sparepart'
+        }
+      }
+      if (first.model) {
+        const label = `${first.model}${first.serial_no ? ` (${first.serial_no})` : ''}`
+        const isExternalUnit = !!(first.brand_id || first.unit_type_id || first.serial_no)
+        return {
+          id: isExternalUnit ? `unit_ext_${first.model}_${first.serial_no || ''}` : `prod_ext_${first.model}`,
+          name: label,
+          kind: isExternalUnit ? 'unit' : 'product',
+          badge: isExternalUnit ? 'Unit (External)' : 'Produk'
+        }
       }
     }
   }
-  return { id: 'other', name: 'Lainnya / Tanpa Product' }
+  return { id: 'other', name: 'Lainnya / Tanpa Item', kind: 'other', badge: '-' }
 }
 
-const productTabs = computed(() => {
-  const tabsMap = new Map<string, { id: string; name: string; count: number }>()
+const unitTabs = computed(() => {
+  const map = new Map<string, { id: string; name: string; count: number }>()
   for (const item of customerHistory.value) {
-    const u = getItemUnit(item)
-    if (!tabsMap.has(u.id)) {
-      tabsMap.set(u.id, { id: u.id, name: u.name, count: 0 })
+    const t = getItemTarget(item)
+    if (t.kind === 'unit') {
+      if (!map.has(t.id)) map.set(t.id, { id: t.id, name: t.name, count: 0 })
+      map.get(t.id)!.count++
     }
-    tabsMap.get(u.id)!.count++
   }
-  return Array.from(tabsMap.values())
+  return Array.from(map.values())
+})
+
+const productTabs = computed(() => {
+  const map = new Map<string, { id: string; name: string; count: number }>()
+  for (const item of customerHistory.value) {
+    const t = getItemTarget(item)
+    if (t.kind === 'product') {
+      if (!map.has(t.id)) map.set(t.id, { id: t.id, name: t.name, count: 0 })
+      map.get(t.id)!.count++
+    }
+  }
+  return Array.from(map.values())
+})
+
+const otherItemsCount = computed(() => {
+  return customerHistory.value.filter(item => getItemTarget(item).kind === 'other').length
 })
 
 const activeFilteredCustomerHistory = computed(() => {
-  if (selectedUnitTab.value === 'all') return customerHistory.value
-  return customerHistory.value.filter((item) => getItemUnit(item).id === selectedUnitTab.value)
+  if (selectedTargetTab.value === 'all') return customerHistory.value
+  return customerHistory.value.filter((item) => getItemTarget(item).id === selectedTargetTab.value)
 })
 
 async function openHistory(customer: Customer) {
   historyModalCustomer.value = customer
-  selectedUnitTab.value = 'all'
+  selectedTargetTab.value = 'all'
   await masterStore.refreshOnly(['serviceReports', 'deliveryOrders', 'technicians', 'units', 'products'])
 }
 
@@ -402,36 +467,148 @@ function goToForm(item: any) {
         <textarea id="cust-address" v-model="form.address" class="form-textarea" placeholder="Full address"></textarea>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Customer" :message="`Are you sure you want to delete customer '${deletingItem?.company_name}'?`" @close="showConfirm = false" @confirm="handleDelete" />
-    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Customer" :item-label="hardDelete.expected"
-      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
-      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
+    <ConfirmDialog
+      :open="showConfirm"
+      title="Delete Customer"
+      :message="`Are you sure you want to delete customer '${deletingItem?.company_name}'?`"
+      @close="showConfirm = false"
+      @confirm="handleDelete"
+    >
+      <div v-if="hardDelete.isSuperadmin" class="delete-cascade-box" style="margin: 16px 0 6px; text-align: left; display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 12px; font-weight: 600; color: var(--color-text-secondary);">Pilihan Mode Hapus:</div>
+        <label
+          class="cascade-opt"
+          :style="{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid ' + (!deleteCascade ? 'var(--color-primary, #3b82f6)' : 'var(--color-border, #e2e8f0)'),
+            background: !deleteCascade ? 'var(--color-primary-surface, #eff6ff)' : 'var(--color-surface-sunken, #f8fafc)',
+            cursor: 'pointer'
+          }"
+        >
+          <input type="radio" name="cust-delete-cascade" :checked="!deleteCascade" @change="deleteCascade = false" style="margin-top: 3px;" />
+          <div>
+            <div style="font-size: 13px; font-weight: 600; color: var(--color-text);">Hapus Data Terpilih Saja</div>
+            <div style="font-size: 11px; color: var(--color-text-secondary); line-height: 1.3;">Hanya menghapus data customer ini. Relasi transaksi tidak ikut dihapus.</div>
+          </div>
+        </label>
+        <label
+          class="cascade-opt"
+          :style="{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid ' + (deleteCascade ? 'var(--color-danger, #ef4444)' : 'var(--color-border, #e2e8f0)'),
+            background: deleteCascade ? 'var(--color-danger-surface, #fef2f2)' : 'var(--color-surface-sunken, #f8fafc)',
+            cursor: 'pointer'
+          }"
+        >
+          <input type="radio" name="cust-delete-cascade" :checked="deleteCascade" @change="deleteCascade = true" style="margin-top: 3px;" />
+          <div>
+            <div style="font-size: 13px; font-weight: 600;" :style="{ color: deleteCascade ? 'var(--color-danger, #ef4444)' : 'var(--color-text)' }">Hapus Beserta Seluruh Data Terkait (Cascade Foreign Key)</div>
+            <div style="font-size: 11px; color: var(--color-text-secondary); line-height: 1.3;">Menghapus customer dan seluruh riwayat transaksi (Sales, Rental, Invoices, Kontrak, Garansi, Surat Jalan, dll).</div>
+          </div>
+        </label>
+      </div>
+    </ConfirmDialog>
 
-    <FormModal :open="!!historyModalCustomer" :title="'Riwayat Pekerjaan: ' + (historyModalCustomer?.company_name || historyModalCustomer?.name || '')" max-width="960px" @close="historyModalCustomer = null">
+    <HardDeleteDialog
+      :open="hardDelete.show"
+      title="Hapus Permanen Customer"
+      :item-label="hardDelete.expected"
+      :expected="hardDelete.expected"
+      :confirm-valid="hardDelete.confirmed"
+      :show-cascade-option="true"
+      v-model:cascade="hardDelete.cascade"
+      @close="hardDelete.close"
+      @confirm="hardDelete.confirm"
+      @update:input="hardDelete.input = $event"
+    />
+
+    <FormModal :open="!!historyModalCustomer" :title="'Riwayat Pekerjaan: ' + (historyModalCustomer?.company_name || historyModalCustomer?.name || '')" max-width="1000px" @close="historyModalCustomer = null">
       <div v-if="customerHistory.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
         Belum ada riwayat pengerjaan untuk customer ini.
       </div>
       <div v-else>
-        <!-- Tab per product (unit) -->
-        <div v-if="productTabs.length > 0" class="history-tabs mb-3" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid var(--color-border-light); padding-bottom: 10px;">
-          <button
-            type="button"
-            class="btn btn-sm"
-            :class="selectedUnitTab === 'all' ? 'btn-primary' : 'btn-outline'"
-            @click="selectedUnitTab = 'all'"
-          >
-            Semua Product ({{ customerHistory.length }})
-          </button>
-          <button
-            v-for="tab in productTabs"
-            :key="tab.id"
-            type="button"
-            class="btn btn-sm"
-            :class="selectedUnitTab === tab.id ? 'btn-primary' : 'btn-outline'"
-            @click="selectedUnitTab = tab.id"
-          >
-            {{ tab.name }} ({{ tab.count }})
-          </button>
+        <!-- Filter Tabs separated into Unit vs Product -->
+        <div class="history-filter-container mb-3" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; border-bottom: 1px solid var(--color-border-light); padding-bottom: 14px;">
+          <!-- Global / All Tab -->
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="selectedTargetTab === 'all' ? 'btn-primary' : 'btn-outline'"
+              @click="selectedTargetTab = 'all'"
+            >
+              Semua Riwayat ({{ customerHistory.length }})
+            </button>
+            <button
+              v-if="otherItemsCount > 0"
+              type="button"
+              class="btn btn-sm"
+              :class="selectedTargetTab === 'other' ? 'btn-primary' : 'btn-outline'"
+              @click="selectedTargetTab = 'other'"
+            >
+              Lainnya / Tanpa Item ({{ otherItemsCount }})
+            </button>
+          </div>
+
+          <!-- Unit / Mesin Group -->
+          <div v-if="unitTabs.length > 0" style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #2563eb;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+              Unit / Mesin ({{ unitTabs.reduce((acc, t) => acc + t.count, 0) }})
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button
+                v-for="tab in unitTabs"
+                :key="tab.id"
+                type="button"
+                class="btn btn-sm"
+                :class="selectedTargetTab === tab.id ? 'btn-primary' : 'btn-outline'"
+                style="display: inline-flex; align-items: center; gap: 4px;"
+                @click="selectedTargetTab = tab.id"
+              >
+                <span>{{ tab.name }}</span>
+                <span class="badge" style="background: rgba(0,0,0,0.1); font-size: 10px; padding: 1px 5px;">{{ tab.count }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Product / Sparepart Group -->
+          <div v-if="productTabs.length > 0" style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #7c3aed;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                <line x1="12" y1="22.08" x2="12" y2="12"></line>
+              </svg>
+              Produk / Consumable / Sparepart ({{ productTabs.reduce((acc, t) => acc + t.count, 0) }})
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button
+                v-for="tab in productTabs"
+                :key="tab.id"
+                type="button"
+                class="btn btn-sm"
+                :class="selectedTargetTab === tab.id ? 'btn-primary' : 'btn-outline'"
+                style="display: inline-flex; align-items: center; gap: 4px; border-color: #c4b5fd;"
+                @click="selectedTargetTab = tab.id"
+              >
+                <span>{{ tab.name }}</span>
+                <span class="badge" style="background: rgba(0,0,0,0.1); font-size: 10px; padding: 1px 5px;">{{ tab.count }}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="table-scroll" style="max-height: 400px; overflow-y: auto;">
@@ -440,8 +617,9 @@ function goToForm(item: any) {
               <tr style="border-bottom: 1px solid var(--color-border-light);">
                 <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tanggal</th>
                 <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Form</th>
-                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Product</th>
-                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tipe</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Kategori</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Nama Unit / Produk</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tipe Layanan</th>
                 <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Teknisi</th>
                 <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Status</th>
                 <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Problem / Keluhan</th>
@@ -449,16 +627,25 @@ function goToForm(item: any) {
             </thead>
             <tbody>
               <tr v-for="item in activeFilteredCustomerHistory" :key="item._type + '-' + item.id" style="border-bottom: 1px solid var(--color-border-light); font-size: 13px;">
-                <td style="padding: 10px 12px;">{{ item.service_date || item.delivery_date ? new Date(item.service_date || item.delivery_date).toLocaleDateString('en-GB') : '-' }}</td>
-                <td style="padding: 10px 12px; font-weight: 500;">
+                <td style="padding: 10px 12px; white-space: nowrap;">{{ item.service_date || item.delivery_date ? new Date(item.service_date || item.delivery_date).toLocaleDateString('en-GB') : '-' }}</td>
+                <td style="padding: 10px 12px; font-weight: 500; white-space: nowrap;">
                   <a href="#" @click.prevent="goToForm(item)" style="color: var(--color-primary); text-decoration: underline;">
                     {{ item._type === 'service' ? (item.report_no || 'Service Report') : 'Service History' }}
                   </a>
                 </td>
-                <td style="padding: 10px 12px; font-weight: 500;">{{ getItemUnit(item).name }}</td>
-                <td style="padding: 10px 12px;">{{ item._type === 'service' ? 'Service Report' : 'Stand Alone' }}</td>
-                <td style="padding: 10px 12px;">{{ getHistoryTechnicianName(item) }}</td>
-                <td style="padding: 10px 12px;">
+                <td style="padding: 10px 12px; white-space: nowrap;">
+                  <span
+                    class="badge"
+                    :style="getItemTarget(item).kind === 'unit' ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;' : getItemTarget(item).kind === 'product' ? 'background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe;' : 'background: #f3f4f6; color: #4b5563;'"
+                    style="font-size: 11px; font-weight: 600;"
+                  >
+                    {{ getItemTarget(item).badge }}
+                  </span>
+                </td>
+                <td style="padding: 10px 12px; font-weight: 500;">{{ getItemTarget(item).name }}</td>
+                <td style="padding: 10px 12px; white-space: nowrap;">{{ item._type === 'service' ? 'Service Report' : 'Stand Alone' }}</td>
+                <td style="padding: 10px 12px; white-space: nowrap;">{{ getHistoryTechnicianName(item) }}</td>
+                <td style="padding: 10px 12px; white-space: nowrap;">
                   <span class="badge" :class="item.status === 'completed' || item.status === 'delivered' ? 'badge-success' : 'badge-warning'" style="font-size: 11px;">
                     {{ (item.status || 'pending').toUpperCase().replace('_', ' ') }}
                   </span>

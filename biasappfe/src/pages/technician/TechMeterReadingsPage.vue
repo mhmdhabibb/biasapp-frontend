@@ -25,6 +25,20 @@ onMounted(() => {
 
 const data = computed(() => monthlyMeterReadings.value);
 
+const currentPage = ref(1);
+const perPage = 10;
+const totalPages = computed(() => Math.max(1, Math.ceil(data.value.length / perPage)));
+const paginatedData = computed(() => {
+  const start = (currentPage.value - 1) * perPage;
+  return data.value.slice(start, start + perPage);
+});
+
+watch(() => data.value.length, () => {
+  if (currentPage.value > totalPages.value) {
+    currentPage.value = Math.max(1, totalPages.value);
+  }
+});
+
 const paperSizes = ref<any[]>([]);
 const paperTypes = ref<any[]>([]);
 onMounted(async () => {
@@ -329,7 +343,7 @@ async function submitReading() {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="reading in data" :key="reading.id">
+            <tr v-for="reading in paginatedData" :key="reading.id">
               <td>
                 {{
                   reading.created_at
@@ -355,6 +369,17 @@ async function submitReading() {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
+        <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
+          Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, data.length) }} dari {{ data.length }} data
+        </div>
+        <div class="pagination-buttons" style="display: flex; gap: 6px;">
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === 1" @click="currentPage--">Prev</button>
+          <button v-for="p in totalPages" :key="p" class="btn btn-sm" :class="p === currentPage ? 'btn-primary' : 'btn-outline'" @click="currentPage = p">{{ p }}</button>
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
+        </div>
       </div>
     </div>
 

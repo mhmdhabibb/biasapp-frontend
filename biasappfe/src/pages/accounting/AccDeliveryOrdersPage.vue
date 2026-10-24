@@ -8,6 +8,7 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
+import { resources as resourceApi } from '@/services/resource.service'
 import type { ProcurementDeliveryOrder, TableColumn } from '@/types'
 import { reactive, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
@@ -26,6 +27,7 @@ onMounted(() => {
 
 const busyId = ref<string | number | null>(null)
 const detailItem = ref<ProcurementDeliveryOrder | null>(null)
+const photoZoom = ref<string | null>(null)
 const editingItem = ref<ProcurementDeliveryOrder | null>(null)
 const deletingItem = ref<ProcurementDeliveryOrder | null>(null)
 const showDetail = ref(false)
@@ -69,9 +71,17 @@ function getDeliveryItemName(item: NonNullable<ProcurementDeliveryOrder['deliver
   return '-'
 }
 
-function openDetail(item: ProcurementDeliveryOrder) {
+async function openDetail(item: ProcurementDeliveryOrder) {
   detailItem.value = item
   showDetail.value = true
+  try {
+    const res = await resourceApi.deliveryOrders.get(String(item.id))
+    if (res?.data) {
+      detailItem.value = { ...item, ...res.data }
+    }
+  } catch (err) {
+    // Keep initial item if individual fetch fails
+  }
 }
 
 function openEdit(item: ProcurementDeliveryOrder) {
@@ -290,20 +300,40 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
         </section>
 
         <section class="detail-items" style="margin-top: 16px;">
+          <h4>Foto Dokumentasi</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+            <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+              <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sebelum (Photo Before)</div>
+              <div v-if="detailItem.photo_before">
+                <img :src="detailItem.photo_before" alt="Foto Sebelum" style="max-height: 180px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_before" />
+              </div>
+              <div v-else class="text-muted" style="padding: 24px 0; font-size: 12px;">Tidak ada foto sebelum</div>
+            </div>
+            <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+              <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sesudah (Photo After)</div>
+              <div v-if="detailItem.photo_after">
+                <img :src="detailItem.photo_after" alt="Foto Sesudah" style="max-height: 180px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_after" />
+              </div>
+              <div v-else class="text-muted" style="padding: 24px 0; font-size: 12px;">Tidak ada foto sesudah</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-items" style="margin-top: 16px;">
           <h4>Signatures</h4>
           <div class="detail-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
             <div class="detail-field">
               <span>Admin / CS</span>
               <div v-if="detailItem.assigner_signature">
-                <img :src="detailItem.assigner_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px;" />
-                <div style="font-size: 0.8rem; margin-top: 4px; font-weight: bold;">{{ detailItem.assigner_name }}</div>
+                <img :src="detailItem.assigner_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px; cursor: pointer;" @click="photoZoom = detailItem.assigner_signature" />
+                <div style="font-size: 0.8rem; margin-top: 4px; font-weight: bold;">{{ detailItem.assigner_name || '-' }}</div>
               </div>
               <div v-else class="text-muted" style="margin-top: 8px;">-</div>
             </div>
             <div class="detail-field">
               <span>Technician</span>
               <div v-if="detailItem.technician_signature">
-                <img :src="detailItem.technician_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px;" />
+                <img :src="detailItem.technician_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px; cursor: pointer;" @click="photoZoom = detailItem.technician_signature" />
                 <div style="font-size: 0.8rem; margin-top: 4px; font-weight: bold;">{{ detailItem.technician_name || '-' }}</div>
               </div>
               <div v-else class="text-muted" style="margin-top: 8px;">-</div>
@@ -311,7 +341,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
             <div class="detail-field">
               <span>Customer / Recipient</span>
               <div v-if="detailItem.customer_signature">
-                <img :src="detailItem.customer_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px;" />
+                <img :src="detailItem.customer_signature" style="max-height: 60px; object-fit: contain; margin-top: 8px; cursor: pointer;" @click="photoZoom = detailItem.customer_signature" />
                 <div style="font-size: 0.8rem; margin-top: 4px; font-weight: bold;">{{ detailItem.customer_name || detailItem.recipient_name || '-' }}</div>
               </div>
               <div v-else class="text-muted" style="margin-top: 8px;">-</div>
@@ -354,6 +384,14 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       @close="showDelete = false"
       @confirm="deleteDeliveryOrder"
     />
+
+    <!-- Lightbox Zoom Modal -->
+    <div v-if="photoZoom" class="photo-zoom-overlay" @click="photoZoom = null">
+      <div class="photo-zoom-modal" @click.stop>
+        <button class="photo-zoom-close" @click="photoZoom = null">&times;</button>
+        <img :src="photoZoom" alt="Zoomed Photo" style="max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);" />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -488,5 +526,35 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
 }
 .btn-success:hover {
   background: var(--color-success-hover, #15803d);
+}
+
+.photo-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(4px);
+}
+.photo-zoom-modal {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-zoom-close {
+  position: absolute;
+  top: -36px;
+  right: 0;
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 32px;
+  cursor: pointer;
+  line-height: 1;
 }
 </style>

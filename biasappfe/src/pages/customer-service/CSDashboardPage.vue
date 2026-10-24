@@ -12,7 +12,7 @@ onMounted(() => {
   ensureResourcesLoaded(route.path)
 })
 
-useAutoRefresh(15000, [
+useAutoRefresh(10000, [
   "serviceRequests",
   "jobOrders",
   "serviceReports",

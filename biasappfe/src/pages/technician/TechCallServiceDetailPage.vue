@@ -47,7 +47,11 @@ async function fetchDirectJob() {
     console.warn('Failed to fetch job directly:', e)
   }
 }
-const serviceReportFromStore = computed(() => serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id)))
+const serviceReportFromStore = computed(() => {
+  const directSr = directJobData.value?.service_report || directJobData.value?.ServiceReport
+  if (directSr) return directSr
+  return serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id))
+})
 const fullServiceReportData = ref<any>(null)
 
 const serviceReport = computed(() => {
@@ -285,12 +289,15 @@ async function executeAcceptDeliveryJob() {
   isSavingDoForm.value = true
   try {
     const timeIn = nowHM()
-    await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
-    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'in_transit', time_in: timeIn })
+    await Promise.all([
+      api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' }),
+      api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'in_transit', time_in: timeIn }),
+    ])
     doForm.value.time_in = timeIn
     toast.success('Delivery job accepted. Start time recorded.')
     await fetchDirectJob()
     initDoForm(true)
+    void refreshOnly(['jobOrders', 'deliveryOrders'])
   } catch (err: any) {
     toast.error(err.message || 'Failed to accept delivery job')
   } finally {
@@ -303,7 +310,8 @@ async function saveDeliveryForm(silent = false) {
   isSavingDoForm.value = true
   try {
     await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { ...doForm.value })
-    await refreshInBackground()
+    await fetchDirectJob()
+    void refreshOnly(['deliveryOrders'])
     if (!silent) toast.success('Service history saved.')
     return true
   } catch (err: any) {
@@ -334,7 +342,8 @@ async function executeCompleteDeliveryJob() {
     await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'delivered', time_out: timeOut })
     await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
     toast.success('Delivery completed. End time recorded.')
-    await refreshInBackground()
+    await fetchDirectJob()
+    void refreshOnly(['deliveryOrders', 'jobOrders'])
     
     showNewStandaloneConfirm.value = true
   } catch (err: any) {
@@ -458,7 +467,7 @@ async function submitUnitForm() {
     await resources.units.create(payload)
     toast.success('Unit berhasil didaftarkan.')
     showAddUnitModal.value = false
-    await refreshInBackground()
+    await refreshOnly(['units'])
   } catch (e: any) {
     toast.error('Gagal mendaftarkan unit: ' + e.message)
   } finally {
@@ -490,7 +499,7 @@ async function submitEditSn() {
     await resources.units.update(editSnForm.value.id, { serial_no: editSnForm.value.serial_no })
     toast.success('Serial Number berhasil diupdate.')
     showEditSnModal.value = false
-    await refreshInBackground()
+    await refreshOnly(['units'])
   } catch (e: any) {
     toast.error('Gagal update SN: ' + e.message)
   } finally {
@@ -500,7 +509,9 @@ async function submitEditSn() {
 // --------------------
 
 async function ensureServiceReport(now: string) {
-  await refreshInBackground()
+  if (serviceReport.value) return serviceReport.value
+
+  await fetchDirectJob()
   if (serviceReport.value) return serviceReport.value
 
   const unitId = job.value?.unit_id || job.value?.service_request?.unit_id || unit.value?.id
@@ -527,7 +538,10 @@ async function ensureServiceReport(now: string) {
     meter_reading_before: resolveBeforeMeter(),
   })
 
-  await refreshInBackground()
+  await fetchDirectJob()
+  if (!serviceReport.value) {
+    await refreshOnly(['serviceReports'])
+  }
   if (!serviceReport.value) {
     throw new Error('Report created successfully, but it could not be loaded yet. Please try again.')
   }
@@ -560,14 +574,20 @@ async function confirmAcceptJob() {
   try {
     const now = new Date().toISOString()
     const report = await ensureServiceReport(now)
-    await api.patch(`/service-reports/${report.id}`, {
-      status: 'in_progress',
-      time_in: report.time_in || now,
-    })
-    await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
+    await Promise.all([
+      api.patch(`/service-reports/${report.id}`, {
+        status: 'in_progress',
+        time_in: report.time_in || now,
+      }),
+      api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' }),
+    ])
 
     toast.success('Job accepted. Start time recorded.')
-    await refreshInBackground()
+    await Promise.all([
+      fetchDirectJob(),
+      fetchFullServiceReport(),
+    ])
+    void refreshOnly(['jobOrders', 'serviceReports'])
   } catch (err: any) {
     toast.error(err.message || 'Failed to accept job')
   } finally {

@@ -27,10 +27,11 @@ export function createResourceService<T extends ResourceRecord>(
 ) {
   const path = `/${resource}`;
   return {
-    list(query?: ResourceQuery, tracksLoading = true) {
+    list(query?: ResourceQuery, tracksLoading = true, useCache = true) {
       return api.get<PaginatedResponse<T>>(
         `${path}/?${toQueryString(query)}`,
         tracksLoading,
+        useCache,
       );
     },
     get(id: string) {
@@ -42,16 +43,18 @@ export function createResourceService<T extends ResourceRecord>(
     update(id: string, data: Partial<T>) {
       return api.put<ApiResponse<T>>(`${path}/${id}`, data);
     },
-    remove(id: string) {
-      return api.delete<ApiResponse<null>>(`${path}/${id}`);
+    remove(id: string, cascade = false) {
+      const q = cascade ? '?cascade=true' : '';
+      return api.delete<ApiResponse<null>>(`${path}/${id}${q}`);
     },
     /**
      * Permanent (hard) delete. Backend only honors this when
      * `?permanent=true` is sent by a superadmin; other roles get 403
      * and the row stays soft-deleted at most.
      */
-    hardRemove(id: string) {
-      return api.delete<ApiResponse<null>>(`${path}/${id}?permanent=true`);
+    hardRemove(id: string, cascade = false) {
+      const q = cascade ? '?permanent=true&cascade=true' : '?permanent=true';
+      return api.delete<ApiResponse<null>>(`${path}/${id}${q}`);
     },
   };
 }

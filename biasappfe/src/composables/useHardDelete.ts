@@ -49,7 +49,7 @@ export function displayNameOf(item: any): string {
  * additionally requires typing the item name to confirm.
  */
 export function useHardDelete(
-  removeFn: (id: string) => Promise<unknown>,
+  removeFn: (id: string, cascade?: boolean) => Promise<unknown>,
   refresh: () => Promise<void> | void,
 ) {
   const toast = useToast();
@@ -58,6 +58,7 @@ export function useHardDelete(
   const show = ref(false);
   const target = ref<any>(null);
   const input = ref("");
+  const cascade = ref(false);
   const expected = computed(() => displayNameOf(target.value));
   const confirmed = computed(
     () =>
@@ -68,6 +69,7 @@ export function useHardDelete(
   function open(item: any) {
     target.value = item;
     input.value = "";
+    cascade.value = false;
     show.value = true;
   }
 
@@ -82,9 +84,10 @@ export function useHardDelete(
       return;
     }
     try {
-      await removeFn(String(target.value.id));
+      const allowCascade = isSuperadmin.value ? cascade.value : false;
+      await removeFn(String(target.value.id), allowCascade);
       await refresh();
-      toast.success("Data dihapus permanen dari database.");
+      toast.success(allowCascade ? "Data dan seluruh relasi berhasil dihapus permanen." : "Data dihapus permanen dari database.");
     } catch (reason: any) {
       toast.error(
         "Gagal menghapus permanen: " + (reason?.message || "Terjadi kesalahan"),
@@ -96,5 +99,5 @@ export function useHardDelete(
 
   // Wrapped in reactive() so refs auto-unwrap when accessed
   // as hardDelete.show / hardDelete.isSuperadmin in templates.
-  return reactive({ isSuperadmin, show, target, input, expected, confirmed, open, close, confirm });
+  return reactive({ isSuperadmin, show, target, input, cascade, expected, confirmed, open, close, confirm });
 }

@@ -18,13 +18,14 @@ export function useResourcesStore() {
     name: ResourceName,
     query?: ResourceQuery,
     tracksLoading = true,
+    useCache = true,
   ) {
     // tracksLoading=false (silent/background refresh) tidak boleh menyentuh
     // flag loading agar tidak memicu spinner/skeleton di UI.
     if (tracksLoading) loading[name] = true;
     if (tracksLoading) errors[name] = "";
     try {
-      const res = await resources[name].list(query, tracksLoading);
+      const res = await resources[name].list(query, tracksLoading, useCache);
       const items = Array.isArray(res?.data)
         ? res.data
         : Array.isArray(res)
@@ -46,9 +47,9 @@ export function useResourcesStore() {
     }
   }
 
-  /** Silent refresh: update data tanpa efek loading/skeleton/error. */
+  /** Silent refresh: update data tanpa efek loading/skeleton/error dan langsung ambil fresh data dari server. */
   async function fetchAllSilent(name: ResourceName, query?: ResourceQuery) {
-    return fetchAll(name, query, false);
+    return fetchAll(name, query, false, false);
   }
 
   async function create(name: ResourceName, payload: Partial<ResourceRecord>) {

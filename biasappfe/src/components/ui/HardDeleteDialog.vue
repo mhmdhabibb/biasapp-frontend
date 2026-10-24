@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   title: string
   /** Display name of the item being permanently deleted */
@@ -9,12 +9,18 @@ const props = defineProps<{
   /** Exact text the user must type to confirm */
   expected: unknown
   confirmValid?: unknown
-}>()
+  showCascadeOption?: boolean
+  cascade?: boolean
+}>(), {
+  showCascadeOption: false,
+  cascade: false,
+})
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'confirm'): void
   (e: 'update:input', value: string): void
+  (e: 'update:cascade', value: boolean): void
 }>()
 
 const input = ref('')
@@ -78,6 +84,39 @@ const canConfirm = () => {
             <strong class="hd-danger-text">dihapus permanen dari database</strong>
             dan tidak bisa dikembalikan.
           </p>
+
+          <div v-if="showCascadeOption" class="hd-cascade-selector">
+            <div class="hd-cascade-title">Pilih Mode Penghapusan:</div>
+            <label class="hd-option" :class="{ 'hd-option--active': !cascade }">
+              <input
+                type="radio"
+                name="hd-cascade-mode"
+                :checked="!cascade"
+                @change="emit('update:cascade', false)"
+              />
+              <div class="hd-option-content">
+                <span class="hd-option-name">Hapus Data Terpilih Saja</span>
+                <span class="hd-option-desc">
+                  Hanya menghapus customer ini. Relasi data lainnya tidak ikut dihapus.
+                </span>
+              </div>
+            </label>
+
+            <label class="hd-option hd-option--danger" :class="{ 'hd-option--active': cascade }">
+              <input
+                type="radio"
+                name="hd-cascade-mode"
+                :checked="cascade"
+                @change="emit('update:cascade', true)"
+              />
+              <div class="hd-option-content">
+                <span class="hd-option-name">Hapus Beserta Seluruh Data Terkait (Cascade Foreign Key)</span>
+                <span class="hd-option-desc">
+                  Menghapus customer dan SEMUA relasi transaksi (Sales, Rental, Invoices, Kontrak, Garansi, Surat Jalan, dsb).
+                </span>
+              </div>
+            </label>
+          </div>
 
           <p class="hd-hint">
             Ketik <code class="hd-code">{{ expectedText() }}</code> untuk mengonfirmasi:
@@ -201,6 +240,74 @@ const canConfirm = () => {
   color: var(--color-text);
   font-weight: var(--font-weight-semibold);
   overflow-wrap: anywhere;
+}
+
+.hd-cascade-selector {
+  margin-bottom: var(--space-md);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hd-cascade-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
+}
+
+.hd-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-sunken, #f8fafc);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.hd-option:hover {
+  border-color: var(--color-border-hover, #94a3b8);
+}
+
+.hd-option input[type="radio"] {
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.hd-option--active {
+  border-color: var(--color-primary, #3b82f6);
+  background: var(--color-primary-surface, #eff6ff);
+}
+
+.hd-option--danger.hd-option--active {
+  border-color: var(--color-danger, #ef4444);
+  background: var(--color-danger-surface, #fef2f2);
+}
+
+.hd-option-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hd-option-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.hd-option--danger.hd-option--active .hd-option-name {
+  color: var(--color-danger);
+}
+
+.hd-option-desc {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
 }
 
 .hd-input {

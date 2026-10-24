@@ -1,4 +1,5 @@
 import { useAuth } from "@/composables/useAuth";
+import { useMasterStore } from "@/composables/useMasterStore";
 import { canView, routeNamesByMenuOrder } from "@/router/permission-map";
 import {
   allowedRouteNamesByRole,
@@ -384,6 +385,13 @@ router.beforeEach((to) => {
   }
 
   return true;
+});
+
+router.afterEach((to) => {
+  if (to.meta.requiresAuth !== false) {
+    const { ensureResourcesLoaded } = useMasterStore();
+    void ensureResourcesLoaded(to.path);
+  }
 });
 
 export default router;

@@ -10,9 +10,14 @@ import { useRoute } from 'vue-router'
 const { canApprove } = usePermission()
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
+const isLoading = ref(true)
 
-onMounted(() => {
-  ensureResourcesLoaded(route.path)
+onMounted(async () => {
+  try {
+    await ensureResourcesLoaded(route.path)
+  } finally {
+    isLoading.value = false
+  }
 })
 
 const {
@@ -20,6 +25,7 @@ const {
   findCustomer,
   findContractItem,
   findUnit,
+  findProduct,
   findTechnician,
 } = useMasterStore()
 
@@ -38,32 +44,90 @@ const columns: TableColumn[] = [
 const now = ref(Date.now())
 setInterval(() => { now.value = Date.now() }, 60000)
 
-function getCustomerName(id: number | null) {
-  const c = findCustomer(id as any)
+function getCustomerName(row: any) {
+  if (row?.customer?.company_name || row?.customer?.name) {
+    return row.customer.company_name || row.customer.name
+  }
+  const c = findCustomer(row?.customer_id)
   return c ? c.company_name || c.name || '-' : '-'
 }
 
-function getUnitName(contractItemId: number | null) {
-  const ci = findContractItem(contractItemId)
-  if (ci && ci.unit_id) {
-    const u = findUnit(ci.unit_id)
-    return u ? u.model || u.name || '-' : '-'
+function getUnitName(row: any) {
+  if (row?.unit) {
+    const brand = row.unit.brand?.name || row.unit.brand || ''
+    const model = row.unit.model || row.unit.name || row.unit.unit_name || ''
+    return `${brand} ${model}`.trim() || '-'
+  }
+  const unitId =
+    row?.unit_id ||
+    row?.contract_item?.unit_id ||
+    findContractItem(row?.contract_item_id)?.unit_id ||
+    row?.job_order?.unit_id ||
+    row?.job_order?.service_request?.unit_id
+  if (unitId) {
+    const u = findUnit(unitId)
+    if (u) {
+      const brand = (u as any).brand?.name || (u as any).brand || ''
+      const model = u.model || u.name || ''
+      return `${brand} ${model}`.trim() || '-'
+    }
+    const p = findProduct(unitId)
+    if (p) {
+      return `[Consumable/Sparepart] ${p.name}`
+    }
+  }
+  const prodId =
+    row?.product_id ||
+    row?.job_order?.product_id ||
+    row?.job_order?.service_request?.product_id
+  if (prodId) {
+    const p = findProduct(prodId)
+    if (p) return `[Consumable/Sparepart] ${p.name}`
+  }
+  const sr = row?.job_order?.service_request
+  if (sr?.is_external) {
+    return `${sr.external_brand || ''} ${sr.external_model || ''} (Eksternal)`.trim() || '-'
   }
   return '-'
 }
 
-function getUnitSerialNo(contractItemId: number | null) {
-  const ci = findContractItem(contractItemId)
-  if (ci && ci.unit_id) {
-    const u = findUnit(ci.unit_id)
-    return u ? u.serial_no || '-' : '-'
+function getUnitSerialNo(row: any) {
+  if (row?.unit?.serial_no) return row.unit.serial_no
+  const unitId =
+    row?.unit_id ||
+    row?.contract_item?.unit_id ||
+    findContractItem(row?.contract_item_id)?.unit_id ||
+    row?.job_order?.unit_id ||
+    row?.job_order?.service_request?.unit_id
+  if (unitId) {
+    const u = findUnit(unitId)
+    if (u?.serial_no) return u.serial_no
+    const p = findProduct(unitId)
+    if (p?.sku) return p.sku
   }
+  const prodId =
+    row?.product_id ||
+    row?.job_order?.product_id
+  if (prodId) {
+    const p = findProduct(prodId)
+    if (p?.sku) return p.sku
+  }
+  const sr = row?.job_order?.service_request
+  if (sr?.external_serial_no) return sr.external_serial_no
   return '-'
 }
 
-function getTechnicianName(id: number | null) {
-  const t = findTechnician(id)
-  return t ? t.name : '-'
+function getTechnicianName(row: any) {
+  if (row?.technician?.name) return row.technician.name
+  if (row?.technician?.user?.name) return row.technician.user.name
+  if (row?.technician_name) return row.technician_name
+  if (row?.technician_id) {
+    const t = findTechnician(row.technician_id)
+    if (t?.name) return t.name
+    if ((t as any)?.user?.name) return (t as any).user.name
+  }
+  if (row?.job_order?.technician?.name) return row.job_order.technician.name
+  return '-'
 }
 
 function getSlaStatus(report: ServiceReport) {
@@ -92,21 +156,31 @@ function formatSlaTime(report: ServiceReport) {
   <div>
     <PageHeader title="Monitoring Service" />
     
-    <DataTable :columns="columns" :data="serviceReports" permission="service_report" search-placeholder="Search services...">
-      <template #cell-customer_id="{ value }">
-        {{ getCustomerName(value) }}
+    <DataTable :columns="columns" :data="serviceReports" :loading="isLoading" permission="service_report" search-placeholder="Search services...">
+      <template #cell-service_report_no="{ row, value }">
+        <span style="font-weight: 600; color: var(--color-primary);">
+          {{ value || row.report_no || row.job_order?.job_order_no || (row.id ? 'SR-' + String(row.id).slice(0, 8).toUpperCase() : '-') }}
+        </span>
       </template>
+
+      <template #cell-customer_id="{ row }">
+        {{ getCustomerName(row) }}
+      </template>
+
       <template #cell-unit="{ row }">
-        {{ getUnitName(row.contract_item_id) }}
+        {{ getUnitName(row) }}
       </template>
+
       <template #cell-serial_no="{ row }">
-        {{ getUnitSerialNo(row.contract_item_id) }}
+        {{ getUnitSerialNo(row) }}
       </template>
+
       <template #cell-machine_problem="{ value }">
-        <span class="truncate-text" :title="value">{{ value }}</span>
+        <span class="truncate-text" :title="value">{{ value || '-' }}</span>
       </template>
-      <template #cell-technician_id="{ value }">
-        {{ getTechnicianName(value) }}
+
+      <template #cell-technician_id="{ row }">
+        {{ getTechnicianName(row) }}
       </template>
       
       <template #cell-status="{ value }">
@@ -117,7 +191,7 @@ function formatSlaTime(report: ServiceReport) {
             'badge-success': value === 'completed',
             'badge-danger': value === 'cancelled'
           }">
-          {{ value.toUpperCase().replace('_', ' ') }}
+          {{ (value || 'PENDING').toUpperCase().replace('_', ' ') }}
         </span>
       </template>
       

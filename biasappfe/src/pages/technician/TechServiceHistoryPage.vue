@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
@@ -19,6 +19,14 @@ const { currentUser } = useAuth()
 const { ensureResourcesLoaded } = useMasterStore()
 const showDetailModal = ref(false)
 const selectedHistory = ref<any>(null)
+
+const currentPage = ref(1)
+const perPage = 10
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredHistory.value.length / perPage)))
+const paginatedHistory = computed(() => {
+  const start = (currentPage.value - 1) * perPage
+  return filteredHistory.value.slice(start, start + perPage)
+})
 
 function openDetail(job: any) {
   selectedHistory.value = job
@@ -274,7 +282,7 @@ function exportToExcel() {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="job in filteredHistory" :key="job.id">
+            <tr v-for="job in paginatedHistory" :key="job.id">
               <td>{{ formatCompletionDate(job) }}</td>
               <td>{{ getCustomerName(job.customer_id) }}</td>
               <td>{{ getUnitName(job.unit_id) }}</td>
@@ -308,6 +316,17 @@ function exportToExcel() {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
+        <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
+          Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, filteredHistory.length) }} dari {{ filteredHistory.length }} data
+        </div>
+        <div class="pagination-buttons" style="display: flex; gap: 6px;">
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === 1" @click="currentPage--">Prev</button>
+          <button v-for="p in totalPages" :key="p" class="btn btn-sm" :class="p === currentPage ? 'btn-primary' : 'btn-outline'" @click="currentPage = p">{{ p }}</button>
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
+        </div>
       </div>
     </div>
 

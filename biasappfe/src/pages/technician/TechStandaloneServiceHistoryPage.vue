@@ -44,6 +44,14 @@ function isFilled(row: any): boolean {
 function isPending(row: any): boolean {
   return String(row?.status || '').toLowerCase() === 'pending'
 }
+const currentPage = ref(1)
+const perPage = 10
+const totalPages = computed(() => Math.max(1, Math.ceil(standaloneList.value.length / perPage)))
+const paginatedList = computed(() => {
+  const start = (currentPage.value - 1) * perPage
+  return standaloneList.value.slice(start, start + perPage)
+})
+
 async function removeStandalone(row: any) {
   if (!isPending(row)) return
   if (!confirm(`Hapus form stand alone ${row.do_number || ''} yang masih pending?`)) return
@@ -80,7 +88,7 @@ async function removeStandalone(row: any) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in standaloneList" :key="row.id">
+            <tr v-for="row in paginatedList" :key="row.id">
               <td>
                 <div class="font-bold">{{ customerName(row.customer_id) }}</div>
                 <div class="text-xs text-muted">{{ row.delivery_address || '-' }}</div>
@@ -117,6 +125,17 @@ async function removeStandalone(row: any) {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
+        <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
+          Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, standaloneList.length) }} dari {{ standaloneList.length }} data
+        </div>
+        <div class="pagination-buttons" style="display: flex; gap: 6px;">
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === 1" @click="currentPage--">Prev</button>
+          <button v-for="p in totalPages" :key="p" class="btn btn-sm" :class="p === currentPage ? 'btn-primary' : 'btn-outline'" @click="currentPage = p">{{ p }}</button>
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
+        </div>
       </div>
     </div>
   </div>

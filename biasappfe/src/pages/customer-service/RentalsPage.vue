@@ -9,6 +9,7 @@ import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { api } from "@/services/api";
 import { resources } from "@/services/resource.service";
+import { invalidateCache } from "@/utils/requestCache";
 import {
   buildPaymentTimestamp,
   buildPaymentVerifyUrl,
@@ -28,7 +29,7 @@ import { normalizeRole } from "@/router/role-access";
 const toast = useToast();
 const { can, isAdmin } = usePermission();
 const { currentUser } = useAuth();
-const { customers, units, products, payments, refreshOnly } = useMasterStore();
+const { customers, units, products, payments, findCustomer, findUnit, findProduct, refreshOnly } = useMasterStore();
 
 // CS (dan teknisi) tidak boleh melihat nominal: rate, total amount invoice items.
 const canSeeAmount = computed(() => {
@@ -73,6 +74,7 @@ const filteredRentals = computed(() => {
 
 const showModal = ref(false);
 const isLoading = ref(false);
+const isLoadingRentals = ref(true);
 const showInvoiceModal = ref(false);
 const isLoadingRentalInvoices = ref(false);
 const selectedRental = ref<any>(null);
@@ -254,14 +256,20 @@ const rentCustomerOptions = computed(() =>
   })),
 );
 const rentUnitOptions = computed(() => [
+  // 1. Machines / Units
   ...(availableUnits.value as any[]).map((u: any) => ({
     value: "unit_" + u.id,
-    label: `${u.model} (${(u as any).brand?.name}) — S/N: ${u.serial_no || "N/A"}`,
+    label: `[Unit/Mesin] ${u.model || u.name} (${(u as any).brand?.name || u.brand || "Brand"}) — S/N: ${u.serial_no || "N/A"}`,
   })),
   ...(unavailableUnits.value as any[]).map((u: any) => ({
     value: "unit_" + u.id,
-    label: `${u.model} (${(u as any).brand?.name}) — S/N: ${u.serial_no || "N/A"} — ${unitStatusOf(u)}`,
+    label: `[Unit/Mesin] ${u.model || u.name} (${(u as any).brand?.name || u.brand || "Brand"}) — S/N: ${u.serial_no || "N/A"} — ${unitStatusOf(u)}`,
     disabled: true,
+  })),
+  // 2. Consumables / Spareparts (Products)
+  ...(products.value as any[]).map((p: any) => ({
+    value: "prod_" + p.id,
+    label: `[Consumable/Sparepart] ${p.name}${p.sku ? " (" + p.sku + ")" : ""}${p.price ? " — " + fmtRp(p.price) : ""}`,
   })),
 ]);
 const rentPaperSizeOptions = computed(() => [
@@ -407,6 +415,14 @@ function onItemSelectChange(item: any) {
     if (p) {
       item.is_copier = false;
       item.is_computer = !!(p as any).is_computer;
+      if (p.price && !item.monthly_rent) {
+        item.monthly_rent = p.price;
+      }
+      item.rates = [];
+      item.start_meter_bw = 0;
+      item.start_meter_color = 0;
+      item.free_quota_bw = 0;
+      item.free_quota_color = 0;
     }
   }
 }
@@ -453,10 +469,12 @@ async function openAdd() {
 }
 
 async function fetchRentals() {
+  isLoadingRentals.value = true;
   try {
-    const data = await api.get<{ data: any[] }>("/rents?limit=200&order_by=created_at&order_dir=desc");
-    rentals.value = data.data.map((r: any) => {
-      const c = customers.value.find((cust: any) => cust.id === r.customer_id);
+    const res = await api.get<any>("/rents?limit=200&order_by=created_at&order_dir=desc");
+    const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+    rentals.value = list.map((r: any) => {
+      const c = (customers.value || []).find((cust: any) => cust.id === r.customer_id);
       const companyName = c
         ? c.company_name || c.name || "-"
         : r.customer?.company_name || r.customer?.name || "-";
@@ -470,47 +488,64 @@ async function fetchRentals() {
   } catch (error) {
     console.error("Failed to fetch rentals data", error);
     toast.error("Gagal memuat data rental. Silakan refresh halaman.");
+  } finally {
+    isLoadingRentals.value = false;
   }
 }
 
 async function handleSubmit() {
-  if (!form.customer_id) return;
+  if (!form.customer_id) {
+    toast.error("Pilih Customer terlebih dahulu.");
+    return;
+  }
+
+  if (rentalItems.value.length === 0) {
+    toast.error("Tambahkan minimal 1 item/unit rental.");
+    return;
+  }
 
   // Validation: copier requires an initial meter (paper size/kind rates are optional)
   for (let idx = 0; idx < rentalItems.value.length; idx++) {
     const item = rentalItems.value[idx]!;
-    if (!item!.selected_item) {
-      toast.error(`Item #${idx + 1}: select a Unit / Product first.`);
+    if (!item?.selected_item) {
+      toast.error(`Item #${idx + 1}: pilih Unit / Produk terlebih dahulu.`);
       return;
     }
     if (item.is_copier) {
       if ((item.start_meter_bw ?? 0) < 0 || (item.start_meter_color ?? 0) < 0) {
         toast.error(
-          `Item #${idx + 1}: initial BW / Colour meter cannot be negative.`,
+          `Item #${idx + 1}: meteran awal BW / Warna tidak boleh negatif.`,
         );
         return;
       }
     }
   }
 
+  // Refresh paper sizes in background if possible, but do not block form if fails
   try {
     const latestPaperSizes = await resources.paperSizes.list();
-    paperSizes.value = latestPaperSizes.data as any;
-  } catch {
-    toast.error("Failed to validate paper sizes. Please try again.");
-    return;
+    const list = Array.isArray(latestPaperSizes?.data)
+      ? latestPaperSizes.data
+      : Array.isArray(latestPaperSizes)
+        ? latestPaperSizes
+        : [];
+    if (list.length > 0) {
+      paperSizes.value = list as any;
+    }
+  } catch (err) {
+    console.warn("Could not refresh paper sizes, using cached lookups:", err);
   }
 
   const validPaperSizeIDs = new Set(
-    paperSizes.value.map((paperSize) => String(paperSize.id)),
+    (paperSizes.value || []).map((paperSize) => String(paperSize.id)),
   );
   for (let itemIndex = 0; itemIndex < rentalItems.value.length; itemIndex++) {
     const rates = rentalItems.value[itemIndex]?.rates || [];
     for (let rateIndex = 0; rateIndex < rates.length; rateIndex++) {
       const paperSizeID = rates[rateIndex]?.paper_size_id;
-      if (paperSizeID && !validPaperSizeIDs.has(String(paperSizeID))) {
+      if (paperSizeID && validPaperSizeIDs.size > 0 && !validPaperSizeIDs.has(String(paperSizeID))) {
         toast.error(
-          `Item #${itemIndex + 1}, price #${rateIndex + 1}: selected paper size no longer exists. Please select it again.`,
+          `Item #${itemIndex + 1}, harga #${rateIndex + 1}: ukuran kertas yang dipilih tidak ditemukan. Silakan pilih kembali.`,
         );
         return;
       }
@@ -519,31 +554,39 @@ async function handleSubmit() {
 
   isLoading.value = true;
 
+  const startDateObj = form.start_date ? new Date(form.start_date) : new Date();
+  const startDateIso = isNaN(startDateObj.getTime())
+    ? new Date().toISOString()
+    : startDateObj.toISOString();
+
   const payload = {
-    customer_id: form.customer_id,
-    start_date: new Date(form.start_date).toISOString(),
-    duration_months: form.duration_months,
-    duration_days: form.duration_days,
+    customer_id: String(form.customer_id),
+    start_date: startDateIso,
+    duration_months: Math.max(0, Math.round(Number(form.duration_months) || 0)),
+    duration_days: Math.max(0, Math.round(Number(form.duration_days) || 0)),
     tax: 0,
     deposit: 0,
-    po_no: form.po_no,
-    notes: form.notes,
-    installation_address: form.installation_address,
+    po_no: form.po_no ? String(form.po_no).trim() : "",
+    notes: form.notes ? String(form.notes).trim() : "",
+    installation_address: form.installation_address ? String(form.installation_address).trim() : "",
     items: rentalItems.value.map((item) => {
       const isUnit = item.selected_item.startsWith("unit_");
       const isProduct = item.selected_item.startsWith("prod_");
+      const unitId = isUnit ? item.selected_item.replace("unit_", "").trim() : null;
+      const productId = isProduct ? item.selected_item.replace("prod_", "").trim() : null;
+
       return {
-        unit_id: isUnit ? item.selected_item.replace("unit_", "") : null,
-        product_id: isProduct ? item.selected_item.replace("prod_", "") : null,
-        qty: item.qty,
-        monthly_rent: item.monthly_rent,
-        start_meter_bw: item.start_meter_bw,
-        start_meter_color: item.start_meter_color,
-        free_quota_color: item.free_quota_color,
-        free_quota_bw: (item as any).free_quota_bw ?? 0,
-        placement_location: (item as any).placement_location || "",
+        unit_id: unitId || null,
+        product_id: productId || null,
+        qty: Math.max(1, Math.round(Number(item.qty) || 1)),
+        monthly_rent: Math.max(0, Math.round(Number(item.monthly_rent) || 0)),
+        start_meter_bw: Math.max(0, Math.round(Number(item.start_meter_bw) || 0)),
+        start_meter_color: Math.max(0, Math.round(Number(item.start_meter_color) || 0)),
+        free_quota_color: Math.max(0, Math.round(Number(item.free_quota_color) || 0)),
+        free_quota_bw: Math.max(0, Math.round(Number((item as any).free_quota_bw) || 0)),
+        placement_location: ((item as any).placement_location || "").trim() || "",
         specs: item.specs || {},
-        description: item.description,
+        description: item.description ? String(item.description).trim() : "",
         rates: (item.rates || [])
           .filter(
             (r: any) =>
@@ -554,12 +597,12 @@ async function handleSubmit() {
               Number(r.free_quota_color),
           )
           .map((r: any) => ({
-            paper_size_id: r.paper_size_id || null,
-            paper_type_id: r.paper_type_id || null,
-            rate_per_page_bw: Number(r.rate_per_page_bw) || 0,
-            rate_per_page_color: Number(r.rate_per_page_color) || 0,
-            free_quota_bw: Number(r.free_quota_bw) || 0,
-            free_quota_color: Number(r.free_quota_color) || 0,
+            paper_size_id: r.paper_size_id ? String(r.paper_size_id) : null,
+            paper_type_id: r.paper_type_id ? String(r.paper_type_id) : null,
+            rate_per_page_bw: Math.max(0, Math.round(Number(r.rate_per_page_bw) || 0)),
+            rate_per_page_color: Math.max(0, Math.round(Number(r.rate_per_page_color) || 0)),
+            free_quota_bw: Math.max(0, Math.round(Number(r.free_quota_bw) || 0)),
+            free_quota_color: Math.max(0, Math.round(Number(r.free_quota_color) || 0)),
             quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
           })),
       };
@@ -567,29 +610,27 @@ async function handleSubmit() {
   };
 
   try {
-    const token = sessionStorage.getItem("bias_token");
-    const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/rents`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (res.ok) {
-      toast.success(t("rentals.success"));
-      showModal.value = false;
-      fetchRentals(); // refresh
-    } else {
-      const err = await res.json();
-      toast.error(
-        t("rentals.failed", { error: err.message || JSON.stringify(err) }),
-      );
+    await api.post("/rents", payload);
+    invalidateCache("/rents");
+    toast.success(t("rentals.success"));
+    showModal.value = false;
+    await fetchRentals();
+  } catch (error: any) {
+    console.error("Failed to create rental:", error);
+    let errMessage = error.message || t("rentals.network_error");
+    if (error.response?.data?.message) {
+      errMessage = error.response.data.message;
     }
-  } catch (error) {
-    console.error(error);
-    toast.error(t("rentals.network_error"));
+    if (error.response?.data?.error) {
+      errMessage = `${errMessage}: ${error.response.data.error}`;
+    }
+    if (error.response?.data?.errors && typeof error.response.data.errors === "object") {
+      const details = Object.entries(error.response.data.errors)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ");
+      errMessage = `${errMessage} (${details})`;
+    }
+    toast.error(t("rentals.failed", { error: errMessage }));
   } finally {
     isLoading.value = false;
   }
@@ -896,6 +937,7 @@ async function exportToPdf() {
     <DataTable
       :columns="columns"
       :data="filteredRentals"
+      :loading="isLoadingRentals"
       permission="rental"
       :search-placeholder="t('rentals.search')"
     >
@@ -910,8 +952,8 @@ async function exportToPdf() {
       </template>
       <template #cell-company="{ row }">
         {{
-          customers.find((c: any) => c.id === row.customer_id)?.company_name ||
-          customers.find((c: any) => c.id === row.customer_id)?.name ||
+          findCustomer(row.customer_id)?.company_name ||
+          findCustomer(row.customer_id)?.name ||
           row.customer?.company_name ||
           row.customer?.name ||
           "-"
@@ -919,16 +961,16 @@ async function exportToPdf() {
       </template>
       <template #cell-pic_name="{ row }">
         {{
-          customers.find((c: any) => c.id === row.customer_id)?.pic_name ||
+          findCustomer(row.customer_id)?.pic_name ||
           row.customer?.pic_name ||
           "-"
         }}
       </template>
       <template #cell-start_date="{ value }">{{
-        new Date(value).toLocaleDateString("en-GB")
+        value ? new Date(value).toLocaleDateString("en-GB") : '-'
       }}</template>
       <template #cell-end_date="{ value }">{{
-        new Date(value).toLocaleDateString("en-GB")
+        value ? new Date(value).toLocaleDateString("en-GB") : '-'
       }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
       <template #cell-status="{ value }">
@@ -1004,8 +1046,8 @@ async function exportToPdf() {
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
               <div>
                 <strong style="font-size: 1.05em; display: block; color: var(--color-text);">
-                  <span v-if="item.unit">Unit: {{ item.unit.model }} (S/N: {{ item.unit.serial_no || '-' }})</span>
-                  <span v-else-if="item.product">Product: {{ item.product.name }}</span>
+                  <span v-if="item.unit || findUnit(item.unit_id)">Unit: {{ (item.unit || findUnit(item.unit_id))?.model }} (S/N: {{ (item.unit || findUnit(item.unit_id))?.serial_no || '-' }})</span>
+                  <span v-else-if="item.product || findProduct(item.product_id)">Consumable / Sparepart: {{ (item.product || findProduct(item.product_id))?.name }}</span>
                   <span v-else>Item (Unknown)</span>
                 </strong>
                 <span v-if="item.placement_location" style="font-size: 0.85em; color: var(--color-text-secondary); display: inline-block; margin-top: 4px; padding: 2px 6px; background: var(--color-surface); border-radius: 4px; border: 1px solid var(--color-border-light);">
@@ -1529,7 +1571,19 @@ async function exportToPdf() {
         :key="idx"
         class="rental-item-box"
       >
+        <div class="form-group" style="margin-bottom: var(--space-md)">
+          <label class="form-label">Select Item (Unit / Mesin or Consumable / Sparepart)</label>
+          <CustomSelect
+            v-model="item.selected_item"
+            :options="rentUnitOptions"
+            placeholder="-- Select Unit or Consumable / Sparepart --"
+            class="form-select"
+            @update:modelValue="onItemSelectChange(item)"
+          />
+        </div>
+
         <div
+          v-if="!item.selected_item.startsWith('prod_')"
           style="
             display: flex;
             flex-direction: row;
@@ -1557,20 +1611,8 @@ async function exportToPdf() {
               font-weight: var(--font-weight-bold);
             "
           >
-            Check if this item is a Copier Machine (Requires Initial Meter
-            Input)
+            Check if this item is a Copier Machine (Requires Initial Meter Input)
           </label>
-        </div>
-
-        <div class="form-group" style="margin-bottom: var(--space-md)">
-          <label class="form-label">Select Product</label>
-          <CustomSelect
-            v-model="item.selected_item"
-            :options="rentUnitOptions"
-            placeholder="-- Select Product --"
-            class="form-select"
-            @update:modelValue="onItemSelectChange(item)"
-          />
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">

@@ -4,7 +4,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 
@@ -99,6 +99,18 @@ const filterStatusOptions = [
 function goToDetail(id: number) {
   router.push(`/technician/call-services/${id}`)
 }
+
+const currentPage = ref(1)
+const perPage = 10
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredJobs.value.length / perPage)))
+const paginatedJobs = computed(() => {
+  const start = (currentPage.value - 1) * perPage
+  return filteredJobs.value.slice(start, start + perPage)
+})
+
+watch([filterStatus, filterDate, filterCustomer, filterServiceNo], () => {
+  currentPage.value = 1
+})
 </script>
 
 <template>
@@ -141,7 +153,7 @@ function goToDetail(id: number) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="job in filteredJobs" :key="job.id">
+            <tr v-for="job in paginatedJobs" :key="job.id">
               <td>{{ jobRefNo(job) }}</td>
               <td>
                 <span class="badge" :class="isDeliveryJob(job) ? 'badge-info' : 'badge-primary'">
@@ -165,6 +177,17 @@ function goToDetail(id: number) {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
+        <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
+          Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, filteredJobs.length) }} dari {{ filteredJobs.length }} data
+        </div>
+        <div class="pagination-buttons" style="display: flex; gap: 6px;">
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === 1" @click="currentPage--">Prev</button>
+          <button v-for="p in totalPages" :key="p" class="btn btn-sm" :class="p === currentPage ? 'btn-primary' : 'btn-outline'" @click="currentPage = p">{{ p }}</button>
+          <button class="btn btn-outline btn-sm" :disabled="currentPage === totalPages" @click="currentPage++">Next</button>
+        </div>
       </div>
     </div>
   </div>

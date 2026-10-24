@@ -5,7 +5,7 @@ type CacheEntry<T> = {
 };
 
 const cache = new Map<string, CacheEntry<unknown>>();
-const CACHE_TTL = 300000; // 5 minutes for master data; use getOrFetch useCache=false for live data
+const CACHE_TTL = 3000; // 3 seconds window for deduplicating concurrent requests without locking stale data
 const inflight = new Map<string, Promise<unknown>>();
 
 export function getCached<T>(key: string): T | null {
@@ -37,7 +37,7 @@ export function getOrFetch<T>(
 
   const promise = fetcher()
     .then((data) => {
-      if (useCache) setCached(key, data);
+      setCached(key, data);
       inflight.delete(key);
       return data;
     })

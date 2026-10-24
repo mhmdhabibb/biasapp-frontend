@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePermission } from "@/composables/usePermission";
 import type { TableColumn } from "@/types";
-import { computed, ref, useSlots } from "vue";
+import { computed, ref, useSlots, watch } from "vue";
 import { debounce } from "@/utils/requestCache";
 
 const props = withDefaults(
@@ -19,6 +19,8 @@ const props = withDefaults(
     totalPages?: number;
     /** Current page for server-side pagination */
     currentPage?: number;
+    /** Whether data is loading (shows shimmer skeleton) */
+    loading?: boolean;
   }>(),
   {
     columns: () => [],
@@ -29,6 +31,7 @@ const props = withDefaults(
     perPage: 10,
     totalPages: 1,
     currentPage: 1,
+    loading: false,
   },
 );
 
@@ -58,7 +61,74 @@ const showActionsColumn = computed(
 );
 
 const searchQuery = ref("");
-const currentPage = ref(props.currentPage || 1);
+const internalPage = ref(props.currentPage || 1);
+
+const perPage = computed(() => props.perPage || 10);
+
+const processedData = computed(() => {
+  const list = props.data || [];
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return list;
+  return list.filter((row: any) => {
+    if (!row || typeof row !== "object") return false;
+    return Object.values(row).some((val) => {
+      if (val == null) return false;
+      if (typeof val === "string" || typeof val === "number") {
+        return String(val).toLowerCase().includes(q);
+      }
+      return false;
+    });
+  });
+});
+
+const totalPagesCount = computed(() => {
+  if (
+    props.totalPages &&
+    props.totalPages > 1 &&
+    props.data &&
+    props.data.length <= perPage.value
+  ) {
+    return props.totalPages;
+  }
+  return Math.max(1, Math.ceil(processedData.value.length / perPage.value));
+});
+
+watch(totalPagesCount, (newTotal) => {
+  if (internalPage.value > newTotal) {
+    internalPage.value = Math.max(1, newTotal);
+  }
+});
+
+const currentPage = computed({
+  get: () => {
+    if (
+      props.totalPages &&
+      props.totalPages > 1 &&
+      props.data &&
+      props.data.length <= perPage.value
+    ) {
+      return props.currentPage || 1;
+    }
+    return internalPage.value;
+  },
+  set: (val: number) => {
+    internalPage.value = val;
+    emit("page-change", val);
+  },
+});
+
+const displayData = computed(() => {
+  if (
+    props.totalPages &&
+    props.totalPages > 1 &&
+    props.data &&
+    props.data.length <= perPage.value
+  ) {
+    return processedData.value;
+  }
+  const start = (currentPage.value - 1) * perPage.value;
+  return processedData.value.slice(start, start + perPage.value);
+});
 
 const emitSearch = debounce((query: string) => {
   emit("search", query);
@@ -66,23 +136,20 @@ const emitSearch = debounce((query: string) => {
 
 function handleSearchInput(query: string) {
   searchQuery.value = query;
-  currentPage.value = 1;
+  internalPage.value = 1;
   emit("page-change", 1);
   emitSearch(query);
 }
 
-const perPage = computed(() => props.perPage || 10);
-
 function goToPage(page: number) {
-  if (page >= 1 && page <= (props.totalPages || 1)) {
+  if (page >= 1 && page <= totalPagesCount.value) {
     currentPage.value = page;
-    emit("page-change", page);
   }
 }
 
 const visiblePages = computed(() => {
   const pages: number[] = [];
-  const total = props.totalPages || 1;
+  const total = totalPagesCount.value;
   const current = currentPage.value;
   const delta = 2;
   for (
@@ -123,12 +190,44 @@ const visiblePages = computed(() => {
       <div class="toolbar-right">
         <slot name="toolbar"></slot>
         <span class="data-count" aria-live="polite">
-          {{ `${data?.length || 0} items` }}
+          {{ `${processedData.length} items` }}
         </span>
       </div>
     </div>
 
-    <div v-if="!data || data.length === 0" class="empty-state">
+    <!-- Skeleton Loading State -->
+    <div v-if="loading" class="table-scroll">
+      <table class="data-table skeleton-table">
+        <thead>
+          <tr>
+            <th class="th-num">#</th>
+            <th
+              v-for="col in columns"
+              :key="col.key"
+              :style="col.width ? { width: col.width } : {}"
+            >
+              {{ col.label }}
+            </th>
+            <th v-if="showActionsColumn" class="th-actions">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in 5" :key="r" class="skeleton-row">
+            <td class="td-num">
+              <span class="skeleton-box skeleton-box--sm"></span>
+            </td>
+            <td v-for="col in columns" :key="col.key">
+              <span class="skeleton-box" :style="{ width: `${45 + ((r * 19 + (col.label?.length || 5) * 11) % 40)}%` }"></span>
+            </td>
+            <td v-if="showActionsColumn" class="td-actions">
+              <span class="skeleton-box skeleton-box--actions"></span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div v-else-if="!data || data.length === 0" class="empty-state">
       <svg
         width="48"
         height="48"
@@ -146,7 +245,7 @@ const visiblePages = computed(() => {
     </div>
 
     <div
-      v-else-if="searchQuery && (!data || data.length === 0)"
+      v-else-if="searchQuery && processedData.length === 0"
       class="empty-state"
     >
       <svg
@@ -181,7 +280,7 @@ const visiblePages = computed(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, idx) in data" :key="row.id ?? idx" @click="$emit('row-click', row)" style="cursor: pointer;">
+          <tr v-for="(row, idx) in displayData" :key="row.id ?? idx" @click="$emit('row-click', row)" style="cursor: pointer;">
             <td class="td-num">{{ (currentPage - 1) * perPage + idx + 1 }}</td>
             <td v-for="col in columns" :key="col.key">
               <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row">
@@ -271,30 +370,35 @@ const visiblePages = computed(() => {
       </table>
     </div>
 
-    <div v-if="data?.length > perPage && (props.totalPages || 1) > 1" class="pagination">
-      <button
-        class="btn btn-outline btn-sm"
-        :disabled="currentPage === 1"
-        @click="goToPage(currentPage - 1)"
-      >
-        Prev
-      </button>
-      <button
-        v-for="page in visiblePages"
-        :key="page"
-        class="btn btn-sm"
-        :class="page === currentPage ? 'btn-primary' : 'btn-outline'"
-        @click="goToPage(page)"
-      >
-        {{ page }}
-      </button>
-      <button
-        class="btn btn-outline btn-sm"
-        :disabled="currentPage === (props.totalPages || 1)"
-        @click="goToPage(currentPage + 1)"
-      >
-        Next
-      </button>
+    <div v-if="totalPagesCount > 1" class="pagination">
+      <div class="pagination-info">
+        Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, processedData.length) }} dari {{ processedData.length }} data
+      </div>
+      <div class="pagination-buttons">
+        <button
+          class="btn btn-outline btn-sm"
+          :disabled="currentPage === 1"
+          @click="goToPage(currentPage - 1)"
+        >
+          Prev
+        </button>
+        <button
+          v-for="page in visiblePages"
+          :key="page"
+          class="btn btn-sm"
+          :class="page === currentPage ? 'btn-primary' : 'btn-outline'"
+          @click="goToPage(page)"
+        >
+          {{ page }}
+        </button>
+        <button
+          class="btn btn-outline btn-sm"
+          :disabled="currentPage === totalPagesCount"
+          @click="goToPage(currentPage + 1)"
+        >
+          Next
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -473,9 +577,61 @@ const visiblePages = computed(() => {
 .pagination {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-xs);
-  padding: var(--space-md);
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
   border-top: 1px solid var(--color-border-light);
+  flex-wrap: wrap;
+}
+
+.pagination-info {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.pagination-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Skeleton Styles */
+.skeleton-box {
+  display: inline-block;
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(226, 232, 240, 0.6) 25%,
+    rgba(203, 213, 225, 0.9) 37%,
+    rgba(226, 232, 240, 0.6) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton-box--sm {
+  width: 20px;
+  height: 14px;
+}
+
+.skeleton-box--actions {
+  width: 60px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.skeleton-row td {
+  padding: 14px 16px;
+  vertical-align: middle;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
 }
 </style>

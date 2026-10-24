@@ -16,12 +16,8 @@ const toast = useToast();
 const { can } = usePermission();
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
-const { customers, units, sales, brands, findProduct, getUnitsByCustomer, getContractsByCustomer, deliveryOrders } =
+const { customers, units, products, sales, brands, findProduct, findUnit, getUnitsByCustomer, getContractsByCustomer, deliveryOrders } =
   useMasterStore();
-
-onMounted(() => {
-  ensureResourcesLoaded(route.path)
-})
 
 const columns: TableColumn[] = [
   { key: "request_no", label: "Request No" },
@@ -249,8 +245,9 @@ function handleModalSubmit() {
 // Fetch all rentals to know which units are rented by which customer
 async function fetchRentals() {
   try {
-    const data = await api.get<{ data: any[] }>("/rents");
-    rentalsData.value = data.data || [];
+    const data = await api.get<any>("/rents?limit=200&order_by=created_at&order_dir=desc");
+    const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+    rentalsData.value = list;
   } catch (e) {
     console.warn("Could not fetch rentals for unit list", e);
   }
@@ -265,26 +262,33 @@ async function fetchWarranties() {
   }
 }
 
-// Get units rented AND products purchased by the selected customer
+// Get units rented, products purchased, and consumables/spareparts delivered for the selected customer
 const customerRentalUnits = computed(() => {
   if (!form.customer_id) return [];
 
+  const cid = String(form.customer_id);
   const unitMap = new Map<string, any>();
 
-  // From rental items
+  // 1. From rental items (units rented + consumables/spareparts)
   for (const rental of rentalsData.value) {
-    if (rental.customer_id === form.customer_id && rental.rental_items) {
-      for (const item of rental.rental_items) {
-        if (item.unit_id && item.unit) {
-          unitMap.set(item.unit_id, {
+    if (String(rental.customer_id) === cid && (rental.rental_items || rental.items)) {
+      const rItems = rental.rental_items || rental.items || [];
+      for (const item of rItems) {
+        if (item.unit_id) {
+          const u = item.unit || findUnit(item.unit_id);
+          const brandName = u?.brand?.name || u?.brand || "";
+          const modelName = u?.model || u?.unit_name || u?.name || "Unit";
+          const sn = u?.serial_no || "-";
+          unitMap.set(String(item.unit_id), {
             id: item.unit_id,
-            label:
-              `${item.unit.brand || ""} ${item.unit.model || item.unit.unit_name || ""} (SN: ${item.unit.serial_no || "-"})`.trim(),
+            label: `[Unit/Mesin] ${brandName} ${modelName} (SN: ${sn})`.trim(),
+            itemType: "unit",
             source: "rental",
             warranty: { active: false }, // rental units are company-owned, no customer warranty
           });
         }
-        if (item.product_id && item.product) {
+        if (item.product_id) {
+          const prod = item.product || findProduct(item.product_id);
           const warranty = getWarrantyStatus(
             form.customer_id,
             null,
@@ -293,7 +297,8 @@ const customerRentalUnits = computed(() => {
           );
           unitMap.set("rent_prod_" + item.product_id, {
             id: item.product_id,
-            label: `${item.product.name || "Product"} (Qty: ${item.qty || 1})`,
+            label: `[Consumable/Sparepart] ${prod?.name || "Product"} (Qty: ${item.qty || 1})`,
+            itemType: "product",
             source: "rental",
             warranty,
           });
@@ -302,25 +307,31 @@ const customerRentalUnits = computed(() => {
     }
   }
 
-  // From sales (purchased products & units)
+  // 2. From sales (purchased machines & purchased consumables/spareparts)
   for (const sale of sales.value) {
     if (
-      (sale as any).customer_id === form.customer_id &&
-      (sale as any).sale_items
+      String((sale as any).customer_id) === cid &&
+      ((sale as any).sale_items || (sale as any).items)
     ) {
-      for (const si of (sale as any).sale_items) {
-        if (si.unit_id && si.unit) {
-          const key = si.unit_id;
+      const sItems = (sale as any).sale_items || (sale as any).items || [];
+      for (const si of sItems) {
+        if (si.unit_id) {
+          const key = String(si.unit_id);
           if (!unitMap.has(key)) {
+            const u = si.unit || findUnit(si.unit_id);
             const warranty = getWarrantyStatus(
               form.customer_id,
               null,
               null,
               (sale as any).id,
             );
+            const brandName = u?.brand?.name || u?.brand || "";
+            const modelName = u?.model || u?.unit_name || u?.name || "Unit";
+            const sn = u?.serial_no || "-";
             unitMap.set(key, {
               id: key,
-              label: `${si.unit.brand || ""} ${si.unit.model || si.unit.unit_name || ""} (SN: ${si.unit.serial_no || "-"})`.trim(),
+              label: `[Unit/Mesin] ${brandName} ${modelName} (SN: ${sn})`.trim(),
+              itemType: "unit",
               source: "sale",
               warranty,
             });
@@ -330,7 +341,6 @@ const customerRentalUnits = computed(() => {
           const prod = findProduct(si.product_id);
           const key = "sale_prod_" + si.product_id;
           if (!unitMap.has(key)) {
-            // Match by product_id OR sale_id (backend may link warranty to sale, not product)
             const warranty = getWarrantyStatus(
               form.customer_id,
               null,
@@ -339,7 +349,8 @@ const customerRentalUnits = computed(() => {
             );
             unitMap.set(key, {
               id: si.product_id,
-              label: `${prod?.name || "Product ID: " + si.product_id} (Qty: ${si.qty || 1})`,
+              label: `[Consumable/Sparepart] ${prod?.name || "Product ID: " + si.product_id} (Qty: ${si.qty || 1})`,
+              itemType: "product",
               source: "sale",
               warranty,
             });
@@ -349,17 +360,77 @@ const customerRentalUnits = computed(() => {
     }
   }
 
-  // Also from contract items
+  // 3. From delivery orders (delivered machines and consumables/spareparts for this customer)
+  for (const delivery of (deliveryOrders.value as any[])) {
+    if (String(delivery.customer_id) === cid && delivery.delivery_order_items) {
+      for (const item of delivery.delivery_order_items) {
+        if (item.unit_id) {
+          const key = String(item.unit_id);
+          if (!unitMap.has(key)) {
+            const u = item.unit || findUnit(item.unit_id);
+            const brandName = u?.brand?.name || u?.brand || "";
+            const modelName = u?.model || u?.name || "Unit";
+            const sn = u?.serial_no || "-";
+            unitMap.set(key, {
+              id: item.unit_id,
+              label: `[Unit/Mesin] ${brandName} ${modelName} (SN: ${sn})`.trim(),
+              itemType: "unit",
+              source: "delivery",
+              warranty: { active: false },
+            });
+          }
+        }
+        if (item.product_id) {
+          const key = "do_prod_" + item.product_id;
+          if (!unitMap.has(key)) {
+            const prod = item.product || findProduct(item.product_id);
+            unitMap.set(key, {
+              id: item.product_id,
+              label: `[Consumable/Sparepart] ${prod?.name || "Product ID: " + item.product_id} (Qty: ${item.qty || 1})`,
+              itemType: "product",
+              source: "delivery",
+              warranty: { active: false },
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // 4. From contract items
   const contractUnits = getUnitsByCustomer(form.customer_id as any);
   for (const u of contractUnits) {
-    if (!unitMap.has(u.id as string)) {
-      unitMap.set(u.id as string, {
+    const key = String(u.id);
+    if (!unitMap.has(key)) {
+      const brandName = (u as any).brand?.name || (u as any).brand || "";
+      const modelName = (u as any).model || (u as any).name || "Unit";
+      const sn = (u as any).serial_no || (u as any).serial_number || "-";
+      unitMap.set(key, {
         id: u.id,
-        label:
-          `${(u as any).brand || ""} ${(u as any).model || ""} (SN: ${(u as any).serial_number || "-"})`.trim(),
+        label: `[Unit/Mesin] ${brandName} ${modelName} (SN: ${sn})`.trim(),
+        itemType: "unit",
         source: "contract",
         warranty: { active: false }, // contract units are company-owned, no customer warranty
       });
+    }
+  }
+
+  // 5. Also check units directly belonging to customer in store.units
+  for (const u of (units.value || []) as any[]) {
+    if (String(u.customer_id) === cid) {
+      const key = String(u.id);
+      if (!unitMap.has(key)) {
+        const brandName = u.brand?.name || u.brand || "";
+        const modelName = u.model || u.name || "Unit";
+        const sn = u.serial_no || "-";
+        unitMap.set(key, {
+          id: u.id,
+          label: `[Unit/Mesin] ${brandName} ${modelName} (SN: ${sn})`.trim(),
+          itemType: "unit",
+          source: "assigned",
+          warranty: { active: false },
+        });
+      }
     }
   }
 
@@ -367,13 +438,13 @@ const customerRentalUnits = computed(() => {
   // dengan label "Belum Dikirim" (checkbox terkunci).
   return Array.from(unitMap.values()).map((u: any) => {
     const key = String(u.id);
-    const delivered =
+    const isDeliveredByDO =
       deliveredItemIds.value.unitIds.has(key) ||
       deliveredItemIds.value.productIds.has(key);
     return {
       ...u,
-      delivered,
-      doStatus: delivered
+      delivered: true, // Allow selecting valid recorded machines / consumables / spareparts
+      doStatus: isDeliveredByDO
         ? "delivered"
         : deliveredItemIds.value.statusOf.get(key) || null,
     };
@@ -458,6 +529,7 @@ const deliveredItemIds = computed(() => {
         (s: any) => String(s.id) === String(delivery.sale_id),
       );
       for (const item of (sale as any)?.sale_items || []) {
+        if (item.unit_id) unitIds.add(String(item.unit_id));
         if (item.product_id) productIds.add(String(item.product_id));
       }
     }
@@ -641,10 +713,18 @@ function openDetail(row: any) {
   showRequestDetailModal.value = true;
 }
 
-onMounted(() => {
-  fetchRequests();
-  fetchRentals();
-  fetchWarranties();
+onMounted(async () => {
+  isLoading.value = true;
+  try {
+    await Promise.all([
+      fetchRequests(),
+      fetchRentals(),
+      fetchWarranties(),
+      ensureResourcesLoaded(route.path),
+    ]);
+  } finally {
+    isLoading.value = false;
+  }
 });
 </script>
 
@@ -664,7 +744,7 @@ onMounted(() => {
       </button>
     </div>
 
-    <DataTable :columns="tableColumns" :data="displayedRequests"
+    <DataTable :columns="tableColumns" :data="displayedRequests" :loading="isLoading"
       :search-placeholder="listTab === 'internal' ? 'Search complaints...' : 'Search external complaints...'">
       <template #cell-request_date="{ value }">{{
         new Date(value).toLocaleDateString("en-GB")
@@ -852,12 +932,12 @@ onMounted(() => {
       </div>
 
       <div v-show="formTab === 'internal'" class="form-group mt-3">
-        <label class="form-label">Faulty Machine</label>
+        <label class="form-label">Faulty Unit / Consumable / Sparepart</label>
         <div v-if="!form.customer_id" class="field-placeholder">
           Select a customer first
         </div>
         <div v-else-if="customerRentalUnits.length === 0" class="field-placeholder">
-          Belum ada unit/barang tercatat untuk customer ini.
+          Belum ada unit mesin, consumable, atau sparepart tercatat untuk customer ini.
         </div>
         <div v-else>
           <div v-if="!hasDeliveredUnit" class="field-placeholder field-placeholder--warn">
@@ -875,18 +955,28 @@ onMounted(() => {
                 ">
                 Belum Dikirim{{ u.doStatus ? ` (DO ${u.doStatus})` : "" }}
               </span>
-              <span class="unit-source-badge" :class="u.source === 'rental'
-                ? 'badge-rental'
-                : u.source === 'sale'
-                  ? 'badge-sale'
-                  : 'badge-contract'
-                ">
+              <span class="unit-source-badge" :class="u.itemType === 'product'
+                ? 'badge-product'
+                : u.source === 'rental'
+                  ? 'badge-rental'
+                  : u.source === 'sale'
+                    ? 'badge-sale'
+                    : u.source === 'delivery'
+                      ? 'badge-delivery'
+                      : 'badge-contract'
+                "
+                :style="u.itemType === 'product' ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd;' : ''"
+              >
                 {{
-                  u.source === "rental"
-                    ? "Rental"
-                    : u.source === "sale"
-                      ? "Purchase"
-                      : "Contract"
+                  u.itemType === "product"
+                    ? "Consumable / Sparepart"
+                    : u.source === "rental"
+                      ? "Rental Unit"
+                      : u.source === "sale"
+                        ? "Purchased Unit"
+                        : u.source === "delivery"
+                          ? "Delivered Unit"
+                          : "Contract Unit"
                 }}
               </span>
               <span v-if="u.warranty?.active" class="warranty-badge warranty-active"

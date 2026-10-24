@@ -388,33 +388,43 @@ function printDO(item: any) {
   printDeliveryServiceHistory(item)
 }
 
-// ── DO Detail Modal ─────────────────────────────────────────────────────────
-const showDoDetail = ref(false)
-const doDetailItem = ref<any>(null)
-const doDetailTab = ref<'info'|'items'|'signatures'>('info')
-
-function openDoDetail(row: any) {
-  doDetailItem.value = row
-  doDetailTab.value = 'info'
-  showDoDetail.value = true
-}
-
-function getDoItemName(item: any): string {
-  if (item.product?.name) return item.product.name
-  if (item.product_id) return findProduct(item.product_id as any)?.name || `Product ${item.product_id}`
-  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_number ? ` (SN: ${item.unit.serial_number})` : ''}`
-  if (item.unit_id) {
-    const unit = findUnit(item.unit_id as any)
-    return unit ? `${unit.model}${(unit as any).serial_number ? ` (SN: ${(unit as any).serial_number})` : ''}` : `Unit ${item.unit_id}`
-  }
-  return '-'
-}
-
 // ── SR Detail Modal ─────────────────────────────────────────────────────────
 const showSrDetail = ref(false)
 const srDetailItem = ref<any>(null)
 const isLoadingDetail = ref(false)
 const srPhotoZoom = ref<string | null>(null)
+
+const showDoDetail = ref(false)
+const doDetailItem = ref<any>(null)
+const isLoadingDoDetail = ref(false)
+const doDetailTab = ref<'info' | 'items' | 'signatures'>('info')
+
+function getDoItemName(item: any): string {
+  if (item.product?.name) return item.product.name
+  if (item.product_id) return findProduct(item.product_id)?.name || `Product ${item.product_id}`
+  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_no ? ` (${item.unit.serial_no})` : ''}`
+  if (item.unit_id) {
+    const unit = findUnit(item.unit_id)
+    return unit ? `${unit.model}${unit.serial_no ? ` (${unit.serial_no})` : ''}` : `Unit ${item.unit_id}`
+  }
+  if (item.model) return `${item.model}${item.serial_no ? ` (${item.serial_no})` : ''}`
+  return '-'
+}
+
+async function openDoDetail(row: any) {
+  doDetailItem.value = row
+  doDetailTab.value = 'info'
+  showDoDetail.value = true
+  isLoadingDoDetail.value = true
+  try {
+    const res: any = await api.get(`/delivery-orders/${row.id}`)
+    doDetailItem.value = res.data?.data ?? res.data ?? row
+  } catch (err) {
+    // Keep row as fallback
+  } finally {
+    isLoadingDoDetail.value = false
+  }
+}
 
 async function openSrDetail(row: any) {
   // Show modal immediately with list data so it's never empty
@@ -1020,10 +1030,23 @@ function printTable() {
             </div>
           </section>
 
-          <section class="detail-items" v-if="doDetailItem?.photo_after" style="margin-top: 24px;">
-            <h4>Foto Sesudah Pengantaran</h4>
-            <div style="margin-top: 12px; text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md);">
-              <img :src="doDetailItem.photo_after" alt="Foto Sesudah" style="max-height: 250px; max-width: 100%; border-radius: 8px; object-fit: contain; border: 1px solid var(--color-border-light);">
+          <section class="detail-items" style="margin-top: 24px;">
+            <h4>Foto Dokumentasi</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
+              <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sebelum (Photo Before)</div>
+                <div v-if="doDetailItem?.photo_before">
+                  <img :src="doDetailItem.photo_before" alt="Foto Sebelum" style="max-height: 200px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="srPhotoZoom = doDetailItem.photo_before" />
+                </div>
+                <div v-else class="text-muted" style="padding: 30px 0; font-size: 12px;">Tidak ada foto sebelum</div>
+              </div>
+              <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sesudah (Photo After)</div>
+                <div v-if="doDetailItem?.photo_after">
+                  <img :src="doDetailItem.photo_after" alt="Foto Sesudah" style="max-height: 200px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="srPhotoZoom = doDetailItem.photo_after" />
+                </div>
+                <div v-else class="text-muted" style="padding: 30px 0; font-size: 12px;">Tidak ada foto sesudah</div>
+              </div>
             </div>
           </section>
         </div>
@@ -1063,6 +1086,16 @@ function printTable() {
         </div>
       </template>
       <template #footer>
+        <button
+          v-if="doDetailItem && (doDetailItem.status === 'delivered' || doDetailItem.status === 'completed')"
+          type="button"
+          class="btn btn-primary"
+          style="margin-right: auto;"
+          @click="printDO(doDetailItem)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 5px; vertical-align: -2px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+          Print Service History
+        </button>
         <button type="button" class="btn btn-outline" @click="showDoDetail = false">Close</button>
       </template>
     </FormModal>
