@@ -108,7 +108,7 @@ function openEdit(item: Customer) {
   showModal.value = true
 }
 
-const hardDelete = useHardDelete((id: string) => resources.customers.hardRemove(id), fetchData)
+const hardDelete = useHardDelete((id: string, cascade?: boolean) => resources.customers.hardRemove(id, cascade), fetchData)
 
 const masterStore = useMasterStore()
 
