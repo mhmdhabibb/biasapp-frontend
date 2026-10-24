@@ -194,6 +194,7 @@ async function loadAllData(silent = false) {
   await Promise.all([
     fetchJobOrders(silent),
     fetchServiceRequests(),
+    masterStore.refreshOnly(['serviceReports']),
   ]);
 }
 

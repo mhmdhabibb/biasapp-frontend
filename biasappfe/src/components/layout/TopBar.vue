@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useNotificationsStore } from "@/stores/notifications.store";
 import type { Notification } from "@/types";
 import { useAuth } from "@/composables/useAuth";
+import { useNavigationMenu } from "@/composables/useNavigationMenu";
 
 defineProps<{ title: string; hideHamburger?: boolean }>();
 defineEmits<{ (e: "toggle-sidebar"): void }>();
@@ -12,6 +13,113 @@ const router = useRouter();
 const { notifications, fetchAll, markRead, clearAll } = useNotificationsStore();
 const { currentUser } = useAuth();
 const showNotif = ref(false);
+
+const { accessibleItems, iconPaths } = useNavigationMenu();
+
+const searchQuery = ref("");
+const searchInputRef = ref<HTMLInputElement | null>(null);
+const searchContainerRef = ref<HTMLElement | null>(null);
+const isDropdownOpen = ref(false);
+const selectedIndex = ref(0);
+
+const filteredItems = computed(() => {
+  if (!searchQuery.value.trim()) {
+    return accessibleItems.value;
+  }
+  const q = searchQuery.value.trim().toLowerCase();
+  return accessibleItems.value.filter((entry) => {
+    const label = (entry.label || "").toLowerCase();
+    const group = (entry.groupTitle || "").toLowerCase();
+    const route = (entry.route || "").toLowerCase();
+    const raw = (entry.rawLabel || "").toLowerCase().replace(/sidebar\./g, "").replace(/_/g, " ");
+    return label.includes(q) || group.includes(q) || route.includes(q) || raw.includes(q);
+  });
+});
+
+watch(searchQuery, () => {
+  selectedIndex.value = 0;
+});
+
+function openDropdown() {
+  isDropdownOpen.value = true;
+}
+
+function closeDropdown() {
+  isDropdownOpen.value = false;
+  selectedIndex.value = 0;
+}
+
+function clearSearch() {
+  searchQuery.value = "";
+  selectedIndex.value = 0;
+}
+
+function selectItem(entry: { route: string }) {
+  router.push(entry.route);
+  closeDropdown();
+  searchQuery.value = "";
+  searchInputRef.value?.blur();
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (!isDropdownOpen.value) {
+    if (e.key === "ArrowDown" || e.key === "Enter") {
+      isDropdownOpen.value = true;
+      return;
+    }
+  }
+
+  const items = filteredItems.value;
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    if (items.length > 0) {
+      selectedIndex.value = (selectedIndex.value + 1) % items.length;
+      scrollToSelected();
+    }
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    if (items.length > 0) {
+      selectedIndex.value = (selectedIndex.value - 1 + items.length) % items.length;
+      scrollToSelected();
+    }
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    const target = items[selectedIndex.value] || items[0];
+    if (target) {
+      selectItem(target);
+    }
+  } else if (e.key === "Escape") {
+    closeDropdown();
+    searchInputRef.value?.blur();
+  }
+}
+
+function scrollToSelected() {
+  nextTick(() => {
+    const el = document.querySelector(".topbar-search-dropdown .is-selected");
+    if (el) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  });
+}
+
+function handleClickOutside(e: MouseEvent) {
+  if (
+    searchContainerRef.value &&
+    !searchContainerRef.value.contains(e.target as Node)
+  ) {
+    closeDropdown();
+  }
+}
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    searchInputRef.value?.focus();
+    searchInputRef.value?.select();
+    openDropdown();
+  }
+}
 
 const filteredNotifications = computed(() => {
   const user = currentUser.value as any;
@@ -34,10 +142,14 @@ let notificationInterval: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void fetchAll();
   notificationInterval = setInterval(() => void fetchAll(), 10000);
+  window.addEventListener("click", handleClickOutside);
+  window.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onUnmounted(() => {
   if (notificationInterval) clearInterval(notificationInterval);
+  window.removeEventListener("click", handleClickOutside);
+  window.removeEventListener("keydown", handleGlobalKeydown);
 });
 
 async function openNotification(notification: Notification) {
@@ -89,6 +201,103 @@ async function openNotification(notification: Notification) {
 
       <div class="topbar-title-area">
         <h1 class="topbar-title">{{ title }}</h1>
+      </div>
+
+      <!-- Interactive TopBar Module Search with Dropdown -->
+      <div v-if="!hideHamburger" class="topbar-search-container" ref="searchContainerRef">
+        <div class="topbar-search-input-box" :class="{ 'is-active': isDropdownOpen }">
+          <svg
+            class="topbar-search-icon"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            ref="searchInputRef"
+            v-model="searchQuery"
+            type="text"
+            class="topbar-search-input"
+            placeholder="Cari modul... (Ctrl K)"
+            aria-label="Cari modul"
+            @focus="openDropdown"
+            @keydown="handleKeydown"
+          />
+          <button
+            v-if="searchQuery"
+            type="button"
+            class="search-clear-btn"
+            title="Hapus pencarian (Esc)"
+            aria-label="Hapus"
+            @click.stop="clearSearch"
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <kbd v-else class="topbar-search-kbd">Ctrl K</kbd>
+        </div>
+
+        <!-- Floating Dropdown Command Palette -->
+        <div v-if="isDropdownOpen" class="topbar-search-dropdown">
+          <div class="dropdown-header">
+            <span class="dropdown-header-title">
+              {{ searchQuery ? `Hasil Pencarian (${filteredItems.length})` : 'Pilih Modul Cepat' }}
+            </span>
+            <span class="dropdown-header-hint">
+              <kbd class="mini-kbd">↑</kbd> <kbd class="mini-kbd">↓</kbd> Navigasi &nbsp;•&nbsp; <kbd class="mini-kbd">↵</kbd> Buka
+            </span>
+          </div>
+
+          <div v-if="filteredItems.length === 0" class="dropdown-empty">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <line x1="8" y1="11" x2="14" y2="11" />
+            </svg>
+            <p class="empty-title">Modul tidak ditemukan</p>
+            <p class="empty-desc">Tidak ada modul yang cocok atau role Anda tidak memiliki hak akses.</p>
+          </div>
+
+          <ul v-else class="dropdown-list">
+            <li
+              v-for="(entry, idx) in filteredItems"
+              :key="entry.route"
+              class="dropdown-item"
+              :class="{ 'is-selected': idx === selectedIndex }"
+              @mouseenter="selectedIndex = idx"
+              @click="selectItem(entry)"
+            >
+              <div class="item-icon-wrapper">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path :d="iconPaths[entry.icon] || iconPaths.grid" />
+                </svg>
+              </div>
+              <div class="item-info">
+                <span class="item-label">{{ entry.label }}</span>
+                <span class="item-badge">{{ entry.groupTitle }}</span>
+              </div>
+              <span v-if="idx === selectedIndex" class="item-enter-hint">↵ Enter</span>
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
 
@@ -238,6 +447,266 @@ async function openNotification(notification: Notification) {
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
   margin: 0;
+}
+
+.topbar-search-container {
+  position: relative;
+  margin-left: var(--space-md);
+  width: 250px;
+}
+
+@media (min-width: 1024px) {
+  .topbar-search-container {
+    width: 320px;
+  }
+}
+
+.topbar-search-input-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-base);
+  padding: 0 10px;
+  height: 36px;
+  transition: all var(--transition-fast);
+}
+
+.topbar-search-input-box:hover {
+  background: var(--color-surface);
+  border-color: #cbd5e1;
+}
+
+.topbar-search-input-box.is-active,
+.topbar-search-input-box:focus-within {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(48, 92, 255, 0.12);
+}
+
+.topbar-search-icon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  transition: color var(--transition-fast);
+}
+
+.topbar-search-input-box.is-active .topbar-search-icon,
+.topbar-search-input-box:focus-within .topbar-search-icon {
+  color: var(--color-primary);
+}
+
+.topbar-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 12.5px;
+  color: var(--color-text);
+  font-family: inherit;
+}
+
+.topbar-search-input::placeholder {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.topbar-search-kbd {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 5px;
+  line-height: 1;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.search-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.search-clear-btn:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+/* Floating Dropdown Command Palette */
+.topbar-search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 360px;
+  max-width: 90vw;
+  max-height: 420px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: dropdownFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--color-surface-raised);
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: 11px;
+}
+
+.dropdown-header-title {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.dropdown-header-hint {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.mini-kbd {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.dropdown-list {
+  list-style: none;
+  padding: 6px;
+  margin: 0;
+  overflow-y: auto;
+  max-height: 360px;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.dropdown-item.is-selected {
+  background: var(--color-primary-surface);
+  color: var(--color-primary);
+}
+
+.item-icon-wrapper {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.dropdown-item.is-selected .item-icon-wrapper {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.item-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-item.is-selected .item-label {
+  color: var(--color-primary);
+}
+
+.item-badge {
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+}
+
+.item-enter-hint {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: rgba(48, 92, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.dropdown-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.dropdown-empty svg {
+  margin-bottom: 6px;
+  opacity: 0.7;
+}
+
+.dropdown-empty .empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 2px;
+}
+
+.dropdown-empty .empty-desc {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 640px) {
+  .topbar-search-container {
+    display: none;
+  }
 }
 
 .topbar-right {

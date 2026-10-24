@@ -356,12 +356,15 @@ function declineNewStandaloneDelivery() {
 }
 
 const slaDurationStr = computed(() => {
-  if (!job.value) return '-'
+  if (!job.value || !job.value.created_at) return '-'
   const created = new Date(job.value.created_at).getTime()
-  const end = (job.value.status === 'completed' && job.value.time_out)
-    ? new Date(job.value.time_out).getTime()
-    : new Date().getTime()
-  const hours = (end - created) / (1000 * 60 * 60)
+  if (isNaN(created)) return '-'
+  const completionTime = job.value.completed_at || job.value.updated_at
+  const end = (job.value.status === 'completed' && completionTime)
+    ? new Date(completionTime).getTime()
+    : Date.now()
+  if (isNaN(end)) return '-'
+  const hours = Math.max(0, (end - created) / (1000 * 60 * 60))
   return `${hours.toFixed(1)} Hours`
 })
 
@@ -597,7 +600,7 @@ async function confirmCompleteJob() {
       await api.patch(`/service-reports/${serviceReport.value.id}`, {
         status: 'completed',
         is_completed: true,
-        time_out: now,
+        time_out: nowHM(),
       })
     }
 

@@ -81,8 +81,18 @@ const filteredHistory = computed(() => {
       }
     }
     return true
-  }).sort((a, b) => new Date(b.time_out || b.updated_at).getTime() - new Date(a.time_out || a.updated_at).getTime())
+  }).sort((a, b) => new Date(b.service_date || b.updated_at || 0).getTime() - new Date(a.service_date || a.updated_at || 0).getTime())
 })
+
+function formatCompletionDate(job: any): string {
+  if (!job) return '-'
+  const dateStr = job.service_date || job.updated_at || job.created_at
+  if (!dateStr) return '-'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '-'
+  const formattedDate = d.toLocaleDateString('en-GB')
+  return job.time_out ? `${formattedDate}, ${job.time_out}` : formattedDate
+}
 
 const SERVICE_TYPE_LABELS: Record<string, string> = {
   regular: 'Regular',
@@ -135,7 +145,7 @@ function exportToPdf() {
   
   filteredHistory.value.forEach((job: any) => {
     html += '<tr>'
-    html += `<td>${job.time_out ? new Date(job.time_out).toLocaleString('en-GB') : '-'}</td>`
+    html += `<td>${formatCompletionDate(job)}</td>`
     html += `<td>${getCustomerName(job.customer_id)}</td>`
     html += `<td>${getUnitName(job.unit_id)}</td>`
     html += `<td>${getServiceTypeLabel(job.service_type)}</td>`
@@ -166,7 +176,7 @@ function exportToExcel() {
   }
 
   const data = filteredHistory.value.map((job: any) => ({
-    'Completion Date': job.time_out ? new Date(job.time_out).toLocaleString('en-GB') : '-',
+    'Completion Date': formatCompletionDate(job),
     'Customer': getCustomerName(job.customer_id),
     'Unit & SN': getUnitName(job.unit_id),
     'Service Type': getServiceTypeLabel(job.service_type),
@@ -265,7 +275,7 @@ function exportToExcel() {
           </thead>
           <tbody>
             <tr v-for="job in filteredHistory" :key="job.id">
-              <td>{{ job.time_out ? new Date(job.time_out).toLocaleString('en-GB') : '-' }}</td>
+              <td>{{ formatCompletionDate(job) }}</td>
               <td>{{ getCustomerName(job.customer_id) }}</td>
               <td>{{ getUnitName(job.unit_id) }}</td>
               <td>
@@ -320,7 +330,7 @@ function exportToExcel() {
           </div>
           <div>
             <div style="color: var(--color-text-muted); font-size: 11px;">Tanggal Selesai</div>
-            <div>{{ selectedHistory.time_out ? new Date(selectedHistory.time_out).toLocaleString('en-GB') : '-' }}</div>
+            <div>{{ formatCompletionDate(selectedHistory) }}</div>
           </div>
           <div>
             <div style="color: var(--color-text-muted); font-size: 11px;">Tipe Service</div>
