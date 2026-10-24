@@ -11,8 +11,8 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import type { Sale, TableColumn } from '@/types'
-import { computed, reactive, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { apiRequest } from '@/services/api'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { buildPaymentTimestamp } from '@/utils/paymentReceipt'
 import { normalizeRole } from '@/router/role-access'
@@ -102,6 +102,7 @@ const columns: TableColumn[] = [
   { key: 'sale_no', label: 'Code' },
   { key: 'customer_id', label: 'Company' },
   { key: 'pic_name', label: 'PIC Name' },
+  { key: 'do_number', label: 'DO No.' },
   { key: 'total', label: 'Total' },
   { key: 'status', label: 'Status' },
 ]
@@ -126,6 +127,72 @@ function closeSaleItemDetail() {
 }
 
 const showPaymentModal = ref(false)
+const showCreateDOModal = ref(false)
+const targetSaleForDO = ref<any>(null)
+const isSubmittingDO = ref(false)
+const doForm = reactive({
+  do_number: '',
+  delivery_date: '',
+  delivery_address: '',
+  recipient_name: '',
+  recipient_phone: '',
+  notes: '',
+})
+
+function hasActiveDO(sale: any): boolean {
+  if (!sale) return false
+  return Array.isArray(sale.delivery_orders) && sale.delivery_orders.length > 0
+}
+
+function getDONumber(sale: any): string {
+  if (!sale) return '-'
+  if (Array.isArray(sale.delivery_orders) && sale.delivery_orders.length > 0) {
+    return sale.delivery_orders[0].do_number || '-'
+  }
+  return '-'
+}
+
+function openCreateDOModal(sale: any) {
+  targetSaleForDO.value = sale
+  const existingDONo = sale?.delivery_orders?.[0]?.do_number || ''
+  const cust = sale?.customer || findCustomer(sale?.customer_id)
+
+  doForm.do_number = existingDONo
+  doForm.delivery_date = new Date().toISOString().slice(0, 10)
+  doForm.delivery_address = sale?.installation_address || cust?.address || ''
+  doForm.recipient_name = cust?.pic_name || cust?.company_name || ''
+  doForm.recipient_phone = cust?.phone || ''
+  doForm.notes = `Delivery for sale ${sale?.sale_no || ''}`.trim()
+
+  showCreateDOModal.value = true
+}
+
+async function submitCreateDO() {
+  if (!targetSaleForDO.value || isSubmittingDO.value) return
+  isSubmittingDO.value = true
+  try {
+    const payload = {
+      do_number: doForm.do_number ? doForm.do_number.trim() : undefined,
+      delivery_date: doForm.delivery_date ? new Date(doForm.delivery_date).toISOString() : new Date().toISOString(),
+      delivery_address: doForm.delivery_address,
+      recipient_name: doForm.recipient_name,
+      recipient_phone: doForm.recipient_phone,
+      notes: doForm.notes,
+    }
+    await apiRequest({
+      url: `/sales/${targetSaleForDO.value.id}/delivery-order`,
+      method: 'POST',
+      data: payload,
+    })
+    toast.success('Surat Jalan (DO) berhasil dibuat/dipulihkan!')
+    showCreateDOModal.value = false
+    await resources.fetchAll('sales')
+  } catch (err: any) {
+    toast.error(toast.fromError(err, 'Gagal membuat Surat Jalan (DO)'))
+  } finally {
+    isSubmittingDO.value = false
+  }
+}
 const paymentData = reactive({
   amount: 0,
   payment_date: new Date().toISOString().substring(0, 10),
@@ -1157,6 +1224,14 @@ const combinedItemOptions = computed(() => {
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-service_charge="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-tax="{ value }">{{ formatRupiah(value || 0) }}</template>
+      <template #cell-do_number="{ row }">
+        <span v-if="hasActiveDO(row)" class="badge badge-info" style="font-family: monospace; font-size: 0.78rem;">
+          {{ getDONumber(row) }}
+        </span>
+        <span v-else class="text-muted" style="font-size: 0.78rem; font-style: italic;">
+          No DO
+        </span>
+      </template>
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-status="{ value }">
         <span
@@ -1206,6 +1281,21 @@ const combinedItemOptions = computed(() => {
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
               <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+          <!-- Create / Restore Delivery Order Button -->
+          <button
+            class="action-btn action-btn--edit"
+            :title="hasActiveDO(row) ? `DO: ${getDONumber(row)} (Klik untuk buat ulang/kelola)` : 'Buat Surat Jalan (DO)'"
+            @click="openCreateDOModal(row)"
+            :style="{ color: hasActiveDO(row) ? 'var(--color-primary)' : '#e67e22', width: '36px', height: '36px' }"
+          >
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1" y="3" width="15" height="13"></rect>
+              <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+              <circle cx="5.5" cy="18.5" r="2.5"></circle>
+              <circle cx="18.5" cy="18.5" r="2.5"></circle>
             </svg>
           </button>
           <button v-if="can('sale:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="width: 36px; height: 36px;">
@@ -1637,6 +1727,127 @@ const combinedItemOptions = computed(() => {
       <template #footer>
         <button class="btn btn-outline" @click="showPaymentModal = false">Cancel</button>
         <button class="btn btn-accent" @click="handlePayment">Save Payment</button>
+      </template>
+    </FormModal>
+
+    <FormModal
+      :open="showCreateDOModal"
+      :title="hasActiveDO(targetSaleForDO) ? 'Surat Jalan / Delivery Order (DO)' : 'Buat / Pulihkan Surat Jalan (DO)'"
+      @close="showCreateDOModal = false"
+      @submit="submitCreateDO"
+      :max-width="'650px'"
+    >
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- Sale Info Banner -->
+        <div style="background: var(--color-surface-raised, #f8f9fa); padding: 12px; border-radius: 8px; border: 1px solid var(--color-border);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 0.85rem; color: var(--color-text-muted);">Sale Code:</span>
+            <strong style="font-family: monospace; font-size: 0.95rem;">{{ targetSaleForDO?.sale_no }}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.85rem; color: var(--color-text-muted);">Customer:</span>
+            <strong>{{ customerName(targetSaleForDO?.customer_id) }}</strong>
+          </div>
+        </div>
+
+        <!-- DO Number Field -->
+        <div class="form-group">
+          <label class="form-label" style="display: flex; justify-content: space-between;">
+            <span>DO Number (Nomor Surat Jalan)</span>
+            <span style="font-size: 0.78rem; color: var(--color-text-muted);">Kosongkan untuk nomor otomatis baru</span>
+          </label>
+          <input
+            v-model="doForm.do_number"
+            type="text"
+            class="form-input"
+            placeholder="Contoh: Bi/DO/0001/X-2026 atau nomor DO sebelumnya"
+          />
+          <small style="display: block; margin-top: 4px; color: var(--color-text-muted); font-size: 0.78rem;">
+            💡 <em>Jika DO unassigned sebelumnya terhapus dari database, isi nomor yang sama di atas agar dibuat ulang dengan nomor yang sama.</em>
+          </small>
+        </div>
+
+        <!-- Date & Recipient Fields -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Delivery Date</label>
+            <input
+              v-model="doForm.delivery_date"
+              type="date"
+              class="form-input"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Recipient Phone</label>
+            <input
+              v-model="doForm.recipient_phone"
+              type="text"
+              class="form-input"
+              placeholder="No. Telepon Penerima"
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Recipient Name / PIC</label>
+          <input
+            v-model="doForm.recipient_name"
+            type="text"
+            class="form-input"
+            placeholder="Nama Penerima"
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Delivery Address</label>
+          <textarea
+            v-model="doForm.delivery_address"
+            class="form-textarea"
+            rows="2"
+            placeholder="Alamat Pengiriman..."
+            required
+          ></textarea>
+        </div>
+
+        <!-- Items to Deliver -->
+        <div v-if="targetSaleForDO?.sale_items?.length" class="form-group">
+          <label class="form-label">Items to be Delivered ({{ targetSaleForDO.sale_items.length }})</label>
+          <div style="max-height: 140px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+              <thead>
+                <tr style="background: var(--color-surface-raised, #f1f3f5); text-align: left;">
+                  <th style="padding: 6px 10px;">Item</th>
+                  <th style="padding: 6px 10px; width: 60px; text-align: center;">Qty</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(si, idx) in targetSaleForDO.sale_items" :key="idx" style="border-top: 1px solid var(--color-border);">
+                  <td style="padding: 6px 10px;">
+                    {{ findProduct(si.product_id)?.name || findUnit(si.unit_id)?.model || 'Item' }}
+                    <span v-if="findUnit(si.unit_id)?.serial_no" style="font-size: 0.75rem; color: var(--color-text-muted);">
+                      (SN: {{ findUnit(si.unit_id)?.serial_no }})
+                    </span>
+                  </td>
+                  <td style="padding: 6px 10px; text-align: center; font-weight: bold;">
+                    {{ si.qty }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; width: 100%;">
+          <button type="button" class="btn btn-outline" @click="showCreateDOModal = false" :disabled="isSubmittingDO">
+            Batal
+          </button>
+          <button type="button" class="btn btn-primary" @click="submitCreateDO" :disabled="isSubmittingDO">
+            {{ isSubmittingDO ? 'Memproses...' : (hasActiveDO(targetSaleForDO) ? 'Buat Ulang DO' : 'Buat Surat Jalan (DO)') }}
+          </button>
+        </div>
       </template>
     </FormModal>
 
