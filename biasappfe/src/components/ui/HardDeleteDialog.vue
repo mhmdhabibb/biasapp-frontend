@@ -87,7 +87,13 @@ const canConfirm = () => {
 
           <div v-if="showCascadeOption" class="hd-cascade-selector">
             <div class="hd-cascade-title">Pilih Mode Penghapusan:</div>
-            <label class="hd-option" :class="{ 'hd-option--active': !cascade }">
+            <div
+              class="hd-option"
+              :class="{ 'hd-option--active': !cascade }"
+              role="button"
+              tabindex="0"
+              @click="emit('update:cascade', false)"
+            >
               <input
                 type="radio"
                 name="hd-cascade-mode"
@@ -100,9 +106,15 @@ const canConfirm = () => {
                   Hanya menghapus customer ini. Relasi data lainnya tidak ikut dihapus.
                 </span>
               </div>
-            </label>
+            </div>
 
-            <label class="hd-option hd-option--danger" :class="{ 'hd-option--active': cascade }">
+            <div
+              class="hd-option hd-option--danger"
+              :class="{ 'hd-option--active': cascade }"
+              role="button"
+              tabindex="0"
+              @click="emit('update:cascade', true)"
+            >
               <input
                 type="radio"
                 name="hd-cascade-mode"
@@ -115,7 +127,7 @@ const canConfirm = () => {
                   Menghapus customer dan SEMUA relasi transaksi (Sales, Rental, Invoices, Kontrak, Garansi, Surat Jalan, dsb).
                 </span>
               </div>
-            </label>
+            </div>
           </div>
 
           <p class="hd-hint">
