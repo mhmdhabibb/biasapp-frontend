@@ -219,6 +219,7 @@ watch(
 const unassignedRequests = computed<any[]>(() => {
   const assignedSrIds = new Set(
     jobOrders.value
+      .filter((j: any) => !!j.technician_id)
       .map((j: any) => String(j.service_request_id || ""))
       .filter(Boolean),
   );
@@ -246,6 +247,7 @@ const unassignedRequests = computed<any[]>(() => {
 const assignedDeliveryIds = computed(() => {
   return new Set(
     jobOrders.value
+      .filter((j: any) => !!j.technician_id)
       .map((j: any) => j.delivery_order_id || j.delivery_order?.id)
       .filter(Boolean)
       .map(String),
@@ -336,6 +338,7 @@ const unassignedMaintenance = computed<any[]>(() => {
 
   const assignedSrIds = new Set(
     jobOrders.value
+      .filter((j: any) => !!j.technician_id)
       .map((j: any) => String(j.service_request_id || ""))
       .filter(Boolean),
   );
@@ -997,42 +1000,88 @@ async function confirmAssign() {
   } else if (task.taskType === "do") {
     const doNumber =
       task.do_number || task.delivery_no || task.delivery_order?.do_number;
-    const payload = {
-      job_order_no: doNumber || `DO-${Date.now().toString().slice(-6)}`,
-      delivery_order_id: task.id,
-      job_type: "delivery",
-      technician_id: techId,
-      scheduled_date: new Date(assignDeliveryDate.value).toISOString(),
-      instructions: task.notes || `Delivery ${doNumber || ""}`.trim(),
-      assigner_signature: assignSignature.value,
-      assigner_name: assignerName,
-    };
-    try {
-      await apiRequest({ url: `/job-orders`, method: "POST", data: payload });
-      await fetchJobOrders();
-      await fetchDeliveryOrders();
-      toast.success("Delivery order successfully assigned to technician.");
-    } catch (error) {
-      toast.error(toast.fromError(error, "Failed to assign delivery order"));
+    const existingJob = jobOrders.value.find(
+      (j: any) =>
+        !j.technician_id &&
+        String(j.delivery_order_id || j.delivery_order?.id || "") === String(task.id)
+    );
+    if (existingJob) {
+      const payload = {
+        technician_id: techId,
+        scheduled_date: new Date(assignDeliveryDate.value).toISOString(),
+        status: "scheduled",
+        assigner_signature: assignSignature.value,
+        assigner_name: assignerName,
+      };
+      try {
+        await apiRequest({ url: `/job-orders/${existingJob.id}`, method: "PUT", data: payload });
+        await fetchJobOrders();
+        await fetchDeliveryOrders();
+        toast.success("Delivery order successfully assigned to technician.");
+      } catch (error) {
+        toast.error(toast.fromError(error, "Failed to assign delivery order"));
+      }
+    } else {
+      const payload = {
+        job_order_no: doNumber || `DO-${Date.now().toString().slice(-6)}`,
+        delivery_order_id: task.id,
+        job_type: "delivery",
+        technician_id: techId,
+        scheduled_date: new Date(assignDeliveryDate.value).toISOString(),
+        instructions: task.notes || `Delivery ${doNumber || ""}`.trim(),
+        assigner_signature: assignSignature.value,
+        assigner_name: assignerName,
+      };
+      try {
+        await apiRequest({ url: `/job-orders`, method: "POST", data: payload });
+        await fetchJobOrders();
+        await fetchDeliveryOrders();
+        toast.success("Delivery order successfully assigned to technician.");
+      } catch (error) {
+        toast.error(toast.fromError(error, "Failed to assign delivery order"));
+      }
     }
   } else {
-    const payload = {
-      job_order_no: `JO-${Date.now().toString().slice(-6)}`,
-      service_request_id: task.id,
-      technician_id: techId,
-      scheduled_date: new Date(assignScheduledDate.value).toISOString(),
-      instructions: task.problem_description || "Please check the unit",
-      assigner_signature: assignSignature.value,
-      assigner_name: assignerName,
-    };
+    const existingJob = jobOrders.value.find(
+      (j: any) =>
+        !j.technician_id &&
+        String(j.service_request_id || "") === String(task.id)
+    );
+    if (existingJob) {
+      const payload = {
+        technician_id: techId,
+        scheduled_date: new Date(assignScheduledDate.value).toISOString(),
+        status: "scheduled",
+        assigner_signature: assignSignature.value,
+        assigner_name: assignerName,
+      };
+      try {
+        await apiRequest({ url: `/job-orders/${existingJob.id}`, method: "PUT", data: payload });
+        await fetchJobOrders();
+        await fetchServiceRequests();
+        toast.success("Job order successfully assigned to technician.");
+      } catch (error) {
+        toast.error("Failed to assign job order");
+      }
+    } else {
+      const payload = {
+        job_order_no: `JO-${Date.now().toString().slice(-6)}`,
+        service_request_id: task.id,
+        technician_id: techId,
+        scheduled_date: new Date(assignScheduledDate.value).toISOString(),
+        instructions: task.problem_description || "Please check the unit",
+        assigner_signature: assignSignature.value,
+        assigner_name: assignerName,
+      };
 
-    try {
-      await apiRequest({ url: `/job-orders`, method: "POST", data: payload });
-      await fetchJobOrders();
-      await fetchServiceRequests();
-      toast.success("Job order successfully assigned to technician.");
-    } catch (error) {
-      toast.error("Failed to assign job order");
+      try {
+        await apiRequest({ url: `/job-orders`, method: "POST", data: payload });
+        await fetchJobOrders();
+        await fetchServiceRequests();
+        toast.success("Job order successfully assigned to technician.");
+      } catch (error) {
+        toast.error("Failed to assign job order");
+      }
     }
   }
 
@@ -1056,7 +1105,11 @@ async function cancelJobAssignment(jobId: string) {
       method: "POST",
     });
     toast.success("Technician assignment cancelled successfully");
-    await fetchJobOrders();
+    await Promise.all([
+      fetchJobOrders(),
+      fetchServiceRequests(),
+      fetchDeliveryOrders(),
+    ]);
     closeDetail();
   } catch (error) {
     toast.error(toast.fromError(error, "Failed to cancel assignment"));
