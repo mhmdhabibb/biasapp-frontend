@@ -78,7 +78,16 @@ async function fetchJobOrders() {
 
       const sr = j.service_request || null;
       const srpt = j.service_report || null;
-      const doObj = j.delivery_order || null;
+      let doObj = j.delivery_order || null;
+      const doTargetId = j.delivery_order_id || doObj?.id;
+      if (doTargetId) {
+        const fullDo = deliveryOrders.value.find(
+          (d: any) => String(d.id) === String(doTargetId),
+        );
+        if (fullDo) {
+          doObj = { ...fullDo, ...doObj };
+        }
+      }
       const customer =
         sr?.customer || doObj?.customer || srpt?.customer || j.customer || null;
 
@@ -88,10 +97,18 @@ async function fetchJobOrders() {
       else if (isVisit) taskType = "visit";
 
       const doNum = doObj?.do_number || doObj?.delivery_no || j.do_number;
+      const resolvedTechId =
+        j.technician_id ||
+        j.technician?.id ||
+        j.technician?.technician_id ||
+        j.technician?.user_id ||
+        null;
+
       return {
         ...j,
-        technician_id: j.technician_id,
+        technician_id: resolvedTechId,
         taskType,
+        delivery_order: doObj || j.delivery_order,
         do_number: doNum || j.do_number,
         service_request_no: isDelivery
           ? doNum || j.job_order_no || "-"
@@ -143,10 +160,10 @@ async function fetchDeliveryOrders() {
 
 async function loadAllData() {
   await Promise.all([
-    fetchJobOrders(),
     fetchServiceRequests(),
     fetchDeliveryOrders(),
   ]);
+  await fetchJobOrders();
 }
 
 onMounted(async () => {
@@ -165,6 +182,36 @@ watch(
   () => technicians.value,
   () => {
     // Re-evaluate tanpa mengosongkan state
+  },
+  { deep: true },
+);
+
+watch(
+  () => deliveryOrders.value,
+  () => {
+    if (jobOrders.value.length > 0) {
+      jobOrders.value = jobOrders.value.map((j: any) => {
+        let doObj = j.delivery_order;
+        const doTargetId = j.delivery_order_id || doObj?.id;
+        if (
+          (!doObj ||
+            !doObj.delivery_order_items ||
+            doObj.delivery_order_items.length === 0) &&
+          doTargetId
+        ) {
+          const fullDo = deliveryOrders.value.find(
+            (d: any) => String(d.id) === String(doTargetId),
+          );
+          if (fullDo) {
+            return {
+              ...j,
+              delivery_order: { ...fullDo, ...doObj },
+            };
+          }
+        }
+        return j;
+      });
+    }
   },
   { deep: true },
 );
@@ -361,11 +408,41 @@ function getJobsForTech(techId: string | number): any[] {
   );
 
   const jobs = jobOrders.value
-    .filter((j: any) => validTechIds.has(String(j.technician_id || "")))
-    .map((j: any) => ({
-      ...j,
-      taskType: j.taskType || (j.job_type === "delivery" ? "do" : "sr"),
-    }));
+    .filter((j: any) => {
+      const techIdVal =
+        j.technician_id ||
+        j.technician?.id ||
+        j.technician?.technician_id ||
+        j.technician?.user_id ||
+        "";
+      const userVal = j.technician?.user?.id || "";
+      return (
+        validTechIds.has(String(techIdVal)) ||
+        (userVal !== "" && validTechIds.has(String(userVal)))
+      );
+    })
+    .map((j: any) => {
+      let doObj = j.delivery_order;
+      const doTargetId = j.delivery_order_id || doObj?.id;
+      if (
+        (!doObj ||
+          !doObj.delivery_order_items ||
+          doObj.delivery_order_items.length === 0) &&
+        doTargetId
+      ) {
+        const fullDo = deliveryOrders.value.find(
+          (d: any) => String(d.id) === String(doTargetId),
+        );
+        if (fullDo) {
+          doObj = { ...fullDo, ...doObj };
+        }
+      }
+      return {
+        ...j,
+        delivery_order: doObj || j.delivery_order,
+        taskType: j.taskType || (j.job_type === "delivery" ? "do" : "sr"),
+      };
+    });
 
   const covered = new Set(
     jobs
@@ -2588,6 +2665,9 @@ async function cancelJobAssignment(jobId: string) {
   flex-direction: column;
   padding: var(--space-base);
   gap: var(--space-sm);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar-header {
@@ -2649,11 +2729,30 @@ async function cancelJobAssignment(jobId: string) {
 
 .unassigned-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  padding-right: 2px;
+  padding-right: 4px;
+}
+
+.unassigned-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.unassigned-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.unassigned-list::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+.unassigned-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
 }
 
 .empty-state {
@@ -2840,13 +2939,14 @@ async function cancelJobAssignment(jobId: string) {
 }
 
 .job-card {
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   gap: var(--space-sm);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: 16px;
+  padding: 12px 14px;
   width: 100%;
   box-shadow: var(--shadow-xs);
   transition:
@@ -2854,7 +2954,6 @@ async function cancelJobAssignment(jobId: string) {
     box-shadow var(--transition-base),
     border-color var(--transition-base);
   position: relative;
-  overflow: hidden;
 }
 
 .job-card:hover {
@@ -2935,13 +3034,13 @@ async function cancelJobAssignment(jobId: string) {
   align-items: center;
   gap: var(--space-xs);
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .ref-no {
   color: var(--color-primary);
   font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
   white-space: nowrap;
 }
 
@@ -2949,7 +3048,7 @@ async function cancelJobAssignment(jobId: string) {
   margin-left: auto;
   background: var(--color-surface-sunken);
   color: var(--color-text-secondary);
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-radius: var(--radius-full);
   font-size: 11px;
   font-weight: var(--font-weight-medium);
@@ -2958,13 +3057,18 @@ async function cancelJobAssignment(jobId: string) {
 
 .card-body {
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: 1.4;
   border-top: 1px solid var(--color-border-light);
-  padding-top: 12px;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .problem-text {
   color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -2984,7 +3088,7 @@ async function cancelJobAssignment(jobId: string) {
 .card-customer svg,
 .card-address svg {
   flex-shrink: 0;
-  margin-top: 1px;
+  margin-top: 2px;
   opacity: 0.55;
 }
 
@@ -3002,7 +3106,7 @@ async function cancelJobAssignment(jobId: string) {
 }
 
 .card-body > .card-customer + .card-address {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .detail-hero {
