@@ -1057,31 +1057,7 @@ function printTable() {
         <button type="button" class="btn btn-outline" @click="showDoDetail = false">Close</button>
       </template>
     </FormModal>
-    <!-- Sparepart Requests Tab -->
-    <DataTable v-if="activeTab === 'sparepart'" :columns="sprColumns" :data="filteredSparepartRequests" permission="service_sparepart" search-placeholder="Search requests...">
-      <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
-      <template #cell-service_report_id="{ row }">{{ getSR(row) }}</template>
-      <template #cell-technician_id="{ row }">{{ sprTechName(row) }}</template>
-      <template #cell-status="{ value }">
-        <span class="badge" :class="{
-          'badge-warning': value === 'pending',
-          'badge-success': value === 'po_created' || value === 'completed',
-          'badge-danger': value === 'rejected'
-        }">
-          {{ value || 'pending' }}
-        </span>
-      </template>
-      <template #cell-created_at="{ value }">
-        {{ new Date(value).toLocaleDateString() }}
-      </template>
-      <template #cell-actions="{ row }">
-        <button v-if="row.status === 'pending' && can('purchase_order:create')" class="btn btn-sm btn-primary"
-          :disabled="creatingId !== null" @click="openCreatePOModal(row)">
-          {{ creatingId === row.id ? 'Creating...' : 'Create PO' }}
-        </button>
-        <span v-else class="text-muted text-sm">Processed</span>
-      </template>
-    </DataTable>
+
     <FormModal :open="showModal" :title="editingItem ? 'Edit Service Report' : 'Add Service Report'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="sr-no" class="form-label">Report No.</label>
