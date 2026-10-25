@@ -55,7 +55,7 @@ export function invalidateCache(pattern?: string): void {
     cache.clear();
     return;
   }
-  const clean = pattern.split("?")[0].replace(/^\/+|\/+$/g, "");
+  const clean = (pattern.split("?")[0] || "").replace(/^\/+|\/+$/g, "");
   const segments = clean.split("/");
   const rootResource = segments[0] ? `/${segments[0]}` : "";
 

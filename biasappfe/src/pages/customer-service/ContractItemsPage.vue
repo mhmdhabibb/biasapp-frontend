@@ -26,6 +26,7 @@ const {
   units,
   findCustomer,
   findUnit,
+  formatUnitDisplayName,
 } = useMasterStore();
 
 const columns: TableColumn[] = [
@@ -134,7 +135,7 @@ const customerOptions = computed(() =>
 const unitOptions = computed(() =>
   (units.value as any[]).map((u: any) => ({
     value: u.id,
-    label: `${u.name} (S/N: ${u.serial_no})`,
+    label: `${formatUnitDisplayName(u)} (S/N: ${u.serial_no || '-'})`,
   })),
 );
 const statusOptions = [
@@ -1089,9 +1090,8 @@ function customerPhone(id: any): string {
 }
 
 function unitOnlyName(id: any, rowUnit?: any): string {
-  if (rowUnit?.name) return rowUnit.name;
-  const u = findUnit(id);
-  return u ? u.name || u.model || "-" : "-";
+  const u = rowUnit || (id ? findUnit(id) : null);
+  return u ? formatUnitDisplayName(u) : "-";
 }
 
 function unitSerialNo(id: any, rowUnit?: any): string {

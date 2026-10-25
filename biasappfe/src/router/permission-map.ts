@@ -37,7 +37,7 @@ products: ['product'],
   jobOrders: ['job_order'],
   csMaintenanceSchedules: ['maintenance'],
   serviceReports: ['service_report'],
-  csStandaloneServiceHistory: ['delivery_order'],
+  csStandaloneServiceHistory: ['service_report', 'delivery_order'],
   copierReports: ['service_report'],
   monthlyMeterReadings: ['monthly_meter_reading'],
   rentals: ['rental'],
@@ -77,5 +77,12 @@ export function canView(routeName: string | null | undefined, permissions: strin
   const keys = permissionKeysFor(routeName)
   if (!keys) return true
   const lowerPerms = (permissions || []).map((p) => String(p).toLowerCase())
-  return keys.some((key) => lowerPerms.includes(`${key.toLowerCase()}:view`))
+  return keys.some((key) => {
+    const k = key.toLowerCase()
+    // For Consumable / Sparepart catalog (products), grant view access if user has product:view or product:read
+    if (k === 'product') {
+      return lowerPerms.includes('product:view') || lowerPerms.includes('product:read')
+    }
+    return lowerPerms.includes(`${k}:view`)
+  })
 }

@@ -23,7 +23,7 @@ onMounted(() => {
 const deletingId = ref<string | null>(null)
 
 const standaloneList = computed(() =>
-  (deliveryOrders.value as any[]).filter(
+  ((deliveryOrders?.value || []) as any[]).filter(
     (d: any) => String(d.do_type || '').toLowerCase() === 'service',
   ).sort((a: any, b: any) =>
     String(b.created_at || b.delivery_date || '').localeCompare(String(a.created_at || a.delivery_date || '')),
@@ -95,8 +95,8 @@ async function removeStandalone(row: any) {
               </td>
               <td>{{ row.delivery_date ? new Date(row.delivery_date).toLocaleDateString('en-GB') : '-' }}</td>
               <td>
-                <span class="badge" :class="isFilled(row) ? 'badge-success' : 'badge-warning'">
-                  {{ isFilled(row) ? 'SUDAH DIISI' : 'BELUM DIISI' }}
+                <span class="badge" :class="row.status === 'draft' ? 'badge-secondary' : isFilled(row) ? 'badge-success' : 'badge-warning'">
+                  {{ row.status === 'draft' ? 'DRAFT' : isFilled(row) ? 'SUDAH DIISI' : 'BELUM DIISI' }}
                 </span>
                 <div class="text-xs text-muted mt-xs">Teknisi: {{ techName(row.technician_id) }}</div>
               </td>
@@ -106,7 +106,7 @@ async function removeStandalone(row: any) {
                   class="btn btn-sm btn-primary"
                   @click="router.push(`/technician/standalone-service-history/${row.id}`)"
                 >
-                  {{ isFilled(row) ? 'Lihat / Lanjut' : 'Isi Product Detail' }}
+                  {{ row.status === 'draft' ? 'Lanjut Draft' : isFilled(row) ? 'Lihat / Lanjut' : 'Isi Product Detail' }}
                 </button>
                 <button
                   v-if="can('delivery_order:delete') && isPending(row)"

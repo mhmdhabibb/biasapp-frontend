@@ -17,7 +17,10 @@ import {
   type UOM,
 } from "@/types";
 import { useToast } from "@/composables/useToast";
-import { useHardDelete } from '@/composables/useHardDelete'
+import { useHardDelete } from '@/composables/useHardDelete';
+import { downloadStyledExcel, NUMFMT_COUNT, NUMFMT_RP, type StyledCell } from "@/utils/exportHelpers";
+import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import { formatProductDisplayName } from "@/utils/format";
 
 const toast = useToast();
 
@@ -70,10 +73,33 @@ async function fetchUoms() {
   }
 }
 
+let productPollingTimer: any = null;
+
+function silentRefresh() {
+  if (document.visibilityState === "visible") {
+    resources.products.list().then((res) => {
+      if (Array.isArray(res.data)) {
+        data.value = res.data as any;
+      }
+    }).catch(() => {});
+  }
+}
+
 onMounted(() => {
   fetchData();
   fetchCategories();
   fetchUoms();
+  productPollingTimer = setInterval(silentRefresh, 4000);
+  window.addEventListener("focus", silentRefresh);
+  window.addEventListener("bias:data-mutated", silentRefresh);
+  document.addEventListener("visibilitychange", silentRefresh);
+});
+
+onUnmounted(() => {
+  if (productPollingTimer) clearInterval(productPollingTimer);
+  window.removeEventListener("focus", silentRefresh);
+  window.removeEventListener("bias:data-mutated", silentRefresh);
+  document.removeEventListener("visibilitychange", silentRefresh);
 });
 
 const showModal = ref(false);
@@ -266,92 +292,217 @@ function formatRupiah(val: number): string {
 const totalStockQty = computed(() => (data.value || []).reduce((acc, p) => acc + (Number(p.stock) || 0), 0));
 const totalStockValue = computed(() => (data.value || []).reduce((acc, p) => acc + ((Number(p.stock) || 0) * (Number(p.price) || 0)), 0));
 
-function exportStockExcel() {
+async function exportStockExcel() {
   if (!data.value.length) {
-    toast.error("No stock data to export");
+    toast.error("Tidak ada data stok untuk diekspor");
     return;
   }
-  const rows: any[] = data.value.map((p, idx) => ({
-    "No": idx + 1,
-    "Consumable / Sparepart Name": p.name,
-    "SN": p.sku || "-",
-    "Item / Category": (p.category as any)?.name || "-",
-    "UOM": (p.uom as any)?.name || "-",
-    "Stock": Number(p.stock) || 0,
-    "Price (Rp)": Number(p.price) || 0,
-    "Total Value (Rp)": (Number(p.stock) || 0) * (Number(p.price) || 0),
-  }));
 
-  rows.push({
-    "No": "",
-    "Consumable / Sparepart Name": "GRAND TOTAL",
-    "SN": "",
-    "Item / Category": "",
-    "UOM": "",
-    "Stock": totalStockQty.value,
-    "Price (Rp)": "",
-    "Total Value (Rp)": totalStockValue.value,
+  const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+  const rows: StyledCell[][] = [
+    [{ v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 7, style: 'titleCell' }],
+    [{ v: 'LAPORAN STOK & VALUASI BARANG (CONSUMABLE / SPAREPART)', mergeAcross: 7, style: 'plainBoldCenter' }],
+    [{ v: 'Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia | Phone: +62 811 7045 657', mergeAcross: 7, style: 'subTitleCell' }],
+    [{ v: `Tanggal Cetak: ${dateStr}`, mergeAcross: 7, style: 'subTitleCell' }],
+    [],
+    [
+      { v: 'RINGKASAN VALUASI STOK', mergeAcross: 7, style: 'plainBoldCenter' },
+    ],
+    [
+      { v: 'Total Jenis Barang (SKU)', style: 'headerCell', mergeAcross: 2 }, {}, {},
+      { v: 'Total Fisik Stok (Qty)', style: 'headerCell', mergeAcross: 1 }, {},
+      { v: 'Total Nilai Valuasi Stok (Rp)', style: 'headerCell', mergeAcross: 2 }, {}, {},
+    ],
+    [
+      { v: `${data.value.length} Item`, style: 'grandTotalCell', mergeAcross: 2 }, {}, {},
+      { v: totalStockQty.value, style: 'grandTotalCell', mergeAcross: 1, numFmt: NUMFMT_COUNT }, {},
+      { v: totalStockValue.value, style: 'grandTotalCell', mergeAcross: 2, numFmt: NUMFMT_RP }, {}, {},
+    ],
+    [],
+    [
+      { v: 'No', style: 'headerCell' },
+      { v: 'Nama Barang / Sparepart', style: 'headerCell' },
+      { v: 'SN / SKU', style: 'headerCell' },
+      { v: 'Kategori / Item', style: 'headerCell' },
+      { v: 'UOM', style: 'headerCell' },
+      { v: 'Stok', style: 'headerCell' },
+      { v: 'Harga Satuan (Rp)', style: 'headerCell' },
+      { v: 'Total Nilai Stok (Rp)', style: 'headerCell' },
+    ],
+  ];
+
+  data.value.forEach((p, idx) => {
+    const stockQty = Number(p.stock) || 0;
+    const priceVal = Number(p.price) || 0;
+    const totalVal = stockQty * priceVal;
+
+    rows.push([
+      { v: idx + 1, style: 'borderCenter' },
+      { v: formatProductDisplayName(p), style: 'border' },
+      { v: p.sku || '-', style: 'borderCenter' },
+      { v: (p.category as any)?.name || '-', style: 'border' },
+      { v: (p.uom as any)?.name || '-', style: 'borderCenter' },
+      { v: stockQty, style: 'borderRight', numFmt: NUMFMT_COUNT },
+      { v: priceVal, style: 'borderRight', numFmt: NUMFMT_RP },
+      { v: totalVal, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+    ]);
   });
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Stock Report");
-  XLSX.writeFile(wb, `Stock_Report_${Date.now()}.xlsx`);
-  toast.success("Stock report exported to Excel!");
+  // Grand Total row
+  rows.push([
+    { v: 'GRAND TOTAL', mergeAcross: 4, style: 'grandTotalCell' },
+    {}, {}, {}, {},
+    { v: totalStockQty.value, style: 'grandTotalCell', numFmt: NUMFMT_COUNT },
+    { v: '', style: 'grandTotalCell' },
+    { v: totalStockValue.value, style: 'grandTotalCell', numFmt: NUMFMT_RP },
+  ]);
+
+  const columnWidths = [6, 38, 18, 22, 10, 14, 20, 24];
+  await downloadStyledExcel(
+    [{ name: 'Stok Barang', columnWidths, rows }],
+    `Laporan_Stok_BiAS_${new Date().toISOString().slice(0, 10)}.xlsx`
+  );
+  toast.success("Laporan stok berhasil diekspor ke Excel!");
 }
 
 function exportStockPdf() {
   if (!data.value.length) {
-    toast.error("No stock data to export");
+    toast.error("Tidak ada data stok untuk diekspor");
     return;
   }
-  let html = `<div style="font-family: Arial, sans-serif; padding: 10px;">
-    <h2 style="margin-bottom: 4px;">Stock Valuation Report (Consumable / Sparepart)</h2>
-    <p style="color: #666; font-size: 12px; margin-top: 0;">Date: ${new Date().toLocaleDateString('id-ID')} | Total Stock: ${totalStockQty.value} | Grand Total Nilai Stock: Rp ${totalStockValue.value.toLocaleString('id-ID')}</p>
-    <table border="1" cellpadding="6" cellspacing="0" style="width:100%; border-collapse: collapse; font-size: 11px; margin-top: 10px;">
-      <thead>
-        <tr style="background-color: #f1f5f9;">
-          <th>No</th>
-          <th>Name</th>
-          <th>SN</th>
-          <th>Item</th>
-          <th>Stock</th>
-          <th>Price</th>
-          <th>Total Value</th>
-        </tr>
-      </thead>
-      <tbody>`;
-  data.value.forEach((p, idx) => {
-    const totalVal = (Number(p.stock) || 0) * (Number(p.price) || 0);
-    html += `<tr>
-      <td style="text-align: center;">${idx + 1}</td>
-      <td>${p.name}</td>
-      <td>${p.sku || '-'}</td>
-      <td>${(p.category as any)?.name || '-'}</td>
-      <td style="text-align: center;">${p.stock || 0}</td>
-      <td style="text-align: right;">Rp ${(Number(p.price) || 0).toLocaleString('id-ID')}</td>
-      <td style="text-align: right; font-weight: bold;">Rp ${totalVal.toLocaleString('id-ID')}</td>
-    </tr>`;
-  });
-  html += `<tr style="background-color: #e2e8f0; font-weight: bold;">
-    <td colspan="4" style="text-align: center;">GRAND TOTAL</td>
-    <td style="text-align: center;">${totalStockQty.value}</td>
-    <td></td>
-    <td style="text-align: right;">Rp ${totalStockValue.value.toLocaleString('id-ID')}</td>
-  </tr>`;
-  html += `</tbody></table></div>`;
+  const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+  const totalItems = data.value.length;
+  const totalQty = totalStockQty.value.toLocaleString('id-ID');
+  const totalValStr = 'Rp ' + totalStockValue.value.toLocaleString('id-ID');
 
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = html;
-  const opt: any = {
-    margin: 0.5,
-    filename: `Stock_Report_${Date.now()}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2 },
-    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-  };
-  html2pdf().set(opt).from(wrapper).save();
-  toast.success("Stock report exported to PDF!");
+  const rowsHtml = data.value.map((p, idx) => {
+    const stockQty = Number(p.stock) || 0;
+    const priceVal = Number(p.price) || 0;
+    const totalVal = stockQty * priceVal;
+    return `
+      <tr>
+        <td style="text-align: center;">${idx + 1}</td>
+        <td style="font-weight: 500;">${formatProductDisplayName(p)}</td>
+        <td style="text-align: center; font-family: monospace;">${p.sku || '-'}</td>
+        <td>${(p.category as any)?.name || '-'}</td>
+        <td style="text-align: center;">${(p.uom as any)?.name || '-'}</td>
+        <td style="text-align: center; font-weight: 600;">${stockQty}</td>
+        <td style="text-align: right;">Rp ${priceVal.toLocaleString('id-ID')}</td>
+        <td style="text-align: right; font-weight: 700;">Rp ${totalVal.toLocaleString('id-ID')}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Laporan Stok & Valuasi Barang - BiAS</title>
+  <style>
+    @media print {
+      @page { margin: 8mm; size: landscape; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; margin: 0; padding: 15px; }
+    .header-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border-bottom: 2px solid #003366; padding-bottom: 10px; }
+    .logo { width: 70px; height: 70px; object-fit: contain; }
+    .company-title h1 { margin: 0; font-size: 18px; font-weight: 800; color: #003366; letter-spacing: 0.5px; }
+    .company-title h2 { margin: 2px 0 4px 0; font-size: 12px; font-style: italic; color: #64748b; font-weight: normal; }
+    .company-title p { margin: 0; font-size: 10px; color: #475569; line-height: 1.4; }
+    .doc-title { text-align: right; vertical-align: top; }
+    .doc-title h2 { margin: 0; font-size: 18px; font-weight: 800; color: #003366; }
+    .doc-title p { margin: 4px 0 0 0; font-size: 11px; color: #64748b; }
+    
+    .kpi-container { display: flex; gap: 12px; margin-bottom: 16px; }
+    .kpi-card { flex: 1; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 14px; }
+    .kpi-label { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 3px; }
+    .kpi-val { font-size: 16px; font-weight: 800; color: #0f172a; }
+
+    table.data-table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+    table.data-table thead { display: table-header-group; }
+    table.data-table tr { page-break-inside: avoid; }
+    table.data-table th { background-color: #003366; color: #ffffff; border: 1px solid #002244; padding: 7px 8px; text-align: left; font-size: 10.5px; }
+    table.data-table td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10.5px; vertical-align: middle; }
+    table.data-table tr:nth-child(even) { background-color: #f8fafc; }
+    table.data-table tfoot td { background-color: #e2e8f0; font-weight: 800; border: 1px solid #94a3b8; }
+  </style>
+</head>
+<body>
+  <table class="header-table">
+    <tr>
+      <td style="width: 80px; vertical-align: top;">
+        <img src="${BIAS_LOGO_DATA_URL}" class="logo" alt="BiAS Logo" />
+      </td>
+      <td style="vertical-align: top; padding-left: 10px;">
+        <div class="company-title">
+          <h1>PT. BIAS SURYA TEKNOLOGI</h1>
+          <h2>The shape of smart</h2>
+          <p>Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia<br>
+          Phone: +62811 704 5657 | Email: admin@biasbst.com | Web: www.biassuryateknologi.com</p>
+        </div>
+      </td>
+      <td class="doc-title">
+        <h2>LAPORAN STOK & VALUASI</h2>
+        <p>Tanggal Cetak: <strong>${dateStr}</strong></p>
+      </td>
+    </tr>
+  </table>
+
+  <div class="kpi-container">
+    <div class="kpi-card">
+      <div class="kpi-label">Total Jenis Barang</div>
+      <div class="kpi-val">${totalItems} Item</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total Kuantitas Fisik</div>
+      <div class="kpi-val">${totalQty} Unit / Pcs</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Grand Total Nilai Stok</div>
+      <div class="kpi-val" style="color: #0284c7;">${totalValStr}</div>
+    </div>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 35px; text-align: center;">No</th>
+        <th>Nama Consumable / Sparepart</th>
+        <th style="width: 120px; text-align: center;">SN / SKU</th>
+        <th style="width: 140px;">Item / Kategori</th>
+        <th style="width: 60px; text-align: center;">UOM</th>
+        <th style="width: 70px; text-align: center;">Stok</th>
+        <th style="width: 130px; text-align: right;">Harga Satuan</th>
+        <th style="width: 150px; text-align: right;">Total Nilai</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="5" style="text-align: center;">GRAND TOTAL</td>
+        <td style="text-align: center;">${totalQty}</td>
+        <td></td>
+        <td style="text-align: right; color: #003366;">${totalValStr}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 400);
+    };
+  <\/script>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (w) {
+    w.document.write(fullHtml);
+    w.document.close();
+  } else {
+    toast.error('Pop-up terblokir oleh browser. Izinkan pop-up untuk mencetak PDF.');
+  }
 }
 </script>
 
@@ -402,6 +553,7 @@ function exportStockPdf() {
       <template #toolbar>
         <ExcelImportButtons master-key="product" @imported="fetchData" />
       </template>
+      <template #cell-name="{ row }">{{ formatProductDisplayName(row) }}</template>
       <template #cell-price="{ value }">{{
         formatRupiah(value || 0)
       }}</template>

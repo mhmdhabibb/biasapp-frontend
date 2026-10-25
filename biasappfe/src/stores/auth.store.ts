@@ -113,9 +113,23 @@ export function useAuthStore() {
     // Superadmin has all permissions
     if (currentUser.value.role === "admin" || currentUser.value.role === "superadmin") return true;
 
+    const roleLower = String(currentUser.value.role || "").trim().toLowerCase();
+    const isAdminSales =
+      roleLower === "admin sales" ||
+      roleLower === "admin_sales" ||
+      roleLower === "adminsales" ||
+      roleLower === "sales admin" ||
+      roleLower === "sales_admin";
+
     // Case-insensitive: nama permission di DB bisa tertulis beda kapital
     // (tampilan RolesPage selalu huruf besar).
     const want = String(permissionName || "").toLowerCase();
+
+    // Admin sales selalu diberikan akses hapus data
+    if (isAdminSales && want.endsWith(":delete")) {
+      return true;
+    }
+
     return (currentUser.value.permissions || []).some(
       (p) => String(p).toLowerCase() === want,
     );

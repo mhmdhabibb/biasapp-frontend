@@ -32,27 +32,39 @@ function parseJwtPayload(token: string): any {
   }
 }
 
+function isSuperadminRoleString(r: string): boolean {
+  const s = String(r || '').trim().toLowerCase()
+  return s === 'superadmin' || s === 'super_admin' || s === 'super admin'
+}
+
 /**
- * True for superadmin or admin users.
+ * Strictly true ONLY for users with role 'superadmin'.
+ * Users with other roles (admin, admin sales, customer service, technician, etc.)
+ * even if they have delete permissions, return false.
  */
 export function useIsSuperadmin() {
   const authStore = useAuthStore()
   return computed(() => {
-    const u = authStore.currentUser.value
-    const roleStr = String(u?.role || '').trim().toLowerCase()
-    if (roleStr === 'superadmin' || roleStr === 'admin' || u?.username === 'admin') {
-      return true
-    }
+    // 1. Check raw JWT payload (preserves the actual role string)
     try {
       const raw = sessionStorage.getItem('bias_token') || authStore.token.value
-      if (!raw) return false
-      const payload = parseJwtPayload(raw)
-      if (!payload) return false
-      const r = String(payload.role || '').trim().toLowerCase()
-      return r === 'superadmin' || r === 'admin' || payload.username === 'admin'
+      if (raw) {
+        const payload = parseJwtPayload(raw)
+        if (payload) {
+          const r = String(payload.role || '').trim().toLowerCase()
+          if (isSuperadminRoleString(r)) {
+            return true
+          }
+        }
+      }
     } catch {
-      return false
+      // ignore
     }
+
+    // 2. Check currentUser rawRole or role
+    const u = authStore.currentUser.value
+    const roleStr = String((u as any)?.rawRole || u?.role || '').trim().toLowerCase()
+    return isSuperadminRoleString(roleStr)
   })
 }
 
@@ -80,15 +92,16 @@ export function displayNameOf(item: any): string {
 
 /**
  * Shared hard-delete (permanent delete) state machine for master pages.
- * The backend only honors `?permanent=true` for superadmin; the dialog
- * additionally requires typing the item name to confirm.
+ * The backend honors ?permanent=true for superadmin, admin sales, or roles with permission;
+ * the dialog additionally requires typing the item name to confirm.
  */
 export function useHardDelete(
   removeFn: (id: string, cascade?: boolean) => Promise<unknown>,
   refresh: () => Promise<void> | void,
+  modulePermission?: string,
 ) {
   const toast = useToast()
-  const isSuperadmin = useIsSuperadmin()
+  const isSuperadmin = useIsSuperadmin(modulePermission)
 
   const show = ref(false)
   const target = ref<any>(null)

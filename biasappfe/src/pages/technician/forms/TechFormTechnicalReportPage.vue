@@ -37,11 +37,12 @@ const isLoading = ref(true)
 const isSaving = ref(false)
 const removedSparepartIds = ref<string[]>([])
 
-const productOptions = computed(() =>
-  products.value
+const productOptions = computed(() => [
+  ...products.value
     .filter((product: any) => product.is_sparepart)
     .map((product: any) => ({ value: product.id, label: product.name })),
-)
+  { value: '__manual__', label: '➕ Tidak ada di database? Input manual...' }
+])
 
 onMounted(async () => {
   try {
@@ -54,7 +55,9 @@ onMounted(async () => {
       is_tested: job.value.is_tested || false,
       spareparts: (job.value.service_spareparts || []).map((item: any) => ({
         id: String(item.id),
-        product_id: String(item.product_id),
+        mode: item.product_id ? 'db' : 'manual',
+        product_id: item.product_id ? String(item.product_id) : '',
+        item_name: item.item_name || (item.product?.name || ''),
         qty: Number(item.qty) || 1,
       })),
       customer_signature: job.value.customer_signature_technical || '',
@@ -141,16 +144,30 @@ async function saveSpareparts() {
       await resources.serviceSpareparts.remove(id)
     }
     for (const sp of form.value.spareparts) {
-      if (!sp.product_id || Number(sp.qty) <= 0) continue
-      const payload = {
-        product_id: sp.product_id,
-        qty: Number(sp.qty),
+      const qty = Number(sp.qty)
+      if (qty <= 0) continue
+
+      let finalProductId = sp.mode === 'db' ? (sp.product_id || null) : null
+      let finalItemName = (sp.item_name || '').trim()
+
+      if (sp.mode === 'db' && finalProductId) {
+        const p = products.value.find((prod: any) => String(prod.id) === String(finalProductId))
+        if (p) finalItemName = p.name
+      }
+
+      if (!finalProductId && !finalItemName) continue
+
+      const payload: any = {
+        product_id: finalProductId,
+        item_name: finalItemName,
+        qty: qty,
       }
       if (sp.id) {
         await resources.serviceSpareparts.update(sp.id, payload)
       } else {
         await api.post('/service-spareparts/', {
           service_report_id: serviceId,
+          technician_id: job.value?.technician_id || currentUser.value?.id,
           ...payload,
         })
       }
@@ -160,7 +177,9 @@ async function saveSpareparts() {
     reportRecord.value = response.data
     form.value.spareparts = (reportRecord.value?.service_spareparts || []).map((item: any) => ({
       id: String(item.id),
-      product_id: String(item.product_id),
+      mode: item.product_id ? 'db' : 'manual',
+      product_id: item.product_id ? String(item.product_id) : '',
+      item_name: item.item_name || (item.product?.name || ''),
       qty: Number(item.qty) || 1,
     }))
     await refreshInBackground()
@@ -282,12 +301,42 @@ async function saveForm() {
       <!-- 7. Add Sparepart -->
       <div class="form-group sparepart-list mt-lg">
         <label class="form-label">Sparepart Request <span class="text-muted">(Optional)</span></label>
-        <div v-for="(sp, index) in form.spareparts" :key="sp.id || index" class="sparepart-row">
-          <CustomSelect v-model="sp.product_id" class="form-select" :options="productOptions" placeholder="Select Component..." />
-          <input v-model.number="sp.qty" type="number" class="form-input qty-input" min="1" placeholder="Qty">
-          <button type="button" class="btn btn-outline remove-sparepart" :aria-label="`Remove sparepart ${index + 1}`" @click="removeSparepart(index)">Delete</button>
+        <div v-for="(sp, index) in form.spareparts" :key="sp.id || index" class="sparepart-card">
+          <div class="sparepart-card-header">
+            <div class="sparepart-mode-toggle">
+              <button
+                type="button"
+                class="btn btn-xs"
+                :class="sp.mode === 'db' ? 'btn-primary' : 'btn-outline'"
+                @click="sp.mode = 'db'"
+              >
+                Pilih DB
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs"
+                :class="sp.mode === 'manual' ? 'btn-primary' : 'btn-outline'"
+                @click="sp.mode = 'manual'"
+              >
+                Input Manual
+              </button>
+            </div>
+            <button type="button" class="btn btn-xs btn-outline remove-sparepart" :aria-label="`Remove sparepart ${index + 1}`" @click="removeSparepart(index)">Hapus</button>
+          </div>
+          <div class="sparepart-row">
+            <CustomSelect
+              v-if="sp.mode === 'db'"
+              v-model="sp.product_id"
+              class="form-select"
+              :options="productOptions"
+              placeholder="Select Component..."
+              @update:model-value="(val) => { if (val === '__manual__') { sp.mode = 'manual'; sp.product_id = '' } }"
+            />
+            <input v-else v-model="sp.item_name" type="text" class="form-input" placeholder="Ketik nama sparepart / komponen..." />
+            <input v-model.number="sp.qty" type="number" class="form-input qty-input" min="1" placeholder="Qty">
+          </div>
         </div>
-        <button type="button" class="btn btn-outline add-sparepart" @click="form.spareparts.push({ product_id: '', qty: 1 })">
+        <button type="button" class="btn btn-outline add-sparepart" @click="form.spareparts.push({ mode: 'db', product_id: '', item_name: '', qty: 1 })">
           + Add Sparepart
         </button>
         <p v-if="form.spareparts.length === 0" class="form-hint">No sparepart request? Leave empty.</p>
@@ -361,12 +410,30 @@ async function saveForm() {
   border-radius: var(--radius-md);
 }
 
+.sparepart-card {
+  padding: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-top: 10px;
+}
+
+.sparepart-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.sparepart-mode-toggle {
+  display: flex;
+  gap: 6px;
+}
+
 .sparepart-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 88px auto;
+  grid-template-columns: minmax(0, 1fr) 88px;
   gap: 8px;
-  margin-top: 10px;
-  align-items: center;
 }
 
 .qty-input { width: 100%; }

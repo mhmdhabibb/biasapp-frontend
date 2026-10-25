@@ -3,7 +3,7 @@
 // Standalone Service History — sisi CS.
 // Tanpa Job Order / assign job. CS hanya mengisi CUSTOMER DETAIL.
 // PRODUCT DETAIL diisi teknisi di halaman teknisi.
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
@@ -15,9 +15,8 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
+import { printServiceReport, type ReportType } from '@/utils/printReport'
 import type { TableColumn } from '@/types'
-import * as XLSX from 'xlsx'
-import html2pdf from 'html2pdf.js'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -33,7 +32,7 @@ onMounted(() => {
 const filterCustomer = ref<any>(null)
 const filterCustomerOptions = computed(() => [
   { value: null as any, label: 'Semua Customer' },
-  ...(store.customers.value as any[]).map((c: any) => ({
+  ...((store.customers?.value || []) as any[]).map((c: any) => ({
     value: c.id,
     label: c.company_name || c.name || `Customer ${c.id}`,
   })),
@@ -44,7 +43,7 @@ const filterTechnician = ref<any>(null)
 const filterTechnicianOptions = computed(() => [
   { value: null as any, label: 'Semua Teknisi' },
   { value: 'unassigned', label: 'Belum Ditunjuk / Tanpa Teknisi' },
-  ...(store.technicians.value as any[]).map((t: any) => ({
+  ...((store.technicians?.value || []) as any[]).map((t: any) => ({
     value: t.id,
     label: t.user?.name || t.name || `Teknisi ${t.id}`,
   })),
@@ -52,7 +51,7 @@ const filterTechnicianOptions = computed(() => [
 
 // Hanya DO mandiri bertipe service (bukan rental/sale/inbound, bukan yang ditempel job).
 const standaloneList = computed(() => {
-  let list = (store.deliveryOrders.value as any[]).filter(
+  let list = ((store.deliveryOrders?.value || []) as any[]).filter(
     (d: any) => String(d.do_type || '').toLowerCase() === 'service',
   )
   if (filterCustomer.value) {
@@ -103,14 +102,14 @@ function productSummary(row: any): string {
 }
 
 const customerOptions = computed(() =>
-  (store.customers.value as any[]).map((c: any) => ({
+  ((store.customers?.value || []) as any[]).map((c: any) => ({
     value: c.id,
     label: c.company_name || c.name || `Customer ${c.id}`,
   })),
 )
 const technicianOptions = computed(() => [
   { value: null as any, label: '-- Tanpa penunjukan langsung --' },
-  ...(store.technicians.value as any[]).map((t: any) => ({
+  ...((store.technicians?.value || []) as any[]).map((t: any) => ({
     value: t.id,
     label: t.user?.name || t.name || `Teknisi ${t.id}`,
   })),
@@ -137,6 +136,23 @@ const form = reactive({
   technician_id: null as any,
   notes: '',
 })
+
+watch(
+  () => form.customer_id,
+  (cid) => {
+    if (editingItem.value || !cid) return
+    const cust: any = ((store.customers?.value || []) as any[]).find((c: any) => String(c.id) === String(cid))
+    if (cust) {
+      if (!form.delivery_address) form.delivery_address = cust.address || ''
+      if (!form.recipient_name) form.recipient_name = cust.pic_name || cust.company_name || cust.name || ''
+      if (!form.recipient_phone) form.recipient_phone = cust.phone || ''
+      if (cust.category) form.customer_category = cust.category
+      if (!form.project_name && form.delivery_address) {
+        form.project_name = `Pengantaran Unit ke ${form.delivery_address}`
+      }
+    }
+  }
+)
 
 function resetForm() {
   Object.assign(form, {
@@ -246,8 +262,28 @@ async function handleDelete() {
   }
 }
 
+const printModalOpen = ref(false)
+const printType = ref<ReportType | 'all'>('all')
+const printTarget = ref<any>(null)
+
+const printTypeOptions = [
+  { value: 'all', label: 'Semua Form (Lengkap)' },
+  { value: 'technical', label: 'Technical Report Form' },
+  { value: 'history', label: 'Service History Form' },
+  { value: 'copier', label: 'Copier Service Report' },
+]
+
 function handlePrint(row: any) {
-  printDeliveryServiceHistory(row)
+  printTarget.value = row
+  printType.value = 'all'
+  printModalOpen.value = true
+}
+
+function handleConfirmPrint() {
+  if (printTarget.value) {
+    printServiceReport(printTarget.value, printType.value === 'all' ? undefined : (printType.value as ReportType))
+  }
+  printModalOpen.value = false
 }
 
 function exportExcel() {
@@ -370,13 +406,13 @@ function exportPdf() {
       </template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
       <template #cell-status="{ value }">
-        <span class="badge" :class="value === 'delivered' || value === 'completed' ? 'badge-success' : value === 'in_transit' ? 'badge-info' : 'badge-warning'">
+        <span class="badge" :class="value === 'delivered' || value === 'completed' ? 'badge-success' : value === 'draft' ? 'badge-secondary' : value === 'in_transit' ? 'badge-info' : 'badge-warning'">
           {{ String(value || '-').replace('_', ' ').toUpperCase() }}
         </span>
       </template>
       <template #actions="{ row }">
         <button class="btn btn-sm btn-outline" @click="openDetail(row)" title="Lihat Detail Pekerjaan">Detail</button>
-        <button v-if="can('delivery_order:read') && row.status !== 'pending' && hasDeliveryHistory(row)" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="handlePrint(row)">Print</button>
+        <button v-if="can('delivery_order:read') && (row.status !== 'pending' || hasDeliveryHistory(row))" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="handlePrint(row)">Print</button>
         <button v-if="can('delivery_order:delete')" class="btn btn-sm btn-outline btn-danger" style="margin-left: 0.5rem;" @click="openDelete(row)">Hapus</button>
       </template>
     </DataTable>
@@ -389,7 +425,7 @@ function exportPdf() {
       </div>
       <div class="form-group">
         <label class="form-label">Project Name</label>
-        <input v-model="form.project_name" type="text" class="form-input" placeholder="Contoh: Service Laptop" />
+        <input v-model="form.project_name" type="text" class="form-input" placeholder="Pengantaran [Nama Produk / Unit] ke [Alamat Penerima]" />
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -487,6 +523,18 @@ function exportPdf() {
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" style="width: 100%;" @click="showDetailModal = false">Tutup</button>
+      </template>
+    </FormModal>
+
+    <!-- Print Modal -->
+    <FormModal :open="printModalOpen" title="Pilih Format Print" @close="printModalOpen = false" @submit="handleConfirmPrint">
+      <div class="form-group">
+        <label class="form-label">Tipe Format Report</label>
+        <CustomSelect v-model="printType" :options="printTypeOptions" class="form-select" />
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="printModalOpen = false">Batal</button>
+        <button type="button" class="btn btn-primary" @click="handleConfirmPrint">Print / Download</button>
       </template>
     </FormModal>
   </div>

@@ -437,7 +437,8 @@ async function saveForm() {
         <label class="form-label">Sparepart Request (Read Only)</label>
         <div v-if="sparepartRequests.length > 0" class="sparepart-box">
           <div v-for="(sp, i) in sparepartRequests" :key="sp.id || i">
-            {{ i + 1 }}. {{ sp.product?.name || sp.product_name || findProduct(sp.product_id)?.name || '-' }} - Qty {{ sp.qty }}
+            {{ i + 1 }}. {{ sp.item_name || sp.product?.name || sp.product_name || findProduct(sp.product_id)?.name || '-' }} - Qty {{ sp.qty }}
+            <span v-if="!sp.product_id && sp.item_name" class="badge" style="background: #e0f2fe; color: #0369a1; font-size: 10px; padding: 1px 4px; border-radius: 4px; margin-left: 4px;">Manual</span>
           </div>
         </div>
         <div v-else class="sparepart-box sparepart-empty">

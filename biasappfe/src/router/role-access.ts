@@ -59,8 +59,10 @@ export const homeRouteNameByRole: Record<string, string> = {
 // Backend accepts both 'technician' and 'teknisi' (auth/service.go, user/service.go);
 // role names may also arrive capitalized from the DB.
 export function normalizeRole(role: string | null | undefined): string {
-  const r = (role || "").trim().toLowerCase();
+  const r = (role || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (r === "superadmin") return "admin";
   if (r === "teknisi") return "technician";
+  if (r === "cs") return "customer_service";
+  if (r === "akuntansi") return "accounting";
   return r;
 }

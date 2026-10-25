@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useAuth } from "@/composables/useAuth";
 import { useMasterStore } from "@/composables/useMasterStore";
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import BottomNav from "./BottomNav.vue";
 import Sidebar from "./Sidebar.vue";
@@ -10,7 +10,7 @@ import TopBar from "./TopBar.vue";
 const route = useRoute();
 const sidebarOpen = ref(false);
 
-const { refreshIfStale } = useMasterStore();
+const { refreshIfStale, refreshOnly, getResourcesForPath, ensureResourcesLoaded } = useMasterStore();
 const { currentUser } = useAuth();
 
 let adminInterval: any = null;
@@ -27,27 +27,42 @@ const useMobileLayout = computed(() => {
   return isTechnician.value && windowWidth.value <= 768;
 });
 
+function refreshActivePageResources() {
+  if (document.visibilityState !== "visible") return;
+  const activeResources = getResourcesForPath(route.path);
+  if (activeResources && activeResources.length > 0) {
+    void refreshOnly(activeResources);
+  } else {
+    void refreshIfStale(5000);
+  }
+}
+
 onMounted(() => {
   window.addEventListener("resize", handleResize);
-  adminInterval = setInterval(() => {
-    if (document.visibilityState === "visible") {
-      void refreshIfStale(20000);
-    }
-  }, 20000);
-  // Kembali dari tab browser lain / minimize: refresh silent bila data basi,
-  // jadi tidak perlu reload manual agar angka & tabel muncul terbaru.
+  // Polling silent setiap 4 detik agar data tabel update real-time tanpa perlu reload browser
+  adminInterval = setInterval(refreshActivePageResources, 4000);
   document.addEventListener("visibilitychange", onVisibleTab);
+  window.addEventListener("focus", onVisibleTab);
+  window.addEventListener("bias:data-mutated", refreshActivePageResources);
+});
+
+// Bila berpindah route/menu, pastikan resource halaman langsung di-revalidasi
+watch(() => route.path, (newPath) => {
+  void ensureResourcesLoaded(newPath);
+  refreshActivePageResources();
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", handleResize);
   document.removeEventListener("visibilitychange", onVisibleTab);
+  window.removeEventListener("focus", onVisibleTab);
+  window.removeEventListener("bias:data-mutated", refreshActivePageResources);
   if (adminInterval) clearInterval(adminInterval);
 });
 
 function onVisibleTab() {
   if (document.visibilityState === "visible") {
-    void refreshIfStale();
+    refreshActivePageResources();
   }
 }
 

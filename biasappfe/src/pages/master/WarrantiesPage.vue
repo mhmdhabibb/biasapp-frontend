@@ -63,7 +63,12 @@ async function fetchRentals() {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchData(), fetchRentals()])
+  await Promise.all([
+    fetchData(),
+    fetchRentals(),
+    useMasterStore().ensureResourcesLoaded('/master/warranties'),
+    useMasterStore().ensureResourcesLoaded('/customer-service/sales'),
+  ])
 })
 
 const showModal = ref(false)
@@ -152,6 +157,50 @@ function getUnitOrProductName(item: any) {
     const p = products.value.find((p: any) => String(p.id) === String(item.product_id))
     return p ? (p as any).name : (item.product_id ? `Product #${String(item.product_id).slice(0, 8)}` : '-')
   }
+
+  // Fallback: resolve from Sale if warranty is linked to a sale (barang terjual)
+  const saleId = item.sale_id || item.sale?.id
+  if (saleId) {
+    const s = (sales.value as any[]).find((s: any) => String(s.id) === String(saleId)) || item.sale
+    const saleItems: any[] = s?.sale_items || []
+    if (saleItems.length > 0) {
+      const formatUnit = (unitId: any, embeddedU?: any) => {
+        const u = embeddedU || units.value.find((u: any) => String(u.id) === String(unitId))
+        const b = u?.brand?.name
+        const m = u?.name || u?.model || 'Unit'
+        return `${b ? b + ' ' : ''}${m} (SN: ${u?.serial_no || '-'})`
+      }
+      const formatProduct = (prodId: any, embeddedP?: any) => {
+        const p = embeddedP || products.value.find((p: any) => String(p.id) === String(prodId))
+        return p?.name || (prodId ? `Product #${String(prodId).slice(0, 8)}` : 'Product')
+      }
+
+      const wType = String(item.warranty_type || '').toLowerCase()
+      if (wType === 'machine') {
+        const unitItem = saleItems.find((si: any) => si.unit_id || si.unit)
+        if (unitItem) return formatUnit(unitItem.unit_id, unitItem.unit)
+      } else if (wType === 'sparepart') {
+        const prodItems = saleItems.filter((si: any) => si.product_id || si.product)
+        if (prodItems.length > 0) {
+          return prodItems.map((si: any) => formatProduct(si.product_id, si.product)).join(', ')
+        }
+      }
+
+      // Default: map all sold units and products
+      const list = saleItems.map((si: any) => {
+        if (si.unit_id || si.unit) return formatUnit(si.unit_id, si.unit)
+        if (si.product_id || si.product) return formatProduct(si.product_id, si.product)
+        return si.description || si.specs || 'Barang Terjual'
+      }).filter(Boolean)
+
+      if (list.length > 0) {
+        return list.join(', ')
+      }
+    }
+    const saleNo = s?.sale_no
+    return saleNo ? `Penjualan #${saleNo}` : '-'
+  }
+
   return '-'
 }
 

@@ -666,13 +666,19 @@ async function createStandalone() {
     const timeIn = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     // Warisi Project Name dari CS (lewati '-' peninggalan data lama).
     const pickName = (...vals: any[]) => vals.map((v) => String(v || '').trim()).find((v) => v && v !== '-') || ''
+    let finalProjectName = pickName(d?.project_name, sr?.project_name, job.value?.service_request?.project_name)
+    if (!finalProjectName && isDeliveryJob.value) {
+      const summary = productSummary(d)
+      const addr = d?.delivery_address || sr?.customer?.address || ''
+      finalProjectName = addr ? `Pengantaran ${summary} ke ${addr}` : `Pengantaran ${summary}`
+    }
 
     const newDo = await resources.deliveryOrders.create({
         do_type: 'service',
         status: 'pending',
         customer_id: custId,
         customer_category: d?.customer_category || sr?.customer_category || 'Corporate',
-        project_name: pickName(d?.project_name, sr?.project_name, job.value?.service_request?.project_name),
+        project_name: finalProjectName,
         delivery_address: d?.delivery_address || sr?.customer?.address || '',
         recipient_name: d?.recipient_name || sr?.customer?.pic_name || '',
         recipient_phone: d?.recipient_phone || sr?.customer?.phone || '',
@@ -1029,7 +1035,10 @@ async function createStandalone() {
             <label class="form-label">Direct Component Replacement</label>
             <div v-if="serviceReport?.service_spareparts && serviceReport.service_spareparts.length > 0">
               <div v-for="sp in serviceReport.service_spareparts" :key="sp.id" class="text-sm p-sm" style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span>{{ sp.product?.name || findProduct(sp.product_id)?.name || '-' }}</span>
+                <span>
+                  {{ sp.item_name || sp.product?.name || findProduct(sp.product_id)?.name || '-' }}
+                  <span v-if="!sp.product_id && sp.item_name" class="badge" style="background: #e0f2fe; color: #0369a1; font-size: 10px; padding: 1px 4px; border-radius: 4px; margin-left: 4px;">Manual</span>
+                </span>
                 <span class="font-bold">x {{ sp.qty }}</span>
               </div>
             </div>

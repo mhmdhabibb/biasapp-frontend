@@ -137,6 +137,11 @@ export const allMenuGroups: MenuGroup[] = [
         icon: "activity",
         route: "/customer-service/monitoring-service",
       },
+      {
+        label: "sidebar.sparepart_requests",
+        icon: "box",
+        route: "/customer-service/sparepart-request",
+      },
     ],
   },
   {
@@ -162,6 +167,11 @@ export const allMenuGroups: MenuGroup[] = [
   {
     title: "sidebar.master_data",
     items: [
+      {
+        label: "sidebar.products",
+        icon: "box",
+        route: "/master/products",
+      },
       {
         label: "sidebar.product_categories",
         icon: "folder",
@@ -231,6 +241,12 @@ export const allMenuGroups: MenuGroup[] = [
         label: "sidebar.standalone_service_history",
         icon: "clipboard",
         route: "/technician/standalone-service-history",
+        roles: ["technician"],
+      },
+      {
+        label: "sidebar.sparepart_requests",
+        icon: "box",
+        route: "/technician/sparepart-request",
         roles: ["technician"],
       },
     ],

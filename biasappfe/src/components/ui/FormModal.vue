@@ -5,8 +5,10 @@ const props = withDefaults(defineProps<{
   title: string
   open: boolean
   maxWidth?: string
+  submitLabel?: string
 }>(), {
-  maxWidth: '520px'
+  maxWidth: '520px',
+  submitLabel: 'Save',
 })
 const emit = defineEmits<{
   (e: 'close'): void
@@ -62,7 +64,7 @@ onUnmounted(() => {
           <div class="modal-footer">
             <slot name="footer">
               <button class="btn btn-outline" @click="emit('close')">Cancel</button>
-              <button class="btn btn-accent" @click="emit('submit')">Save</button>
+              <button class="btn btn-accent" @click="emit('submit')">{{ props.submitLabel || 'Save' }}</button>
             </slot>
           </div>
         </div>

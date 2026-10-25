@@ -116,7 +116,11 @@ async function mutate<T>(
   invalidateCache(path.split("?")[0]);
   activeMutationRequests.value++;
   try {
-    return await request<T>(path, options);
+    const res = await request<T>(path, options);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("bias:data-mutated", { detail: { path } }));
+    }
+    return res;
   } finally {
     activeMutationRequests.value--;
   }
@@ -137,6 +141,9 @@ export async function apiRequest<T = any>(
     const response = await http.request<T>(config);
     if (method !== "GET" && config.url) {
       invalidateCache(config.url);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("bias:data-mutated", { detail: { path: config.url } }));
+      }
     }
     return response.data;
   } catch (error) {

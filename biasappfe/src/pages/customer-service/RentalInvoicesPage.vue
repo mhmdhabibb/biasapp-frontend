@@ -15,24 +15,13 @@ import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import type { RentalInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_COUNT, NUMFMT_RP, NUMFMT_RP_RATE, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
+import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { printPaymentSlip, printPaymentStruk, paymentMethodOf, buildPaymentTimestamp, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 
 const toast = useToast()
 const route = useRoute()
-const { ensureResourcesLoaded, refreshIfStale } = useMasterStore()
-
-const isLoading = ref(false)
-
-onMounted(async () => {
-  isLoading.value = true
-  await ensureResourcesLoaded(route.path)
-  isLoading.value = false
-})
-
-const { can } = usePermission()
-const { currentUser } = useAuth()
 const {
   rentalInvoices: data,
   contractItems,
@@ -42,7 +31,38 @@ const {
   findCustomer,
   findUnit,
   refresh,
+  refreshInBackground,
+  ensureResourcesLoaded,
+  formatUnitDisplayName,
+  formatProductDisplayName,
 } = useMasterStore()
+
+const isLoading = ref(false)
+let rentalInvTimer: any = null
+
+function silentRefresh() {
+  if (document.visibilityState === 'visible') {
+    void refreshInBackground()
+  }
+}
+
+onMounted(async () => {
+  isLoading.value = true
+  await ensureResourcesLoaded(route.path)
+  isLoading.value = false
+  rentalInvTimer = setInterval(silentRefresh, 4000)
+  window.addEventListener('focus', silentRefresh)
+  window.addEventListener('bias:data-mutated', silentRefresh)
+})
+
+onUnmounted(() => {
+  if (rentalInvTimer) clearInterval(rentalInvTimer)
+  window.removeEventListener('focus', silentRefresh)
+  window.removeEventListener('bias:data-mutated', silentRefresh)
+})
+
+const { can } = usePermission()
+const { currentUser } = useAuth()
 
 const columns: TableColumn[] = [
   { key: 'invoice_no', label: 'Invoice No' },
@@ -129,6 +149,7 @@ const deletingItem = ref<RentalInvoice | null>(null)
 const hardDelete = useHardDelete(
   (id, cascade) => resources.rentalInvoices.hardRemove(id, cascade),
   () => useMasterStore().refreshInBackground(),
+  'rental_invoice:delete',
 )
 
 function openDelete(item: RentalInvoice) {
@@ -201,6 +222,328 @@ const filteredData = computed(() => {
   return items
 })
 
+function renderRentalInvoiceBody(item: any): string {
+  const customer = findCustomer(item.customer_id)
+  const custName = customer?.company_name || customer?.name || '-'
+  const custAddress = customer?.address || '-'
+  const pic = customer?.pic_name || '-'
+  const gender = customer?.pic_gender
+  let prefix = 'Bapak/Ibu '
+  if (gender === 'L') prefix = 'Bapak '
+  if (gender === 'P') prefix = 'Ibu '
+  const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
+  const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
+
+  const dateStr = item.invoice_date
+    ? new Date(item.invoice_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
+    : (item.monthly_date ? new Date(item.monthly_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '-')
+
+  let periodStr = '-'
+  if (item.period_start) {
+    periodStr = new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  }
+
+  const ci = findContractItem(item.contract_item_id) || (contractItems.value as any[]).find(c => String(c.contract_id) === String(item.contract_id))
+  const unit = findUnit(ci?.unit_id)
+  const isCopier = isCopierUnit(unit)
+  const unitDesc = unit ? formatUnitDisplayName(unit) : (ci?.description || unit?.model || 'Mesin Fotocopy / Printer')
+  const baseRentalFee = item.base_rental_fee || item.basis_rental_fee || 0
+
+  const meterDetails: any[] = item.meter_details || []
+  const bwDetails = meterDetails.filter((d: any) => (d.color_mode || '').toLowerCase().includes('bw') || (d.color_mode || '').toLowerCase().includes('mono') || (d.color_mode || '').toLowerCase() === 'b/w')
+  const colDetails = meterDetails.filter((d: any) => (d.color_mode || '').toLowerCase().includes('colour') || (d.color_mode || '').toLowerCase().includes('color'))
+
+  const legacyBwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
+  const legacyBwEnd = item.meter_end || item.meter_end_bw || legacyBwStart
+  const legacyFree = item.free_copies || ci?.free_copy_quota || 2000
+  const legacyRateBw = item.rate_per_page || 150
+
+  const fmtPcsPrint = (n: number) => n === 0 ? '-' : n.toLocaleString('id-ID')
+  const fmtNetPrint = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : n === 0 ? '-' : n.toLocaleString('id-ID')
+
+  function meterDetailRows(details: any[], label: string): string {
+    if (details.length === 0) return ''
+    return details.map(d => {
+      const start = d.start_meter_reading || 0
+      const last = d.last_meter_reading || 0
+      const total = d.total_copies ?? (last - start)
+      const free = d.free_quota ?? 0
+      const net = total - free
+      const sizeLabel = d.paper_size?.name || d.color_mode || label
+      return `
+        <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
+          <b>${sizeLabel}</b><br>
+          <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
+            <span>Start Meter Reading</span><span style="text-align:right;">${start.toLocaleString('id-ID')}</span><span></span>
+            <span>Last Meter Reading</span><span style="text-align:right;">${last.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
+            <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(total)}</b></span><span></span>
+            <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(free)}</span><span style="padding-left:4px;">(-)</span>
+            <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(net)}</b></span><span></span>
+          </div>
+        </td></tr>`
+    }).join('')
+  }
+
+  function chargeRows(details: any[], rowNum: number): string {
+    return details.map((d, i) => {
+      const sizeLabel = d.paper_size?.name ? `Copies Charges ${d.color_mode?.toUpperCase() || ''} ${d.paper_size.name}` : `Copies Charges ${d.color_mode?.toUpperCase() || ''}`
+      const rate = d.rate_per_page || 0
+      const amount = d.total_amount || 0
+      return `<tr>
+        <td class="no-col">${rowNum + i}</td>
+        <td>${sizeLabel}</td>
+        <td style="text-align:center;">(x)</td>
+        <td style="text-align:right;">${rate > 0 ? `Rp&nbsp;${rate.toLocaleString('id-ID')}` : '-'}</td>
+        <td class="rp-col">Rp</td>
+        <td class="val-col">${amount > 0 ? amount.toLocaleString('id-ID') : '-'}</td>
+      </tr>`
+    }).join('')
+  }
+
+  const legacyBwTotal = Math.max(0, legacyBwEnd - legacyBwStart)
+  const legacyBwNet = legacyBwTotal - legacyFree
+  const legacyBwBillable = Math.max(0, legacyBwNet)
+  const legacyBwAmount = legacyBwBillable * legacyRateBw
+
+  const legacyColStart = ci?.start_meter_color || 0
+  const legacyColEnd = legacyColStart
+  const legacyColFree = ci?.free_quota_color || 0
+  const legacyColTotal = Math.max(0, legacyColEnd - legacyColStart)
+  const legacyColNet = legacyColTotal - legacyColFree
+
+  const legacyBodyRows = (meterDetails.length === 0 && isCopier) ? `
+    <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
+      <b>B/W</b><br>
+      <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
+        <span>Start Meter Reading</span><span style="text-align:right;">${legacyBwStart.toLocaleString('id-ID')}</span><span></span>
+        <span>Last Meter Reading</span><span style="text-align:right;">${legacyBwEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyBwTotal)}</b></span><span></span>
+        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyFree)}</span><span style="padding-left:4px;">(-)</span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyBwNet)}</b></span><span></span>
+      </div>
+
+      ${legacyColStart > 0 || legacyColFree > 0 ? `
+      <br><b>Color</b><br>
+      <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
+        <span>Start Meter Reading</span><span style="text-align:right;">${legacyColStart.toLocaleString('id-ID')}</span><span></span>
+        <span>Last Meter Reading</span><span style="text-align:right;">${legacyColEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyColTotal)}</b></span><span></span>
+        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyColFree)}</span><span style="padding-left:4px;">(-)</span>
+        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyColNet)}</b></span><span></span>
+      </div>
+      ` : ''}
+    </td></tr>
+    <tr>
+      <td class="no-col">2</td><td>Copies Charges B/W</td>
+      <td style="text-align:center;">(x)</td>
+      <td style="text-align:right;">${legacyRateBw > 0 ? `Rp&nbsp;${legacyRateBw.toLocaleString('id-ID')}` : '-'}</td>
+      <td class="rp-col">Rp</td>
+      <td class="val-col">${legacyBwAmount > 0 ? legacyBwAmount.toLocaleString('id-ID') : '-'}</td>
+    </tr>` : ''
+
+  const totalNum = item.subtotal || baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0)
+  const taxNum = item.tax || 0
+  const totalPayNum = item.total_pay || 0
+  const total = totalNum === 0 ? '-' : totalNum.toLocaleString('id-ID')
+  const tax = taxNum === 0 ? '-' : taxNum.toLocaleString('id-ID')
+  const totalPay = totalPayNum === 0 ? '-' : totalPayNum.toLocaleString('id-ID')
+
+  // Stempel label Lunas dihilangkan pada rental invoice (hanya ada pada bukti pembayaran / kwitansi)
+  const stampHtml = ''
+
+  const poNo = (item.po_no || item.rental?.po_no || '').trim()
+
+  return `
+<div class="inv-container">
+  <!-- Header -->
+  <div class="header-wrap">
+    <div class="left-box">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+        <img src="${BIAS_LOGO_DATA_URL}" style="width: 50px; height: 50px; object-fit: contain;" alt="BiAS Logo" />
+        <div>
+          <div class="co-name" style="margin-bottom: 2px;">PT. BiAS SURYA TEKNOLOGI</div>
+          <div style="font-size: 10px; font-style: italic; color: #4b5563;">The shape of smart</div>
+        </div>
+      </div>
+      <div class="co-addr">Ruko Purimas Blok A No.47 Kota Batam<br>Kepulauan Riau - Indonesia</div>
+      <div class="co-contact">
+        Telp : +62 811 7045 657<br>
+        Email : admin@biasbst.com<br>
+        www.biassuryateknologi.com
+      </div>
+    </div>
+    <div class="right-box">
+      <table class="right-table">
+        <tr><td class="lbl">Inv No. :</td><td>${item.invoice_no || '-'}</td></tr>
+        <tr><td class="lbl">Date :</td><td>${dateStr}</td></tr>
+        ${poNo ? `<tr><td class="lbl">PO No. :</td><td style="font-weight: 700; color: #1a56db;">${poNo}</td></tr>` : ''}
+        <tr><td colspan="2" style="text-align:center; font-weight:bold;">To:</td></tr>
+        <tr><td colspan="2" class="cust-name">${custName}</td></tr>
+        <tr><td colspan="2" style="font-weight:normal; min-height:36px; vertical-align:top;">${custAddress}</td></tr>
+        <tr><td class="lbl">Attn</td><td>${picDisplay}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="inv-title-wrap"><div class="inv-title">INVOICE</div></div>
+  <div class="period">Period: ${periodStr}</div>
+
+  <!-- Main Table -->
+  <table class="main-table">
+    <thead>
+      <tr>
+        <th class="no-col">No</th>
+        <th>Description</th>
+        <th></th>
+        <th></th>
+        <th class="center">Rp</th>
+        <th style="text-align:right; width:90px;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Row 1: Rental charge -->
+      <tr>
+        <td class="no-col">1</td>
+        <td colspan="3" style="font-weight:bold;">Rental Charges ${unitDesc} 1 Unit</td>
+        <td class="rp-col">Rp</td>
+        <td class="val-col">${baseRentalFee.toLocaleString('id-ID')}</td>
+      </tr>
+
+      ${meterDetails.length > 0
+      ? meterDetailRows(bwDetails, 'B/W') + meterDetailRows(colDetails, 'Colour')
+      : legacyBodyRows
+    }
+
+      ${meterDetails.length > 0 ? chargeRows([...bwDetails, ...colDetails], 2) : ''}
+
+      <!-- Total rows -->
+      <tr class="total-row">
+        <td colspan="4" class="total-lbl">TOTAL</td>
+        <td class="rp-col">Rp</td>
+        <td class="val-col">${total}</td>
+      </tr>
+      <tr class="total-row">
+        <td colspan="4" class="total-lbl">TAX</td>
+        <td class="rp-col">Rp</td>
+        <td class="val-col">${tax === '0' ? '-' : tax}</td>
+      </tr>
+      <tr class="total-row grand">
+        <td colspan="4" class="total-lbl">TOTAL PAY</td>
+        <td class="rp-col">Rp</td>
+        <td class="val-col">${totalPay}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  ${stampHtml}
+  <!-- Footer -->
+  <div class="bottom-wrap">
+    <div class="bank-box">
+      <div class="bank-header">Payment by transfer to account:</div>
+      <div class="bank-header">PT. BIAS SURYA TEKNOLOGI</div>
+      NPWP : 0941.8395.0822.5000<br>
+      <span class="bank-name">BANK RIAU KEPRI SYARIAH CAB. BATAM</span><br>
+      Rek No. 1060885757<br>
+      <span class="bank-name">BANK MANDIRI CABANG BATAM</span><br>
+      Rek No. 109-00-3388575-7
+    </div>
+    <div class="sig-area">
+      <div class="sig-col">
+        <span class="sig-label">Received By,</span>
+        <div class="sig-line"></div>
+        <div class="sig-name">${picDisplay}</div>
+      </div>
+      <div class="sig-col">
+        <span class="sig-label">PT. BiAS SURYA TEKNOLOGI</span>
+        <div class="sig-line"></div>
+        <div class="sig-name">${signer}</div>
+        <div class="sig-role">Admin Finance</div>
+      </div>
+    </div>
+  </div>
+</div>`
+}
+
+function renderRentalInvoicesPdf(items: any[], title: string): string {
+  const bodyContent = items.map(item => `<div class="inv-page">${renderRentalInvoiceBody(item)}</div>`).join('')
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>${title}</title>
+  <style>
+    @media print {
+      @page { margin: 10mm 10mm; size: portrait; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .inv-page { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
+      .inv-page:last-child { page-break-after: auto; break-after: auto; }
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; margin: 0; padding: 20px; color: #1a1a1a; background: #fff; }
+    .inv-page { margin-bottom: 30px; }
+    @media print {
+      .inv-page { margin-bottom: 0; }
+    }
+    .inv-container { max-width: 760px; margin: 0 auto; }
+
+    /* Header */
+    .header-wrap { display: flex; justify-content: space-between; align-items: stretch; gap: 16px; margin-bottom: 16px; }
+    .left-box { width: 44%; background: #f0f7ff; border-radius: 8px; padding: 14px 16px; }
+    .left-box .co-name { color: #1a56db; font-size: 14px; font-weight: 700; margin-bottom: 8px; letter-spacing: 0.3px; }
+    .left-box .co-addr { font-size: 10.5px; color: #374151; line-height: 1.6; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #bfdbfe; }
+    .left-box .co-contact { font-size: 10.5px; color: #374151; line-height: 1.8; }
+    .right-box { width: 54%; }
+    .right-table { width: 100%; border-collapse: collapse; font-size: 11px; border-radius: 8px; overflow: hidden; }
+    .right-table td { border: 1px solid #e5e7eb; padding: 5px 10px; vertical-align: top; }
+    .right-table tr:first-child td:first-child { border-radius: 8px 0 0 0; }
+    .right-table .lbl { width: 80px; font-weight: 600; color: #6b7280; background: #f9fafb; white-space: nowrap; }
+    .right-table .kepada { text-align: center; font-weight: 700; background: #1a56db; color: #fff; letter-spacing: 0.5px; }
+    .right-table .cust-name { font-weight: 700; font-size: 12px; }
+
+    /* Invoice Title */
+    .inv-title-wrap { text-align: center; margin: 16px 0 6px; }
+    .inv-title { font-size: 26px; font-weight: 800; letter-spacing: 6px; color: #111827; }
+    .period { text-align: center; font-style: italic; font-size: 11.5px; color: #4b5563; margin-bottom: 14px; }
+
+    /* Main Table */
+    .main-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .main-table thead tr { background: #1a56db; color: #fff; }
+    .main-table th { padding: 8px 10px; font-weight: 600; font-size: 11px; text-align: left; letter-spacing: 0.3px; }
+    .main-table th.center { text-align: center; }
+    .main-table td { border: 1px solid #e5e7eb; padding: 6px 10px; vertical-align: top; }
+    .main-table tbody tr:nth-child(even) { background: #f9fafb; }
+    .no-col { width: 28px; text-align: center; }
+    .rp-col { width: 22px; border-right: none !important; text-align: center; color: #6b7280; font-size: 10px; }
+    .val-col { border-left: none !important; text-align: right; width: 90px; font-weight: 600; }
+
+    /* Total rows */
+    .total-row td { font-weight: 600; background: #f9fafb; border: 1px solid #e5e7eb; padding: 6px 10px; }
+    .total-row.grand td { background: #1a56db; color: #fff; font-size: 12px; font-weight: 700; }
+    .total-lbl { text-align: right; padding-right: 12px; color: #4b5563; }
+    .total-row.grand .total-lbl { color: #fff; }
+
+    /* Footer */
+    .bottom-wrap { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 16px; }
+    .bank-box { width: 44%; background: #f0f7ff; border-radius: 8px; padding: 12px 14px; font-size: 10px; line-height: 1.7; color: #374151; }
+    .bank-box .bank-header { font-weight: 700; color: #1a56db; text-align: center; font-size: 10.5px; margin-bottom: 4px; }
+    .bank-box .bank-name { font-weight: 700; margin-top: 4px; }
+    .sig-area { width: 52%; display: flex; justify-content: space-between; padding-top: 4px; }
+    .sig-col { width: 46%; text-align: center; display: flex; flex-direction: column; align-items: center; font-size: 11px; }
+    .sig-label { font-size: 10.5px; color: #6b7280; margin-bottom: 48px; }
+    .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
+    .sig-name { font-weight: 700; font-size: 11px; }
+    .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
+    .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin-top: 10px; }
+    .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
+    .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
+  </style>
+</head>
+<body>
+  ${bodyContent}
+  <script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>
+</body>
+</html>`
+}
+
 async function exportMonthToExcel() {
   if (isExporting.value) return
   const items = filteredData.value
@@ -218,7 +561,7 @@ async function exportMonthToExcel() {
 
   isExporting.value = true
   try {
-    await exportInvoicesToExcel(items, `RentalInvoice_${periodLabel}`)
+    await exportInvoicesToExcel(items, `RentalInvoice_${periodLabel}`, [])
     toast.success('Excel report downloaded successfully')
   } finally {
     isExporting.value = false
@@ -230,294 +573,308 @@ async function exportInvoicesToExcel(
   filename: string,
   leadingSheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = [],
 ) {
-  const groups = new Map<string, any[]>()
-  for (const item of items) {
-    const key = String(item.customer_id ?? 'unknown')
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key)!.push(item)
-  }
+  const sortedItems = [...items].sort((a, b) => {
+    const da = a.period_start || a.monthly_date || a.invoice_date || ''
+    const db = b.period_start || b.monthly_date || b.invoice_date || ''
+    return String(da).localeCompare(String(db))
+  })
 
   const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
-  // Sheet names must be unique (two customers may share the same company name).
   const usedSheetNames = new Set<string>()
-  // Layout 5 kolom ala invoice manual (tanpa kolom Rp terpisah):
-  // A=No(4.2), B=Description(39.2), C=MeterValues(7.8), D=Operator/Rate(13), E=Amount(31.2).
-  // Rp ditampilkan via number format; nol tampil '-', negatif dalam kurung.
   const columnWidths = [4.2, 39.2, 7.8, 13, 31.2]
 
-  for (const [customerId, groupItems] of groups) {
-    const sortedItems = [...groupItems].sort((a, b) => {
-      const da = a.period_start || a.monthly_date || ''
-      const db = b.period_start || b.monthly_date || ''
-      return da.localeCompare(db)
-    })
-
-    const firstCustomer = findCustomer(sortedItems[0].customer_id)
-    const sheetName = uniqueSheetName(
-      firstCustomer?.company_name || firstCustomer?.name || 'Customer_' + customerId,
-      usedSheetNames,
-    )
+  for (const item of sortedItems) {
+    const customer = findCustomer(item.customer_id)
+    const custName = customer?.company_name || customer?.name || ''
+    const custShort = custName ? custName.replace(/PT\.?\s*/i, '').trim().slice(0, 15) : ''
+    const baseName = custShort && item.invoice_no
+      ? `${custShort} - ${item.invoice_no}`
+      : (item.invoice_no || custName || `Inv_${item.id}`)
+    const sheetName = uniqueSheetName(baseName, usedSheetNames)
 
     const rows: StyledCell[][] = []
     const addRow = (cells: StyledCell[]) => rows.push(cells)
 
-    const addInvoice = (item: any) => {
-      const customer = findCustomer(item.customer_id)
-      const custName = customer?.company_name || customer?.name || '-'
-      const custAddress = customer?.address || '-'
-      const ci = findContractItem(item.contract_item_id)
-      const unit = findUnit(ci?.unit_id)
-      const isCopier = isCopierUnit(unit)
-      const invoiceDate = item.invoice_date || item.monthly_date || item.period_start
-      const dateLabel = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
-      const periodLabel = item.period_start
-        ? new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-        : '-'
-      const baseRentalFee = item.base_rental_fee ?? item.basis_rental_fee ?? 0
+    const custAddress = customer?.address || '-'
+    const ci = findContractItem(item.contract_item_id)
+    const unit = findUnit(ci?.unit_id)
+    const isCopier = isCopierUnit(unit)
+    const invoiceDate = item.invoice_date || item.monthly_date || item.period_start
+    const dateLabel = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
+    const periodLabel = item.period_start
+      ? new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+      : '-'
+    const baseRentalFee = item.base_rental_fee ?? item.basis_rental_fee ?? 0
 
-      const pic = customer?.pic_name || ''
-      const picGender = customer?.pic_gender
-      const picPhone = customer?.phone || ''
-      const picPrefix = picGender === 'L' ? 'Bapak' : picGender === 'P' ? 'Ibu' : 'Bapak/Ibu'
-      const picDisplay = pic ? ('PIC ' + (picPrefix ? picPrefix + ' ' : '') + pic + (picPhone ? ' - ' + picPhone : '')) : 'PIC Finance'
+    const pic = customer?.pic_name || ''
+    const picGender = customer?.pic_gender
+    const picPhone = customer?.phone || ''
+    const picPrefix = picGender === 'L' ? 'Bapak' : picGender === 'P' ? 'Ibu' : 'Bapak/Ibu'
+    const picDisplay = pic ? ('PIC ' + (picPrefix ? picPrefix + ' ' : '') + pic + (picPhone ? ' - ' + picPhone : '')) : 'PIC Finance'
 
-      const brandName = unit?.brand?.name || unit?.brand_name || ''
-      const modelDesc = unit?.model || ci?.description || ''
-      const serialNo = unit?.serial_no || ''
+    const brandName = unit?.brand?.name || unit?.brand_name || ''
+    const modelDesc = unit?.model || ci?.description || ''
+    const serialNo = unit?.serial_no || ''
+    const poNo = (item.po_no || item.rental?.po_no || '').trim()
 
-      // ===== COMPANY HEADER (left) + INVOICE INFO (right), 5 kolom ala invoice manual =====
-      // Row 1: Company name + Inv No.
+    // Row 1: Company name + Inv No.
+    addRow([
+      { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
+      {},
+      { v: 'Inv No. :', style: 'borderBoldRight' },
+      { v: item.invoice_no || '-', style: 'border' },
+    ])
+    // Row 2: Address line 1 + Date
+    addRow([
+      { v: 'Ruko Purimas Blok A No.47 Kota Batam', mergeAcross: 1, style: 'borderCenter' }, {},
+      {},
+      { v: 'Date :', style: 'borderBoldRight' },
+      { v: dateLabel, style: 'border' },
+    ])
+    // Row 3: Address line 2 + PO No / Kepada Yth.
+    if (poNo) {
       addRow([
-        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
+        { v: 'Kepulauan Riau - Indonesia', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
-        { v: 'Inv No. :', style: 'borderBoldRight' },
-        { v: item.invoice_no || '-', style: 'border' },
+        { v: 'PO No. :', style: 'borderBoldRight' },
+        { v: poNo, style: 'border' },
       ])
-      // Row 2: Address line 1 + Date
       addRow([
-        { v: 'Greenland Housing Blok E6 No. 11', mergeAcross: 1, style: 'borderCenter' }, {},
-        {},
-        { v: 'Date :', style: 'borderBoldRight' },
-        { v: dateLabel, style: 'border' },
-      ])
-      // Row 3: Address line 2 + Kepada Yth.
-      addRow([
-        { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 1, style: 'borderCenter' }, {},
+        { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
         { v: 'Kepada Yth. ', style: 'borderBoldRight' },
         { style: 'border' },
       ])
-      // Row 4: Phone + Customer name
+      addRow([
+        { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: custName || '-', style: 'borderBold' },
+        { style: 'border' },
+      ])
+      addRow([
+        { v: 'www.biassuryateknologi.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: custAddress, mergeAcross: 1, style: 'border' }, {},
+      ])
+      addRow([
+        { style: 'border' }, { style: 'border' },
+        {},
+        { v: 'Up :', style: 'borderBoldRight' },
+        { v: picDisplay, style: 'borderBold' },
+      ])
+    } else {
+      addRow([
+        { v: 'Kepulauan Riau - Indonesia', mergeAcross: 1, style: 'borderCenter' }, {},
+        {},
+        { v: 'Kepada Yth. ', style: 'borderBoldRight' },
+        { style: 'border' },
+      ])
       addRow([
         { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
-        { v: custName, style: 'borderBold' },
+        { v: custName || '-', style: 'borderBold' },
         { style: 'border' },
       ])
-      // Row 5: Email + Customer address
       addRow([
         { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
         { v: custAddress, mergeAcross: 1, style: 'border' }, {},
       ])
-      // Row 6: Website + PIC
       addRow([
-        { v: 'www.biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        { v: 'www.biassuryateknologi.com', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
         { v: 'Up :', style: 'borderBoldRight' },
         { v: picDisplay, style: 'borderBold' },
       ])
-      // Row 7: spacer bergaris ala invoice manual
+    }
+    // Spacer
+    addRow([
+      { style: 'border' }, { style: 'border' },
+      {},
+      { style: 'border' }, { style: 'border' },
+    ])
+
+    // Title + Period
+    addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
+    addRow([{ v: 'Periode : ' + periodLabel, mergeAcross: 1, style: 'borderBold' }, {}])
+
+    // Table Header
+    addRow([
+      { v: 'No', style: 'borderBoldCenter' },
+      { v: 'Description', style: 'borderBold' },
+      { style: 'border' },
+      { style: 'border' },
+      { v: 'Amount', style: 'borderBold' },
+    ])
+
+    const fullUnitName = unit ? formatUnitDisplayName(unit) : ([brandName, modelDesc].filter(Boolean).join(' ') || (isCopier ? 'Mesin Fotocopy' : 'Printer'))
+    const machineLine = `Rental Charges ${fullUnitName} 1 Unit`
+    const unitLine2 = serialNo ? `S/N : ${serialNo}` : ''
+    addRow([
+      { v: 1, style: 'borderCenter' },
+      { v: machineLine, style: 'borderBold' },
+      {}, {},
+      { v: baseRentalFee, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+    ])
+    if (unitLine2) {
       addRow([
-        { style: 'border' }, { style: 'border' },
         {},
-        { style: 'border' }, { style: 'border' },
-      ])
-
-      // ===== INVOICE TITLE + PERIOD =====
-      addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
-      addRow([{ v: 'Periode : ' + periodLabel, mergeAcross: 1, style: 'borderBold' }, {}])
-
-      // ===== TABLE HEADER =====
-      addRow([
-        { v: 'No', style: 'borderBoldCenter' },
-        { v: 'Description', style: 'borderBold' },
-        { style: 'border' },
-        { style: 'border' },
-        { v: 'Amount', style: 'borderBold' },
-      ])
-
-      // ===== ROW 1: Rental Charge (2 baris ala invoice manual) =====
-      // Baris 1: jenis mesin + customer + amount. Baris 2: unit + S/N.
-      const machineLine = `Rental Charges ${isCopier ? 'Mesin Fotocopy' : 'Printer'} ${custName}`
-      const unitLine2 = [brandName, modelDesc, serialNo ? `S/N : ${serialNo}` : '', '1 Unit'].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
-      addRow([
-        { v: 1, style: 'borderCenter' },
-        { v: machineLine, style: 'borderBold' },
-        {}, {},
-        { v: baseRentalFee, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-      ])
-      addRow([
-        {},
-        { v: unitLine2 || '-', style: 'borderBold' },
+        { v: unitLine2, style: 'border' },
         { style: 'border' }, { style: 'border' },
         { style: 'border' },
       ])
-
-      const meterDetails: any[] = item.meter_details || []
-      let rowNum = 2
-
-      // --- Helper: render meter section ---
-      // Format ikut invoice Excel manual: angka tetap numerik, Rp via number
-      // format, 0 tampil '-', net negatif tampil dalam kurung.
-      // Nominal uang tidak berubah (billable tetap clamp >= 0).
-      const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number) => {
-        const total = last - start
-        const net = total - free
-        const billable = Math.max(0, net)
-        // Section label (e.g. "B/W A4", "Colour A4") — bold
-        addRow([{ style: 'border' }, { v: sectionLabel, style: 'borderBold' }, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-        // Start Meter Reading
-        addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
-        // Last Meter Reading + (-)
-        addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
-        // Total Copies
-        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
-        // Free Copies + (-)
-        addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
-        // Total Copies (net)
-        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
-        return { total, billable }
-      }
-
-      // --- Helper: render charge row ---
-      const chargeRow = (desc: string, rate: number, amount: number) => {
-        addRow([
-          { v: rowNum++, style: 'borderCenter' },
-          { v: desc, style: 'border' },
-          { v: '(x)', style: 'borderCenter' },
-          { v: rate, style: 'borderRight', numFmt: NUMFMT_RP_RATE },
-          { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-        ])
-      }
-
-      if (meterDetails.length > 0) {
-        // Group meter details by paper size + kind
-        const byPaperSize = new Map<string, any[]>()
-        for (const detail of meterDetails) {
-          const psName = detail.paper_size?.name || 'Tanpa ukuran'
-          const ptName = detail.paper_type?.name || ''
-          const key = ptName ? `${psName}/${ptName}` : psName
-          if (!byPaperSize.has(key)) byPaperSize.set(key, [])
-          byPaperSize.get(key)!.push(detail)
-        }
-
-        for (const [paperSize, details] of byPaperSize) {
-          const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
-          const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
-
-          // B/W section for this paper size
-          for (const detail of bwDetails) {
-            const start = detail.start_meter_reading || 0
-            const last = detail.last_meter_reading || 0
-            const free = detail.free_quota ?? 0
-            pushMeterSection(`B/W ${paperSize}`, start, last, free)
-            chargeRow(`Copies Charges B/W ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
-          }
-
-          // Colour section for this paper size
-          for (const detail of colorDetails) {
-            const start = detail.start_meter_reading || 0
-            const last = detail.last_meter_reading || 0
-            const free = detail.free_quota ?? 0
-            pushMeterSection(`Colour ${paperSize}`, start, last, free)
-            chargeRow(`Copies Charges Colour ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
-          }
-        }
-      } else if (isCopier) {
-        // Fallback: no meter_details but is copier
-        const bwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
-        const bwEnd = item.meter_end || item.meter_end_bw || bwStart
-        const bwFree = item.free_copies || ci?.free_copy_quota || 2000
-        const bwRate = item.rate_per_page || 150
-        const bw = pushMeterSection('B/W A4', bwStart, bwEnd, bwFree)
-        chargeRow('Copies Charges B/W A4', bwRate, bw.billable * bwRate)
-
-        const colorStart = ci?.start_meter_color || 0
-        const colorEnd = item.meter_end_colour || colorStart
-        const colorFree = ci?.free_quota_color || 0
-        const colorRate = ci?.rate_per_page_color || bwRate
-        if (colorStart > 0 || colorFree > 0) {
-          const col = pushMeterSection('Colour A4', colorStart, colorEnd, colorFree)
-          chargeRow('Copies Charges Colour A4', colorRate, col.billable * colorRate)
-        }
-      }
-
-      // ===== TOTAL / TAX / TOTAL PAY =====
-      const subtotal = item.subtotal ?? (baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0))
-      const tax = item.tax || 0
-      const totalPay = item.total_pay ?? subtotal + tax
-
-      addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: subtotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
-      addRow([
-        { v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {},
-        { style: 'border' },
-        { v: 'TAX', style: 'borderBoldRight' },
-        { v: tax, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-      ])
-      addRow([
-        { v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {},
-        { style: 'border' },
-        { v: 'TOTAL PAY', style: 'borderBoldRight' },
-        { v: totalPay, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-      ])
-      addRow([{ v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-      addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-      addRow([{ v: 'Account No. 1060885757', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-      addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-      addRow([{ v: 'Account No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-
-      // ===== SIGNATURES =====
-      addRow([])
-      addRow([{ v: 'Received By,', mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'plainBoldCenter' }])
-      addRow([])
-      addRow([{ v: '_______________________', mergeAcross: 1, style: 'plainCenter' }, {}, {}, { v: '_______________________', mergeAcross: 1, style: 'plainCenter' }])
-      addRow([{ v: '', mergeAcross: 1 }, {}, {}, { v: item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-', mergeAcross: 1, style: 'plainBoldCenter' }])
-      addRow([{}, {}, { v: 'Admin Finance', mergeAcross: 2, style: 'plainCenter' }])
-      addRow([])
     }
 
-    for (const item of sortedItems) addInvoice(item)
+    const meterDetails: any[] = item.meter_details || []
+    let rowNum = 2
+
+    const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number) => {
+      const total = last - start
+      const net = total - free
+      const billable = Math.max(0, net)
+      addRow([{ style: 'border' }, { v: sectionLabel, style: 'borderBold' }, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+      addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
+      addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+      addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
+      addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+      return { total, billable }
+    }
+
+    const chargeRow = (desc: string, rate: number, amount: number) => {
+      addRow([
+        { v: rowNum++, style: 'borderCenter' },
+        { v: desc, style: 'border' },
+        { v: '(x)', style: 'borderCenter' },
+        { v: rate, style: 'borderRight', numFmt: NUMFMT_RP_RATE },
+        { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      ])
+    }
+
+    if (meterDetails.length > 0) {
+      const byPaperSize = new Map<string, any[]>()
+      for (const detail of meterDetails) {
+        const psName = detail.paper_size?.name || 'Tanpa ukuran'
+        const ptName = detail.paper_type?.name || ''
+        const key = ptName ? `${psName}/${ptName}` : psName
+        if (!byPaperSize.has(key)) byPaperSize.set(key, [])
+        byPaperSize.get(key)!.push(detail)
+      }
+
+      for (const [paperSize, details] of byPaperSize) {
+        const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
+        const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
+
+        for (const detail of bwDetails) {
+          const start = detail.start_meter_reading || 0
+          const last = detail.last_meter_reading || 0
+          const free = detail.free_quota ?? 0
+          pushMeterSection(`B/W ${paperSize}`, start, last, free)
+          chargeRow(`Copies Charges B/W ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
+        }
+
+        for (const detail of colorDetails) {
+          const start = detail.start_meter_reading || 0
+          const last = detail.last_meter_reading || 0
+          const free = detail.free_quota ?? 0
+          pushMeterSection(`Colour ${paperSize}`, start, last, free)
+          chargeRow(`Copies Charges Colour ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
+        }
+      }
+    } else if (isCopier) {
+      const bwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
+      const bwEnd = item.meter_end || item.meter_end_bw || bwStart
+      const bwFree = item.free_copies || ci?.free_copy_quota || 2000
+      const bwRate = item.rate_per_page || 150
+      const bw = pushMeterSection('B/W A4', bwStart, bwEnd, bwFree)
+      chargeRow('Copies Charges B/W A4', bwRate, bw.billable * bwRate)
+
+      const colorStart = ci?.start_meter_color || 0
+      const colorEnd = item.meter_end_colour || colorStart
+      const colorFree = ci?.free_quota_color || 0
+      const colorRate = ci?.rate_per_page_color || bwRate
+      if (colorStart > 0 || colorFree > 0) {
+        const col = pushMeterSection('Colour A4', colorStart, colorEnd, colorFree)
+        chargeRow('Copies Charges Colour A4', colorRate, col.billable * colorRate)
+      }
+    }
+
+    const subtotal = item.subtotal ?? (baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0))
+    const tax = item.tax || 0
+    const totalPay = item.total_pay ?? subtotal + tax
+
+    addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: subtotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+    addRow([
+      { v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {},
+      { style: 'border' },
+      { v: 'TAX', style: 'borderBoldRight' },
+      { v: tax, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+    ])
+    addRow([
+      { v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {},
+      { style: 'border' },
+      { v: 'TOTAL PAY', style: 'borderBoldRight' },
+      { v: totalPay, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+    ])
+    addRow([{ v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+    addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+    addRow([{ v: 'Account No. 1060885757', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+    addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+    addRow([{ v: 'Account No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+
+    // Signatures
+    addRow([])
+    addRow([{ v: 'Received By,', mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'plainBoldCenter' }])
+    addRow([])
+    addRow([{ v: '_______________________', mergeAcross: 1, style: 'plainCenter' }, {}, {}, { v: '_______________________', mergeAcross: 1, style: 'plainCenter' }])
+    addRow([{ v: picDisplay, mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-', mergeAcross: 1, style: 'plainBoldCenter' }])
+    addRow([{}, {}, {}, { v: 'Admin Finance', mergeAcross: 1, style: 'plainCenter' }])
+
     sheets.push({ name: sheetName, columnWidths, rows })
   }
 
   await downloadStyledExcel([...leadingSheets, ...sheets], filename)
 }
-// Old export block (unused XLSX/PDF) removed — active export uses downloadStyledExcel.
+
 function exportMonthToPdf() {
   const items = filteredData.value
   if (items.length === 0) {
     toast.warning('No rental invoice data to export to PDF!')
     return
   }
-
-  const rows = items.map((item: any, index: number) => `
-    <tr>
-      <td>${index + 1}</td>
-      <td>${item.invoice_no || `INV-R-${item.id}`}</td>
-      <td>${formatDate(item.monthly_date || item.period_start)}</td>
-      <td>${customerName(item.customer_id)}</td>
-      <td>${contractNo(item.contract_item_id)}</td>
-      <td>${formatRupiah(item.total_pay || item.subtotal || 0)}</td>
-      <td>${String(item.status || 'unpaid').toUpperCase()}</td>
-    </tr>
-  `).join('')
+  let periodLabel = 'Semua Periode'
+  if (monthFilter.value) {
+    const [y, m] = monthFilter.value.split('-')
+    const mName = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    periodLabel = mName
+  } else if (startDateFilter.value || endDateFilter.value) {
+    periodLabel = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
+  }
+  const html = renderRentalInvoicesPdf(items, `Rental Invoices - ${periodLabel}`)
   const printWindow = window.open('', '_blank')
-  if (!printWindow) return
-  printWindow.document.write(`<!doctype html><html><head><title>Rental Invoices</title><style>
-    body{font:12px Arial,sans-serif;color:#222}h1,h2{text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #777;padding:6px}th{background:#e8f1ff}
-    </style></head><body><h1>PT. BIAS SURYA TEKNOLOGI</h1><h2>Rental Invoices</h2><table><thead><tr><th>No</th><th>Invoice</th><th>Date</th><th>Customer</th><th>Contract</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()<\/script></body></html>`)
-  printWindow.document.close()
+  if (printWindow) {
+    printWindow.document.write(html)
+    printWindow.document.close()
+  }
+}
+
+function exportAnnualPdf() {
+  const year = normalizeExportYear(yearFilter.value)
+  if (year === null) {
+    toast.warning('Invalid year (1900–2100)!')
+    return
+  }
+  const items = filterApprovedPaid(filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS))
+  if (items.length === 0) {
+    toast.warning(`No approved & paid rental invoice data for year ${year}!`)
+    return
+  }
+  const html = renderRentalInvoicesPdf(items, `Rental Invoices Annual ${year}`)
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.write(html)
+    printWindow.document.close()
+  }
 }
 
 const form = reactive({
@@ -589,109 +946,11 @@ async function exportAnnualExcel() {
   }
   isExporting.value = true
   try {
-    const sorted = [...items].sort((a: any, b: any) =>
-      String(a.period_start || a.monthly_date || '').localeCompare(String(b.period_start || b.monthly_date || '')))
-    const recapRows: RecapRow[] = sorted.map((item: any, i: number) => {
-      const c = findCustomer(item.customer_id)
-      const period = item.period_start
-        ? new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-        : String(item.monthly_date || '').slice(0, 10)
-      return {
-        no: i + 1,
-        customer: c?.company_name || c?.name || '-',
-        invoiceNo: item.invoice_no || '-',
-        period,
-        total: item.total_pay ?? item.subtotal ?? 0,
-      }
-    })
-    const recap = buildRecapSheet(`Rental Invoice Recap ${year}`, `${items.length} invoice(s) (approved & paid)`, recapRows)
-    await exportInvoicesToExcel(items, `RentalInvoice_Annual_${year}`, [recap])
+    await exportInvoicesToExcel(items, `RentalInvoice_Annual_${year}`, [])
     toast.success('Annual Excel report downloaded successfully')
   } finally {
     isExporting.value = false
   }
-}
-
-async function exportAnnualPdf() {
-  const year = normalizeExportYear(yearFilter.value)
-  if (year === null) {
-    toast.warning('Invalid year (1900–2100)!')
-    return
-  }
-  // Annual export only for invoices that are approved AND paid.
-  const items = filterApprovedPaid(filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS))
-  if (items.length === 0) {
-    toast.warning(`No approved & paid rental invoice data for year ${year}!`)
-    return
-  }
-  const body = items.map((inv: any) => {
-    const html = invoiceHtml(inv)
-    const m = html.match(/<body>([\s\S]*?)<\/body>/)
-    return m ? `<div style="page-break-after: always;">${m[1]}</div>` : ''
-  }).join('')
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <title>Annual Rental Invoice Report ${year}</title>
-  <style>
-    @media print { @page { margin: 12mm 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-    * { box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; margin: 0; padding: 20px; color: #1a1a1a; background: #fff; }
-    .inv-container { max-width: 760px; margin: 0 auto; page-break-after: always; }
-    .header-wrap { display: flex; justify-content: space-between; align-items: stretch; gap: 16px; margin-bottom: 16px; }
-    .left-box { width: 44%; background: #f0f7ff; border-radius: 8px; padding: 14px 16px; }
-    .left-box .co-name { color: #1a56db; font-size: 14px; font-weight: 700; margin-bottom: 8px; letter-spacing: 0.3px; }
-    .left-box .co-addr { font-size: 10.5px; color: #374151; line-height: 1.6; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #bfdbfe; }
-    .left-box .co-contact { font-size: 10.5px; color: #374151; line-height: 1.8; }
-    .right-box { width: 54%; }
-    .right-table { width: 100%; border-collapse: collapse; font-size: 11px; border-radius: 8px; overflow: hidden; }
-    .right-table td { border: 1px solid #e5e7eb; padding: 5px 10px; vertical-align: top; }
-    .right-table .lbl { width: 80px; font-weight: 600; color: #6b7280; background: #f9fafb; white-space: nowrap; }
-    .right-table .kepada { text-align: center; font-weight: 700; background: #1a56db; color: #fff; letter-spacing: 0.5px; }
-    .right-table .cust-name { font-weight: 700; font-size: 12px; }
-    .inv-title-wrap { text-align: center; margin: 16px 0 6px; }
-    .inv-title { font-size: 26px; font-weight: 800; letter-spacing: 6px; color: #111827; }
-    .period { text-align: center; font-style: italic; font-size: 11.5px; color: #4b5563; margin-bottom: 14px; }
-    .main-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-    .main-table thead tr { background: #1a56db; color: #fff; }
-    .main-table th { padding: 8px 10px; font-weight: 600; font-size: 11px; text-align: left; letter-spacing: 0.3px; }
-    .main-table th.center { text-align: center; }
-    .main-table td { border: 1px solid #e5e7eb; padding: 6px 10px; vertical-align: top; }
-    .main-table tbody tr:nth-child(even) { background: #f9fafb; }
-    .no-col { width: 28px; text-align: center; }
-    .rp-col { width: 22px; border-right: none !important; text-align: center; color: #6b7280; font-size: 10px; }
-    .val-col { border-left: none !important; text-align: right; width: 90px; font-weight: 600; }
-    .desc-inner { font-size: 10.5px; }
-    .desc-inner .meter-section { margin: 6px 0 4px 8px; color: #374151; }
-    .desc-inner .meter-label { font-weight: 600; font-size: 10.5px; color: #1a56db; margin-bottom: 2px; }
-    .desc-inner .meter-grid { display: grid; grid-template-columns: 1fr 70px 16px; line-height: 1.7; padding-left: 4px; color: #374151; }
-    .desc-inner .meter-grid span.num { text-align: right; font-weight: 500; }
-    .total-row td { font-weight: 600; background: #f9fafb; border: 1px solid #e5e7eb; padding: 6px 10px; }
-    .total-row.grand td { background: #1a56db; color: #fff; font-size: 12px; font-weight: 700; }
-    .total-lbl { text-align: right; padding-right: 12px; color: #4b5563; }
-    .total-row.grand .total-lbl { color: #fff; }
-    .bottom-wrap { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 16px; }
-    .bank-box { width: 44%; background: #f0f7ff; border-radius: 8px; padding: 12px 14px; font-size: 10px; line-height: 1.7; color: #374151; }
-    .bank-box .bank-header { font-weight: 700; color: #1a56db; text-align: center; font-size: 10.5px; margin-bottom: 4px; }
-    .bank-box .bank-name { font-weight: 700; margin-top: 4px; }
-    .sig-area { width: 52%; display: flex; justify-content: space-between; padding-top: 4px; }
-    .sig-col { width: 46%; text-align: center; display: flex; flex-direction: column; align-items: center; font-size: 11px; }
-    .sig-label { font-size: 10.5px; color: #6b7280; margin-bottom: 48px; }
-    .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
-    .sig-name { font-weight: 700; font-size: 11px; }
-    .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
-    .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin-top: 10px; }
-    .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
-    .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
-  </style>
-</head>
-<body>
-${body}
-<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>
-</body>
-</html>`
-  const w = window.open('', '_blank')
-  if (w) { w.document.write(html); w.document.close() }
 }
 
 function onContractChange() {
@@ -864,319 +1123,7 @@ function formatRupiah(val: number): string {
 }
 
 function invoiceHtml(item: any): string {
-  const customer = findCustomer(item.customer_id)
-  const custName = customer?.company_name || customer?.name || '-'
-  const custAddress = customer?.address || '-'
-  const pic = customer?.pic_name || '-'
-  const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
-  const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
-  const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
-
-  const dateStr = item.invoice_date
-    ? new Date(item.invoice_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
-    : (item.monthly_date ? new Date(item.monthly_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '-')
-
-  let periodStr = '-'
-  if (item.period_start) {
-    periodStr = new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-  }
-
-  const ci = findContractItem(item.contract_item_id) || contractItems.value.find(c => String(c.contract_id) === String(item.contract_id))
-  const unit = findUnit(ci?.unit_id)
-  const isCopier = isCopierUnit(unit)
-  const unitDesc = ci?.description || unit?.model || ''
-  const baseRentalFee = item.base_rental_fee || item.basis_rental_fee || 0
-
-  // Build meter detail rows from meter_details array
-  const meterDetails: any[] = item.meter_details || []
-  const bwDetails = meterDetails.filter((d: any) => (d.color_mode || '').toLowerCase().includes('bw') || (d.color_mode || '').toLowerCase().includes('mono') || (d.color_mode || '').toLowerCase() === 'b/w')
-  const colDetails = meterDetails.filter((d: any) => (d.color_mode || '').toLowerCase().includes('colour') || (d.color_mode || '').toLowerCase().includes('color'))
-
-  // If no meter_details, fall back to flat fields for legacy data
-  const legacyBwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
-  const legacyBwEnd = item.meter_end || item.meter_end_bw || legacyBwStart
-  const legacyFree = item.free_copies || ci?.free_copy_quota || 2000
-  const legacyRateBw = item.rate_per_page || 150
-
-  // Format cetak ala invoice manual: 0 tampil '-', net negatif dalam kurung.
-  const fmtPcsPrint = (n: number) => n === 0 ? '-' : n.toLocaleString('id-ID')
-  const fmtNetPrint = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : n === 0 ? '-' : n.toLocaleString('id-ID')
-
-  function meterDetailRows(details: any[], label: string): string {
-    if (details.length === 0) return ''
-    return details.map(d => {
-      const start = d.start_meter_reading || 0
-      const last = d.last_meter_reading || 0
-      const total = d.total_copies ?? (last - start)
-      const free = d.free_quota ?? 0
-      const net = total - free
-      const sizeLabel = d.paper_size?.name || d.color_mode || label
-      return `
-        <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
-          <b>${sizeLabel}</b><br>
-          <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
-            <span>Start Meter Reading</span><span style="text-align:right;">${start.toLocaleString('id-ID')}</span><span></span>
-            <span>Last Meter Reading</span><span style="text-align:right;">${last.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-            <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(total)}</b></span><span></span>
-            <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(free)}</span><span style="padding-left:4px;">(-)</span>
-            <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(net)}</b></span><span></span>
-          </div>
-        </td></tr>`
-    }).join('')
-  }
-
-  // Charge rows per detail
-  function chargeRows(details: any[], rowNum: number): string {
-    return details.map((d, i) => {
-      const sizeLabel = d.paper_size?.name ? `Copies Charges ${d.color_mode?.toUpperCase() || ''} ${d.paper_size.name}` : `Copies Charges ${d.color_mode?.toUpperCase() || ''}`
-      const rate = d.rate_per_page || 0
-      const amount = d.total_amount || 0
-      return `<tr>
-        <td class="no-col">${rowNum + i}</td>
-        <td>${sizeLabel}</td>
-        <td style="text-align:center;">(x)</td>
-        <td style="text-align:right;">${rate > 0 ? `Rp&nbsp;${rate.toLocaleString('id-ID')}` : '-'}</td>
-        <td class="rp-col">Rp</td>
-        <td class="val-col">${amount > 0 ? amount.toLocaleString('id-ID') : '-'}</td>
-      </tr>`
-    }).join('')
-  }
-
-  // Legacy (no meter_details) rows
-  const legacyBwTotal = Math.max(0, legacyBwEnd - legacyBwStart)
-  const legacyBwNet = legacyBwTotal - legacyFree
-  const legacyBwBillable = Math.max(0, legacyBwNet)
-  const legacyBwAmount = legacyBwBillable * legacyRateBw
-
-  const legacyColStart = ci?.start_meter_color || 0
-  const legacyColEnd = legacyColStart
-  const legacyColFree = ci?.free_quota_color || 0
-  const legacyColTotal = Math.max(0, legacyColEnd - legacyColStart)
-  const legacyColNet = legacyColTotal - legacyColFree
-
-  const legacyBodyRows = (meterDetails.length === 0 && isCopier) ? `
-    <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
-      <b>B/W</b><br>
-      <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
-        <span>Start Meter Reading</span><span style="text-align:right;">${legacyBwStart.toLocaleString('id-ID')}</span><span></span>
-        <span>Last Meter Reading</span><span style="text-align:right;">${legacyBwEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyBwTotal)}</b></span><span></span>
-        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyFree)}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyBwNet)}</b></span><span></span>
-      </div>
-
-      ${legacyColStart > 0 || legacyColFree > 0 ? `
-      <br><b>Color</b><br>
-      <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
-        <span>Start Meter Reading</span><span style="text-align:right;">${legacyColStart.toLocaleString('id-ID')}</span><span></span>
-        <span>Last Meter Reading</span><span style="text-align:right;">${legacyColEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyColTotal)}</b></span><span></span>
-        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyColFree)}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyColNet)}</b></span><span></span>
-      </div>
-      ` : ''}
-    </td></tr>
-    <tr>
-      <td class="no-col">2</td><td>Copies Charges B/W</td>
-      <td style="text-align:center;">(x)</td>
-      <td style="text-align:right;">${legacyRateBw > 0 ? `Rp&nbsp;${legacyRateBw.toLocaleString('id-ID')}` : '-'}</td>
-      <td class="rp-col">Rp</td>
-      <td class="val-col">${legacyBwAmount > 0 ? legacyBwAmount.toLocaleString('id-ID') : '-'}</td>
-    </tr>` : ''
-
-  const totalNum = item.subtotal || baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0)
-  const taxNum = item.tax || 0
-  const totalPayNum = item.total_pay || 0
-  const total = totalNum === 0 ? '-' : totalNum.toLocaleString('id-ID')
-  const tax = taxNum === 0 ? '-' : taxNum.toLocaleString('id-ID')
-  const totalPay = totalPayNum === 0 ? '-' : totalPayNum.toLocaleString('id-ID')
-
-  // Stempel pelunasan: hanya bila invoice sudah di-approve accounting.
-  const payStatus = String(item.payment_status || '').toLowerCase()
-  const isApprovedInv = String(item.status || '').toLowerCase() === 'approved'
-  const stampHtml = !isApprovedInv ? '' : payStatus === 'paid'
-    ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp">LUNAS</span></div>`
-    : (payStatus === 'partially_paid' || payStatus === 'partial')
-      ? `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
-      : `<div style="text-align:center; margin: 8px 0 2px;"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <title>Invoice - ${item.invoice_no || 'Rental'}</title>
-  <style>
-    @media print { @page { margin: 12mm 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-    * { box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; margin: 0; padding: 20px; color: #1a1a1a; background: #fff; }
-    .inv-container { max-width: 760px; margin: 0 auto; }
-
-    /* Header */
-    .header-wrap { display: flex; justify-content: space-between; align-items: stretch; gap: 16px; margin-bottom: 16px; }
-    .left-box { width: 44%; background: #f0f7ff; border-radius: 8px; padding: 14px 16px; }
-    .left-box .co-name { color: #1a56db; font-size: 14px; font-weight: 700; margin-bottom: 8px; letter-spacing: 0.3px; }
-    .left-box .co-addr { font-size: 10.5px; color: #374151; line-height: 1.6; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #bfdbfe; }
-    .left-box .co-contact { font-size: 10.5px; color: #374151; line-height: 1.8; }
-    .right-box { width: 54%; }
-    .right-table { width: 100%; border-collapse: collapse; font-size: 11px; border-radius: 8px; overflow: hidden; }
-    .right-table td { border: 1px solid #e5e7eb; padding: 5px 10px; vertical-align: top; }
-    .right-table tr:first-child td:first-child { border-radius: 8px 0 0 0; }
-    .right-table .lbl { width: 80px; font-weight: 600; color: #6b7280; background: #f9fafb; white-space: nowrap; }
-    .right-table .kepada { text-align: center; font-weight: 700; background: #1a56db; color: #fff; letter-spacing: 0.5px; }
-    .right-table .cust-name { font-weight: 700; font-size: 12px; }
-
-    /* Invoice Title */
-    .inv-title-wrap { text-align: center; margin: 16px 0 6px; }
-    .inv-title { font-size: 26px; font-weight: 800; letter-spacing: 6px; color: #111827; }
-    .period { text-align: center; font-style: italic; font-size: 11.5px; color: #4b5563; margin-bottom: 14px; }
-
-    /* Main Table */
-    .main-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-    .main-table thead tr { background: #1a56db; color: #fff; }
-    .main-table th { padding: 8px 10px; font-weight: 600; font-size: 11px; text-align: left; letter-spacing: 0.3px; }
-    .main-table th.center { text-align: center; }
-    .main-table td { border: 1px solid #e5e7eb; padding: 6px 10px; vertical-align: top; }
-    .main-table tbody tr:nth-child(even) { background: #f9fafb; }
-    .no-col { width: 28px; text-align: center; }
-    .rp-col { width: 22px; border-right: none !important; text-align: center; color: #6b7280; font-size: 10px; }
-    .val-col { border-left: none !important; text-align: right; width: 90px; font-weight: 600; }
-    .desc-inner { font-size: 10.5px; }
-    .desc-inner .meter-section { margin: 6px 0 4px 8px; color: #374151; }
-    .desc-inner .meter-label { font-weight: 600; font-size: 10.5px; color: #1a56db; margin-bottom: 2px; }
-    .desc-inner .meter-grid { display: grid; grid-template-columns: 1fr 70px 16px; line-height: 1.7; padding-left: 4px; color: #374151; }
-    .desc-inner .meter-grid span.num { text-align: right; font-weight: 500; }
-
-    /* Total rows */
-    .total-row td { font-weight: 600; background: #f9fafb; border: 1px solid #e5e7eb; padding: 6px 10px; }
-    .total-row.grand td { background: #1a56db; color: #fff; font-size: 12px; font-weight: 700; }
-    .total-lbl { text-align: right; padding-right: 12px; color: #4b5563; }
-    .total-row.grand .total-lbl { color: #fff; }
-
-    /* Footer */
-    .bottom-wrap { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 16px; }
-    .bank-box { width: 44%; background: #f0f7ff; border-radius: 8px; padding: 12px 14px; font-size: 10px; line-height: 1.7; color: #374151; }
-    .bank-box .bank-header { font-weight: 700; color: #1a56db; text-align: center; font-size: 10.5px; margin-bottom: 4px; }
-    .bank-box .bank-name { font-weight: 700; margin-top: 4px; }
-    .sig-area { width: 52%; display: flex; justify-content: space-between; padding-top: 4px; }
-    .sig-col { width: 46%; text-align: center; display: flex; flex-direction: column; align-items: center; font-size: 11px; }
-    .sig-label { font-size: 10.5px; color: #6b7280; margin-bottom: 48px; }
-    .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
-    .sig-name { font-weight: 700; font-size: 11px; }
-    .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
-    .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin-top: 10px; }
-    .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
-    .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
-  </style>
-</head>
-<body>
-<div class="inv-container">
-  <!-- Header -->
-  <div class="header-wrap">
-    <div class="left-box">
-      <div class="co-name">PT. BiAS SURYA TEKNOLOGI</div>
-      <div class="co-addr">Greenland Housing Blok E6 No. 11<br>Batam Kota - Batam - Kepulauan Riau</div>
-      <div class="co-contact">
-        Telp : +62 811 7045 657<br>
-        Email : admin@biasbst.com<br>
-        www.biasbst.com
-      </div>
-    </div>
-    <div class="right-box">
-      <table class="right-table">
-        <tr><td class="lbl">Inv No. :</td><td>${item.invoice_no || '-'}</td></tr>
-        <tr><td class="lbl">Date :</td><td>${dateStr}</td></tr>
-        ${item.po_no || item.rental?.po_no ? `<tr><td class="lbl">PO No. :</td><td>${item.po_no || item.rental?.po_no}</td></tr>` : ''}
-        <tr><td colspan="2" style="text-align:center; font-weight:bold;">To:</td></tr>
-        <tr><td colspan="2" class="cust-name">${custName}</td></tr>
-        <tr><td colspan="2" style="font-weight:normal; min-height:36px; vertical-align:top;">${custAddress}</td></tr>
-        <tr><td class="lbl">Attn</td><td>${picDisplay}</td></tr>
-      </table>
-    </div>
-  </div>
-
-  <div class="inv-title-wrap"><div class="inv-title">INVOICE</div></div>
-  <div class="period">Period: ${periodStr}</div>
-
-  <!-- Main Table -->
-  <table class="main-table">
-    <thead>
-      <tr>
-        <th class="no-col">No</th>
-        <th>Description</th>
-        <th></th>
-        <th></th>
-        <th class="center">Rp</th>
-        <th style="text-align:right; width:90px;">Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      <!-- Row 1: Rental charge -->
-      <tr>
-        <td class="no-col">1</td>
-        <td colspan="3" style="font-weight:bold;">Rental Charges ${unitDesc} 1 Unit</td>
-        <td class="rp-col">Rp</td>
-        <td class="val-col">${baseRentalFee.toLocaleString('id-ID')}</td>
-      </tr>
-
-      ${meterDetails.length > 0
-      ? meterDetailRows(bwDetails, 'B/W') + meterDetailRows(colDetails, 'Colour')
-      : legacyBodyRows
-    }
-
-      ${meterDetails.length > 0 ? chargeRows([...bwDetails, ...colDetails], 2) : ''}
-
-      <!-- Total rows -->
-      <tr class="total-row">
-        <td colspan="4" class="total-lbl">TOTAL</td>
-        <td class="rp-col">Rp</td>
-        <td class="val-col">${total}</td>
-      </tr>
-      <tr class="total-row">
-        <td colspan="4" class="total-lbl">TAX</td>
-        <td class="rp-col">Rp</td>
-        <td class="val-col">${tax === '0' ? '-' : tax}</td>
-      </tr>
-      <tr class="total-row grand">
-        <td colspan="4" class="total-lbl">TOTAL PAY</td>
-        <td class="rp-col">Rp</td>
-        <td class="val-col">${totalPay}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  ${stampHtml}
-  <!-- Footer -->
-  <div class="bottom-wrap">
-    <div class="bank-box">
-      <div class="bank-header">Payment by transfer to account:</div>
-      <div class="bank-header">PT. BIAS SURYA TEKNOLOGI</div>
-      NPWP : 0941.8395.0822.5000<br>
-      <span class="bank-name">BANK RIAU KEPRI SYARIAH CAB. BATAM</span><br>
-      Rek No. 1060885757<br>
-      <span class="bank-name">BANK MANDIRI CABANG BATAM</span><br>
-      Rek No. 109-00-3388575-7
-    </div>
-    <div class="sig-area">
-      <div class="sig-col">
-        <span class="sig-label">Received By,</span>
-        <div class="sig-line"></div>
-        <div class="sig-name">${picDisplay}</div>
-      </div>
-      <div class="sig-col">
-        <span class="sig-label">PT. BiAS SURYA TEKNOLOGI</span>
-        <div class="sig-line"></div>
-        <div class="sig-name">${signer}</div>
-        <div class="sig-role">Admin Finance</div>
-      </div>
-    </div>
-  </div>
-</div>
-</body>
-</html>`
-
-  return html
+  return renderRentalInvoicesPdf([item], `Invoice - ${item.invoice_no || 'Rental'}`)
 }
 
 function printReceipt(item: any) {
@@ -1219,7 +1166,7 @@ function printInvoice(item: any) {
     toast.warning('Invoice is not approved yet, cannot print receipt')
     return
   }
-  const html = invoiceHtml(item).replace('</body>', '<script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script></body>')
+  const html = invoiceHtml(item)
   const w = window.open('', '_blank')
   if (w) { w.document.write(html); w.document.close() }
 }
@@ -1259,8 +1206,28 @@ function printInvoice(item: any) {
       </div>
 
       <div class="export-actions">
-      
-       
+        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportMonthToPdf"
+          title="Export PDF (Filtered)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          Export PDF
+        </button>
+        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel"
+          :disabled="isExporting" title="Export Excel (Filtered)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="8" y1="13" x2="16" y2="13"></line>
+            <line x1="8" y1="17" x2="16" y2="17"></line>
+          </svg>
+          Export Excel
+        </button>
         <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf"
           title="Export Annual (PDF)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -1419,14 +1386,14 @@ function printInvoice(item: any) {
       :open="hardDelete.show"
       title="Hapus Permanen Rental Invoice"
       :item-label="hardDelete.expected"
-      :item-name="hardDelete.expected"
-      :confirm-input="hardDelete.input"
-      :is-valid="hardDelete.confirmed"
+      :expected="hardDelete.expected"
+      :confirm-valid="hardDelete.confirmed"
+      :show-cascade-option="true"
       :cascade="hardDelete.cascade"
-      @update:confirm-input="hardDelete.input = $event"
       @update:cascade="hardDelete.cascade = $event"
+      @update:input="hardDelete.input = $event"
       @confirm="hardDelete.confirm"
-      @cancel="hardDelete.close"
+      @close="hardDelete.close"
     />
 
     <FormModal :open="showDetail" :title="detailItem ? `Invoice Details ${detailItem.invoice_no}` : 'Invoice Details'"

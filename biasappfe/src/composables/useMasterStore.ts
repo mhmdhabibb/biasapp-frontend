@@ -25,6 +25,12 @@ import type {
   ProcurementDeliveryOrder,
 } from "@/types";
 import { reactive, toRefs, ref } from "vue";
+import {
+  formatUnitDisplayName as utilFormatUnitDisplayName,
+  formatProductDisplayName as utilFormatProductDisplayName,
+  isCopierOrPrinter,
+  resolvePrintTech,
+} from "@/utils/format";
 
 const store = reactive({
   customers: [] as Customer[],
@@ -47,6 +53,7 @@ const store = reactive({
   warrantyClaims: [] as WarrantyClaim[],
   sparepartRequests: [] as SparepartRequest[],
   indents: [] as Indent[],
+  rents: [] as any[],
   deliveryOrders: [] as DeliveryOrder[],
   purchaseOrders: [] as PurchaseOrder[],
   procurementDeliveryOrders: [] as ProcurementDeliveryOrder[],
@@ -77,8 +84,8 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   // Customer Service Operational Pages
   "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments"],
   "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units"],
-  "/customer-service/sales": ["sales", "salesInvoices", "customers", "units"],
-  "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units"],
+  "/customer-service/sales": ["sales", "salesInvoices", "customers", "units", "products", "brands", "unitTypes"],
+  "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "technicians", "units", "customers", "products"],
   "/customer-service/contract-items": ["contractItems", "customers", "units", "brands", "unitTypes"],
   "/customer-service/job-orders": ["jobOrders", "deliveryOrders", "serviceReports", "serviceRequests", "technicians", "units", "customers"],
@@ -86,7 +93,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/monthly-meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers"],
   "/customer-service/payments": ["payments", "rentalInvoices", "salesInvoices", "customers"],
   "/customer-service/warranty-claims": ["warrantyClaims", "units", "customers", "warranties"],
-  "/customer-service/sparepart-request": ["sparepartRequests", "serviceReports", "units", "customers"],
+  "/customer-service/sparepart-request": ["sparepartRequests", "serviceReports", "units", "customers", "products"],
   "/customer-service/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
   "/customer-service/indent": ["indents", "products", "suppliers"],
   "/customer-service/delivery": ["deliveryOrders", "purchaseOrders", "customers"],
@@ -102,7 +109,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   // Technician Operational Pages
   "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
   "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
-  "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units"],
+  "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units"],
   "/technician/service-history": ["serviceReports", "technicians", "units"],
   "/technician/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units"],
@@ -122,7 +129,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/master/uoms": ["uoms"],
   "/master/products": ["products"],
   "/master/units": ["units", "customers", "contractItems", "brands", "unitTypes"],
-  "/master/warranties": ["warranties"],
+  "/master/warranties": ["warranties", "sales", "units", "products", "customers"],
   "/master/excel-templates": ["excelTemplates"],
   "/master/suppliers": ["suppliers"],
   "/master/contracts": ["contracts", "contractItems", "customers"],
@@ -243,6 +250,16 @@ export function useMasterStore() {
         safeFetch(
           fetchAll("sales", DROPDOWN_LIMIT),
           (items) => (store.sales = items || []),
+        ),
+      rents: () =>
+        safeFetch(
+          fetchAll("rents", DROPDOWN_LIMIT),
+          (items) => ((store as any).rents = items || []),
+        ),
+      rentals: () =>
+        safeFetch(
+          fetchAll("rents", DROPDOWN_LIMIT),
+          (items) => ((store as any).rents = items || []),
         ),
       rentalInvoices: () =>
         safeFetch(
@@ -507,16 +524,22 @@ export function useMasterStore() {
     return (store.sparepartRequests || []).find((r) => String(r.id).trim().toLowerCase() === str);
   }
 
-  function findRentalInvoice(id: number | null): RentalInvoice | undefined {
-    return (store.rentalInvoices || []).find((ri) => ri.id === id);
+  function findRentalInvoice(id: any): RentalInvoice | undefined {
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.rentalInvoices || []).find((ri) => String(ri.id).trim().toLowerCase() === str);
   }
 
-  function findSale(id: number | null): Sale | undefined {
-    return (store.sales || []).find((s) => s.id === id);
+  function findSale(id: any): Sale | undefined {
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.sales || []).find((s) => String(s.id).trim().toLowerCase() === str);
   }
 
   function findSalesInvoice(id: any): SalesInvoice | undefined {
-    return (store.salesInvoices || []).find((si) => si.id === id);
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.salesInvoices || []).find((si) => String(si.id).trim().toLowerCase() === str);
   }
 
   function getUnitsByCustomer(customerId: number | string | null): Unit[] {
@@ -574,6 +597,14 @@ export function useMasterStore() {
     );
   }
 
+  function formatUnitDisplayName(u: any): string {
+    return utilFormatUnitDisplayName(u, { findBrand, findUnitType });
+  }
+
+  function formatProductDisplayName(p: any): string {
+    return utilFormatProductDisplayName(p, { findBrand });
+  }
+
   return {
     ...toRefs(store),
     refresh: syncFromApi,
@@ -600,5 +631,10 @@ export function useMasterStore() {
     getContractsByCustomer,
     getTechnicianIdByUser,
     getServiceReportsByTechnician,
+    formatUnitDisplayName,
+    formatProductDisplayName,
+    isCopierOrPrinter,
+    resolvePrintTech,
+    getResourcesForPath,
   };
 }

@@ -18,16 +18,52 @@ import type { SalesInvoice, TableColumn } from '@/types'
 import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_RP, SALES_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
 import { buildPaymentVerifyUrl, generatePaymentQrDataUrl, paymentMethodOf, printPaymentStruk } from '@/utils/paymentReceipt'
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 
 const toast = useToast()
 const route = useRoute()
-const { ensureResourcesLoaded } = useMasterStore()
+const {
+  salesInvoices: data,
+  sales,
+  customers,
+  products,
+  units,
+  brands,
+  unitTypes,
+  payments,
+  findCustomer,
+  findProduct,
+  findUnit,
+  findBrand,
+  findSale,
+  refreshInBackground,
+  ensureResourcesLoaded,
+  formatUnitDisplayName,
+  formatProductDisplayName,
+} = useMasterStore()
+
+let salesInvTimer: any = null
+
+function silentRefresh() {
+  if (document.visibilityState === 'visible') {
+    void refreshInBackground()
+  }
+}
 
 onMounted(() => {
   ensureResourcesLoaded(route.path)
+  salesInvTimer = setInterval(silentRefresh, 4000)
+  window.addEventListener('focus', silentRefresh)
+  window.addEventListener('bias:data-mutated', silentRefresh)
 })
+
+onUnmounted(() => {
+  if (salesInvTimer) clearInterval(salesInvTimer)
+  window.removeEventListener('focus', silentRefresh)
+  window.removeEventListener('bias:data-mutated', silentRefresh)
+})
+
 const { can } = usePermission()
 const { currentUser } = useAuth()
 
@@ -36,22 +72,13 @@ function signerName(item: any): string {
   return item?.user?.name || item?.user?.username
     || (currentUser as any)?.value?.name || (currentUser as any)?.name || '-'
 }
-const {
-  salesInvoices: data,
-  sales,
-  customers,
-  products,
-  payments,
-  findCustomer,
-  findProduct,
-  findSale,
-} = useMasterStore()
 
 const resources = useResourcesStore()
 
 const hardDelete = useHardDelete(
   (id, cascade) => resourceService.salesInvoices.hardRemove(id, cascade),
-  () => useMasterStore().refreshInBackground(),
+  () => refreshInBackground(),
+  'sales_invoice:delete',
 )
 
 const columns: TableColumn[] = [
@@ -174,8 +201,454 @@ const filteredData = computed(() => {
   return items
 })
 
-function exportMonthToPdf() {
-  toast.info('PDF export will be available soon (sample function)')
+function getInvoiceItems(item: any): any[] {
+  if (!item) return []
+  // 1. Ambil dari item.items (SalesInvoiceItem)
+  if (Array.isArray(item.items) && item.items.length > 0) {
+    return item.items
+  }
+  if (Array.isArray(item.sales_invoice_items) && item.sales_invoice_items.length > 0) {
+    return item.sales_invoice_items
+  }
+  // 2. Ambil dari item.sale.sale_items atau item.sale.items
+  if (item.sale) {
+    if (Array.isArray(item.sale.sale_items) && item.sale.sale_items.length > 0) {
+      return item.sale.sale_items
+    }
+    if (Array.isArray(item.sale.items) && item.sale.items.length > 0) {
+      return item.sale.items
+    }
+  }
+  // 3. Ambil dari findSale(item.sale_id)?.sale_items
+  const saleId = item.sale_id || item.sale?.id
+  if (saleId) {
+    const s = findSale(saleId)
+    if (s && Array.isArray(s.sale_items) && s.sale_items.length > 0) {
+      return s.sale_items
+    }
+    if (s && Array.isArray((s as any).items) && (s as any).items.length > 0) {
+      return (s as any).items
+    }
+  }
+  // 4. Ambil dari item.sale_items
+  if (Array.isArray(item.sale_items) && item.sale_items.length > 0) {
+    return item.sale_items
+  }
+  return []
+}
+
+function getItemDisplayInfo(si: any) {
+  let name = ''
+  let uom = si.uom_name || si.uom || ''
+  let serialNo = ''
+
+  // 1. Cek jika Product (sparepart, toner, aksesoris, dll)
+  if (si.product && (si.product.name || si.product.id)) {
+    name = formatProductDisplayName(si.product)
+    if (!uom && si.product.uom?.name) uom = si.product.uom.name
+  } else if (si.product_id) {
+    const p = findProduct(si.product_id)
+    if (p) {
+      name = formatProductDisplayName(p)
+      if (!uom && (p as any).uom?.name) uom = (p as any).uom.name
+    }
+  }
+
+  // 2. Cek jika Unit (Mesin fotokopi / printer / scanner)
+  const u = si.unit || (si.unit_id ? findUnit(si.unit_id) : null)
+  if (!name && u) {
+    name = formatUnitDisplayName(u)
+    serialNo = u.serial_no || u.serial_number || ''
+    if (!uom) uom = 'Unit'
+  }
+
+  // 3. Cek dari specs jika ada JSON string
+  if (!name && si.specs) {
+    try {
+      const parsed = typeof si.specs === 'string' ? JSON.parse(si.specs) : si.specs
+      if (parsed?.name) name = parsed.name
+      if (parsed?.serial_no && !serialNo) serialNo = parsed.serial_no
+    } catch (_) {}
+  }
+
+  // 4. Fallback nama item
+  if (!name) {
+    if (si.unit_id) {
+      const uFallback = findUnit(si.unit_id)
+      name = uFallback ? formatUnitDisplayName(uFallback) : `Unit (${si.unit_id})`
+    } else if (si.product_id) {
+      const pFallback = findProduct(si.product_id)
+      name = pFallback ? formatProductDisplayName(pFallback) : `Product (${si.product_id})`
+    } else {
+      name = si.item_name || si.name || si.product_name || si.unit_name || si.description || 'Barang Penjualan'
+    }
+  }
+
+  if (!serialNo) {
+    serialNo = si.serial_no || si.serial_number || ''
+  }
+
+  if (!uom) uom = 'Unit'
+
+  const qty = Number(si.qty) || 1
+  const price = Number(si.unit_price ?? si.price ?? (si.total_price && qty ? si.total_price / qty : 0)) || 0
+  const total = Number(si.total_price ?? (price * qty)) || 0
+
+  return {
+    name,
+    uom,
+    qty,
+    price,
+    total,
+    description: si.description || '',
+    serialNo,
+  }
+}
+
+async function resolveInvoiceFullData(item: any): Promise<any> {
+  if (!item) return item
+  if (getInvoiceItems(item).length > 0) return item
+
+  // 1. Ambil detail invoice lengkap via API jika items belum ada
+  if (item.id) {
+    try {
+      const res: any = await api.get(`/sales-invoices/${item.id}`, false, true)
+      const invData = res?.data?.data || res?.data
+      if (invData && typeof invData === 'object' && invData.id) {
+        Object.assign(item, invData)
+      }
+    } catch (_) {}
+  }
+
+  if (getInvoiceItems(item).length > 0) return item
+
+  // 2. Ambil detail sale lengkap via API jika sale_items masih kosong
+  const saleId = item.sale_id || item.sale?.id
+  if (saleId) {
+    try {
+      const res: any = await api.get(`/sales/${saleId}`, false, true)
+      const saleData = res?.data?.data || res?.data
+      if (saleData && typeof saleData === 'object' && saleData.id) {
+        item.sale = saleData
+        const storeSale = findSale(saleId)
+        if (storeSale) Object.assign(storeSale, saleData)
+      }
+    } catch (_) {}
+  }
+
+  return item
+}
+
+async function ensureInvoicesItemsLoaded(items: any[]): Promise<void> {
+  const missing = items.filter(it => getInvoiceItems(it).length === 0)
+  if (missing.length === 0) return
+  await Promise.all(missing.map(it => resolveInvoiceFullData(it)))
+}
+
+function renderSalesInvoiceBody(item: any): string {
+  const customer = findCustomer(item.customer_id)
+  const custName = customer?.company_name || customer?.name || '-'
+  const custAddress = customer?.address || '-'
+  const custPhone = customer?.phone || '-'
+  const pic = customer?.pic_name || '-'
+  const gender = customer?.pic_gender
+  let prefix = 'Bapak/Ibu '
+  if (gender === 'L') prefix = 'Bapak '
+  if (gender === 'P') prefix = 'Ibu '
+  const picDisplay = pic !== '-' ? prefix + pic : '-'
+  const signer = signerName(item)
+
+  const invoiceNo = item.invoice_no || '-'
+  const invoiceDate = item.invoice_date || item.created_at || item.due_date
+
+  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+
+  let itemsHtml = ''
+  const sale = item.sale || findSale(item.sale_id)
+  const poNo = (sale?.po_no || sale?.po_number || item?.po_no || item?.po_number || '').trim()
+  const invoiceItems = getInvoiceItems(item)
+
+  if (invoiceItems.length > 0) {
+    itemsHtml = invoiceItems.map((si: any, idx: number) => {
+      const info = getItemDisplayInfo(si)
+      let descHtml = info.name
+      if (info.serialNo) {
+        descHtml += ` <span style="font-size: 11px; color: #003366; font-weight: 600;">(SN: ${info.serialNo})</span>`
+      }
+      if (info.description) {
+        descHtml += `<br><span style="font-size: 10px; color: #555;">${info.description}</span>`
+      }
+      return `
+        <tr>
+          <td style="text-align: center;">${idx + 1}</td>
+          <td>${descHtml}</td>
+          <td style="text-align: center;">${info.qty}</td>
+          <td style="text-align: center;">${info.uom}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${info.price.toLocaleString('id-ID')}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${info.total.toLocaleString('id-ID')}</td>
+        </tr>
+      `
+    }).join('')
+  } else {
+    const rawTotal = Number(item.subtotal || item.total_amount || item.total || 0)
+    if (rawTotal > 0) {
+      const fallbackDesc = item.notes?.trim() || (sale?.sale_no ? `Penjualan Unit / Produk (${sale.sale_no})` : (item.invoice_no ? `Penjualan (${item.invoice_no})` : 'Penjualan Unit / Produk'))
+      itemsHtml = `
+        <tr>
+          <td style="text-align: center;">1</td>
+          <td>${fallbackDesc}</td>
+          <td style="text-align: center;">1</td>
+          <td style="text-align: center;">Unit</td>
+          <td class="rp-col">Rp</td><td class="val-col">${rawTotal.toLocaleString('id-ID')}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${rawTotal.toLocaleString('id-ID')}</td>
+        </tr>
+      `
+    } else {
+      itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">Data unit / produk belum tersedia</td></tr>`
+    }
+  }
+
+  const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
+  const discountStr = (item.discount || 0).toLocaleString('id-ID')
+  const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
+
+  // Stempel label Lunas dihilangkan pada sales invoice (hanya ada pada bukti pembayaran / kwitansi)
+  const stampHtml = ''
+
+  return `
+    <div class="container">
+      <table class="header-table">
+        <tr>
+          <td class="logo-col">
+            <div class="logo-container">
+              <img src="${BIAS_LOGO_DATA_URL}" class="logo" alt="BiAS Logo" />
+              <div class="company-details">
+                <h1>PT. BIAS SURYA</h1>
+                <h1>TEKNOLOGI</h1>
+                <h2>The shape of smart</h2>
+              </div>
+            </div>
+            <div class="company-details" style="padding-left: 95px;">
+              <p>Ruko Purimas Blok A No.47 Kota Batam,<br>
+              Kepulauan Riau - Indonesia<br>
+              Phone: +62811 704 5657<br>
+              Email: admin@biasbst.com<br>
+              Website: www.biassuryateknologi.com</p>
+            </div>
+            <div class="invoice-text">INVOICE</div>
+          </td>
+          <td class="info-col">
+            <div style="font-size: 20px; font-weight: bold; text-align: right; margin-bottom: 10px; font-family: monospace;">INVOICE NO. : ${invoiceNo}</div>
+            <table class="meta-table">
+              <tr>
+                <td class="label">Date :</td>
+                <td>${dateStr}</td>
+              </tr>
+              <tr>
+                <td class="label">PO NO.:</td>
+                <td style="font-weight: 700; color: #003366;">${poNo || '-'}</td>
+              </tr>
+              <tr>
+                <td colspan="2" class="bg-blue">To:</td>
+              </tr>
+              <tr>
+                <td colspan="2" style="font-weight: bold; height: 35px; vertical-align: top;">${custName}</td>
+              </tr>
+              <tr>
+                <td colspan="2" class="bg-blue" style="height: 10px; padding: 4px 8px;">Address :</td>
+              </tr>
+              <tr>
+                <td colspan="2" style="height: 45px; vertical-align: top;">${custAddress}</td>
+              </tr>
+              <tr>
+                <td class="label">Phone :</td>
+                <td>${custPhone}</td>
+              </tr>
+              <tr>
+                <td class="label">Attn:</td>
+                <td>${picDisplay}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;">No</th>
+            <th>Description</th>
+            <th style="width: 50px;">Qty</th>
+            <th style="width: 60px;">UOM</th>
+            <th colspan="2" style="width: 140px;">Unit Price</th>
+            <th colspan="2" style="width: 140px;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsHtml}
+          <tr style="height: 60px;">
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="rp-col"></td><td class="val-col"></td>
+            <td class="rp-col"></td><td class="val-col"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table class="summary-table">
+        <tr>
+          <td class="label">Sub Total</td>
+          <td class="rp-col" style="border-right: none; width: 30px; padding-right: 0;">Rp</td>
+          <td class="val-col" style="border-left: none; text-align: right; width: 110px;">${subTotalStr}</td>
+        </tr>
+        <tr>
+          <td class="label">Discount</td>
+          <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
+          <td class="val-col" style="border-left: none; text-align: right;">${discountStr}</td>
+        </tr>
+        <tr>
+          <td class="label">Amount</td>
+          <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
+          <td class="val-col" style="border-left: none; text-align: right;">${grandTotalStr}</td>
+        </tr>
+      </table>
+
+      <div class="payment-info">
+        Payment by transfer to account:<br>
+        BANK BRKSYARIAH Cabang Batam<br>
+        Account No. 106-08-85757<br>
+        Account Name : PT. BIAS SURYA TEKNOLOGI<br>
+        NPWP : 0941.8395.0822.5000
+      </div>
+
+      ${stampHtml}
+      <div class="signatures">
+        <div class="sig-box">
+          Received By, (${picDisplay})
+          <div class="sig-line"></div>
+        </div>
+        <div class="sig-box">
+          Sincerely,
+          <div class="sig-line">${signer}</div>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function renderSalesInvoicesPdf(items: any[], title: string): string {
+  const bodyContent = items.map(item => `<div class="inv-page">${renderSalesInvoiceBody(item)}</div>`).join('')
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <title>${title}</title>
+    <style>
+      @media print {
+        @page { margin: 10mm; size: portrait; }
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .inv-page { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
+        .inv-page:last-child { page-break-after: auto; break-after: auto; }
+      }
+      * { box-sizing: border-box; }
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; color: #000; font-size: 12px; margin: 0; background: #fff; }
+      .inv-page { margin-bottom: 30px; }
+      @media print {
+        .inv-page { margin-bottom: 0; }
+      }
+      .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+      .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+      .header-table td { vertical-align: top; padding: 0; }
+
+      .logo-col { width: 50%; padding-right: 20px; }
+      .info-col { width: 50%; }
+
+      .logo-container { display: flex; align-items: center; margin-bottom: 10px; }
+      .logo { width: 80px; height: 80px; margin-right: 15px; flex-shrink: 0; object-fit: contain; }
+
+      .company-details h1 { margin: 0; font-size: 22px; font-weight: bold; }
+      .company-details h2 { margin: 0; font-size: 14px; font-style: italic; font-weight: normal; margin-bottom: 10px; color: #333; }
+      .company-details p { margin: 0; font-size: 11px; line-height: 1.4; }
+
+      .invoice-text { font-size: 28px; font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 10px; letter-spacing: 1px; }
+
+      .meta-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #7ea8ce; }
+      .meta-table td, .meta-table th { border: 1px solid #7ea8ce; padding: 4px 8px; }
+      .meta-table .bg-blue { background-color: #003366; color: white; font-weight: bold; }
+      .meta-table .label { width: 90px; font-weight: bold; }
+
+      .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      .items-table th { background-color: #003366; color: white; border: 1px solid #7ea8ce; padding: 8px; text-align: center; font-size: 12px; }
+      .items-table td { border: 1px solid #7ea8ce; padding: 8px; vertical-align: top; }
+      .items-table .rp-col { border-right: none; width: 20px; padding-right: 2px; }
+      .items-table .val-col { border-left: none; text-align: right; }
+
+      .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 0; margin-bottom: 20px; }
+      .summary-table td { border: 1px solid #7ea8ce; padding: 6px; background-color: #dbeaf4; font-weight: bold; }
+      .summary-table .label { text-align: right; padding-right: 10px; }
+
+      .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
+
+      .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
+      .sig-box { width: 250px; }
+      .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
+      .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin: 10px 0; }
+      .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
+      .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
+      .stamp-wrap { text-align: center; clear: both; padding-top: 10px; }
+    </style>
+  </head>
+  <body>
+    ${bodyContent}
+    <script>window.onload=function(){setTimeout(()=>{window.print()},500)}<\/script>
+  </body>
+</html>
+  `
+}
+
+async function exportMonthToPdf() {
+  const items = filteredData.value
+  if (items.length === 0) {
+    toast.warning('No sales invoice data to export to PDF!')
+    return
+  }
+  await ensureInvoicesItemsLoaded(items)
+  let periodLabel = 'Semua Periode'
+  if (monthFilter.value) {
+    const [y, m] = monthFilter.value.split('-')
+    const mName = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    periodLabel = mName
+  } else if (startDateFilter.value || endDateFilter.value) {
+    periodLabel = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
+  }
+  const html = renderSalesInvoicesPdf(items, `Sales Invoices - ${periodLabel}`)
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.write(html)
+    printWindow.document.close()
+  }
+}
+
+async function exportAnnualPdf() {
+  const year = normalizeExportYear(yearFilter.value)
+  if (year === null) {
+    toast.warning('Invalid year (1900–2100)!')
+    return
+  }
+  const items = filterApprovedPaid(filterByYear(data.value, year, SALES_INVOICE_YEAR_FIELDS))
+  if (items.length === 0) {
+    toast.warning(`No approved & paid sales invoice data for year ${year}!`)
+    return
+  }
+  await ensureInvoicesItemsLoaded(items)
+  const html = renderSalesInvoicesPdf(items, `Sales Invoices Annual ${year}`)
+  const printWindow = window.open('', '_blank')
+  if (printWindow) {
+    printWindow.document.write(html)
+    printWindow.document.close()
+  }
 }
 
 async function exportMonthToExcel() {
@@ -195,7 +668,7 @@ async function exportMonthToExcel() {
 
   isExporting.value = true
   try {
-    await exportInvoicesToExcel(items, `SalesInvoice_${periodLabel}`)
+    await exportInvoicesToExcel(items, `SalesInvoice_${periodLabel}`, [])
     toast.success('Excel report downloaded successfully')
   } finally {
     isExporting.value = false
@@ -217,23 +690,7 @@ async function exportAnnualExcel() {
   }
   isExporting.value = true
   try {
-    const sorted = [...items].sort((a: any, b: any) =>
-      String(a.invoice_date || a.created_at || a.due_date || '').localeCompare(
-        String(b.invoice_date || b.created_at || b.due_date || '')))
-    const recapRows: RecapRow[] = sorted.map((item: any, i: number) => {
-      const c = findCustomer(item.customer_id)
-      const dateVal = item.invoice_date || item.created_at || item.due_date
-      const period = dateVal ? new Date(dateVal).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
-      return {
-        no: i + 1,
-        customer: c?.company_name || c?.name || '-',
-        invoiceNo: item.invoice_no || '-',
-        period,
-        total: item.total_amount ?? item.total ?? item.subtotal ?? 0,
-      }
-    })
-    const recap = buildRecapSheet(`Sales Invoice Recap ${year}`, `${items.length} invoice(s) (approved & paid)`, recapRows)
-    await exportInvoicesToExcel(items, `SalesInvoice_Annual_${year}`, [recap])
+    await exportInvoicesToExcel(items, `SalesInvoice_Annual_${year}`, [])
     toast.success('Annual Excel report downloaded successfully')
   } finally {
     isExporting.value = false
@@ -245,213 +702,143 @@ async function exportInvoicesToExcel(
   filename: string,
   leadingSheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = [],
 ) {
-  const groups = new Map<string, any[]>()
-  for (const item of items) {
-    const key = String(item.customer_id ?? 'unknown')
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key)!.push(item)
-  }
+  await ensureInvoicesItemsLoaded(items)
+  const sortedItems = [...items].sort((a, b) => {
+    const da = a.invoice_date || a.created_at || a.due_date || ''
+    const db = b.invoice_date || b.created_at || b.due_date || ''
+    return String(da).localeCompare(String(db))
+  })
 
   const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
-  // Sheet names must be unique (two customers may share the same company name).
   const usedSheetNames = new Set<string>()
-  // Layout 5 kolom ala invoice manual (tanpa kolom Rp terpisah, Rp via number
-  // format): A=No(4.2), B=Description(39.2), C=Qty(7.8), D=UOM(13), E=Amount(31.2)
   const columnWidths = [4.2, 39.2, 7.8, 13, 31.2]
 
-  for (const [customerId, groupItems] of groups) {
-    const sortedItems = [...groupItems].sort((a, b) => {
-      const da = a.invoice_date || a.created_at || a.due_date || ''
-      const db = b.invoice_date || b.created_at || b.due_date || ''
-      return String(da).localeCompare(String(db))
-    })
-
-    const firstCustomer = findCustomer(sortedItems[0].customer_id)
-    const sheetName = uniqueSheetName(
-      firstCustomer?.company_name || firstCustomer?.name || 'Customer_' + customerId,
-      usedSheetNames,
-    )
+  for (const item of sortedItems) {
+    const customer = findCustomer(item.customer_id)
+    const custName = customer?.company_name || customer?.name || ''
+    const custShort = custName ? custName.replace(/PT\.?\s*/i, '').trim().slice(0, 15) : ''
+    const baseName = custShort && item.invoice_no
+      ? `${custShort} - ${item.invoice_no}`
+      : (item.invoice_no || custName || `Inv_${item.id}`)
+    const sheetName = uniqueSheetName(baseName, usedSheetNames)
 
     const rows: StyledCell[][] = []
     const addRow = (cells: StyledCell[]) => rows.push(cells)
 
-    const addInvoice = (item: any) => {
-      const customer = findCustomer(item.customer_id)
-      const custName = customer?.company_name || customer?.name || '-'
-      const dateLabel = item.invoice_date || item.created_at
-        ? new Date(item.invoice_date || item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-        : '-'
-      const poNo = item.sale?.po_no || item.po_no || '-'
+    const dateLabel = item.invoice_date || item.created_at
+      ? new Date(item.invoice_date || item.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+      : '-'
+    const sale = item.sale || findSale(item.sale_id)
+    const poNo = (sale?.po_no || sale?.po_number || item?.po_no || item?.po_number || '').trim() || '-'
 
-      // Header blok (5 kolom, konsisten dengan export rental)
-      addRow([
-        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
-        {},
-        { v: 'Inv No. :', style: 'borderBoldRight' },
-        { v: item.invoice_no || '-', style: 'border' },
-      ])
-      addRow([
-        { v: 'Ruko Puri Mas I Blok A No.40 teluk tering', mergeAcross: 1, style: 'borderCenter' }, {},
-        {},
-        { v: 'Date :', style: 'borderBoldRight' },
-        { v: dateLabel, style: 'border' },
-      ])
-      addRow([
-        { v: 'Batam Kota - Batam - Kepulauan Riau', mergeAcross: 1, style: 'borderCenter' }, {},
-        {},
-        { v: 'PO No. :', style: 'borderBoldRight' },
-        { v: poNo, style: 'border' },
-      ])
-      addRow([
-        { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
-        {},
-        { v: 'Kepada Yth. ', style: 'borderBoldRight' },
-        { style: 'border' },
-      ])
-      addRow([
-        { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
-        {},
-        { v: custName, style: 'borderBold' },
-        { style: 'border' },
-      ])
-      addRow([
-        { v: 'www.biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
-        {},
-        { v: customer?.address || '-', mergeAcross: 1, style: 'border' }, {},
-      ])
-      addRow([
-        { style: 'border' }, { style: 'border' },
-        {},
-        { v: 'Up :', style: 'borderBoldRight' },
-        { v: customer?.pic_name || '-', style: 'borderBold' },
-      ])
-      // Spacer bergaris ala invoice manual
-      addRow([
-        { style: 'border' }, { style: 'border' },
-        {},
-        { style: 'border' }, { style: 'border' },
-      ])
+    // Header blok (5 kolom, konsisten dengan invoice manual)
+    addRow([
+      { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
+      {},
+      { v: 'Inv No. :', style: 'borderBoldRight' },
+      { v: item.invoice_no || '-', style: 'border' },
+    ])
+    addRow([
+      { v: 'Ruko Purimas Blok A No.47 Kota Batam', mergeAcross: 1, style: 'borderCenter' }, {},
+      {},
+      { v: 'Date :', style: 'borderBoldRight' },
+      { v: dateLabel, style: 'border' },
+    ])
+    addRow([
+      { v: 'Kepulauan Riau - Indonesia', mergeAcross: 1, style: 'borderCenter' }, {},
+      {},
+      { v: 'PO No. :', style: 'borderBoldRight' },
+      { v: poNo, style: 'border' },
+    ])
+    addRow([
+      { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
+      {},
+      { v: 'Kepada Yth. ', style: 'borderBoldRight' },
+      { style: 'border' },
+    ])
+    addRow([
+      { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+      {},
+      { v: custName, style: 'borderBold' },
+      { style: 'border' },
+    ])
+    addRow([
+      { v: 'www.biassuryateknologi.com', mergeAcross: 1, style: 'borderCenter' }, {},
+      {},
+      { v: customer?.address || '-', mergeAcross: 1, style: 'border' }, {},
+    ])
+    addRow([
+      { style: 'border' }, { style: 'border' },
+      {},
+      { v: 'Up :', style: 'borderBoldRight' },
+      { v: customer?.pic_name || '-', style: 'borderBold' },
+    ])
+    // Spacer bergaris ala invoice manual
+    addRow([
+      { style: 'border' }, { style: 'border' },
+      {},
+      { style: 'border' }, { style: 'border' },
+    ])
 
-      addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
-      addRow([])
+    addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
+    addRow([])
 
-      // Header tabel items
-      addRow([
-        { v: 'No', style: 'borderBoldCenter' },
-        { v: 'Description', style: 'borderBold' },
-        { v: 'Qty', style: 'borderBoldCenter' },
-        { v: 'UOM', style: 'borderBoldCenter' },
-        { v: 'Amount', style: 'borderBold' },
-      ])
+    // Header tabel items
+    addRow([
+      { v: 'No', style: 'borderBoldCenter' },
+      { v: 'Description', style: 'borderBold' },
+      { v: 'Qty', style: 'borderBoldCenter' },
+      { v: 'UOM', style: 'borderBoldCenter' },
+      { v: 'Amount', style: 'borderBold' },
+    ])
 
-      const sale = findSale(item.sale_id)
-      const saleItems: any[] = (sale && sale.sale_items) ? sale.sale_items : []
-      if (saleItems.length > 0) {
-        saleItems.forEach((si: any, idx: number) => {
-          const p: any = findProduct(si.product_id)
-          const pName = p ? p.name : 'Product ID: ' + si.product_id
-          const qty = si.qty || 1
-          const unitPrice = si.unit_price || si.price || 0
-          const amount = unitPrice * qty
-          addRow([
-            { v: idx + 1, style: 'borderCenter' },
-            { v: pName, style: 'border' },
-            { v: qty, style: 'borderCenter' },
-            { v: 'unit', style: 'borderCenter' },
-            { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-          ])
-        })
-      } else {
+    const invoiceItems = getInvoiceItems(item)
+    if (invoiceItems.length > 0) {
+      invoiceItems.forEach((si: any, idx: number) => {
+        const info = getItemDisplayInfo(si)
+        let desc = info.name
+        if (info.serialNo) {
+          desc += ` (SN: ${info.serialNo})`
+        }
+        if (info.description) {
+          desc += ` - ${info.description}`
+        }
         addRow([
-          { v: 1, style: 'borderCenter' },
-          { v: 'No item data available', style: 'border' },
-          { style: 'border' },
-          { style: 'border' },
-          { v: 0, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+          { v: idx + 1, style: 'borderCenter' },
+          { v: desc, style: 'border' },
+          { v: info.qty, style: 'borderCenter' },
+          { v: info.uom, style: 'borderCenter' },
+          { v: info.total, style: 'borderBoldRight', numFmt: NUMFMT_RP },
         ])
-      }
-
-      const subTotal = item.subtotal || item.total_amount || item.total || 0
-      const grandTotal = item.total_amount || item.total || 0
-      addRow([{}, {}, {}, { v: 'Sub Total', style: 'borderBoldRight' }, { v: subTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
-      addRow([{}, {}, {}, { v: 'Discount', style: 'borderBoldRight' }, { v: item.discount || 0, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
-      addRow([{}, {}, {}, { v: 'Amount', style: 'borderBoldRight' }, { v: grandTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
-
-      addRow([])
-      addRow([{ v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {}, {}, { v: 'Received By,' }, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
-      addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Account No. 106-08-85757', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { style: 'border' }])
-      addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { v: signerName(item), style: 'plainBold' }])
-      addRow([])
+      })
+    } else {
+      const rawTotal = Number(item.subtotal || item.total_amount || item.total || 0)
+      const fallbackDesc = item.notes?.trim() || (sale?.sale_no ? `Penjualan Unit / Produk (${sale.sale_no})` : (item.invoice_no ? `Penjualan (${item.invoice_no})` : 'Penjualan Unit / Produk'))
+      addRow([
+        { v: 1, style: 'borderCenter' },
+        { v: fallbackDesc, style: 'border' },
+        { v: 1, style: 'borderCenter' },
+        { v: 'Unit', style: 'borderCenter' },
+        { v: rawTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      ])
     }
 
-    for (const item of sortedItems) addInvoice(item)
+    const subTotal = item.subtotal || item.total_amount || item.total || 0
+    const grandTotal = item.total_amount || item.total || 0
+    addRow([{}, {}, {}, { v: 'Sub Total', style: 'borderBoldRight' }, { v: subTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+    addRow([{}, {}, {}, { v: 'Discount', style: 'borderBoldRight' }, { v: item.discount || 0, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+    addRow([{}, {}, {}, { v: 'Amount', style: 'borderBoldRight' }, { v: grandTotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
+
+    addRow([])
+    addRow([{ v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {}, {}, { v: 'Received By,' }, { v: 'PT. BiAS SURYA TEKNOLOGI' }])
+    addRow([{ v: 'BANK BRKSYARIAH Cabang Batam - Account No. 106-08-85757', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { style: 'border' }])
+    addRow([{ v: 'Account Name : PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'border' }, {}, {}, { style: 'border' }, { v: signerName(item), style: 'plainBold' }])
+    addRow([])
+
     sheets.push({ name: sheetName, columnWidths, rows })
   }
 
   await downloadStyledExcel([...leadingSheets, ...sheets], filename)
-}
-
-async function exportAnnualPdf() {
-  const year = normalizeExportYear(yearFilter.value)
-  if (year === null) {
-    toast.warning('Invalid year (1900–2100)!')
-    return
-  }
-  // Annual export only for invoices that are approved AND paid.
-  const items = filterApprovedPaid(filterByYear(data.value, year, SALES_INVOICE_YEAR_FIELDS))
-  if (items.length === 0) {
-    toast.warning(`No approved & paid sales invoice data for year ${year}!`)
-    return
-  }
-
-  const style = `@media print { @page { margin: 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; color: #000; font-size: 12px; margin: 0; }
-  .container { max-width: 900px; margin: 0 auto; padding: 20px; page-break-after: always; }
-  .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-  .header-table td { vertical-align: top; padding: 0; }
-  .logo-col { width: 50%; padding-right: 20px; }
-  .info-col { width: 50%; }
-  .company-details h1 { margin: 0; font-size: 22px; font-weight: bold; }
-  .company-details h2 { margin: 0; font-size: 14px; font-style: italic; font-weight: normal; margin-bottom: 10px; color: #333; }
-  .company-details p { margin: 0; font-size: 11px; line-height: 1.4; }
-  .invoice-text { font-size: 28px; font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 10px; letter-spacing: 1px; }
-  .meta-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #7ea8ce; }
-  .meta-table td, .meta-table th { border: 1px solid #7ea8ce; padding: 4px 8px; }
-  .meta-table .bg-blue { background-color: #003366; color: white; font-weight: bold; }
-  .meta-table .label { width: 90px; font-weight: bold; }
-  .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  .items-table th { background-color: #003366; color: white; border: 1px solid #7ea8ce; padding: 8px; text-align: center; font-size: 12px; }
-  .items-table td { border: 1px solid #7ea8ce; padding: 8px; vertical-align: top; }
-  .items-table .rp-col { border-right: none; width: 20px; padding-right: 2px; }
-  .items-table .val-col { border-left: none; text-align: right; }
-  .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 0; margin-bottom: 20px; }
-  .summary-table td { border: 1px solid #7ea8ce; padding: 6px; background-color: #dbeaf4; font-weight: bold; }
-  .summary-table .label { text-align: right; padding-right: 10px; }
-  .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
-  .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
-  .sig-box { width: 250px; }
-  .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
-  .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin: 10px 0; }
-  .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
-  .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
-  .stamp-wrap { text-align: center; clear: both; padding-top: 10px; }`
-
-  const body = items.map((inv: any) => {
-    const html = invoiceHtml(inv)
-    const bodyMatch = html.match(/<body>([\s\S]*?)<\/body>/)
-    if (!bodyMatch) return ''
-    return `<div style="page-break-after: always;">${bodyMatch[1]}</div>`
-  }).join('')
-
-  const fullHtml = `<!DOCTYPE html>
-<html>
-  <head><title>Annual Sales Invoice Report ${year}</title><style>${style}</style></head>
-<body>${body}
-<script>window.onload=function(){setTimeout(()=>{window.print()},500)}<\/script>
-</body></html>`
-
-  const w = window.open('', '_blank')
-  if (w) { w.document.write(fullHtml); w.document.close() }
 }
 
 const calcTotal = computed(() => Math.max(0, form.subtotal + form.service_charge + form.tax - (Number(form.discount) || 0)))
@@ -549,247 +936,16 @@ function formatRupiah(val: number): string {
 }
 
 function invoiceHtml(item: any): string {
-  const customer = findCustomer(item.customer_id)
-  const custName = customer?.company_name || customer?.name || '-'
-  const custAddress = customer?.address || '-'
-  const custPhone = customer?.phone || '-'
-  const pic = customer?.pic_name || '-'
-  const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
-  const picDisplay = pic !== '-' ? prefix + pic : '-'
-  const signer = signerName(item)
-
-  const invoiceNo = item.invoice_no || '-'
-  const invoiceDate = item.created_at || item.due_date
-
-  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
-
-  let itemsHtml = ''
-  const sale = findSale(item.sale_id)
-  if (sale && sale.sale_items && sale.sale_items.length > 0) {
-    itemsHtml = sale.sale_items.map((si: any, idx: number) => {
-      const p = findProduct(si.product_id)
-      let pName = p ? p.name : ('Product ID: ' + si.product_id)
-      if (si.description) {
-        pName += `<br><span style="font-size: 10px; color: #555;">${si.description}</span>`
-      }
-      return `
-        <tr>
-          <td style="text-align: center;">${idx + 1}</td>
-          <td>${pName}</td>
-          <td style="text-align: center;">${si.qty || 1}</td>
-          <td style="text-align: center;">unit</td>
-          <td class="rp-col">Rp</td><td class="val-col">${(si.unit_price || si.price || 0).toLocaleString('id-ID')}</td>
-          <td class="rp-col">Rp</td><td class="val-col">${((si.unit_price || si.price || 0) * (si.qty || 1)).toLocaleString('id-ID')}</td>
-        </tr>
-      `
-    }).join('')
-  } else {
-    itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">Item data not available</td></tr>`
-  }
-
-  const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
-  const discountStr = (item.discount || 0).toLocaleString('id-ID')
-  const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
-
-  // Stempel pelunasan: hanya bila invoice sudah di-approve accounting.
-  const payStatus = String(item.payment_status || '').toLowerCase()
-  const isApprovedInv = String(item.status || '').toLowerCase() === 'approved'
-  const stampHtml = !isApprovedInv ? '' : payStatus === 'paid'
-    ? `<div class="stamp-wrap"><span class="paid-stamp">LUNAS</span></div>`
-    : (payStatus === 'partially_paid' || payStatus === 'partial')
-    ? `<div class="stamp-wrap"><span class="paid-stamp partial">BELUM LUNAS (CICILAN)</span></div>`
-    : `<div class="stamp-wrap"><span class="paid-stamp unpaid">BELUM BAYAR</span></div>`
-
-  const html = `
-    <html>
-      <head>
-        <title>Invoice - ${invoiceNo}</title>
-        <style>
-          @media print {
-            @page { margin: 10mm; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 0; color: #000; font-size: 12px; margin: 0; }
-          .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-
-          .header-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          .header-table td { vertical-align: top; padding: 0; }
-
-          .logo-col { width: 50%; padding-right: 20px; }
-          .info-col { width: 50%; }
-
-          .logo-container { display: flex; align-items: center; margin-bottom: 10px; }
-          .logo { width: 80px; height: 80px; margin-right: 15px; flex-shrink: 0; }
-
-          .company-details h1 { margin: 0; font-size: 22px; font-weight: bold; }
-          .company-details h2 { margin: 0; font-size: 14px; font-style: italic; font-weight: normal; margin-bottom: 10px; color: #333; }
-          .company-details p { margin: 0; font-size: 11px; line-height: 1.4; }
-
-          .invoice-text { font-size: 28px; font-weight: bold; text-align: center; margin-top: 20px; margin-bottom: 10px; letter-spacing: 1px; }
-
-          .meta-table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #7ea8ce; }
-          .meta-table td, .meta-table th { border: 1px solid #7ea8ce; padding: 4px 8px; }
-          .meta-table .bg-blue { background-color: #003366; color: white; font-weight: bold; }
-          .meta-table .label { width: 90px; font-weight: bold; }
-
-          .items-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          .items-table th { background-color: #003366; color: white; border: 1px solid #7ea8ce; padding: 8px; text-align: center; font-size: 12px; }
-          .items-table td { border: 1px solid #7ea8ce; padding: 8px; vertical-align: top; }
-          .items-table .rp-col { border-right: none; width: 20px; padding-right: 2px; }
-          .items-table .val-col { border-left: none; text-align: right; }
-
-          .summary-table { width: 350px; float: right; border-collapse: collapse; margin-top: 0; margin-bottom: 20px; }
-          .summary-table td { border: 1px solid #7ea8ce; padding: 6px; background-color: #dbeaf4; font-weight: bold; }
-          .summary-table .label { text-align: right; padding-right: 10px; }
-
-          .payment-info { clear: left; float: left; margin-top: 10px; font-size: 12px; font-weight: bold; line-height: 1.6; }
-
-          .signatures { display: flex; justify-content: space-between; clear: both; padding-top: 50px; text-align: center; font-weight: bold; }
-          .sig-box { width: 250px; }
-          .sig-line { margin-top: 80px; border-bottom: 1px solid #000; padding-bottom: 5px; }
-          .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin: 10px 0; }
-          .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
-          .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
-          .stamp-wrap { text-align: center; clear: both; padding-top: 10px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <table class="header-table">
-            <tr>
-              <td class="logo-col">
-                <div class="logo-container">
-                  <img src="${BIAS_LOGO_DATA_URL}" class="logo"  alt="BiAS Logo" />
-                  <div class="company-details">
-                    <h1>PT. BIAS SURYA</h1>
-                    <h1>TEKNOLOGI</h1>
-                    <h2>The shape of smart</h2>
-                  </div>
-                </div>
-                <div class="company-details" style="padding-left: 95px;">
-                  <p>Ruko Purimas Blok A No.47 Kota Batam,<br>
-                  Kepulauan Riau - Indonesia<br>
-                  Phone: +62811 704 5657<br>
-                  Email: admin@biasbst.com<br>
-                  Website: www.biassuryateknologi.com</p>
-                </div>
-                <div class="invoice-text">INVOICE</div>
-              </td>
-              <td class="info-col">
-                <div style="font-size: 20px; font-weight: bold; text-align: right; margin-bottom: 10px; font-family: monospace;">INVOICE NO. : ${invoiceNo}</div>
-                <table class="meta-table">
-                  <tr>
-                    <td class="label">Date :</td>
-                    <td>${dateStr}</td>
-                  </tr>
-                  ${item.sale?.po_no || item.po_no ? `
-                  <tr>
-                    <td class="label">PO NO.:</td>
-                    <td>${item.sale?.po_no || item.po_no}</td>
-                  </tr>
-                  ` : ''}
-                  <tr>
-                    <td colspan="2" class="bg-blue">To:</td>
-                  </tr>
-                  <tr>
-                    <td colspan="2" style="font-weight: bold; height: 35px; vertical-align: top;">${custName}</td>
-                  </tr>
-                  <tr>
-                    <td colspan="2" class="bg-blue" style="height: 10px; padding: 4px 8px;">Address :</td>
-                  </tr>
-                  <tr>
-                    <td colspan="2" style="height: 45px; vertical-align: top;">${custAddress}</td>
-                  </tr>
-                  <tr>
-                    <td class="label">Phone :</td>
-                    <td>${custPhone}</td>
-                  </tr>
-                  <tr>
-                    <td class="label">Attn:</td>
-                    <td>${picDisplay}</td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-
-          <table class="items-table">
-            <thead>
-              <tr>
-                <th style="width: 40px;">No</th>
-                <th>Description</th>
-                <th style="width: 50px;">Qty</th>
-                <th style="width: 60px;">UOM</th>
-                <th colspan="2" style="width: 140px;">Unit Price</th>
-                <th colspan="2" style="width: 140px;">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-              <tr style="height: 100px;">
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td class="rp-col"></td><td class="val-col"></td>
-                <td class="rp-col"></td><td class="val-col"></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <table class="summary-table">
-            <tr>
-              <td class="label">Sub Total</td>
-              <td class="rp-col" style="border-right: none; width: 30px; padding-right: 0;">Rp</td>
-              <td class="val-col" style="border-left: none; text-align: right; width: 110px;">${subTotalStr}</td>
-            </tr>
-            <tr>
-              <td class="label">Discount</td>
-              <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
-              <td class="val-col" style="border-left: none; text-align: right;">${discountStr}</td>
-            </tr>
-            <tr>
-              <td class="label">Amount</td>
-              <td class="rp-col" style="border-right: none; padding-right: 0;">Rp</td>
-              <td class="val-col" style="border-left: none; text-align: right;">${grandTotalStr}</td>
-            </tr>
-          </table>
-
-          <div class="payment-info">
-            Payment by transfer to account:<br>
-            BANK BRKSYARIAH Cabang Batam<br>
-            Account No. 106-08-85757<br>
-            Account Name : PT. BIAS SURYA TEKNOLOGI<br>
-            NPWP : 0941.8395.0822.5000
-          </div>
-
-          ${stampHtml}
-          <div class="signatures">
-            <div class="sig-box">
-              Received By, (${picDisplay})
-              <div class="sig-line"></div>
-            </div>
-            <div class="sig-box">
-              Sincerely,
-              <div class="sig-line">${signer}</div>
-            </div>
-          </div>
-        </div>
-      </body>
-    </html>
-  `
-  return html
+  return renderSalesInvoicesPdf([item], `Invoice - ${item.invoice_no || 'Sales'}`)
 }
 
-function printInvoice(item: any) {
+async function printInvoice(item: any) {
   if (item.status !== 'approved') {
     toast.warning('Invoice is not approved yet, cannot print receipt')
     return
   }
-  const html = invoiceHtml(item).replace('</body>', '<script>window.onload=function(){setTimeout(()=>{window.print()},500)}<\/script></body>')
+  await resolveInvoiceFullData(item)
+  const html = renderSalesInvoicesPdf([item], `Invoice - ${item.invoice_no || 'Sales'}`)
   const printWindow = window.open('', '_blank')
   if (printWindow) {
     printWindow.document.write(html)
@@ -871,12 +1027,19 @@ async function printReceiptAsync(item: any, approved: any) {
       </div>
 
       <div class="export-actions">
-       
-          <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf" title="Export Annual (PDF)">
+        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportMonthToPdf" title="Export PDF (Filtered)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Export PDF
+        </button>
+        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel" :disabled="isExporting" title="Export Excel (Filtered)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
+          Export Excel
+        </button>
+        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf" title="Export Annual (PDF)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
           Annual PDF
         </button>
-          <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportAnnualExcel" :disabled="isExporting" title="Export Annual (Excel)">
+        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportAnnualExcel" :disabled="isExporting" title="Export Annual (Excel)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
           Annual Excel
         </button>
@@ -1009,14 +1172,14 @@ async function printReceiptAsync(item: any, approved: any) {
       :open="hardDelete.show"
       title="Hapus Permanen Sales Invoice"
       :item-label="hardDelete.expected"
-      :item-name="hardDelete.expected"
-      :confirm-input="hardDelete.input"
-      :is-valid="hardDelete.confirmed"
+      :expected="hardDelete.expected"
+      :confirm-valid="hardDelete.confirmed"
+      :show-cascade-option="true"
       :cascade="hardDelete.cascade"
-      @update:confirm-input="hardDelete.input = $event"
       @update:cascade="hardDelete.cascade = $event"
+      @update:input="hardDelete.input = $event"
       @confirm="hardDelete.confirm"
-      @cancel="hardDelete.close"
+      @close="hardDelete.close"
     />
 
     <FormModal :open="showDetail" :title="detailItem ? `Invoice Details ${detailItem.invoice_no}` : 'Invoice Details'" @close="showDetail = false">
