@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
 
-const route = useRoute()
-const { ensureResourcesLoaded } = useMasterStore()
+const route = useRoute();
+const router = useRouter();
+const { ensureResourcesLoaded } = useMasterStore();
 
 onMounted(() => {
-  ensureResourcesLoaded(route.path)
-})
+  ensureResourcesLoaded(route.path);
+});
 
 useAutoRefresh(10000, [
   "serviceRequests",
@@ -19,6 +20,7 @@ useAutoRefresh(10000, [
   "contractItems",
   "serviceSpareparts",
   "warrantyClaims",
+  "rents",
 ]);
 
 const {
@@ -28,6 +30,7 @@ const {
   contractItems,
   sparepartRequests,
   warrantyClaims,
+  rents,
 } = useMasterStore();
 
 // Derived metrics
@@ -93,21 +96,51 @@ const maxJobs = computed(() =>
   ),
 );
 
-const activeContracts = computed(
-  () => contractItems.value.filter((c) => c.status === "active").length,
-);
-const expiringContracts = computed(
-  () => contractItems.value.filter((c) => c.status === "expiring").length,
-);
+const activeContracts = computed(() => {
+  const activeRents = (rents.value || []).filter((r: any) => {
+    const s = String(r.status || "").toLowerCase();
+    return s === "active" || s === "ongoing";
+  }).length;
+  const activeCi = (contractItems.value || []).filter((c: any) => {
+    const s = String(c.status || c.contract?.status || "").toLowerCase();
+    return s === "active";
+  }).length;
+  return activeRents > 0 ? activeRents : activeCi;
+});
+
+const expiringContracts = computed(() => {
+  const now = new Date().getTime();
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  const expiringRents = (rents.value || []).filter((r: any) => {
+    const s = String(r.status || "").toLowerCase();
+    if (s === "expiring") return true;
+    if (s === "active" && r.end_date) {
+      const end = new Date(r.end_date).getTime();
+      return end > now && end - now <= thirtyDaysMs;
+    }
+    return false;
+  }).length;
+  const expiringCi = (contractItems.value || []).filter((c: any) => {
+    const s = String(c.status || c.contract?.status || "").toLowerCase();
+    return s === "expiring";
+  }).length;
+  return expiringRents > 0 ? expiringRents : expiringCi;
+});
 
 const pendingSparepartRequests = computed(
-  () => sparepartRequests.value.filter((r) => r.status === "pending").length,
+  () =>
+    (sparepartRequests.value || []).filter((r: any) => {
+      const s = String(r.status || "").toLowerCase();
+      return s === "pending" || s === "draft" || s === "waiting_approval" || s === "open";
+    }).length,
 );
+
 const pendingWarrantyClaims = computed(
   () =>
-    warrantyClaims.value.filter(
-      (c) => c.status === "pending" || c.status === "open",
-    ).length,
+    (warrantyClaims.value || []).filter((c: any) => {
+      const s = String(c.status || "").toLowerCase();
+      return s === "pending" || s === "open" || s === "in_review" || s === "draft";
+    }).length,
 );
 
 const totalJobsAll = computed(
@@ -123,8 +156,6 @@ const completionPercentage = computed(() =>
     ? 0
     : Math.round((completedJobs.value / totalJobsAll.value) * 100),
 );
-
-// Removed Job Analytics
 </script>
 
 <template>
@@ -134,7 +165,7 @@ const completionPercentage = computed(() =>
 
     <!-- Top Cards -->
     <div class="top-cards">
-      <div class="card card-primary">
+      <div class="card card-primary card-clickable" @click="router.push('/customer-service/service-requests')" title="Lihat Service Requests">
         <div class="card-header">
           <span>Service Requests</span>
           <span class="icon-wrapper">
@@ -172,7 +203,7 @@ const completionPercentage = computed(() =>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card card-clickable" @click="router.push('/customer-service/job-orders')" title="Lihat Job Orders">
         <div class="card-header">
           <span>In Progress</span>
           <span class="icon-wrapper">
@@ -210,7 +241,7 @@ const completionPercentage = computed(() =>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card card-clickable" @click="router.push('/customer-service/service-reports')" title="Lihat Service Reports">
         <div class="card-header">
           <span>Completed</span>
           <span class="icon-wrapper">
@@ -248,7 +279,7 @@ const completionPercentage = computed(() =>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card card-clickable" @click="router.push('/customer-service/service-reports')" title="Lihat Breached SLA Jobs">
         <div class="card-header">
           <span>Breached SLA</span>
           <span class="icon-wrapper">
@@ -296,7 +327,7 @@ const completionPercentage = computed(() =>
           <h3 class="section-title">Contracts</h3>
         </div>
 
-        <div class="list-item">
+        <div class="list-item item-clickable" @click="router.push('/customer-service/rentals')" title="Lihat Rental Contracts">
           <div
             class="list-icon"
             style="background: rgba(16, 185, 129, 0.1); color: #10b981"
@@ -328,7 +359,7 @@ const completionPercentage = computed(() =>
           </div>
         </div>
 
-        <div class="list-item">
+        <div class="list-item item-clickable" @click="router.push('/customer-service/rentals')" title="Lihat Expiring Contracts">
           <div
             class="list-icon"
             style="background: rgba(245, 158, 11, 0.1); color: #f59e0b"
@@ -358,7 +389,7 @@ const completionPercentage = computed(() =>
         <div class="section-header">
           <h3 class="section-title">Pending Requests</h3>
         </div>
-        <div class="list-item">
+        <div class="list-item item-clickable" @click="router.push('/customer-service/sparepart-request')" title="Lihat Sparepart Requests">
           <div class="list-icon">
             <svg
               width="20"
@@ -384,7 +415,7 @@ const completionPercentage = computed(() =>
             </div>
           </div>
         </div>
-        <div class="list-item">
+        <div class="list-item item-clickable" @click="router.push('/customer-service/warranty-claims')" title="Lihat Warranty Claims">
           <div class="list-icon">
             <svg
               width="20"
@@ -408,7 +439,7 @@ const completionPercentage = computed(() =>
         </div>
       </div>
 
-      <div class="card section-card">
+      <div class="card section-card card-clickable" @click="router.push('/customer-service/job-orders')" title="Lihat Job Orders">
         <div class="section-header">
           <h3 class="section-title">Project Progress</h3>
         </div>
@@ -451,6 +482,28 @@ const completionPercentage = computed(() =>
   flex-direction: column;
   gap: 12px;
   border: 1px solid var(--color-border);
+}
+
+.card-clickable {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-clickable:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.item-clickable {
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 12px 10px !important;
+  margin: 0 -10px;
+  transition: background 0.2s ease;
+}
+
+.item-clickable:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
 }
 
 .card-primary {

@@ -47,9 +47,9 @@ export function useResourcesStore() {
     }
   }
 
-  /** Silent refresh: update data tanpa efek loading/skeleton/error dan langsung ambil fresh data dari server. */
-  async function fetchAllSilent(name: ResourceName, query?: ResourceQuery) {
-    return fetchAll(name, query, false, false);
+  /** Silent refresh: update data tanpa efek loading/skeleton/error. Menggunakan cache untuk mencegah network flooding. */
+  async function fetchAllSilent(name: ResourceName, query?: ResourceQuery, useCache = true) {
+    return fetchAll(name, query, false, useCache);
   }
 
   async function create(name: ResourceName, payload: Partial<ResourceRecord>) {

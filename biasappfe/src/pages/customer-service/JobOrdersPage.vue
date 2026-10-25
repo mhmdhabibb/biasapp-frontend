@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import FormModal from "@/components/ui/FormModal.vue";
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
 import SignaturePad from "@/components/ui/SignaturePad.vue";
 import { useAuthStore } from "@/stores/auth.store";
 import { useMasterStore } from "@/composables/useMasterStore";
+import { useIsSuperadmin } from "@/composables/useHardDelete";
 import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
 import { invalidateCache } from "@/utils/requestCache";
@@ -13,9 +15,16 @@ import { useRoute } from "vue-router";
 
 const toast = useToast();
 const authStore = useAuthStore();
+const isSuperadmin = useIsSuperadmin();
 const route = useRoute();
 const masterStore = useMasterStore();
 const { technicians, units, products, serviceReports } = masterStore;
+
+const showDeleteJobModal = ref(false);
+const jobToDelete = ref<any | null>(null);
+const showDeleteTechModal = ref(false);
+const techToDelete = ref<any | null>(null);
+const isDeleting = ref(false);
 
 function extractArray(res: any): any[] {
   if (!res) return [];
@@ -161,7 +170,7 @@ async function fetchDeliveryOrders() {
   }
 }
 
-const AUTO_RELOAD_INTERVAL_MS = 10000; // 10 seconds auto-refresh
+const AUTO_RELOAD_INTERVAL_MS = 30000; // 30 seconds auto-refresh
 let autoReloadTimer: any = null;
 const isReloading = ref(false);
 
@@ -1251,6 +1260,85 @@ async function cancelJobAssignment(jobId: string) {
     toast.error(toast.fromError(error, "Failed to cancel assignment"));
   }
 }
+
+function openDeleteJob(job: any) {
+  jobToDelete.value = job;
+  showDeleteJobModal.value = true;
+}
+
+async function handleDeleteJob() {
+  if (!jobToDelete.value) return;
+  const job = jobToDelete.value;
+  try {
+    isDeleting.value = true;
+    if (job.taskType === 'visit') {
+      const targetReportId = job.service_report_id || job.id;
+      if (job.id && job.id !== targetReportId) {
+        try {
+          await api.delete(`/job-orders/${job.id}?permanent=true`);
+        } catch {}
+      }
+      try {
+        await api.delete(`/service-reports/${targetReportId}?permanent=true`);
+      } catch {
+        if (job.id) {
+          await api.delete(`/job-orders/${job.id}?permanent=true`);
+        }
+      }
+    } else if (job.taskType === 'do' && !job.job_order_no && job.do_number) {
+      await api.delete(`/delivery-orders/${job.id}?permanent=true`);
+    } else {
+      try {
+        await api.delete(`/job-orders/${job.id}?permanent=true`);
+      } catch (err: any) {
+        if (job.delivery_order_id || job.do_number) {
+          await api.delete(`/delivery-orders/${job.id}?permanent=true`);
+        } else if (job.service_report_id || job.report_no) {
+          await api.delete(`/service-reports/${job.id}?permanent=true`);
+        } else {
+          throw err;
+        }
+      }
+    }
+    toast.success(`Job ${jobDisplayNo(job)} berhasil dihapus!`);
+    showDeleteJobModal.value = false;
+    jobToDelete.value = null;
+    closeDetail();
+    invalidateCache();
+    await loadAllData(true);
+    masterStore.refreshOnly(['serviceReports']);
+  } catch (err: any) {
+    console.error('Failed to delete job:', err);
+    toast.error('Gagal menghapus job: ' + (err.response?.data?.message || err.message || 'Error'));
+  } finally {
+    isDeleting.value = false;
+  }
+}
+
+function openDeleteTech(t: any) {
+  techToDelete.value = t;
+  showDeleteTechModal.value = true;
+}
+
+async function handleDeleteTech() {
+  if (!techToDelete.value) return;
+  const t = techToDelete.value;
+  try {
+    isDeleting.value = true;
+    await api.delete(`/technicians/${t.id}?permanent=true`);
+    toast.success(`Teknisi ${techName(t)} berhasil dihapus!`);
+    showDeleteTechModal.value = false;
+    techToDelete.value = null;
+    invalidateCache();
+    await loadAllData(true);
+    masterStore.refreshOnly(['technicians']);
+  } catch (err: any) {
+    console.error('Failed to delete technician:', err);
+    toast.error('Gagal menghapus teknisi: ' + (err.response?.data?.message || err.message || 'Error'));
+  } finally {
+    isDeleting.value = false;
+  }
+}
 </script>
 
 <template>
@@ -1932,6 +2020,18 @@ async function cancelJobAssignment(jobId: string) {
                   getFilteredJobsForTech(t.id).length === 1 ? "job" : "jobs"
                 }}</span
               >
+              <button
+                v-if="isSuperadmin"
+                type="button"
+                class="btn-tech-delete"
+                :title="`Hapus Teknisi ${techName(t)} (Khusus Superadmin)`"
+                @click.stop="openDeleteTech(t)"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
             </div>
 
             <div
@@ -1976,9 +2076,23 @@ async function cancelJobAssignment(jobId: string) {
               >
                 <div class="ac-row">
                   <span class="ref-no">{{ jobDisplayNo(job) }}</span>
-                  <span class="badge" :class="statusBadgeClass(job.status)">
-                    {{ String(job.status || "new").replace("_", " ") }}
-                  </span>
+                  <div class="ac-badge-actions">
+                    <span class="badge" :class="statusBadgeClass(job.status)">
+                      {{ String(job.status || "new").replace("_", " ") }}
+                    </span>
+                    <button
+                      v-if="isSuperadmin"
+                      type="button"
+                      class="btn-job-card-delete"
+                      title="Hapus Job Ini (Khusus Superadmin)"
+                      @click.stop="openDeleteJob(job)"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
 
                 <!-- Customer Name -->
@@ -2534,10 +2648,23 @@ async function cancelJobAssignment(jobId: string) {
         <button class="btn btn-outline" @click="closeDetail">Close</button>
         <button
           v-if="selectedJob && selectedJob.technician_id"
-          class="btn btn-danger"
+          class="btn btn-outline"
+          style="color: var(--color-warning, #d97706); border-color: rgba(217, 119, 6, 0.4);"
           @click="cancelJobAssignment(selectedJob.id)"
         >
           Cancel Assignment
+        </button>
+        <button
+          v-if="isSuperadmin && selectedJob"
+          class="btn btn-danger"
+          style="display: inline-flex; align-items: center; gap: 6px;"
+          @click="openDeleteJob(selectedJob)"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+          Hapus Job Order
         </button>
       </template>
     </FormModal>
@@ -2770,6 +2897,32 @@ async function cancelJobAssignment(jobId: string) {
         </button>
       </template>
     </FormModal>
+
+    <!-- Superadmin Delete Job Order Confirmation Modal -->
+    <ConfirmDialog
+      :open="showDeleteJobModal"
+      title="Hapus Job Order (Permanen)"
+      :message="`Apakah Anda yakin ingin menghapus job ${jobToDelete ? jobDisplayNo(jobToDelete) : ''} secara permanen? Data job order dan relasi terkait akan dihapus dari sistem.`"
+      confirm-text="Hapus Permanen"
+      cancel-text="Batal"
+      variant="danger"
+      :loading="isDeleting"
+      @confirm="handleDeleteJob"
+      @cancel="showDeleteJobModal = false; jobToDelete = null"
+    />
+
+    <!-- Superadmin Delete Technician Lane Confirmation Modal -->
+    <ConfirmDialog
+      :open="showDeleteTechModal"
+      title="Hapus Teknisi / Lane (Permanen)"
+      :message="`Apakah Anda yakin ingin menghapus data teknisi '${techToDelete ? techName(techToDelete) : ''}' secara permanen? Semua penugasan job akan otomatis dilepas.`"
+      confirm-text="Hapus Teknisi"
+      cancel-text="Batal"
+      variant="danger"
+      :loading="isDeleting"
+      @confirm="handleDeleteTech"
+      @cancel="showDeleteTechModal = false; techToDelete = null"
+    />
   </div>
 </template>
 
@@ -3208,6 +3361,57 @@ async function cancelJobAssignment(jobId: string) {
   align-items: center;
   gap: 6px;
   flex-wrap: nowrap;
+}
+
+.ac-badge-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-tech-delete {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-tech-delete:hover {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
+.btn-job-card-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-job-card-delete:hover {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+  transform: scale(1.08);
 }
 
 .ac-row.muted {

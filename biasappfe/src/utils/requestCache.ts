@@ -1,25 +1,56 @@
 type CacheEntry<T> = {
   data: T;
   timestamp: number;
+  ttl: number;
   promise?: Promise<T>;
 };
 
 const cache = new Map<string, CacheEntry<unknown>>();
-const CACHE_TTL = 3000; // 3 seconds window for deduplicating concurrent requests without locking stale data
+
+// Master / reference lookup data changes rarely: cache 60s
+const MASTER_RESOURCES = [
+  "customer",
+  "technician",
+  "brand",
+  "unit-type",
+  "paper-size",
+  "paper-type",
+  "uom",
+  "product-categor",
+  "supplier",
+  "system-setting",
+  "role",
+  "permission",
+  "module",
+];
+
+function getTTLForKey(key: string): number {
+  const lower = key.toLowerCase();
+  for (const res of MASTER_RESOURCES) {
+    if (lower.includes(res)) return 60000; // 60s for master data
+  }
+  return 30000; // 30s default for operational data
+}
+
 const inflight = new Map<string, Promise<unknown>>();
 
 export function getCached<T>(key: string): T | null {
   const entry = cache.get(key);
   if (!entry) return null;
-  if (Date.now() - entry.timestamp > CACHE_TTL) {
+  const ttl = entry.ttl || getTTLForKey(key);
+  if (Date.now() - entry.timestamp > ttl) {
     cache.delete(key);
     return null;
   }
   return entry.data as T;
 }
 
-export function setCached<T>(key: string, data: T): void {
-  cache.set(key, { data, timestamp: Date.now() });
+export function setCached<T>(key: string, data: T, ttl?: number): void {
+  cache.set(key, {
+    data,
+    timestamp: Date.now(),
+    ttl: ttl || getTTLForKey(key),
+  });
 }
 
 export function getOrFetch<T>(

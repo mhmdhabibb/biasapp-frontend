@@ -89,7 +89,7 @@ onMounted(() => {
   fetchData();
   fetchCategories();
   fetchUoms();
-  productPollingTimer = setInterval(silentRefresh, 4000);
+  productPollingTimer = setInterval(silentRefresh, 30000);
   window.addEventListener("focus", silentRefresh);
   window.addEventListener("bias:data-mutated", silentRefresh);
   document.addEventListener("visibilitychange", silentRefresh);

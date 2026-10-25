@@ -158,7 +158,7 @@ function silentRefresh() {
 
 onMounted(() => {
   ensureResourcesLoaded(route.path)
-  salesTimer = setInterval(silentRefresh, 5000)
+  salesTimer = setInterval(silentRefresh, 30000)
   window.addEventListener('focus', silentRefresh)
   window.addEventListener('bias:data-mutated', silentRefresh)
 })

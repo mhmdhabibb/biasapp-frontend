@@ -37,6 +37,7 @@ export class ApiError extends Error {
 /** Instance axios bersama: base URL + token dari sessionStorage. */
 export const http = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 15000,
   headers: { "Content-Type": "application/json" },
 });
 

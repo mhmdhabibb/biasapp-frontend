@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
 
-const route = useRoute()
-const { ensureResourcesLoaded } = useMasterStore()
+const route = useRoute();
+const router = useRouter();
+const { ensureResourcesLoaded } = useMasterStore();
 
 onMounted(() => {
-  ensureResourcesLoaded(route.path)
-})
+  ensureResourcesLoaded(route.path);
+});
 
 useAutoRefresh(10000, [
   "serviceSpareparts",
@@ -23,6 +24,7 @@ useAutoRefresh(10000, [
 const {
   sparepartRequests,
   purchaseOrders,
+  deliveryOrders,
   procurementDeliveryOrders,
   rentalInvoices,
   salesInvoices,
@@ -30,26 +32,34 @@ const {
 
 // Derived metrics for top cards
 const pendingRequests = computed(
-  () => sparepartRequests.value.filter((r) => r.status === "pending").length,
-);
-const activePOs = computed(
   () =>
-    purchaseOrders.value.filter(
-      (po) => po.status !== "completed" && po.status !== "cancelled",
-    ).length,
-);
-const pendingDeliveries = computed(
-  () =>
-    procurementDeliveryOrders.value.filter(
-      (d) => d.status === "draft" || d.status === "issued",
-    ).length,
+    (sparepartRequests.value || []).filter((r: any) => {
+      const s = String(r.status || "").toLowerCase();
+      return s === "pending" || s === "draft" || s === "waiting_approval" || s === "open";
+    }).length,
 );
 
+const activePOs = computed(
+  () =>
+    (purchaseOrders.value || []).filter((po: any) => {
+      const s = String(po.status || "").toLowerCase();
+      return s !== "completed" && s !== "cancelled" && s !== "canceled";
+    }).length,
+);
+
+const pendingDeliveries = computed(() => {
+  const allDos = (deliveryOrders.value || []).length > 0 ? deliveryOrders.value : (procurementDeliveryOrders.value || []);
+  return allDos.filter((d: any) => {
+    const s = String(d.status || "").toLowerCase();
+    return s !== "delivered" && s !== "completed" && s !== "cancelled" && s !== "canceled";
+  }).length;
+});
+
 const unpaidRentalInvoices = computed(
-  () => rentalInvoices.value.filter((i) => i.payment_status !== "paid").length,
+  () => (rentalInvoices.value || []).filter((i: any) => String(i.payment_status || "").toLowerCase() !== "paid").length,
 );
 const unpaidSalesInvoices = computed(
-  () => salesInvoices.value.filter((i) => i.payment_status !== "paid").length,
+  () => (salesInvoices.value || []).filter((i: any) => String(i.payment_status || "").toLowerCase() !== "paid").length,
 );
 const totalUnpaidInvoices = computed(
   () => unpaidRentalInvoices.value + unpaidSalesInvoices.value,
@@ -57,27 +67,31 @@ const totalUnpaidInvoices = computed(
 
 // Data for bottom cards
 const completedPOs = computed(
-  () => purchaseOrders.value.filter((po) => po.status === "completed").length,
+  () => (purchaseOrders.value || []).filter((po: any) => String(po.status || "").toLowerCase() === "completed").length,
 );
 const cancelledPOs = computed(
-  () => purchaseOrders.value.filter((po) => po.status === "cancelled").length,
+  () => (purchaseOrders.value || []).filter((po: any) => {
+    const s = String(po.status || "").toLowerCase();
+    return s === "cancelled" || s === "canceled";
+  }).length,
 );
 
 const approvedRequests = computed(
   () =>
-    sparepartRequests.value.filter(
-      (r) => r.status === "approved" || r.status === "processed",
-    ).length,
+    (sparepartRequests.value || []).filter((r: any) => {
+      const s = String(r.status || "").toLowerCase();
+      return s === "approved" || s === "processed" || s === "completed";
+    }).length,
 );
 
 const totalInvoices = computed(
-  () => rentalInvoices.value.length + salesInvoices.value.length,
+  () => (rentalInvoices.value || []).length + (salesInvoices.value || []).length,
 );
 const completionPercentage = computed(() => {
   if (totalInvoices.value === 0) return 0;
   const paid =
-    rentalInvoices.value.filter((i) => i.payment_status === "paid").length +
-    salesInvoices.value.filter((i) => i.payment_status === "paid").length;
+    (rentalInvoices.value || []).filter((i: any) => String(i.payment_status || "").toLowerCase() === "paid").length +
+    (salesInvoices.value || []).filter((i: any) => String(i.payment_status || "").toLowerCase() === "paid").length;
   return Math.round((paid / totalInvoices.value) * 100);
 });
 </script>
@@ -91,7 +105,7 @@ const completionPercentage = computed(() => {
 
     <!-- Top Cards -->
     <div class="top-cards">
-      <div class="card card-primary">
+      <div class="card card-primary card-clickable" @click="router.push('/accounting/sparepart-requests')" title="Lihat Sparepart Requests">
         <div class="card-header">
           <span>Pending Requests</span>
           <span class="icon-wrapper">
@@ -132,7 +146,7 @@ const completionPercentage = computed(() => {
         </div>
       </div>
 
-      <div class="card">
+      <div class="card card-clickable" @click="router.push('/accounting/purchase-orders')" title="Lihat Purchase Orders">
         <div class="card-header">
           <span>Active POs</span>
           <span class="icon-wrapper">
@@ -171,7 +185,7 @@ const completionPercentage = computed(() => {
         </div>
       </div>
 
-      <div class="card">
+      <div class="card card-clickable" @click="router.push('/accounting/delivery-orders')" title="Lihat Delivery Orders">
         <div class="card-header">
           <span>Pending Deliveries</span>
           <span class="icon-wrapper">
@@ -210,7 +224,11 @@ const completionPercentage = computed(() => {
         </div>
       </div>
 
-      <div class="card">
+      <div
+        class="card card-clickable"
+        @click="router.push(unpaidRentalInvoices >= unpaidSalesInvoices ? '/customer-service/rental-invoices' : '/customer-service/sales-invoices')"
+        title="Lihat Unpaid Invoices"
+      >
         <div class="card-header">
           <span>Unpaid Invoices</span>
           <span class="icon-wrapper">
@@ -264,7 +282,7 @@ const completionPercentage = computed(() => {
         <div class="section-header">
           <h3 class="section-title">Sparepart Requests</h3>
         </div>
-        <div class="list-item">
+        <div class="list-item item-clickable" @click="router.push('/accounting/sparepart-requests')" title="Lihat Pending Sparepart Requests">
           <div
             class="list-icon"
             style="background: rgba(245, 158, 11, 0.1); color: #f59e0b"
@@ -293,7 +311,7 @@ const completionPercentage = computed(() => {
             </div>
           </div>
         </div>
-        <div class="list-item">
+        <div class="list-item item-clickable" @click="router.push('/accounting/sparepart-requests')" title="Lihat Approved Sparepart Requests">
           <div
             class="list-icon"
             style="background: rgba(16, 185, 129, 0.1); color: #10b981"
@@ -345,6 +363,28 @@ const completionPercentage = computed(() => {
   flex-direction: column;
   gap: 12px;
   border: 1px solid var(--color-border);
+}
+
+.card-clickable {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-clickable:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.item-clickable {
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 12px 10px !important;
+  margin: 0 -10px;
+  transition: background 0.2s ease;
+}
+
+.item-clickable:hover {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.03));
 }
 
 .card-primary {

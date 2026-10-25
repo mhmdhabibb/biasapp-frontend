@@ -50,7 +50,7 @@ onMounted(async () => {
   isLoading.value = true
   await ensureResourcesLoaded(route.path)
   isLoading.value = false
-  rentalInvTimer = setInterval(silentRefresh, 4000)
+  rentalInvTimer = setInterval(silentRefresh, 30000)
   window.addEventListener('focus', silentRefresh)
   window.addEventListener('bias:data-mutated', silentRefresh)
 })

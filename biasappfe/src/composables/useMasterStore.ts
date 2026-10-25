@@ -77,7 +77,7 @@ const CRITICAL_RESOURCES = [
 
 const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   // Dashboards (All Roles)
-  "/customer-service/dashboard": ["serviceRequests", "jobOrders", "serviceReports", "contractItems", "serviceSpareparts", "warrantyClaims"],
+  "/customer-service/dashboard": ["serviceRequests", "jobOrders", "serviceReports", "contractItems", "serviceSpareparts", "warrantyClaims", "rents"],
   "/accounting/dashboard": ["serviceSpareparts", "purchaseOrders", "deliveryOrders", "rentalInvoices", "salesInvoices", "payments"],
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units"],
 
@@ -412,23 +412,33 @@ export function useMasterStore() {
     const notLoaded = combined.filter((r) => !loadedResources.value.has(r));
     if (notLoaded.length > 0) {
       // First visit: load not-yet-cached critical & needed resources
-      return runSyncTasks(notLoaded, false).then(() => {
-        if (needed.length > 0) {
-          void refreshOnly(needed);
-        }
-      });
+      return runSyncTasks(notLoaded, false);
     }
 
     // Resources already in memory: page renders INSTANTLY (0ms)
-    // SWR background refresh: silently revalidate the needed resources from the server
-    if (needed.length > 0) {
-      void refreshOnly(needed);
+    // Silently revalidate only if data is older than 30 seconds
+    if (Date.now() - lastFullSyncAt > 30000) {
+      void refreshIfStale(30000);
     }
     return Promise.resolve();
   }
 
   function refreshInBackground() {
-    return syncFromApi(true, false);
+    // Refresh only resources needed for current page instead of flooding all 25 resources across the browser socket pool
+    const route = typeof window !== 'undefined' ? window.location.pathname : '';
+    let needed = (route && PAGE_RESOURCE_MAP[route]) || [];
+    if (!needed || needed.length === 0) {
+      for (const [key, val] of Object.entries(PAGE_RESOURCE_MAP)) {
+        if (route && route.startsWith(key)) {
+          needed = val;
+          break;
+        }
+      }
+    }
+    if (needed && needed.length > 0) {
+      return refreshOnly(needed.slice(0, 3));
+    }
+    return Promise.resolve();
   }
 
   async function refreshOnly(names: string[]) {
@@ -439,7 +449,7 @@ export function useMasterStore() {
     names.forEach((n) => loadedResources.value.add(n));
   }
 
-  function refreshIfStale(maxAgeMs = 15000) {
+  function refreshIfStale(maxAgeMs = 30000) {
     if (Date.now() - lastFullSyncAt < maxAgeMs) return Promise.resolve();
     return refreshInBackground();
   }

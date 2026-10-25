@@ -80,7 +80,7 @@ async function silentRefresh() {
 
 onMounted(() => {
   fetchData()
-  unitTimer = setInterval(silentRefresh, 5000)
+  unitTimer = setInterval(silentRefresh, 30000)
   window.addEventListener('focus', silentRefresh)
   window.addEventListener('bias:data-mutated', silentRefresh)
 })

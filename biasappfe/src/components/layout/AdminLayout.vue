@@ -33,23 +33,22 @@ function refreshActivePageResources() {
   if (activeResources && activeResources.length > 0) {
     void refreshOnly(activeResources);
   } else {
-    void refreshIfStale(5000);
+    void refreshIfStale(30000);
   }
 }
 
 onMounted(() => {
   window.addEventListener("resize", handleResize);
-  // Polling silent setiap 4 detik agar data tabel update real-time tanpa perlu reload browser
-  adminInterval = setInterval(refreshActivePageResources, 4000);
+  // Polling silent setiap 30 detik agar data tetap sinkron tanpa membebani network
+  adminInterval = setInterval(refreshActivePageResources, 30000);
   document.addEventListener("visibilitychange", onVisibleTab);
   window.addEventListener("focus", onVisibleTab);
   window.addEventListener("bias:data-mutated", refreshActivePageResources);
 });
 
-// Bila berpindah route/menu, pastikan resource halaman langsung di-revalidasi
+// Bila berpindah route/menu, pastikan resource halaman dimuat
 watch(() => route.path, (newPath) => {
   void ensureResourcesLoaded(newPath);
-  refreshActivePageResources();
 });
 
 onUnmounted(() => {
@@ -62,7 +61,7 @@ onUnmounted(() => {
 
 function onVisibleTab() {
   if (document.visibilityState === "visible") {
-    refreshActivePageResources();
+    void refreshIfStale(30000);
   }
 }
 

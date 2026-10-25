@@ -5,11 +5,13 @@ import { useNotificationsStore } from "@/stores/notifications.store";
 import type { Notification } from "@/types";
 import { useAuth } from "@/composables/useAuth";
 import { useNavigationMenu } from "@/composables/useNavigationMenu";
+import { useToast } from "@/composables/useToast";
 
 defineProps<{ title: string; hideHamburger?: boolean }>();
 defineEmits<{ (e: "toggle-sidebar"): void }>();
 
 const router = useRouter();
+const toast = useToast();
 const { notifications, fetchAll, markRead, clearAll } = useNotificationsStore();
 const { currentUser } = useAuth();
 const showNotif = ref(false);
@@ -141,7 +143,9 @@ let notificationInterval: ReturnType<typeof setInterval> | undefined;
 
 onMounted(() => {
   void fetchAll();
-  notificationInterval = setInterval(() => void fetchAll(), 10000);
+  notificationInterval = setInterval(() => {
+    if (document.visibilityState === "visible") void fetchAll();
+  }, 30000);
   window.addEventListener("click", handleClickOutside);
   window.addEventListener("keydown", handleGlobalKeydown);
 });
@@ -161,7 +165,12 @@ async function openNotification(notification: Notification) {
       console.warn("Failed to mark notification as read:", error);
     }
   }
-  if (notification.type === "payment_approval") {
+
+  const type = String(notification.type || "").toLowerCase();
+  const title = String(notification.title || "").toLowerCase();
+  const msg = String(notification.message || "").toLowerCase();
+
+  if (type === "payment_approval" || msg.includes("pay-") || title.includes("payment")) {
     const match = String(notification.message || "").match(/PAY-[A-Za-z0-9-]+/);
     if (match) {
       await router.push({
@@ -171,6 +180,46 @@ async function openNotification(notification: Notification) {
     } else {
       await router.push("/customer-service/payments");
     }
+  } else if (title.includes("stock") || title.includes("product") || msg.includes("stock") || msg.includes("product")) {
+    await router.push("/master/products");
+  } else if (title.includes("job") || type.includes("job") || msg.includes("job")) {
+    await router.push("/customer-service/job-orders");
+  } else if (title.includes("delivery") || type.includes("delivery") || msg.includes("delivery")) {
+    await router.push("/customer-service/job-orders");
+  } else if (title.includes("service request") || type.includes("service_request") || msg.includes("service request")) {
+    await router.push("/customer-service/service-requests");
+  } else if (title.includes("purchase order") || title.includes("po") || type.includes("purchase_order")) {
+    await router.push("/accounting/purchase-orders");
+  } else if (title.includes("sparepart") || type.includes("sparepart")) {
+    await router.push("/customer-service/sparepart-requests");
+  } else if (title.includes("warranty") || type.includes("warranty")) {
+    await router.push("/customer-service/warranty-claims");
+  } else if (title.includes("rental") || type.includes("rental")) {
+    await router.push("/customer-service/rentals");
+  } else if (title.includes("sale") || type.includes("sale")) {
+    await router.push("/customer-service/sales");
+  }
+}
+
+async function handleClearAll() {
+  if (!confirm("Apakah Anda yakin ingin membersihkan semua notifikasi?")) return;
+  try {
+    await clearAll();
+    toast.success("Semua notifikasi berhasil dibersihkan");
+  } catch (err: any) {
+    console.error("Gagal membersihkan notifikasi:", err);
+    toast.error("Gagal membersihkan notifikasi: " + (err.message || "Error"));
+  }
+}
+
+async function handleMarkAllAsRead() {
+  const unreadItems = filteredNotifications.value.filter((n) => !n.is_read);
+  if (unreadItems.length === 0) return;
+  try {
+    await Promise.all(unreadItems.map((n) => markRead(String(n.id))));
+    toast.success("Semua notifikasi telah ditandai dibaca");
+  } catch (err: any) {
+    console.warn("Gagal menandai notifikasi dibaca:", err);
   }
 }
 </script>
@@ -327,16 +376,32 @@ async function openNotification(notification: Notification) {
         </button>
 
         <div v-if="showNotif" class="notif-dropdown">
-          <div class="notif-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <h4>Notifications</h4>
-            <button
-              v-if="filteredNotifications.length"
-              class="btn btn-sm btn-outline text-danger"
-              @click="clearAll"
-              style="padding: 2px 8px; font-size: 12px; border: none; background: transparent; text-decoration: underline;"
-            >
-              Clear All
-            </button>
+          <div class="notif-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--color-border-light);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <h4 style="margin: 0; font-size: 14px; font-weight: 600;">Notifications</h4>
+              <span v-if="unreadCount" class="badge" style="background: var(--color-primary, #3b82f6); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 10px;">{{ unreadCount }} baru</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button
+                v-if="unreadCount > 0"
+                type="button"
+                @click.stop="handleMarkAllAsRead"
+                style="padding: 2px 6px; font-size: 11px; border: none; background: transparent; color: var(--color-primary); cursor: pointer; text-decoration: underline;"
+                title="Tandai semua sudah dibaca"
+              >
+                Tandai dibaca
+              </button>
+              <button
+                v-if="filteredNotifications.length"
+                type="button"
+                class="text-danger"
+                @click.stop="handleClearAll"
+                style="padding: 2px 6px; font-size: 11px; border: none; background: transparent; cursor: pointer; text-decoration: underline;"
+                title="Hapus semua notifikasi"
+              >
+                Clear All
+              </button>
+            </div>
           </div>
           <div class="notif-body">
             <div v-if="!filteredNotifications.length" class="notif-empty">

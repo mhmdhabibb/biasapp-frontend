@@ -27,11 +27,12 @@ const limit = ref(15)
 const totalPages = ref(1)
 const searchQuery = ref('')
 const selectedAction = ref('')
+const selectedModule = ref(props.module || '')
 
 const moduleLabel = computed(() => {
   if (props.title) return props.title
-  if (!props.module) return 'Semua Modul'
-  return props.module.replace(/_/g, ' ').toUpperCase()
+  if (!selectedModule.value) return 'Semua Modul'
+  return selectedModule.value.replace(/_/g, ' ').toUpperCase()
 })
 
 async function fetchLogs() {
@@ -39,7 +40,7 @@ async function fetchLogs() {
   loading.value = true
   try {
     const res = await activityLogService.getLogs({
-      module: props.module || undefined,
+      module: selectedModule.value || undefined,
       action: selectedAction.value || undefined,
       search: searchQuery.value.trim() || undefined,
       page: page.value,
@@ -60,6 +61,7 @@ watch(
   () => props.open,
   (val) => {
     if (val) {
+      selectedModule.value = props.module || ''
       page.value = 1
       searchQuery.value = ''
       selectedAction.value = ''
@@ -68,6 +70,12 @@ watch(
   },
   { immediate: true },
 )
+
+function setModuleFilter(mod: string) {
+  selectedModule.value = mod
+  page.value = 1
+  fetchLogs()
+}
 
 function handleSearch() {
   page.value = 1
@@ -177,6 +185,26 @@ function getActionBadgeClass(action: string) {
               <button v-if="searchQuery" class="clear-btn" @click="searchQuery = ''; handleSearch()">✕</button>
             </div>
             <div class="log-action-filters">
+              <!-- Module Switcher if opened with module prop -->
+              <div v-if="props.module" class="module-filter-group">
+                <button
+                  class="filter-chip filter-chip--scope"
+                  :class="{ active: selectedModule === props.module }"
+                  @click="setModuleFilter(props.module)"
+                >
+                  {{ props.module.replace(/_/g, ' ').toUpperCase() }}
+                </button>
+                <button
+                  class="filter-chip filter-chip--scope"
+                  :class="{ active: selectedModule === '' }"
+                  @click="setModuleFilter('')"
+                >
+                  Semua Modul
+                </button>
+              </div>
+
+              <div class="filter-divider" v-if="props.module"></div>
+
               <button
                 class="filter-chip"
                 :class="{ active: selectedAction === '' }"
@@ -223,12 +251,25 @@ function getActionBadgeClass(action: string) {
             </div>
 
             <div v-else-if="items.length === 0" class="log-empty-state">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="8" x2="12" y2="12"></line>
                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
               </svg>
-              <p>Tidak ada logs aktivitas ditemukan.</p>
+              <p class="empty-main-text">
+                {{ selectedModule ? `Belum ada log aktivitas untuk modul ${moduleLabel}.` : 'Belum ada log aktivitas sistem.' }}
+              </p>
+              <p class="empty-sub-text">
+                Fitur Activity Log otomatis mencatat pembuatan (CREATE), pengubahan (UPDATE), dan penghapusan (DELETE) data operasional baru.
+              </p>
+              <button
+                v-if="selectedModule"
+                type="button"
+                class="log-btn-show-all"
+                @click="setModuleFilter('')"
+              >
+                Lihat Log Semua Modul
+              </button>
             </div>
 
             <div v-else class="log-table-wrap">
@@ -630,8 +671,66 @@ function getActionBadgeClass(action: string) {
   align-items: center;
   justify-content: center;
   min-height: 280px;
-  gap: 12px;
+  gap: 8px;
+  padding: 32px 20px;
+  text-align: center;
   color: var(--color-text-muted, #94a3b8);
+}
+
+.empty-main-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text, #1e293b);
+  margin: 0;
+}
+
+.empty-sub-text {
+  font-size: 12px;
+  color: var(--color-text-muted, #64748b);
+  max-width: 420px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.log-btn-show-all {
+  margin-top: 10px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--color-primary, #3b82f6);
+  background: var(--color-primary-light, #eff6ff);
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.log-btn-show-all:hover {
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+}
+
+.module-filter-group {
+  display: flex;
+  gap: 4px;
+}
+
+.filter-chip--scope {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.filter-chip--scope.active {
+  background: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+  color: #ffffff;
+}
+
+.filter-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border, #e2e8f0);
+  align-self: center;
 }
 
 .log-spinner {

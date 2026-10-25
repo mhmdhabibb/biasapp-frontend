@@ -47,10 +47,21 @@ const columns: TableColumn[] = [
   { key: 'status', label: 'Status' },
 ]
 
+function extractArray(res: any): any[] {
+  if (!res) return []
+  if (Array.isArray(res)) return res
+  if (Array.isArray(res.data)) return res.data
+  if (Array.isArray(res.data?.data)) return res.data.data
+  if (Array.isArray(res.data?.items)) return res.data.items
+  if (Array.isArray(res.items)) return res.items
+  return []
+}
+
 async function fetchJobs() {
   try {
-    const res = await api.get<{ data: any[] }>('/job-orders?kind=maintenance&limit=200')
-    jobOrders.value = (res.data || []).map(j => ({
+    const res = await api.get('/job-orders?kind=maintenance&limit=200')
+    const rawList = extractArray(res)
+    jobOrders.value = rawList.map((j: any) => ({
       ...j,
       job_order_no: (j.job_order_no || '').replace('JO-', 'MT-').replace('REQ-', 'MT-')
     }))
@@ -176,7 +187,7 @@ async function submitForm() {
         status: 'pending'
       }
       const srRes = await api.post<any>('/service-requests/', srPayload)
-      const srId = srRes?.data?.id
+      const srId = srRes?.data?.data?.id || srRes?.data?.id
 
       if (srId) {
         const joPayload = {

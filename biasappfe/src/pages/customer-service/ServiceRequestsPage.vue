@@ -442,10 +442,10 @@ const customerRentalUnits = computed(() => {
       deliveredItemIds.value.productIds.has(key);
     return {
       ...u,
-      delivered: true, // Allow selecting valid recorded machines / consumables / spareparts
+      delivered: Boolean(isDeliveredByDO),
       doStatus: isDeliveredByDO
         ? "delivered"
-        : deliveredItemIds.value.statusOf.get(key) || null,
+        : deliveredItemIds.value.statusOf.get(key) || "belum dikirim",
     };
   });
 });
@@ -767,7 +767,7 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
-  srTimer = setInterval(silentRefresh, 5000)
+  srTimer = setInterval(silentRefresh, 30000)
   window.addEventListener('focus', silentRefresh)
   window.addEventListener('bias:data-mutated', silentRefresh)
 });
@@ -996,15 +996,27 @@ onUnmounted(() => {
             service request baru bisa dibuat setelah barang/DO diterima customer.
           </div>
           <div class="unit-checkbox-list">
-            <label v-for="u in customerRentalUnits" :key="u.id" class="unit-checkbox-item"
-              :class="{ 'unit-disabled': !u.delivered }">
-              <input type="checkbox" :value="u.id" v-model="form.unit_ids" :disabled="!u.delivered" />
-              <span class="unit-checkbox-label">{{ u.label }}</span>
-              <span v-if="!u.delivered" class="delivery-badge delivery-pending" :title="u.doStatus
-                ? `Status DO: ${u.doStatus}`
-                : 'Belum ada DO untuk barang ini'
-                ">
-                Belum Dikirim{{ u.doStatus ? ` (DO ${u.doStatus})` : "" }}
+            <label
+              v-for="u in customerRentalUnits"
+              :key="u.id"
+              class="unit-checkbox-item"
+              :class="{ 'unit-disabled': !u.delivered }"
+              :title="!u.delivered ? 'Barang ini belum bisa dipilih karena belum melakukan pengantaran (status belum delivered)' : ''"
+              @click="!u.delivered ? $event.preventDefault() : null"
+            >
+              <input
+                type="checkbox"
+                :value="u.id"
+                v-model="form.unit_ids"
+                :disabled="!u.delivered"
+              />
+              <span class="unit-checkbox-label" :style="!u.delivered ? 'color: var(--color-text-muted); cursor: not-allowed;' : ''">{{ u.label }}</span>
+              <span
+                v-if="!u.delivered"
+                class="delivery-badge delivery-pending"
+                :title="u.doStatus ? `Status DO: ${u.doStatus}` : 'Belum ada pengantaran/DO untuk barang ini'"
+              >
+                Belum Dikirim{{ u.doStatus && u.doStatus !== 'belum dikirim' && u.doStatus !== '-' ? ` (${u.doStatus})` : '' }}
               </span>
               <span class="unit-source-badge" :class="u.itemType === 'product'
                 ? 'badge-product'

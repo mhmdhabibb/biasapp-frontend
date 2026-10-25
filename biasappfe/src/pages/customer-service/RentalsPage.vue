@@ -731,7 +731,7 @@ async function openEdit(row: any) {
 async function fetchRentals(silent = false) {
   if (!silent) isLoadingRentals.value = true;
   try {
-    const res = await api.get<any>("/rents?limit=200&order_by=created_at&order_dir=desc", !silent, false);
+    const res = await api.get<any>("/rents?limit=200&order_by=created_at&order_dir=desc", !silent, true);
     const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
     rentals.value = list.map((r: any) => {
       const c = (customers.value || []).find((cust: any) => cust.id === r.customer_id);
@@ -1123,16 +1123,18 @@ let rentalPollTimer: any = null;
 function silentSyncRentals() {
   if (document.visibilityState === "visible") {
     fetchRentals(true);
-    hydrateRentalLookups();
   }
 }
 
 onMounted(() => {
   fetchRentals();
   hydrateRentalLookups();
-  rentalPollTimer = setInterval(silentSyncRentals, 4000);
+  rentalPollTimer = setInterval(silentSyncRentals, 30000);
   window.addEventListener("focus", silentSyncRentals);
-  window.addEventListener("bias:data-mutated", silentSyncRentals);
+  window.addEventListener("bias:data-mutated", () => {
+    fetchRentals(true);
+    hydrateRentalLookups();
+  });
 });
 
 onUnmounted(() => {
