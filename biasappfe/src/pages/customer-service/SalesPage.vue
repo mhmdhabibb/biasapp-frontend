@@ -14,7 +14,7 @@ import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import { resources as resourceService } from '@/services/resource.service'
 import type { Sale, TableColumn } from '@/types'
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiRequest } from '@/services/api'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
@@ -44,9 +44,7 @@ const canSeeAmount = computed(() => {
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
 
-onMounted(() => {
-  ensureResourcesLoaded(route.path)
-})
+
 
 const {
   sales: data,
@@ -58,6 +56,8 @@ const {
   findCustomer,
   findProduct,
   findUnit,
+  formatUnitDisplayName,
+  formatProductDisplayName,
 } = useMasterStore()
 
 const resources = useResourcesStore()
@@ -65,6 +65,7 @@ const resources = useResourcesStore()
 const hardDelete = useHardDelete(
   (id, cascade) => resourceService.sales.hardRemove(id, cascade),
   () => useMasterStore().refreshInBackground(),
+  'sale:delete',
 )
 
 const customerOptions = computed(() => [
@@ -141,11 +142,31 @@ const targetSaleForDO = ref<any>(null)
 const isSubmittingDO = ref(false)
 const doForm = reactive({
   do_number: '',
+  project_name: '',
   delivery_date: '',
   delivery_address: '',
   recipient_name: '',
   recipient_phone: '',
   notes: '',
+})
+
+let salesTimer: any = null
+function silentRefresh() {
+  if (showModal.value || showConfirm.value || showDetail.value || showItemDetail.value || showPaymentModal.value || showCreateDOModal.value) return
+  void useMasterStore().refreshInBackground()
+}
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path)
+  salesTimer = setInterval(silentRefresh, 5000)
+  window.addEventListener('focus', silentRefresh)
+  window.addEventListener('bias:data-mutated', silentRefresh)
+})
+
+onUnmounted(() => {
+  if (salesTimer) clearInterval(salesTimer)
+  window.removeEventListener('focus', silentRefresh)
+  window.removeEventListener('bias:data-mutated', silentRefresh)
 })
 
 function hasActiveDO(sale: any): boolean {
@@ -172,9 +193,20 @@ function openCreateDOModal(sale: any) {
   const existingDONo = sale?.delivery_orders?.[0]?.do_number || ''
   const cust = sale?.customer || findCustomer(sale?.customer_id)
 
+  const itemNames = (sale?.sale_items || []).map((si: any) => {
+    const p = si.product || findProduct(si.product_id);
+    if (p) return formatProductDisplayName(p);
+    const u = si.unit || findUnit(si.unit_id);
+    if (u) return formatUnitDisplayName(u);
+    return '';
+  }).filter(Boolean);
+  const productOrUnitName = itemNames.length > 0 ? itemNames.join(', ') : 'Product';
+  const recipientAddress = sale?.installation_address || cust?.address || '';
+
   doForm.do_number = existingDONo
+  doForm.project_name = recipientAddress ? `Pengantaran ${productOrUnitName} ke ${recipientAddress}` : `Pengantaran ${productOrUnitName}`;
   doForm.delivery_date = new Date().toISOString().slice(0, 10)
-  doForm.delivery_address = sale?.installation_address || cust?.address || ''
+  doForm.delivery_address = recipientAddress
   doForm.recipient_name = cust?.pic_name || cust?.company_name || ''
   doForm.recipient_phone = cust?.phone || ''
   doForm.notes = `Delivery for sale ${sale?.sale_no || ''}`.trim()
@@ -188,6 +220,7 @@ async function submitCreateDO() {
   try {
     const payload = {
       do_number: doForm.do_number ? doForm.do_number.trim() : undefined,
+      project_name: doForm.project_name ? doForm.project_name.trim() : undefined,
       delivery_date: doForm.delivery_date ? new Date(doForm.delivery_date).toISOString() : new Date().toISOString(),
       delivery_address: doForm.delivery_address,
       recipient_name: doForm.recipient_name,
@@ -301,12 +334,12 @@ function generateSingleInvoiceHtml(item: any) {
       let serialNo = ''
       if (si.product_id) {
          const p = findProduct(si.product_id)
-         pName = p ? p.name : ('Product ID: ' + si.product_id)
+         pName = p ? formatProductDisplayName(p) : ('Product ID: ' + si.product_id)
       } else if (si.unit_id) {
          const u = findUnit(si.unit_id)
-         pName = u ? (u.name || u.model) : 'Unit Only' 
-         if (u && u.serial_no) {
-             serialNo = u.serial_no
+         pName = u ? formatUnitDisplayName(u) : 'Unit Only' 
+         if (u && (u.serial_no || (u as any).serial_number)) {
+             serialNo = u.serial_no || (u as any).serial_number
          }
       }
       const uPrice = si.unit_price || si.price || 0
@@ -347,7 +380,21 @@ function generateSingleInvoiceHtml(item: any) {
       `
     }).join('')
   } else {
-    itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">No item data available</td></tr>`
+    const rawTotal = Number(item.subtotal || item.total_amount || item.total || 0)
+    if (rawTotal > 0) {
+      itemsHtml = `
+        <tr>
+          <td style="text-align: center;">1</td>
+          <td>${item.sale_no ? `Penjualan (${item.sale_no})` : 'Penjualan Unit / Produk'}</td>
+          <td style="text-align: center;">1</td>
+          <td style="text-align: center;">unit</td>
+          <td class="rp-col">Rp</td><td class="val-col">${rawTotal.toLocaleString('id-ID')}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${rawTotal.toLocaleString('id-ID')}</td>
+        </tr>
+      `
+    } else {
+      itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">No item data available</td></tr>`
+    }
   }
 
   const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
@@ -530,10 +577,10 @@ function exportMonthToExcel() {
         let serialNo = ''
         if (si.product_id) {
            const p = findProduct(si.product_id)
-           pName = p ? p.name : ('Product ID: ' + si.product_id)
+           pName = p ? formatProductDisplayName(p) : ('Product ID: ' + si.product_id)
         } else if (si.unit_id) {
            const u = findUnit(si.unit_id)
-           pName = u ? (u.name || u.model) : 'Unit Only' 
+           pName = u ? formatUnitDisplayName(u) : 'Unit Only' 
            if (u && u.serial_no) {
                serialNo = u.serial_no
            }
@@ -1189,12 +1236,12 @@ function printReceipt(item: any, existingWindow?: Window | null) {
 const combinedItemOptions = computed(() => {
   const opts: { value: string; label: string }[] = []
   products.value.forEach(p => {
-    opts.push({ value: `P_${p.id}`, label: `[Product] ${p.name}` })
+    opts.push({ value: `P_${p.id}`, label: `[Product] ${formatProductDisplayName(p)}` })
   })
 
   const groupedUnits: { [key: string]: any[] } = {}
   units.value.filter(u => u.status !== 'sold').forEach(u => {
-    const key = u.name || u.model || 'Unknown'
+    const key = formatUnitDisplayName(u)
     if (!groupedUnits[key]) {
       groupedUnits[key] = []
     }
@@ -1204,10 +1251,10 @@ const combinedItemOptions = computed(() => {
   Object.values(groupedUnits).forEach(group => {
     if (group.length === 1) {
       const u = group[0]
-      opts.push({ value: `U_${u.id}`, label: `[Unit] ${u.name} ${u.serial_no ? '(SN: ' + u.serial_no + ')' : ''}` })
+      opts.push({ value: `U_${u.id}`, label: `[Unit] ${formatUnitDisplayName(u)} ${u.serial_no ? '(SN: ' + u.serial_no + ')' : ''}` })
     } else if (group.length > 1) {
       const u = group[0]
-      opts.push({ value: `U_${u.id}`, label: `[Unit] ${u.name}` })
+      opts.push({ value: `U_${u.id}`, label: `[Unit] ${formatUnitDisplayName(u)}` })
     }
   })
 
@@ -1562,8 +1609,8 @@ const combinedItemOptions = computed(() => {
                   <td colspan="5" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
                 </tr>
                 <tr v-for="(si, idx) in viewingItem.sale_items" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
-                  <td style="padding: 12px;">{{ si.product_id ? (findProduct(si.product_id)?.name || 'Product ID: ' + si.product_id) : '-' }}</td>
-                  <td style="padding: 12px;">{{ si.unit_id ? (findUnit(si.unit_id)?.name + (findUnit(si.unit_id)?.serial_no ? ' (' + findUnit(si.unit_id)?.serial_no + ')' : '')) : '-' }}</td>
+                  <td style="padding: 12px;">{{ si.product_id ? (formatProductDisplayName(findProduct(si.product_id) || si.product) || 'Product ID: ' + si.product_id) : '-' }}</td>
+                  <td style="padding: 12px;">{{ si.unit_id ? (formatUnitDisplayName(findUnit(si.unit_id) || si.unit) + ((findUnit(si.unit_id) || si.unit)?.serial_no ? ' (' + (findUnit(si.unit_id) || si.unit)?.serial_no + ')' : '')) : '-' }}</td>
                   <td style="padding: 12px; text-align: center;">{{ si.qty }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah(si.unit_price || (si as any).price || 0) }}</td>
                   <td style="padding: 12px; text-align: right;">{{ formatRupiah((si.unit_price || (si as any).price || 0) * (si.qty || 1)) }}</td>
@@ -1672,21 +1719,21 @@ const combinedItemOptions = computed(() => {
         <span style="display:none;"></span>
       </template>
     </FormModal>
-    <FormModal :open="showItemDetail" :title="selectedSaleItem ? `Detail Item — ${(selectedSaleItem.product_id ? findProduct(selectedSaleItem.product_id)?.name : 'Unit Only') || 'Item'}` : 'Detail Item'" @close="closeSaleItemDetail" max-width="480px">
+    <FormModal :open="showItemDetail" :title="selectedSaleItem ? `Detail Item — ${(selectedSaleItem.product_id ? formatProductDisplayName(findProduct(selectedSaleItem.product_id) || selectedSaleItem.product) : formatUnitDisplayName(findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit)) || 'Item'}` : 'Detail Item'" @close="closeSaleItemDetail" max-width="480px">
       <template v-if="selectedSaleItem">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
             <label class="form-label">Product</label>
-            <div style="font-weight: 600;">{{ selectedSaleItem.product_id ? (findProduct(selectedSaleItem.product_id)?.name || 'Product ID: ' + selectedSaleItem.product_id) : '-' }}</div>
-            <div style="font-size: 12px; color: var(--color-text-muted);">SKU: {{ selectedSaleItem.product_id ? (findProduct(selectedSaleItem.product_id)?.sku || '-') : '-' }}</div>
+            <div style="font-weight: 600;">{{ selectedSaleItem.product_id ? (formatProductDisplayName(findProduct(selectedSaleItem.product_id) || selectedSaleItem.product) || 'Product ID: ' + selectedSaleItem.product_id) : '-' }}</div>
+            <div style="font-size: 12px; color: var(--color-text-muted);">SKU: {{ selectedSaleItem.product_id ? ((findProduct(selectedSaleItem.product_id) || selectedSaleItem.product)?.sku || '-') : '-' }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">UOM</label>
-            <div>{{ selectedSaleItem.product_id ? ((findProduct(selectedSaleItem.product_id) as any)?.uom?.name || '-') : '-' }}</div>
+            <div>{{ selectedSaleItem.product_id ? (((findProduct(selectedSaleItem.product_id) || selectedSaleItem.product) as any)?.uom?.name || '-') : '-' }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Unit</label>
-            <div>{{ selectedSaleItem.unit_id ? (findUnit(selectedSaleItem.unit_id)?.name + (findUnit(selectedSaleItem.unit_id)?.serial_no ? ` (${findUnit(selectedSaleItem.unit_id)?.serial_no})` : '')) : '-' }}</div>
+            <div>{{ selectedSaleItem.unit_id ? (formatUnitDisplayName(findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit) + ((findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit)?.serial_no ? ` (${(findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit)?.serial_no})` : '')) : '-' }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Qty</label>
@@ -1806,6 +1853,20 @@ const combinedItemOptions = computed(() => {
           </small>
         </div>
 
+        <!-- Project Name Field -->
+        <div class="form-group">
+          <label class="form-label">Project Name</label>
+          <input
+            v-model="doForm.project_name"
+            type="text"
+            class="form-input"
+            placeholder="Pengantaran [Nama Produk/Unit] ke [Alamat Penerima]"
+          />
+          <small style="display: block; margin-top: 4px; color: var(--color-text-muted); font-size: 0.78rem;">
+            Otomatis: Pengantaran Nama Produk/Unit ke Alamat Penerima.
+          </small>
+        </div>
+
         <!-- Date & Recipient Fields -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
@@ -1863,9 +1924,9 @@ const combinedItemOptions = computed(() => {
               <tbody>
                 <tr v-for="(si, idx) in targetSaleForDO.sale_items" :key="idx" style="border-top: 1px solid var(--color-border);">
                   <td style="padding: 6px 10px;">
-                    {{ findProduct(si.product_id)?.name || findUnit(si.unit_id)?.model || 'Item' }}
-                    <span v-if="findUnit(si.unit_id)?.serial_no" style="font-size: 0.75rem; color: var(--color-text-muted);">
-                      (SN: {{ findUnit(si.unit_id)?.serial_no }})
+                    {{ si.product_id ? formatProductDisplayName(findProduct(si.product_id) || si.product) : si.unit_id ? formatUnitDisplayName(findUnit(si.unit_id) || si.unit) : 'Item' }}
+                    <span v-if="(findUnit(si.unit_id) || si.unit)?.serial_no" style="font-size: 0.75rem; color: var(--color-text-muted);">
+                      (SN: {{ (findUnit(si.unit_id) || si.unit)?.serial_no }})
                     </span>
                   </td>
                   <td style="padding: 6px 10px; text-align: center; font-weight: bold;">
@@ -1902,14 +1963,14 @@ const combinedItemOptions = computed(() => {
       :open="hardDelete.show"
       title="Hapus Permanen Penjualan (Sale)"
       :item-label="hardDelete.expected"
-      :item-name="hardDelete.expected"
-      :confirm-input="hardDelete.input"
-      :is-valid="hardDelete.confirmed"
+      :expected="hardDelete.expected"
+      :confirm-valid="hardDelete.confirmed"
+      :show-cascade-option="true"
       :cascade="hardDelete.cascade"
-      @update:confirm-input="hardDelete.input = $event"
       @update:cascade="hardDelete.cascade = $event"
+      @update:input="hardDelete.input = $event"
       @confirm="hardDelete.confirm"
-      @cancel="hardDelete.close"
+      @close="hardDelete.close"
     />
 
   </div>

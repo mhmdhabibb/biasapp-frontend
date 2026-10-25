@@ -24,6 +24,7 @@ const {
   getUnitsByCustomer,
   getContractsByCustomer,
   serviceReports, // to push the new report
+  formatUnitDisplayName,
 } = useMasterStore()
 
 const form = reactive({
@@ -44,12 +45,13 @@ const availableUnits = computed(() => {
 })
 
 const customerOptions = computed(() => customers.value.map((c: any) => ({ value: c.id, label: c.company_name || c.name || '-' })))
-const unitOptions = computed(() => availableUnits.value.map((u: any) => ({ value: u.id, label: `${u.model} (SN: ${u.serial_no})` })))
+const unitOptions = computed(() => availableUnits.value.map((u: any) => ({ value: u.id, label: `${formatUnitDisplayName(u)} (SN: ${u.serial_no || '-'})` })))
 const serviceTypeOptions = [
   { value: 'corrective', label: 'Corrective' },
   { value: 'preventive', label: 'Preventive' },
   { value: 'installation', label: 'Installation' },
   { value: 'relocation', label: 'Relocation' },
+  { value: 'delivery', label: 'Delivery' },
 ]
 const priorityOptions = [
   { value: 'low', label: 'Low' },
@@ -73,6 +75,18 @@ function handleAssignJob() {
   const customerContracts = getContractsByCustomer(form.customer_id)
   const relatedContract = customerContracts.find(c => c.unit_id === form.unit_id)
 
+  let projectName = ''
+  if (String(form.service_type || '').toLowerCase() === 'delivery') {
+    const selectedUnit = availableUnits.value.find(u => u.id === form.unit_id)
+    const unitName = selectedUnit ? `${selectedUnit.brand?.name || selectedUnit.brand || ''} ${selectedUnit.model || selectedUnit.name || 'Unit'}`.trim() : 'Unit'
+    const addr = selectedCustomer.value?.address || ''
+    projectName = addr ? `Pengantaran ${unitName} ke ${addr}` : `Pengantaran ${unitName}`
+  } else if (relatedContract?.placement_location) {
+    projectName = relatedContract.placement_location
+  } else if (selectedCustomer.value) {
+    projectName = selectedCustomer.value.company_name || selectedCustomer.value.name || ''
+  }
+
   const newReport = {
     id: Date.now(),
     service_report_no: `SR-${Date.now().toString().slice(-6)}`,
@@ -86,7 +100,7 @@ function handleAssignJob() {
     machine_problem: form.machine_problem,
     repair_action: '',
     status: 'assigned', // Workflow: NEW -> ASSIGNED
-    project_name: '',
+    project_name: projectName,
     is_chargeable: false,
     reading_counter: 0,
     is_complete: false,

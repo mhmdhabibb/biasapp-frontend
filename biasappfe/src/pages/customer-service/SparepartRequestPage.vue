@@ -5,14 +5,15 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { useMasterStore } from '@/composables/useMasterStore'
-import { useResourcesStore } from '@/stores/resources.store'
+import { resources } from '@/services/resource.service'
 import { useToast } from '@/composables/useToast'
 import type { TableColumn } from '@/types'
 
 const toast = useToast()
 const master = useMasterStore()
-const resources = useResourcesStore()
 const route = useRoute()
 const { ensureResourcesLoaded } = master
 
@@ -21,6 +22,12 @@ onMounted(() => {
 })
 
 const { sparepartRequests, serviceReports, products, findProduct, findServiceReport, findTechnician } = master
+
+const hardDelete = useHardDelete(
+  (id, cascade) => resources.serviceSpareparts.hardRemove(id, cascade),
+  () => master.refreshInBackground(),
+  'service_sparepart:delete',
+)
 
 const columns: TableColumn[] = [
   { key: 'request_no', label: 'Request No' },
@@ -35,6 +42,7 @@ const columns: TableColumn[] = [
 const showModal = ref(false)
 const saving = ref(false)
 const inputMode = ref<'db' | 'manual'>('db')
+const editingRequest = ref<any>(null)
 const form = reactive({
   service_report_id: '',
   product_id: '',
@@ -58,9 +66,33 @@ const productOptions = computed(() =>
 )
 
 function openAdd() {
+  editingRequest.value = null
   inputMode.value = 'db'
   Object.assign(form, defaultForm)
   showModal.value = true
+}
+
+function openEdit(row: any) {
+  editingRequest.value = row
+  inputMode.value = row.product_id ? 'db' : 'manual'
+  Object.assign(form, {
+    service_report_id: row.service_report_id || '',
+    product_id: row.product_id || '',
+    item_name: row.item_name || row.product?.name || '',
+    qty: row.qty || 1,
+  })
+  showModal.value = true
+}
+
+async function handleDelete(row: any) {
+  if (!confirm(`Hapus sparepart request ${row.request_no || ''}?`)) return
+  try {
+    await resources.serviceSpareparts.remove(row.id)
+    await master.refreshInBackground()
+    toast.success('Sparepart request berhasil dihapus')
+  } catch (err: any) {
+    toast.error(toast.fromError(err, 'Gagal menghapus sparepart request'))
+  }
 }
 
 async function handleSubmit() {
@@ -68,14 +100,15 @@ async function handleSubmit() {
     toast.warning('Select a service report first')
     return
   }
-  let finalProductId: string | null = form.product_id || null
+  let finalProductId: string | null = null
   let finalItemName = (form.item_name || '').trim()
 
   if (inputMode.value === 'db') {
-    if (!finalProductId) {
+    if (!form.product_id) {
       toast.warning('Select a sparepart from database')
       return
     }
+    finalProductId = form.product_id
     const p = (products.value as any[]).find((x: any) => String(x.id) === String(finalProductId))
     if (p) finalItemName = p.name
   } else {
@@ -83,10 +116,7 @@ async function handleSubmit() {
       toast.warning('Please enter sparepart name')
       return
     }
-    const match = (products.value as any[]).find((x: any) => x.name?.toLowerCase().trim() === finalItemName.toLowerCase())
-    if (match) {
-      finalProductId = match.id
-    }
+    finalProductId = null
   }
 
   if (form.qty < 1) {
@@ -96,17 +126,23 @@ async function handleSubmit() {
 
   saving.value = true
   try {
-    await resources.create('serviceSpareparts', {
+    const payload = {
       service_report_id: form.service_report_id,
       product_id: finalProductId,
       item_name: finalItemName,
       qty: Number(form.qty)
-    })
+    }
+    if (editingRequest.value) {
+      await resources.serviceSpareparts.update(editingRequest.value.id, payload)
+      toast.success('Sparepart request berhasil diperbarui')
+    } else {
+      await resources.serviceSpareparts.create(payload)
+      toast.success('Sparepart request created')
+    }
     await master.refreshInBackground()
-    toast.success('Sparepart request created')
     showModal.value = false
   } catch (err) {
-    toast.error(toast.fromError(err, 'Failed to create sparepart request'))
+    toast.error(toast.fromError(err, 'Failed to save sparepart request'))
   } finally {
     saving.value = false
   }
@@ -153,8 +189,16 @@ function getTechnician(row: any) {
   <div>
     <PageHeader title="Sparepart Requests" button-label="New Request" permission="service_sparepart:create"
       @add="openAdd" />
-    <DataTable :columns="columns" :data="sparepartRequests" permission="service_sparepart"
-      search-placeholder="Search requests...">
+    <DataTable
+      :columns="columns"
+      :data="sparepartRequests"
+      permission="service_sparepart"
+      :show-hard-delete="hardDelete.isSuperadmin"
+      search-placeholder="Search requests..."
+      @edit="openEdit"
+      @delete="handleDelete"
+      @hard-delete="hardDelete.open"
+    >
       <template #cell-product_id="{ row }">{{ getProduct(row) }}</template>
       <template #cell-service_report_id="{ row }">{{ getSR(row) }}</template>
       <template #cell-technician_id="{ row }">{{ getTechnician(row) }}</template>
@@ -172,7 +216,27 @@ function getTechnician(row: any) {
       </template>
     </DataTable>
 
-    <FormModal title="New Sparepart Request" :open="showModal" @close="showModal = false" @submit="handleSubmit">
+    <HardDeleteDialog
+      :open="hardDelete.show"
+      title="Hapus Permanen Sparepart Request"
+      :item-label="hardDelete.expected"
+      :expected="hardDelete.expected"
+      :confirm-valid="hardDelete.confirmed"
+      :show-cascade-option="true"
+      :cascade="hardDelete.cascade"
+      @update:cascade="hardDelete.cascade = $event"
+      @update:input="hardDelete.input = $event"
+      @confirm="hardDelete.confirm"
+      @close="hardDelete.close"
+    />
+
+    <FormModal
+      :title="editingRequest ? `Edit Sparepart Request - ${editingRequest.request_no || ''}` : 'New Sparepart Request'"
+      :open="showModal"
+      :submit-label="editingRequest ? 'Simpan Perubahan' : 'Save'"
+      @close="showModal = false"
+      @submit="handleSubmit"
+    >
       <div class="form-group">
         <label class="form-label" for="sr">Service Report</label>
         <CustomSelect id="sr" v-model="form.service_report_id" :options="serviceReportOptions" placeholder="Select service report" class="form-select" />
@@ -217,7 +281,7 @@ function getTechnician(row: any) {
       <template #footer>
         <button class="btn btn-outline" @click="showModal = false">Cancel</button>
         <button class="btn btn-accent" :disabled="saving" @click="handleSubmit">
-          {{ saving ? 'Saving...' : 'Save' }}
+          {{ saving ? 'Saving...' : (editingRequest ? 'Simpan Perubahan' : 'Save') }}
         </button>
       </template>
     </FormModal>

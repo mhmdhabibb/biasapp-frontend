@@ -76,7 +76,7 @@ export function printDeliveryServiceHistory(item: any): boolean {
   const html = `
     <html>
       <head>
-        <title>Service History - ${esc(item.do_number || "")}</title>
+        <title>Service History - ${esc(custName)}</title>
         <style>
           @media print {
             @page { margin: 10mm; }
@@ -135,11 +135,7 @@ export function printDeliveryServiceHistory(item: any): boolean {
 
           <table class="meta-table">
             <tr>
-              <td style="width: 30%; border-right: 1px solid #000;">DO Number</td>
-              <td>${esc(item.do_number || "-")}</td>
-            </tr>
-            <tr>
-              <td style="border-right: 1px solid #000;">Delivery Date</td>
+              <td style="width: 30%; border-right: 1px solid #000;">Date</td>
               <td>${esc(dateStr)}</td>
             </tr>
           </table>

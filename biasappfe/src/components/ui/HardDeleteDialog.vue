@@ -103,7 +103,7 @@ const canConfirm = () => {
               <div class="hd-option-content">
                 <span class="hd-option-name">Hapus Data Terpilih Saja</span>
                 <span class="hd-option-desc">
-                  Hanya menghapus customer ini. Relasi data lainnya tidak ikut dihapus.
+                  Hanya menghapus data ini. Relasi data lainnya tidak ikut dihapus.
                 </span>
               </div>
             </div>
@@ -124,7 +124,7 @@ const canConfirm = () => {
               <div class="hd-option-content">
                 <span class="hd-option-name">Hapus Beserta Seluruh Data Terkait (Cascade Foreign Key)</span>
                 <span class="hd-option-desc">
-                  Menghapus customer dan SEMUA relasi transaksi (Sales, Rental, Invoices, Kontrak, Garansi, Surat Jalan, dsb).
+                  Menghapus data ini beserta seluruh relasi data transaksi terkait (Invoice, Item, Surat Jalan, Kontrak, dsb).
                 </span>
               </div>
             </div>

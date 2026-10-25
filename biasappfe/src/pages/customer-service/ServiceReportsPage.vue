@@ -41,6 +41,8 @@ const {
   findProduct,
   findUnit,
   findServiceReport,
+  formatUnitDisplayName,
+  formatProductDisplayName,
 } = useMasterStore()
 
 const customerOptions = computed(() =>
@@ -62,6 +64,7 @@ const serviceTypeOptions = [
   { value: 'preventive', label: 'Preventive' },
   { value: 'installation', label: 'Installation' },
   { value: 'relocation', label: 'Relocation' },
+  { value: 'delivery', label: 'Delivery' },
 ]
 
 const technicianOptions = computed(() =>
@@ -222,8 +225,9 @@ function openCreatePOModal(request: any) {
   poForm.unit_price = req.unit_price || prod?.price || 0
 
   const purposeParts: string[] = []
-  if (unit?.model) {
-    purposeParts.push(`Unit ${unit.model}${unit.serial_number ? ` (SN: ${unit.serial_number})` : ''}`)
+  if (unit) {
+    const sn = unit.serial_no || (unit as any).serial_number || ''
+    purposeParts.push(`${formatUnitDisplayName(unit)}${sn ? ` (SN: ${sn})` : ''}`)
   }
   if (cust?.company_name || cust?.name) {
     purposeParts.push(cust.company_name || cust.name)
@@ -400,14 +404,15 @@ const isLoadingDoDetail = ref(false)
 const doDetailTab = ref<'info' | 'items' | 'signatures'>('info')
 
 function getDoItemName(item: any): string {
-  if (item.product?.name) return item.product.name
-  if (item.product_id) return findProduct(item.product_id)?.name || `Product ${item.product_id}`
-  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_no ? ` (${item.unit.serial_no})` : ''}`
-  if (item.unit_id) {
-    const unit = findUnit(item.unit_id)
-    return unit ? `${unit.model}${unit.serial_no ? ` (${unit.serial_no})` : ''}` : `Unit ${item.unit_id}`
+  if (item.product || item.product_id) {
+    const p = item.product || findProduct(item.product_id)
+    return p ? formatProductDisplayName(p) : `Product ${item.product_id}`
   }
-  if (item.model) return `${item.model}${item.serial_no ? ` (${item.serial_no})` : ''}`
+  if (item.unit || item.unit_id) {
+    const u = item.unit || findUnit(item.unit_id)
+    return u ? `${formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}` : `Unit ${item.unit_id}`
+  }
+  if (item.model) return `${formatUnitDisplayName(item)}${item.serial_no ? ` (${item.serial_no})` : ''}`
   return '-'
 }
 
@@ -444,10 +449,10 @@ async function openSrDetail(row: any) {
 }
 
 function getSrUnitName(item: any): string {
-  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_number ? ` (SN: ${item.unit.serial_number})` : ''}`
-  if (item.unit_id) {
-    const unit = findUnit(item.unit_id as any)
-    return unit ? `${unit.model}${(unit as any).serial_number ? ` (SN: ${(unit as any).serial_number})` : ''}` : `Unit ${item.unit_id}`
+  const u = item.unit || (item.unit_id ? findUnit(item.unit_id as any) : null)
+  if (u) {
+    const sn = u.serial_no || (u as any).serial_number || ''
+    return `${formatUnitDisplayName(u)}${sn ? ` (SN: ${sn})` : ''}`
   }
   return '-'
 }
@@ -507,32 +512,69 @@ const form = reactive({
 
 const defaultForm = { ...form }
 
-// Auto-fill project name from contract item placement_location or customer name
-watch(
-  () => [form.unit_id, form.customer_id] as const,
-  ([unitId, customerId]) => {
-    // Only auto-fill when adding new (not editing existing)
-    if (editingItem.value) return
+// Auto-fill project name from contract item placement_location, customer name, or delivery format
+function computeProjectName() {
+  if (editingItem.value) return
 
-    if (unitId) {
-      // Find contract item linked to this unit
+  const isDelivery = String(form.service_type || '').toLowerCase() === 'delivery'
+
+  if (isDelivery) {
+    let unitName = ''
+    if (form.unit_id) {
+      const u: any = findUnit(form.unit_id)
+      if (u) {
+        const brand = u.brand_id ? findBrand(u.brand_id) : (u.brand?.name ? u.brand : null)
+        const brandName = brand?.name || brand || ''
+        unitName = [brandName, u.model || u.name].filter(Boolean).join(' ') || u.model || ''
+      }
+    }
+    if (!unitName) unitName = 'Unit'
+
+    let address = ''
+    if (form.unit_id) {
       const ci = (contractItems.value as any[]).find(
-        (c: any) => String(c.unit_id) === String(unitId)
+        (c: any) => String(c.unit_id) === String(form.unit_id)
       )
       if (ci?.placement_location) {
-        form.project_name = ci.placement_location
-        return
+        address = ci.placement_location
+      }
+    }
+    if (!address && form.customer_id) {
+      const c = findCustomer(form.customer_id as any)
+      if (c) {
+        address = (c as any).address || (c as any).installation_address || ''
       }
     }
 
-    // Fallback: use customer name if no contract placement found
-    if (customerId) {
-      const c = findCustomer(customerId as any)
-      if (c) {
-        form.project_name = (c as any).company_name || (c as any).name || ''
-        return
-      }
+    form.project_name = address ? `Pengantaran ${unitName} ke ${address}` : `Pengantaran ${unitName}`
+    return
+  }
+
+  if (form.unit_id) {
+    // Find contract item linked to this unit
+    const ci = (contractItems.value as any[]).find(
+      (c: any) => String(c.unit_id) === String(form.unit_id)
+    )
+    if (ci?.placement_location) {
+      form.project_name = ci.placement_location
+      return
     }
+  }
+
+  // Fallback: use customer name if no contract placement found
+  if (form.customer_id) {
+    const c = findCustomer(form.customer_id as any)
+    if (c) {
+      form.project_name = (c as any).company_name || (c as any).name || ''
+      return
+    }
+  }
+}
+
+watch(
+  () => [form.service_type, form.unit_id, form.customer_id] as const,
+  () => {
+    computeProjectName()
   }
 )
 
@@ -1123,8 +1165,8 @@ function printTable() {
       </div>
       <div class="form-group">
         <label class="form-label">Project Name</label>
-        <input v-model="form.project_name" type="text" class="form-input" placeholder="Auto-filled from unit contract location">
-        <span class="form-hint">Otomatis dari lokasi kontrak unit. Bisa diubah manual.</span>
+        <input v-model="form.project_name" type="text" class="form-input" :placeholder="form.service_type === 'delivery' ? 'Pengantaran [Nama Produk/Unit] ke [Alamat Penerima]' : 'Auto-filled from unit contract location'">
+        <span class="form-hint">{{ form.service_type === 'delivery' ? 'Otomatis: Pengantaran [Nama Unit] ke [Alamat Penerima]. Bisa diubah manual.' : 'Otomatis dari lokasi kontrak unit. Bisa diubah manual.' }}</span>
       </div>
       <div class="form-group">
         <label class="form-label">Reading Period</label>

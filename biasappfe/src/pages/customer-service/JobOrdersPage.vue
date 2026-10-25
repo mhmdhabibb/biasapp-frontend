@@ -299,6 +299,7 @@ onMounted(() => {
   autoReloadTimer = setInterval(reloadSilently, AUTO_RELOAD_INTERVAL_MS);
   document.addEventListener("visibilitychange", onVisibilityOrFocus);
   window.addEventListener("focus", onVisibilityOrFocus);
+  window.addEventListener("bias:data-mutated", reloadSilently);
 });
 
 onUnmounted(() => {
@@ -308,6 +309,7 @@ onUnmounted(() => {
   }
   document.removeEventListener("visibilitychange", onVisibilityOrFocus);
   window.removeEventListener("focus", onVisibilityOrFocus);
+  window.removeEventListener("bias:data-mutated", reloadSilently);
 });
 
 // Watch technicians jika terisi belakangan agar data tetap sinkron
@@ -1369,7 +1371,7 @@ async function cancelJobAssignment(jobId: string) {
           <button
             class="btn-icon refresh-btn"
             title="Refresh"
-            @click="loadAllData"
+            @click="() => loadAllData()"
           >
             <svg
               width="16"

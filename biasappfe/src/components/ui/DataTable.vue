@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { usePermission } from "@/composables/usePermission";
+import { useIsSuperadmin } from "@/composables/useHardDelete";
+import ActivityLogModal from "@/components/ui/ActivityLogModal.vue";
 import type { TableColumn } from "@/types";
 import { computed, ref, useSlots, watch } from "vue";
 import { debounce } from "@/utils/requestCache";
+
+const isSuperadmin = useIsSuperadmin();
+const showLogsModal = ref(false);
 
 const props = withDefaults(
   defineProps<{
@@ -188,6 +193,22 @@ const visiblePages = computed(() => {
         />
       </div>
       <div class="toolbar-right">
+        <button
+          v-if="isSuperadmin"
+          type="button"
+          class="btn-activity-logs"
+          title="Pantau Logs Aktivitas Modul Ini (Khusus Superadmin)"
+          @click="showLogsModal = true"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span>Logs</span>
+        </button>
         <slot name="toolbar"></slot>
         <span class="data-count" aria-live="polite">
           {{ `${processedData.length} items` }}
@@ -340,7 +361,7 @@ const visiblePages = computed(() => {
                   </svg>
                 </button>
                 <button
-                  v-if="showHardDelete"
+                  v-if="showHardDelete && isSuperadmin"
                   class="action-btn action-btn--hard"
                   title="Hapus permanen dari database (superadmin)"
                   @click.stop="$emit('hard-delete', row)"
@@ -400,6 +421,14 @@ const visiblePages = computed(() => {
         </button>
       </div>
     </div>
+
+    <!-- Activity Log Modal (Superadmin Only) -->
+    <ActivityLogModal
+      v-if="isSuperadmin"
+      :open="showLogsModal"
+      :module="props.permission"
+      @close="showLogsModal = false"
+    />
   </div>
 </template>
 
@@ -418,6 +447,28 @@ const visiblePages = computed(() => {
   padding: var(--space-lg);
   border-bottom: 1px solid var(--color-border-light);
   flex-wrap: wrap;
+}
+
+.btn-activity-logs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-secondary, #475569);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-activity-logs:hover {
+  background: var(--color-primary-surface, #eff6ff);
+  border-color: var(--color-primary, #3b82f6);
+  color: var(--color-primary, #3b82f6);
 }
 
 .search-box {

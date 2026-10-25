@@ -23,7 +23,7 @@ import {
 } from "@/utils/paymentReceipt";
 import type { TableColumn } from "@/types";
 import type { PaymentReceiptData } from "@/utils/paymentReceipt";
-import { computed, onActivated, onMounted, reactive, ref } from "vue";
+import { computed, onActivated, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { normalizeRole } from "@/router/role-access";
@@ -31,7 +31,22 @@ import { normalizeRole } from "@/router/role-access";
 const toast = useToast();
 const { can, isAdmin } = usePermission();
 const { currentUser } = useAuth();
-const { customers, units, products, payments, findCustomer, findUnit, findProduct, refreshOnly } = useMasterStore();
+const masterStore = useMasterStore();
+const {
+  customers,
+  units,
+  products,
+  payments,
+  technicians,
+  deliveryOrders,
+  findCustomer,
+  findUnit,
+  findProduct,
+  refreshOnly,
+  ensureResourcesLoaded,
+  formatUnitDisplayName,
+  formatProductDisplayName,
+} = masterStore;
 
 // CS (dan teknisi) tidak boleh melihat nominal: rate, total amount invoice items.
 const canSeeAmount = computed(() => {
@@ -41,11 +56,11 @@ const canSeeAmount = computed(() => {
 });
 const { t } = useI18n();
 const route = useRoute();
-const { ensureResourcesLoaded } = useMasterStore();
 
 const hardDelete = useHardDelete(
   (id, cascade) => resources.rentals.hardRemove(id, cascade),
   fetchRentals,
+  "rental:delete",
 );
 
 async function handleDeleteRental(row: any) {
@@ -59,16 +74,13 @@ async function handleDeleteRental(row: any) {
   }
 }
 
-onMounted(() => {
-  ensureResourcesLoaded(route.path)
-})
-
 const columns = computed<TableColumn[]>(() => [
   { key: "rental_no", label: t("rentals.no") },
   { key: "company", label: t("rentals.company") },
   { key: "pic_name", label: t("rentals.pic_name") },
   { key: "start_date", label: t("rentals.start") },
   { key: "end_date", label: t("rentals.end") },
+  { key: "do_number", label: "DO No." },
   { key: "total", label: t("rentals.total") },
   { key: "invoice_actions", label: "Invoices" },
   { key: "status", label: t("rentals.status") },
@@ -103,6 +115,113 @@ const showMeterDetail = ref(false);
 const isSavingPayment = ref(false);
 const showDetailModal = ref(false);
 const detailRental = ref<any>(null);
+
+const showCreateDOModal = ref(false);
+const targetRentalForDO = ref<any>(null);
+const isSubmittingDO = ref(false);
+const doForm = reactive({
+  do_number: '',
+  project_name: '',
+  delivery_date: '',
+  delivery_address: '',
+  recipient_name: '',
+  recipient_phone: '',
+  technician_id: '',
+  notes: '',
+});
+
+const technicianOptions = computed(() => [
+  { value: '', label: '-- Pilih Teknisi (Opsional) --' },
+  ...((technicians.value as any[]) || []).map((t: any) => ({
+    value: t.id,
+    label: t.name || t.user?.name || `Teknisi ${t.id}`,
+  }))
+]);
+
+function hasActiveRentalDO(rental: any): boolean {
+  if (!rental) return false;
+  if (rental.delivery_order && rental.delivery_order.status !== 'cancelled' && !rental.delivery_order.deleted_at) {
+    return true;
+  }
+  if (Array.isArray(rental.delivery_orders) && rental.delivery_orders.length > 0) {
+    return rental.delivery_orders.some((d: any) => d && d.status !== 'cancelled' && !d.deleted_at);
+  }
+  const found = ((deliveryOrders.value as any[]) || []).find(
+    (d: any) => String(d.rental_id) === String(rental.id) && d.status !== 'cancelled' && !d.deleted_at
+  );
+  return !!found;
+}
+
+function getRentalDONumber(rental: any): string {
+  if (!rental) return '-';
+  if (rental.delivery_order && rental.delivery_order.status !== 'cancelled') {
+    return rental.delivery_order.do_number || '-';
+  }
+  if (Array.isArray(rental.delivery_orders) && rental.delivery_orders.length > 0) {
+    const activeDO = rental.delivery_orders.find((d: any) => d && d.status !== 'cancelled' && !d.deleted_at);
+    if (activeDO?.do_number) return activeDO.do_number;
+  }
+  const found = ((deliveryOrders.value as any[]) || []).find(
+    (d: any) => String(d.rental_id) === String(rental.id) && d.status !== 'cancelled' && !d.deleted_at
+  );
+  return found?.do_number || '-';
+}
+
+function openCreateRentalDOModal(rental: any) {
+  if (hasActiveRentalDO(rental)) {
+    toast.error('Surat Jalan (DO) sudah ada dan aktif untuk transaksi rental ini.');
+    return;
+  }
+  targetRentalForDO.value = rental;
+  const cust = rental?.customer || findCustomer(rental?.customer_id);
+
+  const itemNames = (rental?.rental_items || []).map((ri: any) => {
+    const u = ri.unit || findUnit(ri.unit_id);
+    if (u) return formatUnitDisplayName(u);
+    const p = ri.product || findProduct(ri.product_id);
+    if (p) return formatProductDisplayName(p);
+    return '';
+  }).filter(Boolean);
+  const productOrUnitName = itemNames.length > 0 ? itemNames.join(', ') : 'Unit';
+  const recipientAddress = rental?.installation_address || cust?.address || '';
+
+  doForm.do_number = '';
+  doForm.project_name = recipientAddress ? `Pengantaran ${productOrUnitName} ke ${recipientAddress}` : `Pengantaran ${productOrUnitName}`;
+  doForm.delivery_date = new Date().toISOString().slice(0, 10);
+  doForm.delivery_address = recipientAddress;
+  doForm.recipient_name = cust?.pic_name || cust?.company_name || '';
+  doForm.recipient_phone = cust?.phone || '';
+  doForm.technician_id = '';
+  doForm.notes = `Pengantaran unit rental ${rental?.rental_no || ''}`.trim();
+
+  showCreateDOModal.value = true;
+}
+
+async function submitCreateRentalDO() {
+  if (!targetRentalForDO.value || isSubmittingDO.value) return;
+  isSubmittingDO.value = true;
+  try {
+    const payload = {
+      do_number: doForm.do_number ? doForm.do_number.trim() : undefined,
+      project_name: doForm.project_name ? doForm.project_name.trim() : undefined,
+      delivery_date: doForm.delivery_date ? new Date(doForm.delivery_date).toISOString() : new Date().toISOString(),
+      delivery_address: doForm.delivery_address,
+      recipient_name: doForm.recipient_name,
+      recipient_phone: doForm.recipient_phone,
+      technician_id: doForm.technician_id || undefined,
+      notes: doForm.notes,
+    };
+    await api.post(`/rents/${targetRentalForDO.value.id}/delivery-order`, payload);
+    toast.success('Surat Jalan (DO) berhasil dibuat!');
+    showCreateDOModal.value = false;
+    await fetchRentals();
+    await refreshOnly(['deliveryOrders']);
+  } catch (err: any) {
+    toast.error(toast.fromError(err, 'Gagal membuat Surat Jalan (DO)'));
+  } finally {
+    isSubmittingDO.value = false;
+  }
+}
 
 async function openRentalDetail(rental: any) {
   detailRental.value = rental;
@@ -187,6 +306,7 @@ const paperTypes = ref<{ id: string; name: string }[]>([]);
 
 const rentalItems = ref<
   {
+    id?: string;
     selected_item: string;
     unit_id: string | null;
     product_id: string | null;
@@ -210,7 +330,7 @@ const rentalItems = ref<
     };
     description: string;
     rates: {
-      paper_size_id: string;
+      paper_size_id: string | null;
       paper_type_id: string | null;
       rate_per_page_bw: number;
       rate_per_page_color: number;
@@ -273,23 +393,44 @@ const rentCustomerOptions = computed(() =>
       `${(c as any).pic_name ? " - " + (c as any).pic_name : ""}`,
   })),
 );
-const rentUnitOptions = computed(() => [
-  // 1. Machines / Units
-  ...(availableUnits.value as any[]).map((u: any) => ({
-    value: "unit_" + u.id,
-    label: `[Unit/Mesin] ${u.model || u.name} (${(u as any).brand?.name || u.brand || "Brand"}) — S/N: ${u.serial_no || "N/A"}`,
-  })),
-  ...(unavailableUnits.value as any[]).map((u: any) => ({
-    value: "unit_" + u.id,
-    label: `[Unit/Mesin] ${u.model || u.name} (${(u as any).brand?.name || u.brand || "Brand"}) — S/N: ${u.serial_no || "N/A"} — ${unitStatusOf(u)}`,
-    disabled: true,
-  })),
-  // 2. Consumables / Spareparts (Products)
-  ...(products.value as any[]).map((p: any) => ({
-    value: "prod_" + p.id,
-    label: `[Consumable/Sparepart] ${p.name}${p.sku ? " (" + p.sku + ")" : ""}${p.price ? " — " + fmtRp(p.price) : ""}`,
-  })),
-]);
+const rentUnitOptions = computed(() => {
+  const currentEditingUnitIds = new Set<string>();
+  if (editingRental.value) {
+    const rawItems = editingRental.value.rental_items || editingRental.value.rentalItems || [];
+    rawItems.forEach((it: any) => {
+      if (it.unit_id) currentEditingUnitIds.add(String(it.unit_id));
+    });
+  }
+
+  return [
+    // 1. Machines / Units (Available or attached to current rental being edited)
+    ...(units.value as any[])
+      .filter((u: any) => {
+        const s = unitStatusOf(u);
+        return s === "available" || s === "" || currentEditingUnitIds.has(String(u.id));
+      })
+      .map((u: any) => {
+        const isCurrent = currentEditingUnitIds.has(String(u.id));
+        return {
+          value: "unit_" + u.id,
+          label: `[Unit/Mesin] ${formatUnitDisplayName(u)} — S/N: ${u.serial_no || "N/A"}${isCurrent ? " (Unit Saat Ini)" : ""}`,
+        };
+      }),
+    // 2. Unavailable units (attached to other rentals, broken, etc.)
+    ...(unavailableUnits.value as any[])
+      .filter((u: any) => !currentEditingUnitIds.has(String(u.id)))
+      .map((u: any) => ({
+        value: "unit_" + u.id,
+        label: `[Unit/Mesin] ${formatUnitDisplayName(u)} — S/N: ${u.serial_no || "N/A"} — ${unitStatusOf(u)}`,
+        disabled: true,
+      })),
+    // 3. Consumables / Spareparts (Products)
+    ...(products.value as any[]).map((p: any) => ({
+      value: "prod_" + p.id,
+      label: `[Consumable/Sparepart] ${formatProductDisplayName(p)}${p.sku ? " (" + p.sku + ")" : ""}${p.price ? " — " + fmtRp(p.price) : ""}`,
+    })),
+  ];
+});
 const rentPaperSizeOptions = computed(() => [
   { value: "", label: "— Semua ukuran —" },
   ...(paperSizes.value as any[]).map((p: any) => ({
@@ -445,7 +586,10 @@ function onItemSelectChange(item: any) {
   }
 }
 
+const editingRental = ref<any>(null);
+
 async function openAdd() {
+  editingRental.value = null;
   await refreshOnly(["customers", "units", "products"]);
   Object.assign(form, {
     customer_id: "",
@@ -486,10 +630,108 @@ async function openAdd() {
   showModal.value = true;
 }
 
-async function fetchRentals() {
-  isLoadingRentals.value = true;
+async function openEdit(row: any) {
+  await refreshOnly(["customers", "units", "products"]);
+  let rentalData = row;
   try {
-    const res = await api.get<any>("/rents?limit=200&order_by=created_at&order_dir=desc");
+    const res = await api.get<{ data: any }>(`/rents/${row.id}`, false);
+    if (res?.data) {
+      rentalData = res.data;
+    }
+  } catch (err) {
+    console.warn("Could not fetch full rental data, using row:", err);
+  }
+
+  editingRental.value = rentalData;
+
+  Object.assign(form, {
+    customer_id: rentalData.customer_id || "",
+    start_date: rentalData.start_date ? String(rentalData.start_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    duration_months: rentalData.duration_months ?? 12,
+    duration_days: rentalData.duration_days ?? 0,
+    po_no: rentalData.po_no || "",
+    notes: rentalData.notes || "",
+    installation_address: rentalData.installation_address || "",
+  });
+
+  const rawItems = rentalData.rental_items || rentalData.rentalItems || [];
+  if (rawItems.length > 0) {
+    rentalItems.value = rawItems.map((item: any) => {
+      let selectedItem = "";
+      if (item.unit_id) {
+        selectedItem = `unit_${item.unit_id}`;
+      } else if (item.product_id) {
+        selectedItem = `prod_${item.product_id}`;
+      }
+
+      const unit = item.unit_id ? findUnit(item.unit_id) : null;
+      const isCopier = unit ? !!unit.is_copier : false;
+      const isComputer = unit ? !!(unit as any).is_computer : false;
+
+      return {
+        id: item.id,
+        selected_item: selectedItem,
+        unit_id: item.unit_id || null,
+        product_id: item.product_id || null,
+        qty: item.qty || 1,
+        monthly_rent: item.monthly_rent || 0,
+        start_meter_bw: item.start_meter_bw || 0,
+        start_meter_color: item.start_meter_color || 0,
+        free_quota_color: item.free_quota_color || 0,
+        free_quota_bw: item.free_quota_bw || 0,
+        placement_location: item.placement_location || "",
+        is_copier: isCopier,
+        is_computer: isComputer,
+        specs: item.specs || {
+          cpu: "",
+          ram: "",
+          storage: "",
+          storage_type: "",
+          os: "",
+          vga: "",
+          office: "",
+        },
+        description: item.description || "",
+        rates: (item.rates || []).map((r: any) => ({
+          paper_size_id: r.paper_size_id || null,
+          paper_type_id: r.paper_type_id || null,
+          rate_per_page_bw: r.rate_per_page_bw || 0,
+          rate_per_page_color: r.rate_per_page_color || 0,
+          free_quota_bw: r.free_quota_bw || 0,
+          free_quota_color: r.free_quota_color || 0,
+          quota_applies_to: r.quota_applies_to || "color",
+        })),
+      };
+    });
+  } else {
+    rentalItems.value = [
+      {
+        selected_item: "",
+        unit_id: null,
+        product_id: null,
+        qty: 1,
+        monthly_rent: 0,
+        start_meter_bw: 0,
+        start_meter_color: 0,
+        free_quota_color: 0,
+        free_quota_bw: 0,
+        placement_location: "",
+        is_copier: false,
+        is_computer: false,
+        specs: { cpu: "", ram: "", storage: "", storage_type: "", os: "", vga: "", office: "" },
+        description: "",
+        rates: [],
+      },
+    ];
+  }
+
+  showModal.value = true;
+}
+
+async function fetchRentals(silent = false) {
+  if (!silent) isLoadingRentals.value = true;
+  try {
+    const res = await api.get<any>("/rents?limit=200&order_by=created_at&order_dir=desc", !silent, false);
     const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
     rentals.value = list.map((r: any) => {
       const c = (customers.value || []).find((cust: any) => cust.id === r.customer_id);
@@ -504,10 +746,12 @@ async function fetchRentals() {
       };
     });
   } catch (error) {
-    console.error("Failed to fetch rentals data", error);
-    toast.error("Gagal memuat data rental. Silakan refresh halaman.");
+    if (!silent) {
+      console.error("Failed to fetch rentals data", error);
+      toast.error("Gagal memuat data rental. Silakan refresh halaman.");
+    }
   } finally {
-    isLoadingRentals.value = false;
+    if (!silent) isLoadingRentals.value = false;
   }
 }
 
@@ -594,6 +838,7 @@ async function handleSubmit() {
       const productId = isProduct ? item.selected_item.replace("prod_", "").trim() : null;
 
       return {
+        id: item.id || undefined,
         unit_id: unitId || null,
         product_id: productId || null,
         qty: Math.max(1, Math.round(Number(item.qty) || 1)),
@@ -601,8 +846,8 @@ async function handleSubmit() {
         start_meter_bw: Math.max(0, Math.round(Number(item.start_meter_bw) || 0)),
         start_meter_color: Math.max(0, Math.round(Number(item.start_meter_color) || 0)),
         free_quota_color: Math.max(0, Math.round(Number(item.free_quota_color) || 0)),
-        free_quota_bw: Math.max(0, Math.round(Number((item as any).free_quota_bw) || 0)),
-        placement_location: ((item as any).placement_location || "").trim() || "",
+        free_quota_bw: Math.max(0, Math.round(Number(item.free_quota_bw) || 0)),
+        placement_location: (item.placement_location || "").trim() || "",
         specs: item.specs || {},
         description: item.description ? String(item.description).trim() : "",
         rates: (item.rates || [])
@@ -628,13 +873,23 @@ async function handleSubmit() {
   };
 
   try {
-    await api.post("/rents", payload);
-    invalidateCache("/rents");
-    toast.success(t("rentals.success"));
-    showModal.value = false;
-    await fetchRentals();
+    if (editingRental.value) {
+      await api.put(`/rents/${editingRental.value.id}`, payload);
+      invalidateCache("/rents");
+      window.dispatchEvent(new CustomEvent("bias:data-mutated", { detail: { path: "/rents" } }));
+      toast.success("Rental berhasil diperbarui.");
+      showModal.value = false;
+      editingRental.value = null;
+    } else {
+      await api.post("/rents", payload);
+      invalidateCache("/rents");
+      invalidateCache("/delivery-orders");
+      window.dispatchEvent(new CustomEvent("bias:data-mutated", { detail: { path: "/rents" } }));
+      toast.success("Transaksi sewa rental dan Surat Jalan (DO) berhasil dibuat!");
+      showModal.value = false;
+    }
   } catch (error: any) {
-    console.error("Failed to create rental:", error);
+    console.error("Failed to save rental:", error);
     let errMessage = error.message || t("rentals.network_error");
     if (error.response?.data?.message) {
       errMessage = error.response.data.message;
@@ -649,8 +904,17 @@ async function handleSubmit() {
       errMessage = `${errMessage} (${details})`;
     }
     toast.error(t("rentals.failed", { error: errMessage }));
+    return;
   } finally {
     isLoading.value = false;
+  }
+
+  // Refresh data secara aman setelah modal tertutup
+  try {
+    await fetchRentals();
+    await refreshOnly(["deliveryOrders"]);
+  } catch (refreshErr) {
+    console.warn("Background refresh after rental save encountered an issue:", refreshErr);
   }
 }
 
@@ -854,9 +1118,27 @@ function hydrateRentalLookups() {
 }
 
 let skipNextRentalActivate = true;
+let rentalPollTimer: any = null;
+
+function silentSyncRentals() {
+  if (document.visibilityState === "visible") {
+    fetchRentals(true);
+    hydrateRentalLookups();
+  }
+}
+
 onMounted(() => {
   fetchRentals();
   hydrateRentalLookups();
+  rentalPollTimer = setInterval(silentSyncRentals, 4000);
+  window.addEventListener("focus", silentSyncRentals);
+  window.addEventListener("bias:data-mutated", silentSyncRentals);
+});
+
+onUnmounted(() => {
+  if (rentalPollTimer) clearInterval(rentalPollTimer);
+  window.removeEventListener("focus", silentSyncRentals);
+  window.removeEventListener("bias:data-mutated", silentSyncRentals);
 });
 
 onActivated(() => {
@@ -959,6 +1241,7 @@ async function exportToPdf() {
       permission="rental"
       :show-hard-delete="hardDelete.isSuperadmin"
       :search-placeholder="t('rentals.search')"
+      @edit="openEdit"
       @delete="handleDeleteRental"
       @hard-delete="hardDelete.open"
     >
@@ -994,6 +1277,14 @@ async function exportToPdf() {
         value ? new Date(value).toLocaleDateString("en-GB") : '-'
       }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
+      <template #cell-do_number="{ row }">
+        <span v-if="hasActiveRentalDO(row)" class="badge badge-info" style="font-family: monospace; font-size: 0.78rem;">
+          {{ getRentalDONumber(row) }}
+        </span>
+        <span v-else class="text-muted" style="font-size: 0.78rem; font-style: italic;">
+          No DO
+        </span>
+      </template>
       <template #cell-status="{ value }">
         <span
           class="status-badge"
@@ -1011,20 +1302,75 @@ async function exportToPdf() {
           Invoice Details
         </button>
       </template>
+      <template #actions="{ row }">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <button
+            v-if="can('rental:update')"
+            class="action-btn action-btn--edit"
+            title="Edit"
+            @click.stop="openEdit(row)"
+            style="width: 32px; height: 32px;"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+          </button>
+          <button
+            v-if="!hasActiveRentalDO(row) && can('rental:update')"
+            class="action-btn action-btn--edit"
+            title="Buat Surat Jalan (DO)"
+            @click.stop="openCreateRentalDOModal(row)"
+            style="color: #e67e22; width: 32px; height: 32px;"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1" y="3" width="15" height="13"></rect>
+              <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+              <circle cx="5.5" cy="18.5" r="2.5"></circle>
+              <circle cx="18.5" cy="18.5" r="2.5"></circle>
+            </svg>
+          </button>
+          <button
+            v-if="can('rental:delete')"
+            class="action-btn action-btn--delete"
+            title="Delete"
+            @click.stop="handleDeleteRental(row)"
+            style="width: 32px; height: 32px;"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          </button>
+          <button
+            v-if="hardDelete.isSuperadmin"
+            class="action-btn action-btn--hard"
+            title="Hapus permanen dari database (superadmin)"
+            @click.stop="hardDelete.open(row)"
+            style="width: 32px; height: 32px;"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"></path>
+            </svg>
+          </button>
+        </div>
+      </template>
     </DataTable>
 
     <HardDeleteDialog
       :open="hardDelete.show"
       title="Hapus Permanen Rental"
       :item-label="hardDelete.expected"
-      :item-name="hardDelete.expected"
-      :confirm-input="hardDelete.input"
-      :is-valid="hardDelete.confirmed"
+      :expected="hardDelete.expected"
+      :confirm-valid="hardDelete.confirmed"
+      :show-cascade-option="true"
       :cascade="hardDelete.cascade"
-      @update:confirm-input="hardDelete.input = $event"
       @update:cascade="hardDelete.cascade = $event"
+      @update:input="hardDelete.input = $event"
       @confirm="hardDelete.confirm"
-      @cancel="hardDelete.close"
+      @close="hardDelete.close"
     />
 
     <!-- Modal Detail Rental Items -->
@@ -1081,8 +1427,8 @@ async function exportToPdf() {
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
               <div>
                 <strong style="font-size: 1.05em; display: block; color: var(--color-text);">
-                  <span v-if="item.unit || findUnit(item.unit_id)">Unit: {{ (item.unit || findUnit(item.unit_id))?.model }} (S/N: {{ (item.unit || findUnit(item.unit_id))?.serial_no || '-' }})</span>
-                  <span v-else-if="item.product || findProduct(item.product_id)">Consumable / Sparepart: {{ (item.product || findProduct(item.product_id))?.name }}</span>
+                  <span v-if="item.unit || findUnit(item.unit_id)">Unit: {{ formatUnitDisplayName(item.unit || findUnit(item.unit_id)) }} (S/N: {{ (item.unit || findUnit(item.unit_id))?.serial_no || '-' }})</span>
+                  <span v-else-if="item.product || findProduct(item.product_id)">Consumable / Sparepart: {{ formatProductDisplayName(item.product || findProduct(item.product_id)) }}</span>
                   <span v-else>Item (Unknown)</span>
                 </strong>
                 <span v-if="item.placement_location" style="font-size: 0.85em; color: var(--color-text-secondary); display: inline-block; margin-top: 4px; padding: 2px 6px; background: var(--color-surface); border-radius: 4px; border: 1px solid var(--color-border-light);">
@@ -1153,6 +1499,31 @@ async function exportToPdf() {
         </div>
       </div>
       <template #footer>
+        <button
+          v-if="can('rental:update') && detailRental && !hasActiveRentalDO(detailRental)"
+          type="button"
+          class="btn btn-warning"
+          style="background: #e67e22; color: #fff;"
+          @click="openCreateRentalDOModal(detailRental)"
+        >
+          🚚 Buat Surat Jalan (DO)
+        </button>
+        <button
+          v-else-if="detailRental && hasActiveRentalDO(detailRental)"
+          type="button"
+          class="btn btn-outline"
+          disabled
+        >
+          ✅ DO: {{ getRentalDONumber(detailRental) }}
+        </button>
+        <button
+          v-if="can('rental:update') && detailRental"
+          type="button"
+          class="btn btn-primary"
+          @click="showDetailModal = false; openEdit(detailRental)"
+        >
+          Edit Rental
+        </button>
         <button type="button" class="btn btn-outline" @click="showDetailModal = false">Close</button>
       </template>
     </FormModal>
@@ -1497,7 +1868,8 @@ async function exportToPdf() {
 
     <FormModal
       :open="showModal"
-      :title="t('rentals.modal_title')"
+      :title="editingRental ? ('Edit Rental - ' + (editingRental.rental_no || '')) : t('rentals.modal_title')"
+      :submit-label="editingRental ? 'Simpan Perubahan' : undefined"
       @close="showModal = false"
       @submit="handleSubmit"
     >
@@ -1995,6 +2367,137 @@ async function exportToPdf() {
 
       <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">
         Saving data & generating contract...
+      </div>
+    </FormModal>
+
+    <!-- Modal Buat Surat Jalan (DO) untuk Rental -->
+    <FormModal
+      :open="showCreateDOModal"
+      title="Buat Surat Jalan (DO) Pengantaran Rental"
+      max-width="640px"
+      :submit-label="isSubmittingDO ? 'Membuat DO...' : 'Buat Surat Jalan (DO)'"
+      :is-loading="isSubmittingDO"
+      @close="showCreateDOModal = false; targetRentalForDO = null;"
+      @submit="submitCreateRentalDO"
+    >
+      <div v-if="targetRentalForDO">
+        <div style="background: var(--color-surface-sunken); padding: 12px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--color-border-light);">
+          <div style="font-weight: 600; color: var(--color-primary); margin-bottom: 4px;">
+            {{ targetRentalForDO.rental_no }} — {{ findCustomer(targetRentalForDO.customer_id)?.company_name || targetRentalForDO.customer?.company_name || 'Customer' }}
+          </div>
+          <div style="font-size: 0.85rem; color: var(--color-text-muted);">
+            Periode: {{ targetRentalForDO.start_date ? new Date(targetRentalForDO.start_date).toLocaleDateString("en-GB") : '-' }} s/d {{ targetRentalForDO.end_date ? new Date(targetRentalForDO.end_date).toLocaleDateString("en-GB") : '-' }}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label">Nomor DO (Opsional - Kosongkan untuk Auto-Generate)</label>
+          <input
+            v-model="doForm.do_number"
+            type="text"
+            class="form-input"
+            placeholder="Contoh: Bi/DO/0001/X-2026 (kosongkan jika otomatis)"
+          />
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label">Project Name</label>
+          <input
+            v-model="doForm.project_name"
+            type="text"
+            class="form-input"
+            placeholder="Pengantaran [Nama Produk/Unit] ke [Alamat Penerima]"
+          />
+          <span class="form-hint" style="font-size: 0.8rem; color: var(--color-text-muted);">Otomatis: Pengantaran Nama Unit ke Alamat Penerima.</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+          <div class="form-group">
+            <label class="form-label">Tanggal Pengantaran <span class="text-danger">*</span></label>
+            <input
+              v-model="doForm.delivery_date"
+              type="date"
+              class="form-input"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">No. HP Penerima / PIC</label>
+            <input
+              v-model="doForm.recipient_phone"
+              type="text"
+              class="form-input"
+              placeholder="08xx..."
+            />
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label">Nama Penerima / PIC</label>
+          <input
+            v-model="doForm.recipient_name"
+            type="text"
+            class="form-input"
+            placeholder="Nama Penerima Unit"
+          />
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label">Alamat Pengantaran / Lokasi Instalasi <span class="text-danger">*</span></label>
+          <textarea
+            v-model="doForm.delivery_address"
+            class="form-textarea"
+            rows="2"
+            placeholder="Alamat lengkap tujuan instalasi mesin..."
+            required
+          ></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label">Teknisi Pengantar (Opsional)</label>
+          <CustomSelect
+            v-model="doForm.technician_id"
+            :options="technicianOptions"
+            class="form-select"
+          />
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label">Catatan Pengantaran</label>
+          <input
+            v-model="doForm.notes"
+            type="text"
+            class="form-input"
+            placeholder="Catatan tambahan (opsional)"
+          />
+        </div>
+
+        <!-- Rented Units to Deliver Preview -->
+        <div v-if="targetRentalForDO.rental_items?.length" class="form-group">
+          <label class="form-label" style="font-weight: 600;">Unit / Barang yang Akan Diantar ({{ targetRentalForDO.rental_items.length }})</label>
+          <div style="max-height: 140px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+              <thead>
+                <tr style="background: var(--color-surface-sunken); text-align: left;">
+                  <th style="padding: 6px 10px;">Item / Unit</th>
+                  <th style="padding: 6px 10px; text-align: center;">Qty</th>
+                  <th style="padding: 6px 10px;">Lokasi / Penempatan</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(it, i) in targetRentalForDO.rental_items" :key="i" style="border-top: 1px solid var(--color-border-light);">
+                  <td style="padding: 6px 10px;">
+                    <span v-if="it.unit || findUnit(it.unit_id)">{{ formatUnitDisplayName(it.unit || findUnit(it.unit_id)) }} (SN: {{ (it.unit || findUnit(it.unit_id))?.serial_no || '-' }})</span>
+                    <span v-else-if="it.product || findProduct(it.product_id)">{{ formatProductDisplayName(it.product || findProduct(it.product_id)) }}</span>
+                    <span v-else>Item</span>
+                  </td>
+                  <td style="padding: 6px 10px; text-align: center;">{{ it.qty || 1 }}</td>
+                  <td style="padding: 6px 10px; color: var(--color-text-muted);">{{ it.placement_location || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </FormModal>
   </div>

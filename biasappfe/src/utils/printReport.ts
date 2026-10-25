@@ -36,8 +36,22 @@ function buildCtx(item: any): ReportCtx {
   const masterStore = useMasterStore();
 
   const customer: any = masterStore.findCustomer(item.customer_id) || {};
-  const u: any = masterStore.findUnit(item.unit_id) || {};
-  const brand: any = masterStore.findBrand(u.brand_id);
+  const doi = (item.delivery_order_items && item.delivery_order_items.length > 0) ? item.delivery_order_items[0] : null;
+  const unitId = item.unit_id || (doi ? doi.unit_id : null);
+
+  let u: any = masterStore.findUnit(unitId) || item.unit || {};
+  if (!u.id && doi && (doi.model || doi.serial_no)) {
+    u = {
+      model: doi.model,
+      serial_no: doi.serial_no,
+      brand_id: doi.brand_id,
+      unit_type_id: doi.unit_type_id,
+      is_copier: doi.is_copier,
+      is_computer: doi.is_computer,
+    };
+  }
+
+  const brand: any = masterStore.findBrand(u.brand_id) || (doi?.brand_id ? masterStore.findBrand(doi.brand_id) : null);
   const tech: any = masterStore.findTechnician(item.technician_id) || {};
 
   const contractItems: any[] =
@@ -46,9 +60,11 @@ function buildCtx(item: any): ReportCtx {
   // Contract item rates = copies of rental_item_rates (auto-created with the rental).
   const contractByUnit = contractItems.find(
     (ci: any) =>
-      String(ci.unit_id || ci.unit?.id || "") === String(item.unit_id || u?.id || "") &&
+      String(ci.unit_id || ci.unit?.id || "") === String(unitId || u?.id || "") &&
       String(ci.unit_id || ci.unit?.id || "") !== "",
   );
+
+  const rawDate = item.service_date || item.delivery_date || item.created_at;
 
   return {
     masterStore,
@@ -57,12 +73,12 @@ function buildCtx(item: any): ReportCtx {
     brand,
     tech,
     custName: customer.company_name || customer.name || "-",
-    custPhone: customer.phone || "-",
-    picName: customer.pic_name || "-",
-    custAddress: customer.address || "-",
+    custPhone: customer.phone || item.recipient_phone || "-",
+    picName: customer.pic_name || item.recipient_name || item.customer_name || "-",
+    custAddress: item.delivery_address || customer.address || "-",
     custCategory: item.customer_category || customer.category || "Corporate",
-    dateStr: item.service_date
-      ? new Date(item.service_date).toLocaleDateString("en-GB")
+    dateStr: rawDate
+      ? new Date(rawDate).toLocaleDateString("en-GB")
       : "-",
     contract:
       masterStore.findContractItem(item.contract_item_id) || contractByUnit,
@@ -91,8 +107,19 @@ const companyHeaderHtml = `
   </table>
 `;
 
+function getSpareparts(item: any, ctx: ReportCtx): any[] {
+  if (item.service_spareparts && item.service_spareparts.length > 0) return item.service_spareparts;
+  if (item.spareparts && item.spareparts.length > 0) return item.spareparts;
+  if (item.delivery_order_items && item.delivery_order_items.length > 0) {
+    return item.delivery_order_items
+      .filter((d: any) => d.product_id)
+      .map((d: any) => ({ product_id: d.product_id, qty: d.qty || 1 }));
+  }
+  return [];
+}
+
 function sparepartsListHtml(item: any, ctx: ReportCtx): string {
-  return (item.service_spareparts || item.spareparts || [])
+  return getSpareparts(item, ctx)
     .map((sp: any, i: number) => {
       const p = ctx.masterStore.findProduct(sp.product_id);
       return (
@@ -103,9 +130,10 @@ function sparepartsListHtml(item: any, ctx: ReportCtx): string {
 }
 
 function componentsGridHtml(item: any, ctx: ReportCtx): string {
+  const parts = getSpareparts(item, ctx);
   return Array.from({ length: 8 })
     .map((_, i) => {
-      const sp = (item.service_spareparts || item.spareparts || [])[i];
+      const sp = parts[i];
       if (sp) {
         const p = ctx.masterStore.findProduct(sp.product_id);
         return (
@@ -217,6 +245,8 @@ function copierMeterBlockHtml(item: any, ctx: ReportCtx): string {
 }
 
 function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
+  const techSig = item.technician_signature_copier || item.technician_signature;
+  const custSig = item.customer_signature_copier || item.customer_signature;
   const techName = item.technician_name_copier || item.technician_name || ctx.tech.name || ctx.tech.full_name || ctx.tech.user?.name || "";
   const custName = item.customer_name_copier || item.customer_name || ctx.picName || "";
   return `
@@ -224,11 +254,11 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
       <tr>
         <td style="width: 50%; text-align: center; border-top: none;">
           TESTED YES / NO<br><br><br>
-          ${item.technician_signature_copier ? '<img src="' + item.technician_signature_copier + '" style="max-height: 50px;" />' : "<br><br>"}
+          ${techSig ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br>"}
         </td>
         <td style="width: 50%; text-align: center; border-top: none;">
           COMPLETE YES / NO<br><br><br>
-          ${item.customer_signature_copier ? '<img src="' + item.customer_signature_copier + '" style="max-height: 50px;" />' : "<br><br>"}
+          ${custSig ? '<img src="' + custSig + '" style="max-height: 50px;" />' : "<br><br>"}
         </td>
       </tr>
       <tr>
@@ -243,14 +273,14 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
 }
 
 function signatureBlockHtml(item: any, ctx: ReportCtx, type: 'technical' | 'history' = 'history'): string {
-  const techSig = type === 'technical' ? item.technician_signature_technical : item.technician_signature;
-  const custSig = type === 'technical' ? item.customer_signature_technical : item.customer_signature;
-  const techName = type === 'technical'
-    ? item.technician_name_technical || item.technician_name || ctx.tech.user?.name || ctx.tech.name || ctx.tech.full_name || ""
-    : item.technician_name || ctx.tech.user?.name || ctx.tech.name || ctx.tech.full_name || "";
-  const custName = type === 'technical'
-    ? item.customer_name_technical || item.customer_name || ctx.picName
-    : item.customer_name || ctx.picName;
+  const techSig = (type === 'technical' && item.technician_signature_technical) ? item.technician_signature_technical : item.technician_signature;
+  const custSig = (type === 'technical' && item.customer_signature_technical) ? item.customer_signature_technical : item.customer_signature;
+  const techName = (type === 'technical' && item.technician_name_technical)
+    ? item.technician_name_technical
+    : (item.technician_name || ctx.tech.user?.name || ctx.tech.name || ctx.tech.full_name || "");
+  const custName = (type === 'technical' && item.customer_name_technical)
+    ? item.customer_name_technical
+    : (item.customer_name || ctx.picName);
   return `
     <div class="signature-block">
       <div class="sig-side">
@@ -298,19 +328,19 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col">Brand</td><td class="val-col"> ${ctx.brand?.name || "-"}</td></tr>
         <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.u.model || "-"}</td></tr>
         <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.u.serial_no || "-"}</td></tr>
-        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || "-"}</td></tr>
-        <tr><td class="label-col" style="height: 50px;">Repair Action</td><td class="val-col">${item.repair_action || "-"}</td></tr>
+        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || item.problem || "-"}</td></tr>
+        <tr><td class="label-col" style="height: 50px;">Repair Action</td><td class="val-col">${item.repair_action || item.action || "-"}</td></tr>
         <tr>
           <td class="label-col">Component Replacement</td>
           <td class="val-col"><div class="components-grid">${componentsGridHtml(item, ctx)}</div></td>
         </tr>
         <tr>
           <td class="label-col">Service Result</td>
-          <td class="val-col"> ${item.status === "in_progress" ? "Continue" : item.status === "completed" ? "Done (Test OK)" : item.status || "-"}
+          <td class="val-col"> ${item.status === "in_progress" ? "Continue" : item.status === "draft" ? "Draft" : (item.status === "completed" || item.status === "delivered") ? "Done (Test OK)" : item.status || "-"}
             ${item.status === "in_progress" && item.next_sparepart ? "<br>&nbsp;&nbsp;Next Sparepart: " + item.next_sparepart : ""}
           </td>
         </tr>
-        <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col"> ${item.remarks || "-"}</td></tr>
+        <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col"> ${item.remarks || item.notes || "-"}</td></tr>
       </table>
       <table class="bottom-table">
         <tr>
@@ -361,10 +391,10 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col">Product Type</td><td class="val-col">  ${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td></tr>
         <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.u.model || "-"}</td></tr>
         <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.u.serial_no || "-"}</td></tr>
-        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || "-"}</td></tr>
+        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || item.problem || "-"}</td></tr>
        
         
-        <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col"> ${item.remarks || "-"}</td></tr>
+        <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col"> ${item.remarks || item.notes || item.action || "-"}</td></tr>
       </table>
  
       <table class="bottom-table">

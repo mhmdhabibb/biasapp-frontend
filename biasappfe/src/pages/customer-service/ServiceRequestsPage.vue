@@ -9,14 +9,14 @@ import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
 import type { TableColumn } from "@/types";
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 const toast = useToast();
 const { can } = usePermission();
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
-const { customers, units, products, sales, brands, findProduct, findUnit, getUnitsByCustomer, getContractsByCustomer, deliveryOrders } =
+const { customers, units, products, sales, brands, findProduct, findUnit, getUnitsByCustomer, getContractsByCustomer, deliveryOrders, formatUnitDisplayName, formatProductDisplayName } =
   useMasterStore();
 
 const columns: TableColumn[] = [
@@ -276,12 +276,11 @@ const customerRentalUnits = computed(() => {
       for (const item of rItems) {
         if (item.unit_id) {
           const u = item.unit || findUnit(item.unit_id);
-          const brandName = u?.brand?.name || u?.brand || "";
-          const modelName = u?.model || u?.unit_name || u?.name || "Unit";
+          const fullName = u ? formatUnitDisplayName(u) : "Unit";
           const sn = u?.serial_no || "-";
           unitMap.set(String(item.unit_id), {
             id: item.unit_id,
-            label: `[Unit/Mesin] ${brandName} ${modelName} (SN: ${sn})`.trim(),
+            label: `[Unit/Mesin] ${fullName} (SN: ${sn})`.trim(),
             itemType: "unit",
             source: "rental",
             warranty: { active: false }, // rental units are company-owned, no customer warranty
@@ -289,6 +288,7 @@ const customerRentalUnits = computed(() => {
         }
         if (item.product_id) {
           const prod = item.product || findProduct(item.product_id);
+          const pName = prod ? formatProductDisplayName(prod) : "Product";
           const warranty = getWarrantyStatus(
             form.customer_id,
             null,
@@ -297,7 +297,7 @@ const customerRentalUnits = computed(() => {
           );
           unitMap.set("rent_prod_" + item.product_id, {
             id: item.product_id,
-            label: `[Consumable/Sparepart] ${prod?.name || "Product"} (Qty: ${item.qty || 1})`,
+            label: `[Consumable/Sparepart] ${pName} (Qty: ${item.qty || 1})`,
             itemType: "product",
             source: "rental",
             warranty,
@@ -325,12 +325,11 @@ const customerRentalUnits = computed(() => {
               null,
               (sale as any).id,
             );
-            const brandName = u?.brand?.name || u?.brand || "";
-            const modelName = u?.model || u?.unit_name || u?.name || "Unit";
+            const fullName = u ? formatUnitDisplayName(u) : "Unit";
             const sn = u?.serial_no || "-";
             unitMap.set(key, {
               id: key,
-              label: `[Unit/Mesin] ${brandName} ${modelName} (SN: ${sn})`.trim(),
+              label: `[Unit/Mesin] ${fullName} (SN: ${sn})`.trim(),
               itemType: "unit",
               source: "sale",
               warranty,
@@ -347,9 +346,10 @@ const customerRentalUnits = computed(() => {
               si.product_id,
               (sale as any).id,
             );
+            const pName = prod ? formatProductDisplayName(prod) : ("Product ID: " + si.product_id);
             unitMap.set(key, {
               id: si.product_id,
-              label: `[Consumable/Sparepart] ${prod?.name || "Product ID: " + si.product_id} (Qty: ${si.qty || 1})`,
+              label: `[Consumable/Sparepart] ${pName} (Qty: ${si.qty || 1})`,
               itemType: "product",
               source: "sale",
               warranty,
@@ -368,12 +368,11 @@ const customerRentalUnits = computed(() => {
           const key = String(item.unit_id);
           if (!unitMap.has(key)) {
             const u = item.unit || findUnit(item.unit_id);
-            const brandName = u?.brand?.name || u?.brand || "";
-            const modelName = u?.model || u?.name || "Unit";
+            const fullName = u ? formatUnitDisplayName(u) : "Unit";
             const sn = u?.serial_no || "-";
             unitMap.set(key, {
               id: item.unit_id,
-              label: `[Unit/Mesin] ${brandName} ${modelName} (SN: ${sn})`.trim(),
+              label: `[Unit/Mesin] ${fullName} (SN: ${sn})`.trim(),
               itemType: "unit",
               source: "delivery",
               warranty: { active: false },
@@ -552,6 +551,41 @@ const hasDeliveredUnit = computed(() =>
   customerRentalUnits.value.some((u: any) => u.delivered),
 );
 
+// Auto-fill project_name if selected unit comes from a delivery order
+watch(
+  () => [form.unit_ids, form.customer_id] as const,
+  ([unitIds, customerId]) => {
+    if (isEditing.value) return;
+    if (!unitIds || unitIds.length === 0) return;
+
+    const selectedUnits = customerRentalUnits.value.filter((u: any) =>
+      unitIds.includes(u.id),
+    );
+    const deliveryUnits = selectedUnits.filter(
+      (u: any) => u.source === "delivery",
+    );
+
+    if (deliveryUnits.length > 0) {
+      const names = deliveryUnits.map((u: any) => {
+        let clean = u.label || "";
+        clean = clean
+          .replace(/^\[.*?\]\s*/, "")
+          .replace(/\s*\(SN:.*?\)/, "")
+          .replace(/\s*\(Qty:.*?\)/, "")
+          .trim();
+        return clean || "Unit";
+      });
+      const productOrUnitName = names.join(", ");
+      const cust = findCustomer(customerId as any);
+      const address = (cust as any)?.address || "";
+      form.project_name = address
+        ? `Pengantaran ${productOrUnitName} ke ${address}`
+        : `Pengantaran ${productOrUnitName}`;
+    }
+  },
+  { deep: true },
+);
+
 async function fetchRequests() {
   try {
     const data = await api.get<{ data: any[] }>("/service-requests");
@@ -713,6 +747,14 @@ function openDetail(row: any) {
   showRequestDetailModal.value = true;
 }
 
+let srTimer: any = null
+async function silentRefresh() {
+  if (showModal.value || showRequestDetailModal.value) return
+  try {
+    await fetchRequests()
+  } catch {}
+}
+
 onMounted(async () => {
   isLoading.value = true;
   try {
@@ -725,7 +767,16 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
+  srTimer = setInterval(silentRefresh, 5000)
+  window.addEventListener('focus', silentRefresh)
+  window.addEventListener('bias:data-mutated', silentRefresh)
 });
+
+onUnmounted(() => {
+  if (srTimer) clearInterval(srTimer)
+  window.removeEventListener('focus', silentRefresh)
+  window.removeEventListener('bias:data-mutated', silentRefresh)
+})
 </script>
 
 <template>

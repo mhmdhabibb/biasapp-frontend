@@ -17,6 +17,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
+import { printServiceReport, type ReportType } from '@/utils/printReport'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -26,7 +27,7 @@ const { currentUser } = useAuth()
 const store = useMasterStore()
 
 const id = String(route.params.id)
-const item = computed(() => (store.deliveryOrders.value as any[]).find((d: any) => String(d.id) === id))
+const item = computed(() => ((store.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === id))
 const customer = computed(() => (item.value ? store.findCustomer(item.value.customer_id) : null))
 
 // ── Items (product detail) ──
@@ -291,6 +292,24 @@ async function addItem() {
       qty: itemForm.qty || 1,
       remarks: itemForm.remarks || '',
     })
+
+    // Auto-update project_name to format "Pengantaran [Nama Produk / Unit] ke [Alamat Penerima]"
+    const createdItem = {
+      unit_id: finalUnitId,
+      product_id: itemForm.kind === 'product' ? itemForm.product_id : null,
+      brand_id: itemForm.kind === 'external' ? itemForm.brand_id : null,
+      unit_type_id: itemForm.kind === 'external' ? itemForm.unit_type_id : null,
+      model: itemForm.kind === 'external' ? itemForm.model : '',
+      serial_no: itemForm.kind === 'external' ? (itemForm.serial_no || '').toUpperCase() : '',
+    }
+    const label = itemLabel(createdItem)
+    const curProjectName = String(item.value?.project_name || '').trim()
+    const address = item.value?.delivery_address || customer.value?.address || ''
+    if (!curProjectName || curProjectName === '-' || curProjectName === 'Pengantaran Unit' || curProjectName.startsWith('Pengantaran Unit ke') || curProjectName.toLowerCase().includes('service laptop')) {
+      const newProjectName = address ? `Pengantaran ${label} ke ${address}` : `Pengantaran ${label}`
+      await resources.deliveryOrders.update(id, { project_name: newProjectName })
+    }
+
     await store.refreshOnly(['deliveryOrders'])
     showItemModal.value = false
     Object.assign(itemForm, { kind: 'external', unit_id: null, product_id: null, brand_id: null, unit_type_id: null, model: '', serial_no: '', warranty_status: '', warranty_expired_date: '', qty: 1, remarks: '' })
@@ -314,6 +333,7 @@ async function removeItem(itemId: string) {
 }
 
 const isPending = computed(() => String((item.value as any)?.status || '').toLowerCase() === 'pending')
+const isDraft = computed(() => String((item.value as any)?.status || '').toLowerCase() === 'draft')
 const isInProgress = computed(() => String((item.value as any)?.status || '').toLowerCase() === 'in_progress')
 const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String((item.value as any)?.status || '').toLowerCase()))
 
@@ -358,10 +378,10 @@ async function removeForm() {
 async function saveDraft() {
   isSaving.value = true
   try {
-    await api.patch(`/delivery-orders/${id}`, { ...form })
+    await api.patch(`/delivery-orders/${id}`, { ...form, status: 'draft' })
     await store.refreshOnly(['deliveryOrders'])
     initFormRefresh()
-    toast.success('Product detail tersimpan (draft).')
+    toast.success('Product detail tersimpan sebagai draft.')
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menyimpan.')
   } finally {
@@ -478,8 +498,27 @@ function declineNewSH() {
   router.push('/technician/standalone-service-history')
 }
 
+const printModalOpen = ref(false)
+const printType = ref<ReportType | 'all'>('all')
+const printTypeOptions = [
+  { value: 'all', label: 'Semua Form (Lengkap)' },
+  { value: 'technical', label: 'Technical Report Form' },
+  { value: 'history', label: 'Service History Form' },
+  { value: 'copier', label: 'Copier Service Report' },
+]
+
 function handlePrint() {
-  if (item.value) printDeliveryServiceHistory(item.value)
+  if (item.value) {
+    printType.value = 'all'
+    printModalOpen.value = true
+  }
+}
+
+function handleConfirmPrint() {
+  if (item.value) {
+    printServiceReport(item.value, printType.value === 'all' ? undefined : (printType.value as ReportType))
+  }
+  printModalOpen.value = false
 }
 
 onMounted(async () => {
@@ -511,7 +550,7 @@ onMounted(async () => {
     <div class="card p-lg">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h2 class="card-title mb-0">Product Detail <span class="badge badge-warning">diisi Teknisi</span></h2>
-        <span class="badge" :class="isPending ? 'badge-warning' : isInProgress ? 'badge-info' : 'badge-success'" style="font-size: 14px; padding: 6px 12px;">
+        <span class="badge" :class="isPending ? 'badge-warning' : isDraft ? 'badge-secondary' : isInProgress ? 'badge-info' : 'badge-success'" style="font-size: 14px; padding: 6px 12px;">
           Status: {{ (item.status || 'pending').toUpperCase().replace('_', ' ') }}
         </span>
       </div>
@@ -702,6 +741,18 @@ onMounted(async () => {
       @close="declineNewSH"
       @confirm="executeNewSH"
     />
+
+    <!-- Print Modal -->
+    <FormModal :open="printModalOpen" title="Pilih Format Print" @close="printModalOpen = false" @submit="handleConfirmPrint">
+      <div class="form-group">
+        <label class="form-label">Tipe Format Report</label>
+        <CustomSelect v-model="printType" :options="printTypeOptions" class="form-select" />
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="printModalOpen = false">Batal</button>
+        <button type="button" class="btn btn-primary" @click="handleConfirmPrint">Print / Download</button>
+      </template>
+    </FormModal>
   </div>
   <div v-else class="card p-lg text-center text-muted">
     Data tidak ditemukan. <button class="btn btn-sm btn-outline" @click="router.back()">Kembali</button>
