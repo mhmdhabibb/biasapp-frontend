@@ -31,6 +31,7 @@ import {
   isCopierOrPrinter,
   resolvePrintTech,
 } from "@/utils/format";
+import { invalidateCache } from "@/utils/requestCache";
 
 const store = reactive({
   customers: [] as Customer[],
@@ -441,8 +442,11 @@ export function useMasterStore() {
     return Promise.resolve();
   }
 
-  async function refreshOnly(names: string[]) {
+  async function refreshOnly(names: string[], bypassCache = false) {
     if (!names || names.length === 0) return refreshInBackground();
+    if (bypassCache) {
+      names.forEach((n) => invalidateCache(n));
+    }
     const registry = buildSyncTasks(false);
     const tasks = names.map((name) => registry[name]).filter(Boolean);
     await Promise.all(tasks.map((task) => task()));

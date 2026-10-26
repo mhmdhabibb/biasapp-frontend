@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
@@ -89,9 +89,27 @@ const sparepartProductOptions = computed(() =>
 )
 
 const printTypeOptions = [
-  { value: 'technical', label: 'Technical Report Form' },
-  { value: 'history', label: 'Service History Form' },
-  { value: 'copier', label: 'Copier Service Report' },
+  {
+    value: 'technical' as ReportType,
+    title: 'Technical Report Form',
+    desc: 'Laporan teknis servis lengkap (detail masalah unit, tindakan perbaikan, pergantian sparepart & tanda tangan).',
+    badge: 'Standard',
+    icon: 'technical'
+  },
+  {
+    value: 'history' as ReportType,
+    title: 'Service History Form',
+    desc: 'Ringkasan riwayat pengerjaan servis unit & verifikasi pengujian mesin (Tested & Completed status).',
+    badge: 'Summary',
+    icon: 'history'
+  },
+  {
+    value: 'copier' as ReportType,
+    title: 'Copier Service Report',
+    desc: 'Format khusus mesin fotokopi dengan pencatatan counter meter (Black/White & Color).',
+    badge: 'Mesin Copier',
+    icon: 'copier'
+  },
 ]
 
 // Tab: service reports | delivery history | sparepart requests
@@ -112,21 +130,71 @@ function matchesCustomer(id: any): boolean {
   return String(id) === customerFilter.value
 }
 
+let srRefreshTimer: any = null
+
+function hasOpenModal(): boolean {
+  return Boolean(
+    showModal.value ||
+    showConfirm.value ||
+    showCreatePOModal.value ||
+    showSrDetail.value ||
+    showDoDetail.value ||
+    printModalOpen.value
+  )
+}
+
+async function silentRefresh(bypassCache = true) {
+  if (hasOpenModal()) return
+  if (document.visibilityState !== 'visible') return
+  try {
+    await masterStore.refreshOnly(['serviceReports', 'deliveryOrders', 'sparepartRequests'], bypassCache)
+  } catch (err) {
+    // silent background refresh
+  }
+}
+
+function onFocusOrVisible() {
+  if (document.visibilityState === 'visible') {
+    void silentRefresh(true)
+  }
+}
+
+function onDataMutated() {
+  void silentRefresh(true)
+}
+
 onMounted(async () => {
   if (route.query.customer_id) {
     customerFilter.value = String(route.query.customer_id)
   }
   await ensureResourcesLoaded(route.path)
-  if (!deliveryOrders.value?.length || !sparepartRequests.value?.length) {
-    void masterStore.refreshOnly(['deliveryOrders', 'sparepartRequests'])
+  void silentRefresh(true)
+
+  // Auto-reload setiap 10 detik agar data baru selalu muncul otomatis
+  srRefreshTimer = setInterval(() => void silentRefresh(true), 10000)
+
+  window.addEventListener('focus', onFocusOrVisible)
+  window.addEventListener('bias:data-mutated', onDataMutated)
+  document.addEventListener('visibilitychange', onFocusOrVisible)
+})
+
+onUnmounted(() => {
+  if (srRefreshTimer) {
+    clearInterval(srRefreshTimer)
+    srRefreshTimer = null
   }
+  window.removeEventListener('focus', onFocusOrVisible)
+  window.removeEventListener('bias:data-mutated', onDataMutated)
+  document.removeEventListener('visibilitychange', onFocusOrVisible)
 })
 
 watch(activeTab, (tab) => {
-  if (tab === 'delivery' && (!deliveryOrders.value || deliveryOrders.value.length === 0)) {
-    void masterStore.refreshOnly(['deliveryOrders'])
-  } else if (tab === 'sparepart' && (!sparepartRequests.value || sparepartRequests.value.length === 0)) {
-    void masterStore.refreshOnly(['sparepartRequests'])
+  if (tab === 'delivery') {
+    void masterStore.refreshOnly(['deliveryOrders'], true)
+  } else if (tab === 'sparepart') {
+    void masterStore.refreshOnly(['sparepartRequests'], true)
+  } else if (tab === 'service') {
+    void masterStore.refreshOnly(['serviceReports'], true)
   }
 })
 
@@ -676,15 +744,62 @@ import { isCopierReport } from '@/utils/copierReport'
 const printModalOpen = ref(false)
 const printType = ref<ReportType>('technical')
 const printTarget = ref<any | null>(null)
+const printMode = ref<'single' | 'batch'>('single')
+const selectedPrintReportId = ref<string | number>('')
+
+const reportSelectOptions = computed(() => {
+  return serviceOnlyReports.value.map((r: any) => ({
+    value: String(r.id),
+    label: `${r.report_no || r.service_report_no || 'SR-' + r.id} — ${customerName(r.customer_id)} (${r.service_date ? new Date(r.service_date).toLocaleDateString('id-ID') : '-'})`
+  }))
+})
+
+function onPrintReportChange(newId: string | number) {
+  selectedPrintReportId.value = String(newId)
+  const found = serviceOnlyReports.value.find((r: any) => String(r.id) === String(newId))
+  if (found) {
+    printTarget.value = found
+    if (isCopierReport(found)) {
+      printType.value = 'copier'
+    }
+  }
+}
 
 function openPrintModal(item: any = null) {
-  printTarget.value = item
-  printType.value = 'technical'
+  printMode.value = 'single'
+  if (item) {
+    printTarget.value = item
+    selectedPrintReportId.value = String(item.id)
+    if (isCopierReport(item)) {
+      printType.value = 'copier'
+    } else {
+      printType.value = 'technical'
+    }
+  } else {
+    // If opened from header button, default to single report on the first displayed item
+    if (serviceOnlyReports.value.length > 0) {
+      printTarget.value = serviceOnlyReports.value[0]
+      selectedPrintReportId.value = String(serviceOnlyReports.value[0].id)
+      if (isCopierReport(serviceOnlyReports.value[0])) {
+        printType.value = 'copier'
+      } else {
+        printType.value = 'technical'
+      }
+    } else {
+      printTarget.value = null
+      selectedPrintReportId.value = ''
+      printType.value = 'technical'
+    }
+  }
   printModalOpen.value = true
 }
 
 function handleConfirmPrint() {
-  if (printTarget.value) {
+  if (printMode.value === 'single') {
+    if (!printTarget.value) {
+      toast.error('Silakan pilih laporan transaksi yang ingin dicetak.')
+      return
+    }
     printServiceReport(printTarget.value, printType.value)
   } else {
     printMultipleServiceReports(serviceOnlyReports.value, printType.value)
@@ -983,6 +1098,14 @@ function printTable() {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 5px; vertical-align: -2px;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           Photo Dokumentasi
         </button>
+        <button type="button" class="btn btn-primary" @click="openPrintModal(srDetailItem)" style="display: inline-flex; align-items: center; gap: 6px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+          Print Report
+        </button>
         <button type="button" class="btn btn-outline" @click="showSrDetail = false">Close</button>
       </template>
     </FormModal>
@@ -1131,16 +1254,24 @@ function printTable() {
         </div>
       </template>
       <template #footer>
-        <button
-          v-if="doDetailItem && (doDetailItem.status === 'delivered' || doDetailItem.status === 'completed')"
-          type="button"
-          class="btn btn-primary"
-          style="margin-right: auto;"
-          @click="printDO(doDetailItem)"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 5px; vertical-align: -2px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-          Print Service History
-        </button>
+        <div v-if="doDetailItem && (doDetailItem.status === 'delivered' || doDetailItem.status === 'completed')" style="display: flex; gap: 8px; margin-right: auto;">
+          <button
+            type="button"
+            class="btn btn-outline"
+            @click="printDeliveryOrder(doDetailItem)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 5px; vertical-align: -2px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            Print Delivery Order
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            @click="printDO(doDetailItem)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 5px; vertical-align: -2px;"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            Print Service History
+          </button>
+        </div>
         <button type="button" class="btn btn-outline" @click="showDoDetail = false">Close</button>
       </template>
     </FormModal>
@@ -1275,14 +1406,129 @@ function printTable() {
     <ConfirmDialog :open="showConfirm" title="Delete Service Report" :message="`Are you sure you want to delete report '${deletingItem?.report_no || (deletingItem as any)?.service_report_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
 
     <!-- Print Modal -->
-    <FormModal :open="printModalOpen" title="Select Report Type" @close="printModalOpen = false" @submit="handleConfirmPrint">
-      <div class="form-group">
-        <label class="form-label">Report Type (PDF)</label>
-        <CustomSelect v-model="printType" :options="printTypeOptions" class="form-select" />
+    <FormModal :open="printModalOpen" title="Print Service Report" max-width="580px" @close="printModalOpen = false" @submit="handleConfirmPrint">
+      <!-- Mode selection: Cetak 1 Laporan vs Batch -->
+      <div style="display: flex; gap: 8px; margin-bottom: 16px; background: var(--color-surface-sunken, #f1f5f9); padding: 4px; border-radius: 8px;">
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="printMode === 'single' ? 'btn-primary' : 'btn-outline'"
+          style="flex: 1; border: none; font-size: 12px; font-weight: 500;"
+          @click="printMode = 'single'"
+        >
+          Cetak Per Transaksi (Single)
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="printMode === 'batch' ? 'btn-primary' : 'btn-outline'"
+          style="flex: 1; border: none; font-size: 12px; font-weight: 500;"
+          @click="printMode = 'batch'"
+        >
+          Cetak Semua Laporan (Batch)
+        </button>
       </div>
+
+      <!-- Single report selection -->
+      <div v-if="printMode === 'single'" style="margin-bottom: 16px;">
+        <label class="form-label" style="font-weight: 600; display: block; margin-bottom: 6px;">
+          Pilih Laporan / Transaksi yang Ingin Dicetak:
+        </label>
+        <CustomSelect
+          :model-value="selectedPrintReportId"
+          :options="reportSelectOptions"
+          placeholder="Pilih laporan transaksi..."
+          @update:model-value="onPrintReportChange"
+        />
+
+        <div v-if="printTarget" class="print-modal-target" style="margin-top: 10px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <div style="line-height: 1.4; flex: 1;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline;">
+              <strong style="color: var(--color-text); font-size: 13px;">{{ printTarget?.report_no || (printTarget as any)?.service_report_no || 'Laporan Servis' }}</strong>
+              <span class="badge badge-sm badge-info" style="font-size: 10px;">{{ printTarget?.service_type || 'Regular' }}</span>
+            </div>
+            <div style="font-size: 12px; color: var(--color-text-muted); margin-top: 2px;">
+              {{ customerName(printTarget?.customer_id) }} &bull; {{ printTarget?.service_date ? new Date(printTarget.service_date).toLocaleDateString('id-ID') : '-' }} &bull; Teknisi: {{ technicianName(printTarget?.technician_id) }}
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-muted text-xs" style="margin-top: 8px;">
+          Belum ada laporan yang dipilih.
+        </div>
+      </div>
+
+      <!-- Batch report info -->
+      <div v-else class="print-modal-target" style="margin-bottom: 16px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 6 2 18 2 18 9"></polyline>
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+          <rect x="6" y="14" width="12" height="8"></rect>
+        </svg>
+        <div style="line-height: 1.4;">
+          <div><strong style="color: var(--color-text);">Batch Print Semua Laporan ({{ serviceOnlyReports.length }} Laporan)</strong></div>
+          <div style="font-size: 11px; color: var(--color-text-muted);">Mencetak seluruh laporan yang saat ini tampil di tabel secara berurutan.</div>
+        </div>
+      </div>
+
+      <div style="font-weight: 600; font-size: 12px; margin-bottom: 8px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">
+        Pilih Format Laporan:
+      </div>
+
+      <div class="print-options-grid">
+        <div
+          v-for="opt in printTypeOptions"
+          :key="opt.value"
+          class="print-option-card"
+          :class="{ 'is-selected': printType === opt.value }"
+          @click="printType = opt.value"
+        >
+          <div class="print-option-icon">
+            <svg v-if="opt.icon === 'technical'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+            </svg>
+            <svg v-else-if="opt.icon === 'history'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+          </div>
+
+          <div class="print-option-info">
+            <div class="print-option-header">
+              <span class="print-option-title">{{ opt.title }}</span>
+              <span v-if="opt.badge" class="print-option-badge">{{ opt.badge }}</span>
+            </div>
+            <div class="print-option-desc">{{ opt.desc }}</div>
+          </div>
+
+          <div class="print-option-radio">
+            <div class="radio-circle" :class="{ 'checked': printType === opt.value }">
+              <div v-if="printType === opt.value" class="radio-inner"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <template #footer>
         <button type="button" class="btn btn-outline" @click="printModalOpen = false">Cancel</button>
-        <button type="button" class="btn btn-primary" @click="handleConfirmPrint">Print / Download</button>
+        <button type="button" class="btn btn-primary" @click="handleConfirmPrint">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px; vertical-align: -2px;">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+          Print / Download
+        </button>
       </template>
     </FormModal>
 
@@ -1670,5 +1916,121 @@ function printTable() {
 }
 .text-xs {
   font-size: 11px;
+}
+
+/* Print Modal Styles */
+.print-modal-target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--color-surface-sunken, #f8fafc);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--color-text, #1e293b);
+}
+.print-modal-target svg {
+  color: var(--color-primary, #2563eb);
+  flex-shrink: 0;
+}
+.print-options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.print-option-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border: 1.5px solid var(--color-border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--color-surface, #ffffff);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+.print-option-card:hover {
+  border-color: var(--color-primary-light, #93c5fd);
+  background: var(--color-surface-sunken, #f8fafc);
+  transform: translateY(-1px);
+}
+.print-option-card.is-selected {
+  border-color: var(--color-primary, #2563eb);
+  background: #f0f7ff;
+  box-shadow: 0 0 0 1px var(--color-primary, #2563eb);
+}
+.print-option-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-sunken, #f1f5f9);
+  color: var(--color-text-muted, #64748b);
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+.print-option-card.is-selected .print-option-icon {
+  background: #dbeafe;
+  color: var(--color-primary, #2563eb);
+}
+.print-option-info {
+  flex: 1;
+  min-width: 0;
+}
+.print-option-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.print-option-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--color-text, #0f172a);
+}
+.print-option-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: #e2e8f0;
+  color: #475569;
+}
+.print-option-card.is-selected .print-option-badge {
+  background: #bfdbfe;
+  color: #1e40af;
+}
+.print-option-desc {
+  font-size: 11.5px;
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.4;
+}
+.print-option-radio {
+  flex-shrink: 0;
+}
+.radio-circle {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border, #cbd5e1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.18s ease;
+}
+.radio-circle.checked {
+  border-color: var(--color-primary, #2563eb);
+  background: var(--color-primary, #2563eb);
+}
+.radio-inner {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffffff;
 }
 </style>

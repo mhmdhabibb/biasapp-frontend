@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { isCopierReport } from '@/utils/copierReport'
+import { printServiceReport, type ReportType } from '@/utils/printReport'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -19,6 +20,51 @@ const { currentUser } = useAuth()
 const { ensureResourcesLoaded } = useMasterStore()
 const showDetailModal = ref(false)
 const selectedHistory = ref<any>(null)
+
+const printModalOpen = ref(false)
+const printType = ref<ReportType>('technical')
+const printTarget = ref<any | null>(null)
+
+const printTypeOptions = [
+  {
+    value: 'technical' as ReportType,
+    title: 'Technical Report Form',
+    desc: 'Laporan teknis servis lengkap (detail masalah unit, tindakan perbaikan, pergantian sparepart & tanda tangan).',
+    badge: 'Standard',
+    icon: 'technical'
+  },
+  {
+    value: 'history' as ReportType,
+    title: 'Service History Form',
+    desc: 'Ringkasan riwayat pengerjaan servis unit & verifikasi pengujian mesin (Tested & Completed status).',
+    badge: 'Summary',
+    icon: 'history'
+  },
+  {
+    value: 'copier' as ReportType,
+    title: 'Copier Service Report',
+    desc: 'Format khusus mesin fotokopi dengan pencatatan counter meter (Black/White & Color).',
+    badge: 'Mesin Copier',
+    icon: 'copier'
+  },
+]
+
+function openPrintModal(job: any) {
+  printTarget.value = job
+  if (job && isCopierReport(job)) {
+    printType.value = 'copier'
+  } else {
+    printType.value = 'technical'
+  }
+  printModalOpen.value = true
+}
+
+function handleConfirmPrint() {
+  if (printTarget.value) {
+    printServiceReport(printTarget.value, printType.value)
+  }
+  printModalOpen.value = false
+}
 
 const currentPage = ref(1)
 const perPage = 10
@@ -40,8 +86,36 @@ const {
   getTechnicianIdByUser,
 } = useMasterStore()
 
+let techHistoryTimer: any = null
+
+function silentRefresh() {
+  if (showDetailModal.value) return
+  if (document.visibilityState !== 'visible') return
+  void useMasterStore().refreshOnly(['serviceReports', 'deliveryOrders'], true)
+}
+
+function onFocusOrVisible() {
+  if (document.visibilityState === 'visible') {
+    silentRefresh()
+  }
+}
+
 onMounted(() => {
   ensureResourcesLoaded(route.path)
+  techHistoryTimer = setInterval(silentRefresh, 10000)
+  window.addEventListener('focus', onFocusOrVisible)
+  window.addEventListener('bias:data-mutated', silentRefresh)
+  document.addEventListener('visibilitychange', onFocusOrVisible)
+})
+
+onUnmounted(() => {
+  if (techHistoryTimer) {
+    clearInterval(techHistoryTimer)
+    techHistoryTimer = null
+  }
+  window.removeEventListener('focus', onFocusOrVisible)
+  window.removeEventListener('bias:data-mutated', silentRefresh)
+  document.removeEventListener('visibilitychange', onFocusOrVisible)
 })
 
 // Draft copier yang di-assign ke teknisi login saja — teknisi lain tidak
@@ -306,9 +380,19 @@ function exportToExcel() {
               </td>
               <td>{{ getTechName(job.technician_id) }}</td>
               <td style="text-align: center;">
-                <button type="button" class="btn btn-sm btn-outline" @click="openDetail(job)" title="Lihat Detail Service History">
-                  Detail
-                </button>
+                <div style="display: flex; gap: 6px; justify-content: center;">
+                  <button type="button" class="btn btn-sm btn-outline" @click="openDetail(job)" title="Lihat Detail Service History">
+                    Detail
+                  </button>
+                  <button type="button" class="btn btn-sm btn-primary" @click="openPrintModal(job)" title="Print Laporan Servis Transaksi Ini" style="display: inline-flex; align-items: center; gap: 4px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                      <rect x="6" y="14" width="12" height="8"></rect>
+                    </svg>
+                    Print
+                  </button>
+                </div>
               </td>
             </tr>
             <tr v-if="filteredHistory.length === 0">
@@ -393,7 +477,93 @@ function exportToExcel() {
         </div>
       </div>
       <template #footer>
-        <button type="button" class="btn btn-outline" style="width: 100%;" @click="showDetailModal = false">Tutup</button>
+        <div style="display: flex; gap: 8px; width: 100%;">
+          <button type="button" class="btn btn-primary" style="flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" @click="openPrintModal(selectedHistory)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            Print Report
+          </button>
+          <button type="button" class="btn btn-outline" style="flex: 1;" @click="showDetailModal = false">Tutup</button>
+        </div>
+      </template>
+    </FormModal>
+
+    <!-- Print Modal -->
+    <FormModal :open="printModalOpen" title="Print Service Report" max-width="560px" @close="printModalOpen = false" @submit="handleConfirmPrint">
+      <div v-if="printTarget" class="print-modal-target">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        <div style="line-height: 1.4; flex: 1;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <strong style="color: var(--color-text);">{{ printTarget?.report_no || 'Laporan Servis' }}</strong>
+            <span class="badge badge-sm badge-info">{{ getServiceTypeLabel(printTarget?.service_type) }}</span>
+          </div>
+          <div style="font-size: 11px; color: var(--color-text-muted); margin-top: 2px;">
+            {{ getCustomerName(printTarget?.customer_id) }} &bull; {{ getUnitName(printTarget?.unit_id) }}
+          </div>
+        </div>
+      </div>
+
+      <div style="font-weight: 600; font-size: 12px; margin-bottom: 8px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.5px;">
+        Pilih Format Laporan:
+      </div>
+
+      <div class="print-options-grid">
+        <div
+          v-for="opt in printTypeOptions"
+          :key="opt.value"
+          class="print-option-card"
+          :class="{ 'is-selected': printType === opt.value }"
+          @click="printType = opt.value"
+        >
+          <div class="print-option-icon">
+            <svg v-if="opt.icon === 'technical'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+            </svg>
+            <svg v-else-if="opt.icon === 'history'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+          </div>
+
+          <div class="print-option-info">
+            <div class="print-option-header">
+              <span class="print-option-title">{{ opt.title }}</span>
+              <span v-if="opt.badge" class="print-option-badge">{{ opt.badge }}</span>
+            </div>
+            <div class="print-option-desc">{{ opt.desc }}</div>
+          </div>
+
+          <div class="print-option-radio">
+            <div class="radio-circle" :class="{ 'checked': printType === opt.value }">
+              <div v-if="printType === opt.value" class="radio-inner"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="printModalOpen = false">Cancel</button>
+        <button type="button" class="btn btn-primary" @click="handleConfirmPrint">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px; vertical-align: -2px;">
+            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+            <rect x="6" y="14" width="12" height="8"></rect>
+          </svg>
+          Print / Download
+        </button>
       </template>
     </FormModal>
   </div>
@@ -405,5 +575,120 @@ function exportToExcel() {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--space-md);
   align-items: end;
+}
+
+/* Print Modal Styles */
+.print-modal-target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--color-surface-sunken, #f8fafc);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--color-text, #1e293b);
+}
+.print-modal-target svg {
+  color: var(--color-primary, #2563eb);
+  flex-shrink: 0;
+}
+.print-options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.print-option-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border: 1.5px solid var(--color-border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--color-surface, #ffffff);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+.print-option-card:hover {
+  border-color: var(--color-primary-light, #93c5fd);
+  background: var(--color-surface-sunken, #f8fafc);
+  transform: translateY(-1px);
+}
+.print-option-card.is-selected {
+  border-color: var(--color-primary, #2563eb);
+  background: #f0f7ff;
+  box-shadow: 0 0 0 1px var(--color-primary, #2563eb);
+}
+.print-option-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  color: #475569;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+.print-option-card.is-selected .print-option-icon {
+  background: #e0edff;
+  color: #2563eb;
+}
+.print-option-info {
+  flex: 1;
+  min-width: 0;
+}
+.print-option-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.print-option-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--color-text, #0f172a);
+}
+.print-option-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+.print-option-desc {
+  font-size: 11.5px;
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.4;
+}
+.print-option-radio {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.radio-circle {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border, #cbd5e1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.18s ease;
+}
+.radio-circle.checked {
+  border-color: var(--color-primary, #2563eb);
+}
+.radio-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary, #2563eb);
 }
 </style>

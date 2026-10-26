@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useMasterStore } from "@/composables/useMasterStore";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import { api } from "@/services/api";
 
 /** DO dianggap punya service history bila teknisi sudah mengisi formnya. */
 export function hasDeliveryHistory(d: any): boolean {
@@ -33,13 +34,28 @@ function esc(v: unknown): string {
  * Sumber data: field service-history di delivery_orders
  * (problem, action, time_in/out, tested/completed, signatures).
  */
-export function printDeliveryServiceHistory(item: any): boolean {
+export async function printDeliveryServiceHistory(item: any): Promise<boolean> {
   if (!item) return false;
+
+  // Open window synchronously to avoid popup blocker
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return false;
+
+  let fullItem = item;
+  if (item.id && (!item.customer_signature || !item.technician_signature)) {
+    try {
+      const res: any = await api.get(`/delivery-orders/${item.id}`);
+      fullItem = res.data?.data ?? res.data ?? item;
+    } catch (e) {
+      console.warn("Failed to fetch full delivery order details for printing:", e);
+    }
+  }
+
   const { findCustomer, findUnit, findBrand, findTechnician, findUnitType } =
     useMasterStore();
 
-  const customer: any = findCustomer(item.customer_id) || {};
-  const firstLine: any = (item.delivery_order_items || [])[0] || {};
+  const customer: any = findCustomer(fullItem.customer_id) || {};
+  const firstLine: any = (fullItem.delivery_order_items || [])[0] || {};
   
   let u: any = {};
   let brand: any = {};
@@ -55,16 +71,16 @@ export function printDeliveryServiceHistory(item: any): boolean {
     u = { model: firstLine.model, serial_no: firstLine.serial_no };
   }
 
-  const tech: any = findTechnician(item.technician_id) || {};
+  const tech: any = findTechnician(fullItem.technician_id) || {};
 
   const custName = customer.company_name || customer.name || "-";
   const custPhone = customer.phone || "-";
   const picName = customer.pic_name || "-";
-  const dateStr = item.delivery_date
-    ? new Date(item.delivery_date).toLocaleDateString("en-GB")
+  const dateStr = fullItem.delivery_date
+    ? new Date(fullItem.delivery_date).toLocaleDateString("en-GB")
     : "-";
-  const itemsCount = (item.delivery_order_items || []).length;
-  const itemsList = (item.delivery_order_items || [])
+  const itemsCount = (fullItem.delivery_order_items || []).length;
+  const itemsList = (fullItem.delivery_order_items || [])
     .map((line: any, i: number) => {
       const lu: any = line.unit || findUnit(line.unit_id) || {};
       const label = lu.model || line.product?.name || "Item";
@@ -143,10 +159,10 @@ export function printDeliveryServiceHistory(item: any): boolean {
           <div class="section-title">CUSTOMER DETAIL</div>
           <table class="data-table">
             <tr><td class="label-col">Company Name</td><td class="val-col">${esc(custName)}</td></tr>
-            <tr><td class="label-col">Customer Type</td><td class="val-col">${esc(String(item.customer_category || customer.category || "Corporate"))}</td></tr>
-            <tr><td class="label-col">Project Name</td><td class="val-col">${esc(item.project_name || "-")}</td></tr>
+            <tr><td class="label-col">Customer Type</td><td class="val-col">${esc(String(fullItem.customer_category || customer.category || "Corporate"))}</td></tr>
+            <tr><td class="label-col">Project Name</td><td class="val-col">${esc(fullItem.project_name || "-")}</td></tr>
             <tr><td class="label-col">Address</td><td class="val-col">${esc(customer.address || "-")}</td></tr>
-            <tr><td class="label-col">Installation Address</td><td class="val-col">${esc(item.delivery_address || "-")}</td></tr>
+            <tr><td class="label-col">Installation Address</td><td class="val-col">${esc(fullItem.delivery_address || "-")}</td></tr>
             <tr><td class="label-col">Phone</td><td class="val-col">${esc(custPhone)}</td></tr>
             <tr><td class="label-col">Person in Charge</td><td class="val-col">${esc(picName)}</td></tr>
           </table>
@@ -164,8 +180,8 @@ export function printDeliveryServiceHistory(item: any): boolean {
                 ? `<tr><td class="label-col">Items (${itemsCount})</td><td class="val-col">${itemsList}</td></tr>`
                 : ""
             }
-            <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col">${esc(item.problem || "")}</td></tr>
-            <tr><td class="label-col" style="height: 50px;">Remarks</td><td class="val-col">${esc(item.action || item.notes || firstLine.remarks || "")}</td></tr>
+            <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col">${esc(fullItem.problem || "")}</td></tr>
+            <tr><td class="label-col" style="height: 50px;">Remarks</td><td class="val-col">${esc(fullItem.action || fullItem.notes || firstLine.remarks || "")}</td></tr>
           </table>
 
           <table class="bottom-table">
@@ -175,16 +191,16 @@ export function printDeliveryServiceHistory(item: any): boolean {
               </td>
               <td>
                 <div style="display: flex;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Tested</div><div style="padding: 2px;">${item.is_tested ? "YES" : "NO"}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Tested</div><div style="padding: 2px;">${fullItem.is_tested ? "YES" : "NO"}</div>
                 </div>
                 <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Complete</div><div style="padding: 2px;">${item.is_completed ? "YES" : "NO"}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Complete</div><div style="padding: 2px;">${fullItem.is_completed ? "YES" : "NO"}</div>
                 </div>
                 <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time in</div><div style="padding: 2px;">${esc(item.time_in || "")}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time in</div><div style="padding: 2px;">${esc(fullItem.time_in || "")}</div>
                 </div>
                 <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time Out</div><div style="padding: 2px;">${esc(item.time_out || "")}</div>
+                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time Out</div><div style="padding: 2px;">${esc(fullItem.time_out || "")}</div>
                 </div>
               </td>
             </tr>
@@ -194,19 +210,19 @@ export function printDeliveryServiceHistory(item: any): boolean {
           <div style="border-top: 2px solid #000; padding: 10px 20px 24px; font-weight: bold;">
             <div style="display: flex; justify-content: space-between; gap: 48px;">
               <div style="flex: 1; text-align: center;">
-                <div>TESTED ${item.is_tested ? "YES" : "NO"}</div>
+                <div>TESTED ${fullItem.is_tested ? "YES" : "NO"}</div>
                 <div style="height: 70px; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid #000; margin-top: 8px; overflow: hidden;">
-                  ${item.technician_signature ? '<img src="' + item.technician_signature + '" style="max-height: 68px; max-width: 100%; object-fit: contain; display: block;" />' : ""}
+                  ${fullItem.technician_signature ? '<img src="' + fullItem.technician_signature + '" style="max-height: 68px; max-width: 100%; object-fit: contain; display: block;" />' : ""}
                 </div>
-                <div style="margin-top: 6px;">${esc(item.technician_name || tech.name || tech.full_name || tech.user?.name || "")}</div>
+                <div style="margin-top: 6px;">${esc(fullItem.technician_name || tech.name || tech.full_name || tech.user?.name || "")}</div>
                 <div style="font-weight: normal; font-size: 10px;">Technician</div>
               </div>
               <div style="flex: 1; text-align: center;">
-                <div>COMPLETE ${item.is_completed ? "YES" : "NO"}</div>
+                <div>COMPLETE ${fullItem.is_completed ? "YES" : "NO"}</div>
                 <div style="height: 70px; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid #000; margin-top: 8px; overflow: hidden;">
-                  ${item.customer_signature ? '<img src="' + item.customer_signature + '" style="max-height: 68px; max-width: 100%; object-fit: contain; display: block;" />' : ""}
+                  ${fullItem.customer_signature ? '<img src="' + fullItem.customer_signature + '" style="max-height: 68px; max-width: 100%; object-fit: contain; display: block;" />' : ""}
                 </div>
-                <div style="margin-top: 6px;">${esc(item.customer_name || picName || "")}</div>
+                <div style="margin-top: 6px;">${esc(fullItem.customer_name || picName || "")}</div>
                 <div style="font-weight: normal; font-size: 10px;">Customer</div>
               </div>
             </div>
@@ -220,8 +236,6 @@ export function printDeliveryServiceHistory(item: any): boolean {
       </body>
     </html>
   `;
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) return false;
   printWindow.document.write(html);
   printWindow.document.close();
   return true;

@@ -87,11 +87,31 @@ export function invalidateCache(pattern?: string): void {
     return;
   }
   const clean = (pattern.split("?")[0] || "").replace(/^\/+|\/+$/g, "");
+  const kebab = clean.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
   const segments = clean.split("/");
   const rootResource = segments[0] ? `/${segments[0]}` : "";
+  const rootKebab = kebab.split("/")[0] ? `/${kebab.split("/")[0]}` : "";
+
+  // Common aliases in resource mappings
+  const aliases: string[] = [];
+  if (clean.includes("sparepart") || kebab.includes("sparepart")) {
+    aliases.push("service-spareparts", "sparepart-requests");
+  }
+  if (clean.includes("delivery") || kebab.includes("delivery")) {
+    aliases.push("delivery-orders");
+  }
+  if (clean.includes("report") || kebab.includes("report")) {
+    aliases.push("service-reports");
+  }
 
   for (const key of cache.keys()) {
-    if (key.includes(pattern) || (rootResource && key.includes(rootResource))) {
+    if (
+      key.includes(pattern) ||
+      key.includes(kebab) ||
+      (rootResource && key.includes(rootResource)) ||
+      (rootKebab && key.includes(rootKebab)) ||
+      aliases.some((alias) => key.includes(alias))
+    ) {
       cache.delete(key);
     }
   }

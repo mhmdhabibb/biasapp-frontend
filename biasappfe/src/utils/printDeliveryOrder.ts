@@ -2,6 +2,7 @@
 import { useMasterStore } from "@/composables/useMasterStore";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
 import biasLogoUrl from "@/assets/bias-logo.png";
+import { api } from "@/services/api";
 
 function trimSignature(dataUrl?: string): Promise<string> {
   if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image")) {
@@ -82,15 +83,25 @@ export async function printDeliveryOrder(item: any): Promise<boolean> {
   const win = window.open("", "_blank");
   if (!win) return false;
 
+  let fullItem = item;
+  if (item.id && (!item.assigner_signature && !item.technician_signature && !item.customer_signature)) {
+    try {
+      const res: any = await api.get(`/delivery-orders/${item.id}`);
+      fullItem = res.data?.data ?? res.data ?? item;
+    } catch (e) {
+      console.warn("Failed to fetch full delivery order details for printing:", e);
+    }
+  }
+
   const [assignerSig, techSig, custSig] = await Promise.all([
-    trimSignature(item.assigner_signature),
-    trimSignature(item.technician_signature),
-    trimSignature(item.customer_signature),
+    trimSignature(fullItem.assigner_signature),
+    trimSignature(fullItem.technician_signature),
+    trimSignature(fullItem.customer_signature),
   ]);
 
   const masterStore = useMasterStore();
 
-  const customer: any = masterStore.findCustomer(item.customer_id) || {};
+  const customer: any = masterStore.findCustomer(fullItem.customer_id) || {};
   const custName = customer.company_name || customer.name || "-";
   const custAddress = customer.address || "-";
   const custPhone = customer.phone || "-";
@@ -101,8 +112,8 @@ export async function printDeliveryOrder(item: any): Promise<boolean> {
   if (gender === "P") prefix = "Ibu ";
   const picDisplay = pic !== "-" ? prefix + pic : "-";
 
-  const dateStr = item.delivery_date
-    ? new Date(item.delivery_date).toLocaleDateString("en-GB", {
+  const dateStr = fullItem.delivery_date
+    ? new Date(fullItem.delivery_date).toLocaleDateString("en-GB", {
         day: "numeric",
         month: "short",
         year: "2-digit",
@@ -111,7 +122,7 @@ export async function printDeliveryOrder(item: any): Promise<boolean> {
 
   // Group items by Model/Product Name
   const groupedItems: any[] = [];
-  const items = item.delivery_order_items || [];
+  const items = fullItem.delivery_order_items || [];
   
   items.forEach((doi: any) => {
     let pName = doi.description || "-";
@@ -200,9 +211,9 @@ export async function printDeliveryOrder(item: any): Promise<boolean> {
     itemsHtml = `<tr><td colspan="5" style="text-align: center; color: #666; padding: 10px;">No item data available</td></tr>`;
   }
 
-  const assignerName = item.assigner_name || item.user?.name || item.created_by?.name || "";
-  const techName = item.technician_name || (item.technician ? (item.technician.name || item.technician.full_name) : "");
-  const recipientName = item.customer_name || item.recipient_name || "";
+  const assignerName = fullItem.assigner_name || fullItem.user?.name || fullItem.created_by?.name || "";
+  const techName = fullItem.technician_name || (fullItem.technician ? (fullItem.technician.name || fullItem.technician.full_name) : "");
+  const recipientName = fullItem.customer_name || fullItem.recipient_name || "";
   const logoSrc = BIAS_LOGO_DATA_URL || biasLogoUrl;
 
   const html = `
@@ -210,7 +221,7 @@ export async function printDeliveryOrder(item: any): Promise<boolean> {
     <html>
       <head>
         <meta charset="utf-8">
-        <title>Delivery Order - ${item.do_number}</title>
+        <title>Delivery Order - ${fullItem.do_number}</title>
         <style>
           @media print {
             @page { size: A4 portrait; margin: 10mm; }
@@ -283,8 +294,8 @@ export async function printDeliveryOrder(item: any): Promise<boolean> {
               <div class="header-title">Recipient</div>
               <table class="meta-table">
                 <tr><td>Date</td><td>${dateStr}</td></tr>
-                <tr><td>DO No.</td><td>${item.do_number || "-"}</td></tr>
-                <tr><td>PO No.</td><td>${item.purchase_order?.po_no || "-"}</td></tr>
+                <tr><td>DO No.</td><td>${fullItem.do_number || "-"}</td></tr>
+                <tr><td>PO No.</td><td>${fullItem.purchase_order?.po_no || "-"}</td></tr>
                 <tr><td colspan="2" style="border-right: none; font-weight: bold; background: #f0f0f0;">${custName}</td></tr>
                 <tr><td colspan="2" style="border-right: none; border-bottom: 1px solid #0066cc;">${custAddress}</td></tr>
                 <tr><td>PIC</td><td>${picDisplay}</td></tr>
