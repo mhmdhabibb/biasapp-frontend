@@ -347,11 +347,23 @@ const isDraft = computed(() => String((item.value as any)?.status || '').toLower
 const isInProgress = computed(() => String((item.value as any)?.status || '').toLowerCase() === 'in_progress')
 const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String((item.value as any)?.status || '').toLowerCase()))
 
+const isTechnician = computed(() => {
+  const r = String(currentUser.value?.role || '').trim().toLowerCase()
+  return r === 'technician'
+})
+const isSuperadminOrAdmin = computed(() => {
+  const r = String(currentUser.value?.role || '').trim().toLowerCase()
+  return r === 'superadmin' || r === 'admin'
+})
+
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
-  if (currentUser.value?.role !== 'technician') return false
+  const r = String(currentUser.value?.role || '').trim().toLowerCase()
+  if (r !== 'technician' && r !== 'superadmin' && r !== 'admin') return false
   return true
 })
+
+const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
 
 async function startJob() {
   isSaving.value = true
@@ -577,13 +589,13 @@ onMounted(async () => {
       <div class="items-box mb-lg">
         <div class="items-head">
           <strong>Unit / Product ({{ (item.delivery_order_items || []).length }})</strong>
-          <button v-if="isEditable && can('delivery_order:update') && !hasItem" class="btn btn-sm btn-outline" @click="openItemModal">+ Tambah Item</button>
+          <button v-if="canManageDo && !hasItem" class="btn btn-sm btn-outline" @click="openItemModal">+ Tambah Item</button>
           <span v-else-if="hasItem" class="text-sm text-muted">1 form = 1 produk</span>
         </div>
         <div v-if="(item.delivery_order_items || []).length" class="mt-sm">
           <div v-for="it in item.delivery_order_items" :key="it.id" class="item-row">
             <span>{{ itemLabel(it) }} <span class="text-muted">x{{ it.qty || 1 }}</span><span v-if="it.remarks" class="text-muted"> — {{ it.remarks }}</span></span>
-            <button v-if="isEditable && can('delivery_order:update')" class="btn btn-sm btn-outline btn-danger" @click="removeItem(it.id)">Hapus</button>
+            <button v-if="canManageDo" class="btn btn-sm btn-outline btn-danger" @click="removeItem(it.id)">Hapus</button>
           </div>
         </div>
         <p v-else class="text-sm text-muted mt-sm">Belum ada produk. Tambahkan 1 unit/mesin atau product yang dikerjakan.</p>
@@ -618,12 +630,12 @@ onMounted(async () => {
       <div class="responsive-flex mb-md">
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Time In <span class="text-muted" style="font-weight: 400;">(otomatis saat form dibuat)</span></label>
-          <input v-if="currentUser?.role === 'technician' || isEditable" v-model="form.time_in" type="time" class="form-input" readonly disabled />
+          <input v-if="isTechnician || isEditable" v-model="form.time_in" type="time" class="form-input" readonly disabled />
           <input v-else :value="formatTimeWithDate(form.time_in, item?.created_at)" type="text" class="form-input" readonly disabled />
         </div>
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Time Out <span class="text-muted" style="font-weight: 400;">(otomatis saat selesai)</span></label>
-          <input v-if="currentUser?.role === 'technician' || isEditable" v-model="form.time_out" type="time" class="form-input" readonly disabled placeholder="Otomatis" />
+          <input v-if="isTechnician || isEditable" v-model="form.time_out" type="time" class="form-input" readonly disabled placeholder="Otomatis" />
           <input v-else :value="formatTimeWithDate(form.time_out, item?.updated_at)" type="text" class="form-input" readonly disabled />
         </div>
       </div>
@@ -655,11 +667,11 @@ onMounted(async () => {
       </div>
 
       <div class="mt-lg responsive-flex">
-        <button v-if="isEditable && can('delivery_order:update')" class="btn btn-outline" style="flex: 1;" :disabled="isSaving" @click="saveDraft">
+        <button v-if="canManageDo" class="btn btn-outline" style="flex: 1;" :disabled="isSaving" @click="saveDraft">
           {{ isSaving ? 'Menyimpan...' : 'Simpan Draft' }}
         </button>
         <button class="btn btn-outline" style="flex: 1;" @click="handlePrint">Print</button>
-        <button v-if="isEditable && can('delivery_order:update')" class="btn btn-primary" style="flex: 2;" :disabled="isSaving || !isCompleted" @click="confirmCompleteForm">
+        <button v-if="canManageDo" class="btn btn-primary" style="flex: 2;" :disabled="isSaving || !isCompleted" @click="confirmCompleteForm">
           {{ isSaving ? 'Menyimpan...' : (isCompleted ? '✅ Selesaikan' : '🔒 Lengkapi Form Dulu') }}
         </button>
       </div>

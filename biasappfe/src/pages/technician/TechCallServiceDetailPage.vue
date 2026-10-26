@@ -94,11 +94,22 @@ const contract = computed(() => {
 
 // ── Delivery jobs (JO dari delivery order) ──
 const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
+const isTechnician = computed(() => {
+  const r = String(currentUser.value?.role || '').trim().toLowerCase()
+  return r === 'technician'
+})
+const isSuperadminOrAdmin = computed(() => {
+  const r = String(currentUser.value?.role || '').trim().toLowerCase()
+  return r === 'superadmin' || r === 'admin'
+})
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
-  if (String(currentUser.value?.role || '').trim().toLowerCase() !== 'technician') return false
+  const r = String(currentUser.value?.role || '').trim().toLowerCase()
+  if (r !== 'technician' && r !== 'superadmin' && r !== 'admin') return false
   return true
 })
+const canManageSr = computed(() => isEditable.value && (can('service_report:update') || isTechnician.value || isSuperadminOrAdmin.value))
+const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
 // Hanya job yang benar-benar terhubung ke delivery order (bukan sekadar
 // label job_type) yang menampilkan Service History Form.
 function hasDeliveryOrder(j: any): boolean {
@@ -805,7 +816,7 @@ async function handleDeleteStandalone() {
 
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
           <p class="mb-lg text-muted">You have not accepted this delivery yet.</p>
-          <button v-if="isEditable && can('delivery_order:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="initAcceptDeliveryJob">
+          <button v-if="canManageDo" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="initAcceptDeliveryJob">
             {{ isSavingDoForm ? 'Accepting...' : 'Accept Delivery Job' }}
           </button>
         </div>
@@ -875,10 +886,10 @@ async function handleDeleteStandalone() {
             </div>
           </div>
           <div class="mt-lg responsive-flex">
-            <button v-if="isEditable && can('delivery_order:update')" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
+            <button v-if="canManageDo" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
               {{ isSavingDoForm ? 'Saving...' : 'Save Draft' }}
             </button>
-            <button v-if="isEditable && can('delivery_order:update')" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
+            <button v-if="canManageDo" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
               {{ isSavingDoForm ? 'Saving...' : (isDeliveryFormCompleted ? '✅ Complete Delivery' : '🔒 Complete Form First') }}
             </button>
           </div>
@@ -977,7 +988,7 @@ async function handleDeleteStandalone() {
 
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
           <p class="mb-lg text-muted">You have not accepted this job yet.</p>
-          <button v-if="isEditable && can('service_report:update')" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptJob">
+          <button v-if="canManageSr" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptJob">
             {{ isPreparingForm ? 'Preparing form...' : 'Accept Job' }}
           </button>
         </div>
@@ -985,7 +996,7 @@ async function handleDeleteStandalone() {
         <div v-else-if="job.status === 'in_progress'">
           <div v-if="!serviceReport" class="mb-lg p-md text-center text-muted" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
             <p class="text-sm mb-sm">Inspection form is not available yet.</p>
-            <button v-if="isEditable && can('service_report:update')" class="btn btn-outline" :disabled="isPreparingForm" @click="acceptJob">
+            <button v-if="canManageSr" class="btn btn-outline" :disabled="isPreparingForm" @click="acceptJob">
               {{ isPreparingForm ? 'Preparing form...' : 'Try Preparing Form' }}
             </button>
           </div>
@@ -1062,7 +1073,7 @@ async function handleDeleteStandalone() {
             <button v-if="isEditable" class="btn btn-outline w-full mb-md" style="padding: var(--space-md); font-size: 16px; border-color: var(--color-primary); color: var(--color-primary);" :disabled="isCreatingStandalone" @click="createStandalone">
               {{ isCreatingStandalone ? 'Membuat form...' : '➕ Tambah Unit Bermasalah (Stand Alone)' }}
             </button>
-            <button v-if="isEditable && can('service_report:update')" class="btn btn-primary w-full" :disabled="!isAllFormsCompleted" style="padding: var(--space-md); font-size: 16px;" @click="completeJob">
+            <button v-if="canManageSr" class="btn btn-primary w-full" :disabled="!isAllFormsCompleted" style="padding: var(--space-md); font-size: 16px;" @click="completeJob">
               {{ isAllFormsCompleted ? '✅ Complete Service' : '🔒 Complete Forms First' }}
             </button>
           </div>

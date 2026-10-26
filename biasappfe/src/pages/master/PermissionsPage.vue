@@ -88,7 +88,7 @@ function toggleAllModules() {
 
 async function fetchData() {
   try {
-    const res = await resources.permissions.list()
+    const res = await resources.permissions.list({ limit: 1000 })
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch permissions:', error)

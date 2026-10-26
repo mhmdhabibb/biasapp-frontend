@@ -13,7 +13,7 @@ export interface ResourceQuery {
 function toQueryString(query: ResourceQuery = {}) {
   const params = new URLSearchParams({
     page: String(query.page || 1),
-    limit: String(query.limit || 50),
+    limit: String(query.limit || 1000),
   });
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && key !== "page" && key !== "limit")
