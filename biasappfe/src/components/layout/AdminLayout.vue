@@ -15,7 +15,9 @@ const { currentUser } = useAuth();
 
 let adminInterval: any = null;
 
-const isTechnician = computed(() => currentUser.value?.role === "technician");
+const isTechnician = computed(() =>
+  String(currentUser.value?.role || "").trim().toLowerCase() === "technician"
+);
 const windowWidth = ref(window.innerWidth);
 
 const handleResize = () => {

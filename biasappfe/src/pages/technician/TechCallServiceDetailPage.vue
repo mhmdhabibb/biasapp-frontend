@@ -96,7 +96,7 @@ const contract = computed(() => {
 const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
-  if (currentUser.value?.role !== 'technician') return false
+  if (String(currentUser.value?.role || '').trim().toLowerCase() !== 'technician') return false
   return true
 })
 // Hanya job yang benar-benar terhubung ke delivery order (bukan sekadar
