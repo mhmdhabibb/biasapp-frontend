@@ -94,7 +94,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/payments": ["payments", "rentalInvoices", "salesInvoices", "customers"],
   "/customer-service/warranty-claims": ["warrantyClaims", "units", "customers", "warranties"],
   "/customer-service/sparepart-request": ["sparepartRequests", "serviceReports", "units", "customers", "products"],
-  "/customer-service/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
+  "/customer-service/maintenance": ["serviceReports", "units", "technicians", "customers"],
   "/customer-service/indent": ["indents", "products", "suppliers"],
   "/customer-service/delivery": ["deliveryOrders", "purchaseOrders", "customers"],
   "/customer-service/call-service": ["serviceRequests", "jobOrders", "technicians", "customers", "units"],

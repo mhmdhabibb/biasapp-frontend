@@ -233,8 +233,8 @@ async function submitRequest() {
               </td>
               <td>{{ req.qty }}</td>
               <td>
-                <span class="badge" :class="req.status === 'approved' ? 'badge-success' : req.status === 'rejected' ? 'badge-danger' : 'badge-warning'">
-                  {{ req.status || 'pending' }}
+                <span class="badge" :class="req.status === 'completed' || req.status === 'approved' ? 'badge-success' : req.status === 'rejected' ? 'badge-danger' : req.status === 'po_created' ? 'badge-info' : 'badge-warning'">
+                  {{ req.status === 'completed' ? 'Completed' : req.status === 'po_created' ? 'PO Created' : req.status || 'pending' }}
                 </span>
               </td>
               <td>

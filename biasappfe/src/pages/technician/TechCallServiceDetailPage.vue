@@ -696,6 +696,32 @@ async function createStandalone() {
     isCreatingStandalone.value = false
   }
 }
+
+const standaloneToDelete = ref<any>(null)
+const showDeleteStandaloneConfirm = ref(false)
+const isDeletingStandalone = ref(false)
+
+function confirmDeleteStandalone(st: any) {
+  standaloneToDelete.value = st
+  showDeleteStandaloneConfirm.value = true
+}
+
+async function handleDeleteStandalone() {
+  if (!standaloneToDelete.value) return
+  isDeletingStandalone.value = true
+  try {
+    const doId = standaloneToDelete.value.id
+    await api.delete(`/delivery-orders/${doId}`)
+    toast.success('Stand Alone berhasil dihapus/dibatalkan.')
+    showDeleteStandaloneConfirm.value = false
+    standaloneToDelete.value = null
+    await refreshOnly(['deliveryOrders'])
+  } catch (err: any) {
+    toast.error(err.message || 'Gagal menghapus Stand Alone')
+  } finally {
+    isDeletingStandalone.value = false
+  }
+}
 </script>
 
 <template>
@@ -997,21 +1023,41 @@ async function createStandalone() {
           <div class="mt-xl pt-md" style="border-top: 1px solid var(--color-border-light)">
             <div v-if="standaloneList.length" class="mb-md">
               <p class="font-bold mb-xs text-sm">Stand Alone yang sudah dibuat ({{ standaloneList.length }})</p>
-              <button
+              <div
                 v-for="st in standaloneList"
                 :key="st.id"
-                class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md"
-                @click="router.push(`/technician/standalone-service-history/${st.id}`)"
+                class="flex items-center gap-xs mb-sm"
               >
-                <span class="font-bold">
-                  <span v-if="hasDeliveryHistory(st)">✅</span><span v-else>📝</span>
-                  {{ standaloneTitle(st) }}
-                  <span class="badge" :class="standaloneStatusClass(st)" style="margin-left: 6px;">
-                    {{ String(st.status || '-').toUpperCase().replace('_', ' ') }}
+                <button
+                  type="button"
+                  class="btn btn-outline flex-1 text-left flex justify-between items-center p-md m-0"
+                  @click="router.push(`/technician/standalone-service-history/${st.id}`)"
+                >
+                  <span class="font-bold">
+                    <span v-if="hasDeliveryHistory(st)">✅</span><span v-else>📝</span>
+                    {{ standaloneTitle(st) }}
+                    <span class="badge" :class="standaloneStatusClass(st)" style="margin-left: 6px;">
+                      {{ String(st.status || '-').toUpperCase().replace('_', ' ') }}
+                    </span>
                   </span>
-                </span>
-                <span>></span>
-              </button>
+                  <span>></span>
+                </button>
+                <button
+                  v-if="isEditable"
+                  type="button"
+                  class="btn btn-outline p-md"
+                  style="border-color: var(--color-danger); color: var(--color-danger); min-width: 44px; display: flex; align-items: center; justify-content: center;"
+                  title="Hapus / Batal Stand Alone"
+                  @click.stop="confirmDeleteStandalone(st)"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                  </svg>
+                </button>
+              </div>
             </div>
             <button v-if="isEditable" class="btn btn-outline w-full mb-md" style="padding: var(--space-md); font-size: 16px; border-color: var(--color-primary); color: var(--color-primary);" :disabled="isCreatingStandalone" @click="createStandalone">
               {{ isCreatingStandalone ? 'Membuat form...' : '➕ Tambah Unit Bermasalah (Stand Alone)' }}
@@ -1058,21 +1104,41 @@ async function createStandalone() {
 
           <div v-if="standaloneList.length" class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
             <p class="font-bold mb-xs text-sm">Stand Alone yang sudah dibuat ({{ standaloneList.length }})</p>
-            <button
+            <div
               v-for="st in standaloneList"
               :key="st.id"
-              class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md"
-              @click="router.push(`/technician/standalone-service-history/${st.id}`)"
+              class="flex items-center gap-xs mb-sm"
             >
-              <span class="font-bold">
-                <span v-if="hasDeliveryHistory(st)">✅</span><span v-else>📝</span>
-                {{ standaloneTitle(st) }}
-                <span class="badge" :class="standaloneStatusClass(st)" style="margin-left: 6px;">
-                  {{ String(st.status || '-').toUpperCase().replace('_', ' ') }}
+              <button
+                type="button"
+                class="btn btn-outline flex-1 text-left flex justify-between items-center p-md m-0"
+                @click="router.push(`/technician/standalone-service-history/${st.id}`)"
+              >
+                <span class="font-bold">
+                  <span v-if="hasDeliveryHistory(st)">✅</span><span v-else>📝</span>
+                  {{ standaloneTitle(st) }}
+                  <span class="badge" :class="standaloneStatusClass(st)" style="margin-left: 6px;">
+                    {{ String(st.status || '-').toUpperCase().replace('_', ' ') }}
+                  </span>
                 </span>
-              </span>
-              <span>></span>
-            </button>
+                <span>></span>
+              </button>
+              <button
+                v-if="isEditable"
+                type="button"
+                class="btn btn-outline p-md"
+                style="border-color: var(--color-danger); color: var(--color-danger); min-width: 44px; display: flex; align-items: center; justify-content: center;"
+                title="Hapus / Batal Stand Alone"
+                @click.stop="confirmDeleteStandalone(st)"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1228,6 +1294,17 @@ async function createStandalone() {
       cancelLabel="Tidak, Kembali"
       @close="declineNewStandaloneDelivery"
       @confirm="executeNewStandaloneDelivery"
+    />
+    <ConfirmDialog
+      :open="showDeleteStandaloneConfirm"
+      title="Batalkan / Hapus Stand Alone"
+      :message="`Apakah Anda yakin ingin membatalkan/menghapus Stand Alone '${standaloneTitle(standaloneToDelete)}'? Data form stand alone ini akan dihapus.`"
+      variant="danger"
+      confirmLabel="Ya, Hapus"
+      cancelLabel="Batal"
+      :loading="isDeletingStandalone"
+      @close="showDeleteStandaloneConfirm = false"
+      @confirm="handleDeleteStandalone"
     />
 
   </div>

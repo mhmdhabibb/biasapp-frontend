@@ -200,12 +200,20 @@ function onVisibilityOrFocus() {
 async function loadAllData(silent = false) {
   try {
     // Fetch all datasets in parallel for instant, flicker-free rendering
-    const [doRes, joRes, srRes] = await Promise.all([
+    const results = await Promise.allSettled([
       api.get<any>("/delivery-orders?page=1&limit=100", true, true),
       api.get<any>("/job-orders?page=1&limit=100", true, true),
       api.get<any>("/service-requests?page=1&limit=100", true, true),
       masterStore.refreshOnly(['serviceReports', 'technicians']),
     ]);
+
+    const doRes = results[0].status === "fulfilled" ? results[0].value : null;
+    const joRes = results[1].status === "fulfilled" ? results[1].value : null;
+    const srRes = results[2].status === "fulfilled" ? results[2].value : null;
+
+    if (!joRes && results[1].status === "rejected") {
+      throw (results[1] as PromiseRejectedResult).reason;
+    }
 
     const rawDos = extractArray(doRes);
     const filteredDos = rawDos.filter((d: any) =>

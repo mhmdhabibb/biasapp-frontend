@@ -255,28 +255,38 @@ async function addItem() {
         isSaving.value = false;
         return;
       }
-      const serialUpper = (itemForm.serial_no || '').toUpperCase()
-      await resources.units.create({
-        name: itemForm.model || 'Unit',
-        brand_id: itemForm.brand_id,
-        type_id: itemForm.unit_type_id,
-        model: itemForm.model,
-        serial_no: serialUpper,
-        is_external: true,
-        status: 'available',
-      });
-      // Backend POST /units/ mengembalikan data: null, jadi resolve ID unit
-      // yang baru dibuat lewat list (dicocokkan via serial number).
-      await store.refreshOnly(['units'])
-      const created = ((store.units.value ?? []) as any[]).find(
-        (u: any) => String(u.serial_no || '').toUpperCase() === serialUpper,
-      );
-      if (!created) {
-        toast.error('Unit berhasil dibuat tapi tidak ketemu di daftar. Coba lagi.');
-        isSaving.value = false;
-        return;
+      const serialUpper = (itemForm.serial_no || '').trim().toUpperCase()
+      let existing = ((store.units.value ?? []) as any[]).find(
+        (u: any) => String(u.serial_no || '').trim().toUpperCase() === serialUpper,
+      )
+      if (existing) {
+        finalUnitId = existing.id
+      } else {
+        try {
+          await resources.units.create({
+            name: itemForm.model || 'Unit',
+            brand_id: itemForm.brand_id,
+            type_id: itemForm.unit_type_id,
+            model: itemForm.model,
+            serial_no: serialUpper,
+            is_external: true,
+            status: 'available',
+          })
+        } catch (createErr: any) {
+          console.warn('Unit create notice (already exists or restored):', createErr)
+        }
+        await store.refreshOnly(['units'])
+        const found = ((store.units.value ?? []) as any[]).find(
+          (u: any) => String(u.serial_no || '').trim().toUpperCase() === serialUpper,
+        )
+        if (found) {
+          finalUnitId = found.id
+        } else {
+          toast.error('Gagal menambahkan unit. Silakan coba lagi.')
+          isSaving.value = false
+          return
+        }
       }
-      finalUnitId = created.id;
     }
 
     await resources.deliveryOrderItems.create({
@@ -653,9 +663,9 @@ onMounted(async () => {
           {{ isSaving ? 'Menyimpan...' : (isCompleted ? '✅ Selesaikan' : '🔒 Lengkapi Form Dulu') }}
         </button>
       </div>
-      <div v-if="isEditable && can('delivery_order:delete') && isPending" class="mt-md text-center">
+      <div v-if="isEditable && isPending" class="mt-md text-center">
         <button class="btn btn-sm btn-outline btn-danger" :disabled="isSaving" @click="removeForm">
-          Hapus form ini (masih pending)
+          🗑️ Batalkan / Hapus Stand Alone ini
         </button>
       </div>
       </template>

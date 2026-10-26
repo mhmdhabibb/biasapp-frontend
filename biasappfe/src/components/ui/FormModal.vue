@@ -78,10 +78,11 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   z-index: 200;
-  padding: 40px var(--space-base);
+  padding: 20px var(--space-base);
   overflow-y: auto;
 }
 
@@ -90,9 +91,11 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   width: 100%;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   margin: auto;
+  position: relative;
 }
 
 .modal-header {
@@ -100,6 +103,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-lg) var(--space-lg) var(--space-md);
+  flex-shrink: 0;
 }
 
 .modal-title {
@@ -125,12 +129,12 @@ onUnmounted(() => {
 
 .modal-body {
   padding: var(--space-md) var(--space-lg);
-  padding-bottom: var(--space-2xl);
+  padding-bottom: var(--space-lg);
   display: flex;
   flex-direction: column;
   gap: var(--space-base);
   flex: 1;
-  overflow: visible;
+  overflow-y: auto;
 }
 
 .modal-footer {
@@ -138,8 +142,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-sm);
-  padding: var(--space-md) var(--space-lg) var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
   border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-bottom-left-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
+  flex-shrink: 0;
 }
 
 .modal-enter-active,

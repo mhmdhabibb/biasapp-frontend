@@ -51,7 +51,7 @@ function openCreatePOModal(request: SparepartRequest) {
 
   poForm.request_form_no = `MRF-${Date.now().toString().slice(-6)}`
   poForm.order_date = new Date().toISOString().slice(0, 10)
-  poForm.installation_date = ''
+  poForm.installation_date = new Date().toISOString().slice(0, 10)
   poForm.priority = 'Normal'
   poForm.department = 'Technical / Service'
   poForm.requester_name = tech !== '-' ? tech : 'tech'
@@ -133,10 +133,13 @@ function getTechnician(row: any) {
 async function handleCreatePO() {
   const request = poTarget.value
   if (!request || creatingId.value !== null) return
-  const reason = poForm.reason.trim()
-  if (!reason || !poForm.installation_date) {
-    toast.error('Reason and target installation date are required')
-    return
+  if (!poForm.installation_date) {
+    poForm.installation_date = poForm.order_date || new Date().toISOString().slice(0, 10)
+  }
+  let reason = poForm.reason.trim()
+  if (!reason) {
+    reason = 'Penggantian sparepart ' + (poForm.item_name || 'mesin')
+    poForm.reason = reason
   }
   creatingId.value = request.id
   try {
@@ -287,7 +290,7 @@ async function handlePrintRequestForm(row: any) {
     </DataTable>
 
     <!-- Create Request Form Modal (Material Requisition Form) -->
-    <FormModal :open="showCreatePOModal" title="Material Requisition Form (Request Form)" max-width="720px" @close="closeCreatePOModal" @submit="handleCreatePO">
+    <FormModal :open="showCreatePOModal" title="Material Requisition Form (Request Form)" max-width="720px" :submit-label="creatingId !== null ? 'Menyimpan...' : 'Simpan Form'" @close="closeCreatePOModal" @submit="handleCreatePO">
       <div class="mrf-form-container">
         <!-- Section A: Informasi Pemohon -->
         <div class="mrf-section-header">A. INFORMASI PEMOHON</div>

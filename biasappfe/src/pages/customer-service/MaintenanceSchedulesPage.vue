@@ -58,6 +58,7 @@ function extractArray(res: any): any[] {
 }
 
 async function fetchJobs() {
+  loading.value = true
   try {
     const res = await api.get('/job-orders?kind=maintenance&limit=200')
     const rawList = extractArray(res)
@@ -68,6 +69,8 @@ async function fetchJobs() {
   } catch (err) {
     console.error(err)
     toast.error('Gagal memuat maintenance schedules. Silakan refresh halaman.')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -323,7 +326,7 @@ async function exportToExcel() {
       </template>
     </PageHeader>
 
-    <DataTable :columns="columns" :data="mappedJobOrders" search-placeholder="Search schedules..." @edit="openEdit" @row-click="openDetail">
+    <DataTable :columns="columns" :data="mappedJobOrders" :loading="loading" search-placeholder="Search schedules..." @edit="openEdit" @row-click="openDetail">
       <template #cell-customer="{ row }">{{ getCustomerName(row) }}</template>
       <template #cell-unit="{ row }">{{ getUnitName(row) }}</template>
       <template #cell-scheduled_date="{ value }">
