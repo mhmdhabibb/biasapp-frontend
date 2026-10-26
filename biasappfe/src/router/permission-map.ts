@@ -54,6 +54,7 @@ products: ['product'],
   accSparepartRequests: ['service_sparepart'],
   accPurchaseOrders: ['purchase_order'],
   accDeliveryOrders: ['delivery_order'],
+  accStockControl: ['stock_movement', 'product'],
 }
 
 /** Route names in menu order, used to pick a fallback redirect target. */

@@ -347,6 +347,8 @@ const isDraft = computed(() => String((item.value as any)?.status || '').toLower
 const isInProgress = computed(() => String((item.value as any)?.status || '').toLowerCase() === 'in_progress')
 const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String((item.value as any)?.status || '').toLowerCase()))
 
+const myTechId = computed(() => (store as any).getTechnicianIdByUser?.(currentUser.value?.id || null))
+
 const isTechnician = computed(() => {
   const r = String(currentUser.value?.role || '').trim().toLowerCase()
   return r === 'technician'
@@ -359,8 +361,17 @@ const isSuperadminOrAdmin = computed(() => {
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
   const r = String(currentUser.value?.role || '').trim().toLowerCase()
-  if (r !== 'technician' && r !== 'superadmin' && r !== 'admin') return false
-  return true
+  if (r === 'superadmin' || r === 'admin') return true
+  if (r === 'technician') {
+    const dTechId = item.value?.technician_id ? String(item.value.technician_id) : ''
+    const tId = myTechId.value ? String(myTechId.value) : ''
+    const uId = currentUser.value?.id ? String(currentUser.value.id) : ''
+    if (dTechId) {
+      return dTechId === tId || dTechId === uId
+    }
+    return true
+  }
+  return false
 })
 
 const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
@@ -544,7 +555,7 @@ function handleConfirmPrint() {
 }
 
 onMounted(async () => {
-  await store.refreshOnly(['deliveryOrders'])
+  await store.refreshOnly(['deliveryOrders', 'technicians', 'customers'])
   initForm()
   // Preload dropdown modal di background agar saat klik langsung siap.
   void store.refreshOnly(['units', 'products', 'brands', 'unitTypes'])
@@ -565,6 +576,7 @@ onMounted(async () => {
         <div class="info-item"><span class="info-label">Alamat</span><span class="info-value">{{ item.delivery_address || customer?.address || '-' }}</span></div>
         <div class="info-item"><span class="info-label">PIC & Kontak</span><span class="info-value">{{ item.recipient_name || customer?.pic_name || '-' }} ({{ item.recipient_phone || customer?.phone || '-' }})</span></div>
         <div class="info-item"><span class="info-label">Tanggal</span><span class="info-value">{{ item.delivery_date ? new Date(item.delivery_date).toLocaleDateString('en-GB') : '-' }}</span></div>
+        <div class="info-item"><span class="info-label">Teknisi Bertugas</span><span class="info-value font-bold">{{ store.findTechnician(item.technician_id)?.user?.name || store.findTechnician(item.technician_id)?.name || item.technician_name || '-' }}</span></div>
         <div v-if="item.notes" class="info-item"><span class="info-label">Catatan CS</span><span class="info-value">{{ item.notes }}</span></div>
       </div>
     </div>

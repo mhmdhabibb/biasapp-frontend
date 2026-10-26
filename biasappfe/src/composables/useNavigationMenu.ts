@@ -162,6 +162,12 @@ export const allMenuGroups: MenuGroup[] = [
         icon: "credit-card",
         route: "/customer-service/payments",
       },
+      {
+        label: "sidebar.stock_control",
+        icon: "box",
+        route: "/accounting/stock-control",
+        roles: ["accounting", "admin"],
+      },
     ],
   },
   {
@@ -333,6 +339,15 @@ export function useNavigationMenu() {
             if (
               (routeName === "accDashboard" || item.route === "/accounting/dashboard") &&
               role !== "accounting"
+            ) {
+              return false;
+            }
+
+            // Khusus menu stock control: hanya bisa dilihat oleh user dengan role accounting (dan admin)
+            if (
+              (routeName === "accStockControl" || item.route === "/accounting/stock-control") &&
+              role !== "accounting" &&
+              role !== "admin"
             ) {
               return false;
             }

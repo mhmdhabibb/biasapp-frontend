@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // @ts-nocheck
 // Standalone Service History — sisi Teknisi (list).
-// Tanpa assign job: semua teknisi bisa melihat & mengisi PRODUCT DETAIL.
+// Difilter sesuai teknisi yang login (admin/superadmin melihat semua).
 import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
@@ -13,21 +14,40 @@ import { resources } from '@/services/resource.service'
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
+const { currentUser } = useAuth()
 const { can } = usePermission()
 const { ensureResourcesLoaded } = useMasterStore()
-const { deliveryOrders, findCustomer, findTechnician, refreshOnly } = useMasterStore()
+const { deliveryOrders, findCustomer, findTechnician, getTechnicianIdByUser, refreshOnly } = useMasterStore()
 
 onMounted(() => {
   ensureResourcesLoaded(route.path)
+  void refreshOnly(['deliveryOrders', 'technicians', 'customers'])
 })
 const deletingId = ref<string | null>(null)
 
+const isSuperadminOrAdmin = computed(() => {
+  const r = String(currentUser.value?.role || '').trim().toLowerCase()
+  return r === 'superadmin' || r === 'admin'
+})
+
+const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
+
+function isMyStandalone(d: any): boolean {
+  if (isSuperadminOrAdmin.value) return true
+  const techId = myTechId.value ? String(myTechId.value) : ''
+  const userId = currentUser.value?.id ? String(currentUser.value.id) : ''
+  const dTechId = d?.technician_id ? String(d.technician_id) : ''
+  if (!techId && !userId) return false
+  return (techId && dTechId === techId) || (userId && dTechId === userId)
+}
+
 const standaloneList = computed(() =>
-  ((deliveryOrders?.value || []) as any[]).filter(
-    (d: any) => String(d.do_type || '').toLowerCase() === 'service',
-  ).sort((a: any, b: any) =>
-    String(b.created_at || b.delivery_date || '').localeCompare(String(a.created_at || a.delivery_date || '')),
-  ),
+  ((deliveryOrders?.value || []) as any[])
+    .filter((d: any) => String(d.do_type || '').toLowerCase() === 'service')
+    .filter(isMyStandalone)
+    .sort((a: any, b: any) =>
+      String(b.created_at || b.delivery_date || '').localeCompare(String(a.created_at || a.delivery_date || '')),
+    ),
 )
 
 function customerName(id: any): string {

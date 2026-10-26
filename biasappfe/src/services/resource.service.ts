@@ -109,4 +109,10 @@ export const resources = {
     "purchase-order-items",
   ),
   payments: createResourceService<ResourceRecord>("payments"),
+  stockMovements: {
+    ...createResourceService<ResourceRecord>("stock-movements"),
+    applyOpname: (data: { product_id: string; actual_stock: number; notes: string }) =>
+      api.post("/stock-movements/adjustment", data),
+    getSummary: () => api.get("/stock-movements/summary"),
+  },
 };

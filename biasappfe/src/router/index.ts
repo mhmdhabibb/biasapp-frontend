@@ -260,6 +260,12 @@ const router = createRouter({
       name: "accDeliveryOrders",
       component: () => import("@/pages/accounting/AccDeliveryOrdersPage.vue"),
     },
+    {
+      path: "/accounting/stock-control",
+      name: "accStockControl",
+      component: () => import("@/pages/accounting/StockControlPage.vue"),
+      meta: { roles: ["accounting", "admin"] },
+    },
     // Technician Routes
     {
       path: "/technician/dashboard",
@@ -358,6 +364,13 @@ router.beforeEach((to) => {
 
   if (!isAuthenticated.value) {
     return { name: "login" };
+  }
+
+  // Role-locked meta routes (e.g. accounting only for stock control)
+  if (to.meta?.roles && Array.isArray(to.meta.roles)) {
+    if (!to.meta.roles.includes(role)) {
+      return { name: homeRouteNameByRole[role] || "accDashboard" };
+    }
   }
 
   // Role route allowlists (see role-access.ts). Admin/custom roles are unrestricted here.
