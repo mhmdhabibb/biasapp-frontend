@@ -91,9 +91,9 @@ async function fetchJobOrders(silent = false) {
       let doObj = j.delivery_order || null;
       const doTargetId = j.delivery_order_id || doObj?.id;
       if (doTargetId) {
-        const fullDo = deliveryOrders.value.find(
-          (d: any) => String(d.id) === String(doTargetId),
-        );
+        const fullDo =
+          deliveryOrders.value.find((d: any) => String(d.id) === String(doTargetId)) ||
+          ((masterStore.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === String(doTargetId));
         if (fullDo) {
           doObj = { ...fullDo, ...doObj };
         }
@@ -243,9 +243,9 @@ async function loadAllData(silent = false) {
       let doObj = j.delivery_order || null;
       const doTargetId = j.delivery_order_id || doObj?.id;
       if (doTargetId) {
-        const fullDo = filteredDos.find(
-          (d: any) => String(d.id) === String(doTargetId),
-        );
+        const fullDo =
+          rawDos.find((d: any) => String(d.id) === String(doTargetId)) ||
+          ((masterStore.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === String(doTargetId));
         if (fullDo) {
           doObj = { ...fullDo, ...doObj };
         }
@@ -351,9 +351,9 @@ watch(
             doObj.delivery_order_items.length === 0) &&
           doTargetId
         ) {
-          const fullDo = deliveryOrders.value.find(
-            (d: any) => String(d.id) === String(doTargetId),
-          );
+          const fullDo =
+            deliveryOrders.value.find((d: any) => String(d.id) === String(doTargetId)) ||
+            ((masterStore.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === String(doTargetId));
           if (fullDo) {
             return {
               ...j,
@@ -587,9 +587,9 @@ function getJobsForTech(techId: string | number): any[] {
           doObj.delivery_order_items.length === 0) &&
         doTargetId
       ) {
-        const fullDo = deliveryOrders.value.find(
-          (d: any) => String(d.id) === String(doTargetId),
-        );
+        const fullDo =
+          deliveryOrders.value.find((d: any) => String(d.id) === String(doTargetId)) ||
+          ((masterStore.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === String(doTargetId));
         if (fullDo) {
           doObj = { ...fullDo, ...doObj };
         }

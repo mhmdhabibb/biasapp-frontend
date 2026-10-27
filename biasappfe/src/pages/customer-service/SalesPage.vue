@@ -323,6 +323,7 @@ function generateSingleInvoiceHtml(item: any) {
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
   const invoiceDate = item.sale_date || item.date || invoice?.created_at || invoice?.due_date
+  const poNo = (item.po_no || item.po_number || invoice?.po_no || invoice?.po_number || invoice?.sale?.po_no || '').trim()
 
   const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
@@ -429,6 +430,10 @@ function generateSingleInvoiceHtml(item: any) {
               <tr>
                 <td class="label">Date :</td>
                 <td>${dateStr}</td>
+              </tr>
+              <tr>
+                <td class="label">PO No. :</td>
+                <td style="${poNo ? 'font-weight: bold;' : ''}">${poNo || '-'}</td>
               </tr>
 
               <tr>

@@ -334,6 +334,7 @@ export interface Sale {
   sale_no: string;
   customer_id: string | null;
   sale_date: string;
+  po_no?: string;
   installation_address?: string;
   total_amount: number;
   status: string;
@@ -396,6 +397,8 @@ export interface SalesInvoice {
   invoice_no: string;
   customer_id: string | number | null;
   sale_id: string | number | null;
+  sale?: Sale;
+  po_no?: string;
   due_date: string;
   subtotal: number;
   service_charge: number;

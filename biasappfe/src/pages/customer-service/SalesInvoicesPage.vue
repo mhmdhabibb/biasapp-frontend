@@ -359,13 +359,13 @@ function renderSalesInvoiceBody(item: any): string {
   const signer = signerName(item)
 
   const invoiceNo = item.invoice_no || '-'
+  const sale = item.sale || findSale(item.sale_id)
+  const poNo = (sale?.po_no || sale?.po_number || item?.po_no || item?.po_number || '').trim()
   const invoiceDate = sale?.sale_date || sale?.date || item.invoice_date || item.created_at || item.due_date
 
   const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
   let itemsHtml = ''
-  const sale = item.sale || findSale(item.sale_id)
-  const poNo = (sale?.po_no || sale?.po_number || item?.po_no || item?.po_number || '').trim()
   const invoiceItems = getInvoiceItems(item)
 
   if (invoiceItems.length > 0) {
@@ -443,6 +443,10 @@ function renderSalesInvoiceBody(item: any): string {
               <tr>
                 <td class="label">Date :</td>
                 <td>${dateStr}</td>
+              </tr>
+              <tr>
+                <td class="label">PO No. :</td>
+                <td style="${poNo ? 'font-weight: bold;' : ''}">${poNo || '-'}</td>
               </tr>
 
               <tr>
@@ -1193,6 +1197,10 @@ async function printReceiptAsync(item: any, approved: any) {
           <div class="form-group">
             <label class="form-label">Sale Ref.</label>
             <div>{{ saleRef(detailItem.sale_id) }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">PO No.</label>
+            <div style="font-weight: 500;">{{ detailItem.sale?.po_no || findSale(detailItem.sale_id)?.po_no || detailItem.po_no || '-' }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Total</label>
