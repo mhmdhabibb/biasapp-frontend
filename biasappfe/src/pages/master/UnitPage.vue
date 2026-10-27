@@ -66,6 +66,7 @@ async function fetchData() {
 
 const totalUnitCount = computed(() => (data.value || []).length)
 const totalAvailableCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'available').length)
+const totalLockCount = computed(() => (data.value || []).filter(u => ['lock', 'locked'].includes((u.status || '').toLowerCase())).length)
 const totalRentedCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'rented').length)
 const totalUnitValue = computed(() => (data.value || []).reduce((acc, u) => acc + (Number((u as any).price) || 0), 0))
 
@@ -370,6 +371,9 @@ function statusBadgeClass(status: string | null | undefined): string {
   switch ((status || '').toLowerCase()) {
     case 'available':
       return 'badge-success'
+    case 'lock':
+    case 'locked':
+      return 'badge-warning'
     case 'rented':
       return 'badge-info'
     case 'maintenance':
@@ -666,7 +670,7 @@ function exportStockPdf() {
     </PageHeader>
 
     <!-- Summary Cards -->
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px;">
       <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
         <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Total Unit Aset</div>
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: var(--color-text);">{{ totalUnitCount }} Unit</div>
@@ -674,6 +678,10 @@ function exportStockPdf() {
       <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
         <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Available (Siap)</div>
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #16a34a;">{{ totalAvailableCount }} Unit</div>
+      </div>
+      <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
+        <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Lock (Terkunci)</div>
+        <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #d97706;">{{ totalLockCount }} Unit</div>
       </div>
       <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
         <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Rented (Disewa)</div>

@@ -72,7 +72,7 @@ export function isCopierOrPrinter(u: any): { isCopier: boolean; isPrinter: boole
 
   const isPrinter = !isCopier && (
     combined.includes('printer') ||
-    /\b(laserjet|deskjet|inkjet|ecotank|pixma|stylus|tank)\b/i.test(combined)
+    /\b(laserjet|deskjet|inkjet|ecotank|pixma|stylus|tank|smart\s*tank|l\d{3,4})\b/i.test(combined)
   );
 
   return {
@@ -98,7 +98,7 @@ export function resolvePrintTech(u: any): 'Laser' | 'Inject' | '' {
   // 2. Cek keyword pada model, nama, atau spesifikasi
   const combined = `${cleanString(u.model)} ${cleanString(u.name)} ${cleanString(u.specs)}`.toLowerCase();
   if (/\blaser\b|\blaserjet\b|\btoner\b/i.test(combined)) return 'Laser';
-  if (/\binject\b|\binkjet\b|\bink\s*tank\b|\becotank\b|\bdeskjet\b|\bpixma\b/i.test(combined)) return 'Inject';
+  if (/\binject\b|\binkjet\b|\bink\s*tank\b|\becotank\b|\bdeskjet\b|\bpixma\b|(\b|_)(l\d{3,4}|l-\w+)\b/i.test(combined)) return 'Inject';
 
   // 3. Fallback default:
   // Mesin fotokopi kantor (Copier) adalah mesin Laser
@@ -141,6 +141,23 @@ export function formatUnitDisplayName(
         break;
       }
     }
+    if (!brandName) {
+      if (/\b(l\d{3,4}|ecotank|workforce|stylus|surecolor)\b/i.test(hay)) {
+        brandName = 'Epson';
+      } else if (/\b(imagerunner|ir\s*\d+|ir-adv|pixma|maxify)\b/i.test(hay)) {
+        brandName = 'Canon';
+      } else if (/\b(laserjet|deskjet|pagewide|designjet|officejet)\b/i.test(hay)) {
+        brandName = 'HP';
+      } else if (/\b(bizhub|accutiopress)\b/i.test(hay)) {
+        brandName = 'Konica Minolta';
+      } else if (/\b(docucentre|apeosport)\b/i.test(hay)) {
+        brandName = 'Fuji Xerox';
+      } else if (/\b(taskalfa|ecosys)\b/i.test(hay)) {
+        brandName = 'Kyocera';
+      } else if (/\b(dcp-|mfc-|hl-)\b/i.test(hay)) {
+        brandName = 'Brother';
+      }
+    }
   }
 
   // 2. Type Name
@@ -164,23 +181,30 @@ export function formatUnitDisplayName(
     model = cleanString(u.name);
   }
 
-  // 4. Bersihkan duplikasi brand atau type di dalam model
-  if (brandName && model) {
-    const brandRegex = new RegExp(`^${brandName}\\b[\\s-_]*`, 'i');
-    if (brandRegex.test(model)) {
-      model = model.replace(brandRegex, '').trim();
+  // 4. Bersihkan duplikasi typeName, tech, brandName di awal model (sembarang urutan)
+  let changed = true;
+  while (changed && model) {
+    changed = false;
+    if (typeName) {
+      const typeRegex = new RegExp(`^${typeName}\\b[\\s-_]*`, 'i');
+      if (typeRegex.test(model)) {
+        model = model.replace(typeRegex, '').trim();
+        changed = true;
+      }
     }
-  }
-  if (typeName && model) {
-    const typeRegex = new RegExp(`^${typeName}\\b[\\s-_]*`, 'i');
-    if (typeRegex.test(model)) {
-      model = model.replace(typeRegex, '').trim();
+    if (tech) {
+      const techRegex = new RegExp(`^${tech}\\b[\\s-_]*`, 'i');
+      if (techRegex.test(model)) {
+        model = model.replace(techRegex, '').trim();
+        changed = true;
+      }
     }
-  }
-  if (tech && model) {
-    const techRegex = new RegExp(`^${tech}\\b[\\s-_]+`, 'i');
-    if (techRegex.test(model)) {
-      model = model.replace(techRegex, '').trim();
+    if (brandName) {
+      const brandRegex = new RegExp(`^${brandName}\\b[\\s-_]*`, 'i');
+      if (brandRegex.test(model)) {
+        model = model.replace(brandRegex, '').trim();
+        changed = true;
+      }
     }
   }
 

@@ -9,6 +9,7 @@ import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useModules } from '@/composables/useModules'
 import { useToast } from '@/composables/useToast'
 import { useHardDelete } from '@/composables/useHardDelete'
+import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Permission } from '@/types'
 
@@ -192,11 +193,42 @@ async function handleDelete() {
   showConfirm.value = false
 }
 
+const isDeduplicating = ref(false)
+async function handleDeduplicate() {
+  if (!confirm('Bersihkan semua permission yang duplikat? Seluruh pengaturan role yang sudah Anda buat akan tetap aman dan otomatis disatukan.')) {
+    return
+  }
+  isDeduplicating.value = true
+  try {
+    const res: any = await api.post('/permissions/deduplicate', {})
+    const count = res?.data?.merged_count ?? 0
+    toast.success(`Berhasil membersihkan ${count} permission duplikat. Seluruh setting role tetap tersimpan!`)
+    await fetchData()
+  } catch (err: any) {
+    console.error('Failed to deduplicate permissions:', err)
+    toast.error('Gagal membersihkan duplikat: ' + (err.message || 'Error'))
+  } finally {
+    isDeduplicating.value = false
+  }
+}
 </script>
 
 <template>
   <div>
-    <PageHeader title="Permissions" button-label="Add Permission" permission="permission:create" @add="openAdd" />
+    <PageHeader title="Permissions" button-label="Add Permission" permission="permission:create" @add="openAdd">
+      <template #actions>
+        <button
+          type="button"
+          class="btn btn-outline"
+          :disabled="isDeduplicating"
+          style="display: flex; align-items: center; gap: 6px; margin-right: 8px;"
+          @click="handleDeduplicate"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          {{ isDeduplicating ? 'Cleaning...' : 'Bersihkan Permission Duplikat' }}
+        </button>
+      </template>
+    </PageHeader>
     <DataTable :columns="columns" :data="data" search-placeholder="Search permissions..." permission="permission" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #cell-module_id="{ value }">
         {{ getModuleName(value) }}

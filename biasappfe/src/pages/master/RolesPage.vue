@@ -85,7 +85,10 @@ const permissionsByModule = computed(() => {
     if (!grouped.has(key)) {
       grouped.set(key, [])
     }
-    grouped.get(key)?.push(p)
+    const list = grouped.get(key)!
+    if (!list.some(existing => existing.name.toLowerCase() === p.name.toLowerCase())) {
+      list.push(p)
+    }
   })
   
   const result: { module: Module, permissions: Permission[] }[] = []
@@ -249,6 +252,24 @@ async function savePermissions() {
   }
 }
 
+const isDeduplicating = ref(false)
+async function handleDeduplicatePermissions() {
+  if (!confirm('Bersihkan semua permission duplikat? Seluruh pengaturan role yang telah Anda centang/setting akan tetap aman dan otomatis disatukan.')) {
+    return
+  }
+  isDeduplicating.value = true
+  try {
+    const res: any = await api.post('/permissions/deduplicate', {})
+    const count = res?.data?.merged_count ?? 0
+    toast.success(`Berhasil membersihkan ${count} permission duplikat. Seluruh setting role tetap tersimpan!`)
+    await fetchData()
+  } catch (err: any) {
+    console.error('Failed to deduplicate permissions:', err)
+    toast.error('Gagal membersihkan duplikat: ' + (err.message || 'Error'))
+  } finally {
+    isDeduplicating.value = false
+  }
+}
 </script>
 
 <template>
@@ -368,6 +389,17 @@ async function savePermissions() {
             </svg>
             <input v-model="moduleSearchQuery" type="search" class="form-input" placeholder="Find a module" aria-label="Search modules">
           </div>
+          <button
+            type="button"
+            class="btn btn-outline"
+            :disabled="isDeduplicating"
+            style="font-size: 12px; padding: 6px 12px; height: 38px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;"
+            title="Bersihkan permission duplikat dan satukan ke permission kanonis tanpa menghapus settingan role"
+            @click="handleDeduplicatePermissions"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            {{ isDeduplicating ? 'Cleaning...' : 'Bersihkan Duplikat' }}
+          </button>
           <div class="save-indicator" :class="{ 'is-saving': isSaving }" aria-live="polite">
             <span class="save-dot"></span>
             {{ isSaving ? 'Saving changes' : 'Changes saved' }}

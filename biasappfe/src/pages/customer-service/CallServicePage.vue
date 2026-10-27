@@ -60,9 +60,11 @@ const priorityOptions = [
 ]
 const technicianOptions = computed(() => technicians.value.map((t: any) => ({ value: t.id, label: t.name })))
 
+import { resources } from '@/services/resource.service'
+
 const isSubmitting = ref(false)
 
-function handleAssignJob() {
+async function handleAssignJob() {
   if (!form.customer_id || !form.unit_id || !form.machine_problem.trim() || !form.technician_id) {
     toast.warning('Please fill all required fields.')
     return
@@ -70,7 +72,6 @@ function handleAssignJob() {
 
   isSubmitting.value = true
   
-  // Create a new Service Report
   // First, find the contract associated with the unit for this customer
   const customerContracts = getContractsByCustomer(form.customer_id)
   const relatedContract = customerContracts.find(c => c.unit_id === form.unit_id)
@@ -87,34 +88,35 @@ function handleAssignJob() {
     projectName = selectedCustomer.value.company_name || selectedCustomer.value.name || ''
   }
 
-  const newReport = {
-    id: Date.now(),
-    service_report_no: `SR-${Date.now().toString().slice(-6)}`,
-    contract_item_id: relatedContract ? relatedContract.id : null,
-    customer_id: form.customer_id,
-    service_type: form.service_type,
-    technician_id: form.technician_id,
-    visit_date: '',
-    time_in: '',
-    time_out: '',
-    machine_problem: form.machine_problem,
-    repair_action: '',
-    status: 'assigned', // Workflow: NEW -> ASSIGNED
-    project_name: projectName,
-    is_chargeable: false,
-    reading_counter: 0,
-    is_complete: false,
-    created_at: new Date().toISOString(), // SLA starts here
-    updated_at: new Date().toISOString(),
-    deleted_at: null,
-  }
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000)
+  const reportNo = `SR-${dateStr}-${randomSuffix}`
 
-  serviceReports.value.push(newReport)
-
-  setTimeout(() => {
-    isSubmitting.value = false
+  try {
+    await resources.serviceReports.create({
+      report_no: reportNo,
+      customer_id: form.customer_id,
+      unit_id: form.unit_id,
+      technician_id: form.technician_id,
+      service_type: form.service_type,
+      machine_problem: form.machine_problem,
+      project_name: projectName || 'Call Service',
+      service_date: new Date().toISOString(),
+      time_in: '09:00',
+      time_out: '10:00',
+      repair_action: 'Ditugaskan ke teknisi',
+      status: 'assigned',
+      is_tested: false,
+      is_completed: false,
+    })
+    toast.success('Call Service berhasil dibuat dan ditugaskan!')
     router.push('/customer-service/monitoring-service')
-  }, 600)
+  } catch (err: any) {
+    console.error('Failed to create service report:', err)
+    toast.error('Gagal membuat call service: ' + (err.message || 'Error'))
+  } finally {
+    isSubmitting.value = false
+  }
 }
 </script>
 

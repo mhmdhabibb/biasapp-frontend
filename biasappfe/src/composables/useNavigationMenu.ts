@@ -174,11 +174,6 @@ export const allMenuGroups: MenuGroup[] = [
     title: "sidebar.master_data",
     items: [
       {
-        label: "sidebar.products",
-        icon: "box",
-        route: "/master/products",
-      },
-      {
         label: "sidebar.product_categories",
         icon: "folder",
         route: "/master/product-categories",

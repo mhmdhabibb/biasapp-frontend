@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // @ts-nocheck
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
@@ -14,6 +14,7 @@ import { useToast } from '@/composables/useToast'
 import type { TableColumn, MonthlyMeterReading } from '@/types'
 
 const toast = useToast()
+const router = useRouter()
 const { can } = usePermission()
 const master = useMasterStore()
 const resources = useResourcesStore()
@@ -29,14 +30,21 @@ const {
   contractItems,
   serviceReports,
   units,
+  customers,
   findServiceReport,
   findContractItem,
   findUnit,
+  findCustomer,
+  findBrand,
+  findUnitType,
+  formatUnitDisplayName,
 } = master
 
 const columns: TableColumn[] = [
   { key: 'period', label: 'Period' },
-  { key: 'contract_item_id', label: 'Contract' },
+  { key: 'customer', label: 'Customer' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'contract_no', label: 'Contract' },
   { key: 'service_report_id', label: 'Service Report' },
   { key: 'sizes', label: 'Ukuran' },
   { key: 'total_usage', label: 'Total Usage' },
@@ -69,10 +77,15 @@ const form = reactive({
 const defaultForm = { ...form }
 
 const contractOptions = computed(() =>
-  (contractItems.value as any[]).map((ci: any) => ({
-    value: ci.id,
-    label: (ci as any).contract_no,
-  })),
+  (contractItems.value as any[]).map((ci: any) => {
+    const u = findUnit(ci.unit_id)
+    const unitName = u ? ` - ${formatUnitDisplayName(u, { findBrand, findUnitType })}` : ''
+    const no = (ci as any).contract?.contract_no || (ci as any).contract_no || (ci as any).id
+    return {
+      value: ci.id,
+      label: `${no}${unitName}`,
+    }
+  }),
 )
 const serviceReportOptions = computed(() =>
   (serviceReports.value as any[]).map((sr: any) => ({
@@ -83,7 +96,7 @@ const serviceReportOptions = computed(() =>
 const unitOptions = computed(() =>
   ((units.value as any) as any[]).map((u: any) => ({
     value: u.id,
-    label: `${u.model}${u.serial_no ? ` (${u.serial_no})` : ''}`,
+    label: `${formatUnitDisplayName(u, { findBrand, findUnitType })}${u.serial_no ? ` (${u.serial_no})` : ''}`,
   })),
 )
 const paperSizeOptions = computed(() =>
@@ -95,6 +108,53 @@ const paperSizeOptions = computed(() =>
 const colorModeOptions = [
   { value: 'bw', label: 'B/W' },
   { value: 'color', label: 'Colour' },
+]
+
+// Extract Month (1-12) & Year (YYYY) reliably from any date string
+function extractMonthAndYear(dateStr: any): { month: number; year: number } | null {
+  if (!dateStr) return null
+  const str = String(dateStr).trim()
+  const isoMatch = str.match(/^(\d{4})-(\d{1,2})/)
+  if (isoMatch) {
+    return {
+      year: parseInt(isoMatch[1], 10),
+      month: parseInt(isoMatch[2], 10),
+    }
+  }
+  const d = new Date(str)
+  if (!isNaN(d.getTime())) {
+    return {
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+    }
+  }
+  return null
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+]
+
+// Filter states
+const filterMonth = ref<string | null>(null)
+const filterYear = ref<string | null>(null)
+const filterCustomer = ref<string | null>(null)
+
+const monthFilterOptions = [
+  { value: '', label: '-- All Months --' },
+  { value: '1', label: 'January' },
+  { value: '2', label: 'February' },
+  { value: '3', label: 'March' },
+  { value: '4', label: 'April' },
+  { value: '5', label: 'May' },
+  { value: '6', label: 'June' },
+  { value: '7', label: 'July' },
+  { value: '8', label: 'August' },
+  { value: '9', label: 'September' },
+  { value: '10', label: 'October' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'December' },
 ]
 
 // ---- Pengelompokan: readings dengan service report yang sama digabung
@@ -118,14 +178,41 @@ const grouped = computed(() => {
       String(a.reading_date || a.created_at || '') >= String(b.reading_date || b.created_at || '') ? a : b,
     )
     const periodDate = latest.reading_date || latest.created_at
+
+    const sr = (findServiceReport(first.service_report_id) || first.service_report) as any
+    const ci = (findContractItem(first.contract_item_id) || first.contract_item) as any
+    const unitId = first.unit_id || sr?.unit_id || ci?.unit_id
+    const u = (findUnit(unitId) || first.unit || sr?.unit || ci?.unit) as any
+
+    const custId = sr?.customer_id || ci?.contract?.customer_id || ci?.customer_id
+    const cust = (findCustomer(custId) || sr?.customer || ci?.contract?.customer) as any
+
+    const customerNameStr = cust ? (cust.company_name || cust.name || '-') : '-'
+    const unitDisplayName = u ? formatUnitDisplayName(u, { findBrand, findUnitType }) : '-'
+    const unitNameStr = u ? `${unitDisplayName}${u.serial_no ? ` (${u.serial_no})` : ''}` : '-'
+    const contractNoStr = ci?.contract?.contract_no || ci?.contract_no || sr?.project_name || '-'
+
+    const parsedPeriod = extractMonthAndYear(periodDate)
+    const monthNum = parsedPeriod?.month || 0
+    const yearNum = parsedPeriod?.year || 0
+    const periodDisplay = (monthNum >= 1 && monthNum <= 12 && yearNum > 0)
+      ? `${MONTH_NAMES[monthNum - 1]} ${yearNum}`
+      : (periodDate ? new Date(periodDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : '-')
+
     return {
       id: groupKey(first),
-      period: periodDate
-        ? new Date(periodDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-        : '-',
+      period: periodDisplay,
       periodSort: String(latest.reading_date || latest.created_at || ''),
+      periodMonth: monthNum,
+      periodYear: yearNum,
+      customer: customerNameStr,
+      unit: unitNameStr,
+      contract_no: contractNoStr,
       contract_item_id: first.contract_item_id,
       service_report_id: first.service_report_id || null,
+      unit_id: unitId,
+      customer_id: custId,
+      placement_location: ci?.placement_location || '',
       sizes: readings.length,
       total_usage: readings.reduce(
         (sum: number, x: any) => sum + (Number(x.total_usage) || 0),
@@ -136,6 +223,60 @@ const grouped = computed(() => {
   })
   rows.sort((a, b) => String(b.periodSort).localeCompare(String(a.periodSort)))
   return rows
+})
+
+const yearFilterOptions = computed(() => {
+  const yearsSet = new Set<number>()
+  const currentYear = new Date().getFullYear()
+  yearsSet.add(currentYear)
+
+  for (const row of grouped.value) {
+    if (row.periodYear && row.periodYear > 1900) {
+      yearsSet.add(row.periodYear)
+    }
+  }
+
+  const sortedYears = Array.from(yearsSet).sort((a, b) => b - a)
+  return [
+    { value: '', label: '-- All Years --' },
+    ...sortedYears.map((y) => ({ value: String(y), label: String(y) })),
+  ]
+})
+
+const customerFilterOptions = computed(() => {
+  const custs = (customers.value || []) as any[]
+  const options = custs.map((c: any) => ({
+    value: String(c.id),
+    label: c.company_name || c.name || `Customer #${c.id}`,
+  }))
+  options.sort((a, b) => a.label.localeCompare(b.label))
+  return [
+    { value: '', label: '-- All Customers --' },
+    ...options,
+  ]
+})
+
+const hasActiveFilter = computed(() => !!filterMonth.value || !!filterYear.value || !!filterCustomer.value)
+
+function clearFilters() {
+  filterMonth.value = null
+  filterYear.value = null
+  filterCustomer.value = null
+}
+
+const filteredGrouped = computed(() => {
+  return grouped.value.filter((row: any) => {
+    if (filterMonth.value && String(row.periodMonth) !== String(filterMonth.value)) {
+      return false
+    }
+    if (filterYear.value && String(row.periodYear) !== String(filterYear.value)) {
+      return false
+    }
+    if (filterCustomer.value && String(row.customer_id) !== String(filterCustomer.value)) {
+      return false
+    }
+    return true
+  })
 })
 
 // ---- Detail per grup (live dari store agar ikut ter-refresh) ----
@@ -262,7 +403,7 @@ async function handleDelete() {
 
 function contractNo(id: string | number | null): string {
   const ci = findContractItem(id as any) as any
-  return ci ? ci.contract_no || '-' : '-'
+  return ci ? (ci.contract?.contract_no || ci.contract_no || '-') : '-'
 }
 
 function srNo(id: string | number | null): string {
@@ -274,7 +415,8 @@ function srNo(id: string | number | null): string {
 function unitName(id: string | number | null): string {
   const u = findUnit(id as any) as any
   if (!u) return '-'
-  return `${u.model || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}`
+  const displayName = formatUnitDisplayName(u, { findBrand, findUnitType })
+  return `${displayName}${u.serial_no ? ` (${u.serial_no})` : ''}`
 }
 
 function sizeName(id: string | number | null, fallback?: any): string {
@@ -291,14 +433,111 @@ function modeLabel(mode: string | null): string {
 function recordedBy(row: any): string {
   return row?.user?.name || row?.user?.username || '-'
 }
+
+function viewServiceReport(id: string | null) {
+  if (!id) return
+  router.push(`/shared/service-reports/${id}`)
+}
+
+function viewContract() {
+  router.push('/customer-service/contract-items')
+}
 </script>
 
 <template>
   <div>
     <PageHeader title="Monthly Meter Readings" permission="monthly_meter_reading:create"  />
-    <DataTable :columns="columns" :data="grouped" search-placeholder="Search meter readings...">
-      <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
-      <template #cell-service_report_id="{ value }">{{ srNo(value as any) }}</template>
+
+    <!-- Filter Bar: Month, Year, and Customer -->
+    <div class="filter-bar-card">
+      <div class="filter-group">
+        <label class="filter-label">Filter Month:</label>
+        <div style="min-width: 170px;">
+          <CustomSelect
+            v-model="filterMonth"
+            :options="monthFilterOptions"
+            placeholder="-- All Months --"
+          />
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">Filter Year:</label>
+        <div style="min-width: 140px;">
+          <CustomSelect
+            v-model="filterYear"
+            :options="yearFilterOptions"
+            placeholder="-- All Years --"
+          />
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">Filter Customer:</label>
+        <div style="min-width: 220px;">
+          <CustomSelect
+            v-model="filterCustomer"
+            :options="customerFilterOptions"
+            placeholder="-- All Customers --"
+          />
+        </div>
+      </div>
+
+      <div v-if="hasActiveFilter" style="display: flex; align-items: flex-end;">
+        <button
+          type="button"
+          class="btn btn-outline reset-filter-btn"
+          title="Reset semua filter"
+          @click="clearFilters"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+          Reset Filter
+        </button>
+      </div>
+    </div>
+
+    <DataTable :columns="columns" :data="filteredGrouped" search-placeholder="Search meter readings...">
+      <template #cell-customer="{ row }">
+        <span style="font-weight: 500;">{{ row.customer }}</span>
+      </template>
+      <template #cell-unit="{ row }">
+        <div style="font-weight: 500;">{{ row.unit }}</div>
+        <small v-if="row.placement_location" style="color: var(--color-text-muted); font-size: 11px; display: block;">
+          Lokasi: {{ row.placement_location }}
+        </small>
+      </template>
+      <template #cell-contract_no="{ row }">
+        <button
+          v-if="row.contract_no && row.contract_no !== '-'"
+          type="button"
+          class="ref-link-btn"
+          title="Buka Contract Items"
+          @click.stop="viewContract"
+        >
+          {{ row.contract_no }}
+        </button>
+        <span v-else style="color: var(--color-text-muted);">-</span>
+      </template>
+      <template #cell-service_report_id="{ row }">
+        <button
+          v-if="row.service_report_id"
+          type="button"
+          class="ref-link-btn"
+          title="Buka Service Report"
+          @click.stop="viewServiceReport(row.service_report_id)"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; flex-shrink: 0;">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+          {{ srNo(row.service_report_id) }}
+        </button>
+        <span v-else style="color: var(--color-text-muted);">Tanpa Service Report</span>
+      </template>
       <template #cell-sizes="{ value }">{{ value }} ukuran</template>
       <template #actions="{ row }">
         <button class="action-btn action-btn--edit" title="Detail" @click="openDetail(row)" style="width: 36px; height: 36px;">
@@ -316,12 +555,49 @@ function recordedBy(row: any): string {
       <template v-if="detailRow">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
           <div class="form-group">
+            <label class="form-label">Customer</label>
+            <div style="font-weight: 600;">{{ detailRow.customer }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Unit / Mesin</label>
+            <div style="font-weight: 600;">{{ detailRow.unit }}</div>
+            <div v-if="detailRow.placement_location" style="font-size: 12px; color: var(--color-text-muted);">
+              Lokasi: {{ detailRow.placement_location }}
+            </div>
+          </div>
+          <div class="form-group">
             <label class="form-label">Periode</label>
             <div>{{ detailRow.period }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Contract</label>
-            <div>{{ contractNo(detailRow.contract_item_id) }}</div>
+            <div>
+              <button
+                v-if="detailRow.contract_no && detailRow.contract_no !== '-'"
+                type="button"
+                class="ref-link-btn"
+                title="Buka Contract Items"
+                @click="viewContract"
+              >
+                {{ detailRow.contract_no }} &rarr;
+              </button>
+              <span v-else>-</span>
+            </div>
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label class="form-label">Service Report Visit</label>
+            <div>
+              <button
+                v-if="detailRow.service_report_id"
+                type="button"
+                class="ref-link-btn"
+                title="Buka Service Report"
+                @click="viewServiceReport(detailRow.service_report_id)"
+              >
+                {{ srNo(detailRow.service_report_id) }} (Klik untuk buka laporan visit) &rarr;
+              </button>
+              <span v-else style="color: var(--color-text-muted);">Tanpa Service Report</span>
+            </div>
           </div>
         </div>
         <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;">
@@ -487,5 +763,63 @@ function recordedBy(row: any): string {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-base);
+}
+
+/* Filter Bar Card */
+.filter-bar-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text, #334155);
+}
+
+.reset-filter-btn {
+  font-size: 12px;
+  padding: 7px 12px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ref-link-btn {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-primary, #0ea5e9);
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-align: left;
+  transition: opacity 0.2s;
+}
+
+.ref-link-btn:hover {
+  opacity: 0.8;
 }
 </style>

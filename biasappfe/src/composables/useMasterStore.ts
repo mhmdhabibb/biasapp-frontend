@@ -91,7 +91,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/contract-items": ["contractItems", "customers", "units", "brands", "unitTypes"],
   "/customer-service/job-orders": ["jobOrders", "deliveryOrders", "serviceReports", "serviceRequests", "technicians", "units", "customers"],
   "/customer-service/service-requests": ["serviceRequests", "customers", "units", "sales", "deliveryOrders", "jobOrders", "serviceReports", "contractItems", "rents", "products"],
-  "/customer-service/monthly-meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers"],
+  "/customer-service/monthly-meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "serviceReports", "brands", "unitTypes"],
   "/customer-service/payments": ["payments", "rentalInvoices", "salesInvoices", "customers"],
   "/customer-service/warranty-claims": ["warrantyClaims", "units", "customers", "warranties"],
   "/customer-service/sparepart-request": ["sparepartRequests", "serviceReports", "units", "customers", "products"],
@@ -99,7 +99,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/indent": ["indents", "products", "suppliers"],
   "/customer-service/delivery": ["deliveryOrders", "purchaseOrders", "customers"],
   "/customer-service/call-service": ["serviceRequests", "jobOrders", "technicians", "customers", "units"],
-  "/customer-service/monitoring-service": ["serviceRequests", "jobOrders", "serviceReports", "technicians", "customers", "units", "products"],
+  "/customer-service/monitoring-service": ["serviceRequests", "jobOrders", "serviceReports", "deliveryOrders", "technicians", "customers", "units", "products"],
   "/customer-service/copier-reports": ["serviceReports", "contractItems", "units", "customers", "monthlyMeterReadings"],
   "/customer-service/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units", "customers"],
 
@@ -449,15 +449,89 @@ export function useMasterStore() {
     return refreshInBackground();
   }
 
+  // Fast Index Caches for O(1) lookups across all pages
+  const customerIndex = new Map<string, Customer>();
+  let lastCustArr: any = null;
+  function getCustomerIndex() {
+    if (store.customers !== lastCustArr) {
+      customerIndex.clear();
+      for (const c of (store.customers || [])) {
+        if (c?.id != null) customerIndex.set(String(c.id).trim().toLowerCase(), c);
+      }
+      lastCustArr = store.customers;
+    }
+    return customerIndex;
+  }
+
+  const techIndex = new Map<string, Technician>();
+  let lastTechArr: any = null;
+  function getTechIndex() {
+    if (store.technicians !== lastTechArr) {
+      techIndex.clear();
+      for (const t of (store.technicians || [])) {
+        if (t?.id != null) techIndex.set(String(t.id).trim().toLowerCase(), t);
+        if ((t as any)?.user_id != null) techIndex.set(String((t as any).user_id).trim().toLowerCase(), t);
+      }
+      lastTechArr = store.technicians;
+    }
+    return techIndex;
+  }
+
+  const unitIndex = new Map<string, Unit>();
+  let lastUnitArr: any = null;
+  function getUnitIndex() {
+    if (store.units !== lastUnitArr) {
+      unitIndex.clear();
+      for (const u of (store.units || [])) {
+        if (u?.id != null) unitIndex.set(String(u.id).trim().toLowerCase(), u);
+      }
+      lastUnitArr = store.units;
+    }
+    return unitIndex;
+  }
+
+  const productIndex = new Map<string, Product>();
+  let lastProductArr: any = null;
+  function getProductIndex() {
+    if (store.products !== lastProductArr) {
+      productIndex.clear();
+      for (const p of (store.products || [])) {
+        if (p?.id != null) productIndex.set(String(p.id).trim().toLowerCase(), p);
+      }
+      lastProductArr = store.products;
+    }
+    return productIndex;
+  }
+
+  const contractItemIndex = new Map<string, ContractItem>();
+  let lastCIArr: any = null;
+  function getContractItemIndex() {
+    if (store.contractItems !== lastCIArr) {
+      contractItemIndex.clear();
+      for (const ci of (store.contractItems || [])) {
+        if (ci?.id != null) contractItemIndex.set(String(ci.id).trim().toLowerCase(), ci);
+      }
+      lastCIArr = store.contractItems;
+    }
+    return contractItemIndex;
+  }
+
   function findCustomer(id: number | string | null): Customer | undefined {
     if (id == null) return undefined;
     const str = String(id).trim().toLowerCase();
+    const hit = getCustomerIndex().get(str);
+    if (hit) return hit;
     return (store.customers || []).find((c) => String(c.id).trim().toLowerCase() === str);
   }
 
   function findTechnician(id: number | string | null): Technician | undefined {
     if (id == null) return undefined;
     const str = String(id).trim().toLowerCase();
+    const hit: any = getTechIndex().get(str);
+    if (hit) {
+      if (!hit.name && hit.user?.name) hit.name = hit.user.name;
+      return hit;
+    }
     const found: any = (store.technicians || []).find(
       (t: any) =>
         String(t.id).trim().toLowerCase() === str ||
@@ -472,6 +546,8 @@ export function useMasterStore() {
   function findUnit(id: number | string | null): Unit | undefined {
     if (id == null) return undefined;
     const str = String(id).trim().toLowerCase();
+    const hit = getUnitIndex().get(str);
+    if (hit) return hit;
     return (store.units || []).find((u) => String(u.id).trim().toLowerCase() === str);
   }
 
@@ -496,6 +572,8 @@ export function useMasterStore() {
   function findProduct(id: number | string | null): Product | undefined {
     if (id == null) return undefined;
     const str = String(id).trim().toLowerCase();
+    const hit = getProductIndex().get(str);
+    if (hit) return hit;
     return (store.products || []).find((p) => String(p.id).trim().toLowerCase() === str);
   }
 
@@ -510,6 +588,8 @@ export function useMasterStore() {
   ): ContractItem | undefined {
     if (id == null) return undefined;
     const str = String(id).trim().toLowerCase();
+    const hit = getContractItemIndex().get(str);
+    if (hit) return hit;
     return (store.contractItems || []).find((ci) => String(ci.id).trim().toLowerCase() === str);
   }
 
