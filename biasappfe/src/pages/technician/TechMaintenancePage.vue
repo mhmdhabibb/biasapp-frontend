@@ -73,8 +73,10 @@ const isFormCompleted = computed(() =>
   !!form.value.technician_signature,
 )
 
-const fileInputBefore = ref<HTMLInputElement | null>(null)
-const fileInputAfter = ref<HTMLInputElement | null>(null)
+const fileInputBeforeCamera = ref<HTMLInputElement | null>(null)
+const fileInputBeforeFile = ref<HTMLInputElement | null>(null)
+const fileInputAfterCamera = ref<HTMLInputElement | null>(null)
+const fileInputAfterFile = ref<HTMLInputElement | null>(null)
 const isSaving = ref(false)
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -110,25 +112,58 @@ function fmtDateTime(iso: string) {
 }
 
 // ── Photo handling ────────────────────────────────────────────────────────
-function triggerPhoto(type: 'before' | 'after') {
-  if (type === 'before') fileInputBefore.value?.click()
-  else fileInputAfter.value?.click()
+function triggerPhoto(type: 'before' | 'after', source: 'camera' | 'file' = 'file') {
+  if (type === 'before') {
+    if (source === 'camera') fileInputBeforeCamera.value?.click()
+    else fileInputBeforeFile.value?.click()
+  } else {
+    if (source === 'camera') fileInputAfterCamera.value?.click()
+    else fileInputAfterFile.value?.click()
+  }
 }
 
 function handlePhoto(event: Event, type: 'before' | 'after') {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
   const reader = new FileReader()
   reader.onload = (e) => {
-    if (type === 'before') form.value.photo_before = e.target?.result as string
-    else form.value.photo_after = e.target?.result as string
+    const img = new Image()
+    img.onload = () => {
+      let width = img.width
+      let height = img.height
+      const max = 1024
+      if (width > height && width > max) {
+        height = Math.round(height * (max / width))
+        width = max
+      } else if (height > max) {
+        width = Math.round(width * (max / height))
+        height = max
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d')?.drawImage(img, 0, 0, width, height)
+      const compressed = canvas.toDataURL('image/jpeg', 0.6)
+      if (type === 'before') form.value.photo_before = compressed
+      else form.value.photo_after = compressed
+    }
+    img.src = e.target?.result as string
   }
   reader.readAsDataURL(file)
+  input.value = ''
 }
 
 function removePhoto(type: 'before' | 'after') {
-  if (type === 'before') { form.value.photo_before = ''; if (fileInputBefore.value) fileInputBefore.value.value = '' }
-  else { form.value.photo_after = ''; if (fileInputAfter.value) fileInputAfter.value.value = '' }
+  if (type === 'before') {
+    form.value.photo_before = ''
+    if (fileInputBeforeCamera.value) fileInputBeforeCamera.value.value = ''
+    if (fileInputBeforeFile.value) fileInputBeforeFile.value.value = ''
+  } else {
+    form.value.photo_after = ''
+    if (fileInputAfterCamera.value) fileInputAfterCamera.value.value = ''
+    if (fileInputAfterFile.value) fileInputAfterFile.value.value = ''
+  }
 }
 
 // ── Open / Start Job ──────────────────────────────────────────────────────
@@ -383,41 +418,51 @@ async function completeJob() {
               <!-- Before -->
               <div class="mf-photo-card">
                 <div class="mf-photo-badge mf-photo-badge--before">Before</div>
-                <div class="mf-photo-frame" @click="form.photo_before ? photoZoom = form.photo_before : triggerPhoto('before')">
+                <div class="mf-photo-frame" @click="form.photo_before ? photoZoom = form.photo_before : triggerPhoto('before', 'file')">
                   <img v-if="form.photo_before" :src="form.photo_before" alt="Before" class="mf-photo-img" />
                   <div v-else class="mf-photo-empty">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                    <span>Tap to upload</span>
+                    <span>Tap untuk foto / pilih file</span>
                   </div>
                 </div>
                 <div class="mf-photo-actions">
-                  <button class="mf-photo-btn" @click="triggerPhoto('before')">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    {{ form.photo_before ? 'Change' : 'Upload' }}
+                  <button type="button" class="mf-photo-btn" @click="triggerPhoto('before', 'camera')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    Kamera
                   </button>
-                  <button v-if="form.photo_before" class="mf-photo-btn mf-photo-btn--remove" @click="removePhoto('before')">Remove</button>
+                  <button type="button" class="mf-photo-btn" @click="triggerPhoto('before', 'file')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                    Pilih File
+                  </button>
+                  <button v-if="form.photo_before" type="button" class="mf-photo-btn mf-photo-btn--remove" @click="removePhoto('before')">Hapus</button>
                 </div>
-                <input ref="fileInputBefore" type="file" accept="image/*" capture="environment" class="mf-file-input" @change="handlePhoto($event, 'before')" />
+                <input ref="fileInputBeforeCamera" type="file" accept="image/*" capture="environment" class="mf-file-input" @change="handlePhoto($event, 'before')" />
+                <input ref="fileInputBeforeFile" type="file" accept="image/*" class="mf-file-input" @change="handlePhoto($event, 'before')" />
               </div>
 
               <!-- After -->
               <div class="mf-photo-card">
                 <div class="mf-photo-badge mf-photo-badge--after">After</div>
-                <div class="mf-photo-frame" @click="form.photo_after ? photoZoom = form.photo_after : triggerPhoto('after')">
+                <div class="mf-photo-frame" @click="form.photo_after ? photoZoom = form.photo_after : triggerPhoto('after', 'file')">
                   <img v-if="form.photo_after" :src="form.photo_after" alt="After" class="mf-photo-img" />
                   <div v-else class="mf-photo-empty">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                    <span>Tap to upload</span>
+                    <span>Tap untuk foto / pilih file</span>
                   </div>
                 </div>
                 <div class="mf-photo-actions">
-                  <button class="mf-photo-btn" @click="triggerPhoto('after')">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    {{ form.photo_after ? 'Change' : 'Upload' }}
+                  <button type="button" class="mf-photo-btn" @click="triggerPhoto('after', 'camera')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    Kamera
                   </button>
-                  <button v-if="form.photo_after" class="mf-photo-btn mf-photo-btn--remove" @click="removePhoto('after')">Remove</button>
+                  <button type="button" class="mf-photo-btn" @click="triggerPhoto('after', 'file')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                    Pilih File
+                  </button>
+                  <button v-if="form.photo_after" type="button" class="mf-photo-btn mf-photo-btn--remove" @click="removePhoto('after')">Hapus</button>
                 </div>
-                <input ref="fileInputAfter" type="file" accept="image/*" capture="environment" class="mf-file-input" @change="handlePhoto($event, 'after')" />
+                <input ref="fileInputAfterCamera" type="file" accept="image/*" capture="environment" class="mf-file-input" @change="handlePhoto($event, 'after')" />
+                <input ref="fileInputAfterFile" type="file" accept="image/*" class="mf-file-input" @change="handlePhoto($event, 'after')" />
               </div>
             </div>
 
@@ -687,7 +732,7 @@ async function completeJob() {
   color: var(--color-text-muted); padding: 20px; text-align: center;
 }
 .mf-photo-empty span { font-size: 11px; }
-.mf-photo-actions { display: flex; gap: 6px; }
+.mf-photo-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .mf-photo-btn {
   flex: 1; font-size: 11px; font-weight: 600;
   padding: 5px 8px; border-radius: 6px; cursor: pointer;

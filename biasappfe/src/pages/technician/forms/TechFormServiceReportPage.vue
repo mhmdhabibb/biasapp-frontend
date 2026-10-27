@@ -163,6 +163,7 @@ function handlePhoto(event: Event, type: 'before' | 'after') {
     }
     reader.readAsDataURL(file)
   }
+  target.value = ''
 }
 
 function clearPhoto(type: 'before' | 'after') {
@@ -326,8 +327,8 @@ async function saveSignatures() {
                 </label>
                 <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; text-align: center; cursor: pointer; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
-                  Upload Galeri
-                  <input type="file" accept="image/*" style="display: none;" @change="e => handlePhoto(e, 'before')" ref="fileInputBefore" />
+                  Pilih File / Galeri
+                  <input type="file" accept="image/*" style="display: none;" @change="e => handlePhoto(e, 'before')" />
                 </label>
               </div>
             </div>
@@ -346,8 +347,8 @@ async function saveSignatures() {
                 </label>
                 <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; text-align: center; cursor: pointer; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
-                  Upload Galeri
-                  <input type="file" accept="image/*" style="display: none;" @change="e => handlePhoto(e, 'after')" ref="fileInputAfter" />
+                  Pilih File / Galeri
+                  <input type="file" accept="image/*" style="display: none;" @change="e => handlePhoto(e, 'after')" />
                 </label>
               </div>
             </div>

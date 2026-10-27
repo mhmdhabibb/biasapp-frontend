@@ -153,6 +153,7 @@ function handlePhotoFile(e: Event, type: 'before' | 'after') {
     img.src = ev.target?.result as string
   }
   reader.readAsDataURL(file)
+  input.value = ''
 }
 
 function clearPhoto(type: 'before' | 'after') {
@@ -624,19 +625,43 @@ onMounted(async () => {
       <div class="responsive-flex mb-md">
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Foto Awal (Sebelum Dikerjakan) <span class="text-danger">*</span></label>
-          <input v-if="isEditable" ref="fileInputBefore" type="file" accept="image/*" capture="environment" class="form-input" @change="handlePhotoFile($event, 'before')" />
           <div v-if="form.photo_before" class="photo-preview">
             <img :src="form.photo_before" alt="Foto Awal" />
-            <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('before')">Hapus</button>
+            <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('before')">Hapus Foto</button>
           </div>
+          <div v-else-if="isEditable" class="flex gap-sm mt-xs">
+            <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+              Ambil Foto
+              <input type="file" accept="image/*" capture="environment" style="display: none;" @change="handlePhotoFile($event, 'before')" />
+            </label>
+            <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+              Pilih File
+              <input type="file" accept="image/*" style="display: none;" @change="handlePhotoFile($event, 'before')" />
+            </label>
+          </div>
+          <div v-else class="text-sm text-muted mt-xs">-</div>
         </div>
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Foto Akhir (Sesudah Dikerjakan)</label>
-          <input v-if="isEditable" ref="fileInputAfter" type="file" accept="image/*" capture="environment" class="form-input" @change="handlePhotoFile($event, 'after')" />
           <div v-if="form.photo_after" class="photo-preview">
             <img :src="form.photo_after" alt="Foto Akhir" />
-            <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('after')">Hapus</button>
+            <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('after')">Hapus Foto</button>
           </div>
+          <div v-else-if="isEditable" class="flex gap-sm mt-xs">
+            <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+              Ambil Foto
+              <input type="file" accept="image/*" capture="environment" style="display: none;" @change="handlePhotoFile($event, 'after')" />
+            </label>
+            <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+              Pilih File
+              <input type="file" accept="image/*" style="display: none;" @change="handlePhotoFile($event, 'after')" />
+            </label>
+          </div>
+          <div v-else class="text-sm text-muted mt-xs">-</div>
         </div>
       </div>
       <div class="responsive-flex mb-md">

@@ -272,6 +272,7 @@ function handlePhotoFile(e: Event) {
     img.src = ev.target?.result as string
   }
   reader.readAsDataURL(file)
+  input.value = ''
 }
 
 function clearPhoto() {
@@ -866,7 +867,18 @@ async function handleDeleteStandalone() {
             <div class="photo-upload-wrapper" style="border: 2px dashed var(--color-border); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
               <div v-if="!doForm.photo_after && isEditable">
                 <p class="text-sm text-muted mb-sm">Gunakan kamera atau pilih file gambar</p>
-                <input type="file" accept="image/*" capture="environment" @change="handlePhotoFile" ref="fileInputAfter" class="form-input" style="max-width: 300px; margin: 0 auto;">
+                <div class="flex gap-sm justify-center" style="display: flex; gap: 8px; justify-content: center; max-width: 320px; margin: 0 auto;">
+                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    Ambil Foto
+                    <input type="file" accept="image/*" capture="environment" style="display: none;" @change="handlePhotoFile" />
+                  </label>
+                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                    Pilih File
+                    <input type="file" accept="image/*" style="display: none;" @change="handlePhotoFile" />
+                  </label>
+                </div>
               </div>
               <div v-else-if="doForm.photo_after" style="position: relative; display: inline-block;">
                 <img :src="doForm.photo_after" alt="Foto Sesudah" style="max-height: 200px; border-radius: 8px; object-fit: contain;">
