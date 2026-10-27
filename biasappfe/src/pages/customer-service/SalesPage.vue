@@ -322,7 +322,7 @@ function generateSingleInvoiceHtml(item: any) {
 
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
-  const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
+  const invoiceDate = item.sale_date || item.date || invoice?.created_at || invoice?.due_date
 
   const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
@@ -430,12 +430,7 @@ function generateSingleInvoiceHtml(item: any) {
                 <td class="label">Date :</td>
                 <td>${dateStr}</td>
               </tr>
-              ${item.po_no ? `
-              <tr>
-                <td class="label">PO NO.:</td>
-                <td>${item.po_no}</td>
-              </tr>
-              ` : ''}
+
               <tr>
                 <td colspan="2" class="bg-blue">To:</td>
               </tr>
@@ -555,7 +550,7 @@ function exportMonthToExcel() {
 
     const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
     const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
-    const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
+    const invoiceDate = item.sale_date || item.date || invoice?.created_at || invoice?.due_date
     const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB') : '-'
 
     const subtotal = item.subtotal || item.total_amount || item.total || 0
@@ -1085,7 +1080,7 @@ function generateSingleReceiptHtml(item: any) {
 
   const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
   const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
-  const invoiceDate = invoice?.created_at || invoice?.due_date || item.sale_date || item.date
+  const invoiceDate = item.sale_date || item.date || invoice?.created_at || invoice?.due_date
 
   const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
   const amountStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')

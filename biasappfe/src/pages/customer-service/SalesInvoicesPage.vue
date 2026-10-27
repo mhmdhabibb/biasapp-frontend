@@ -359,7 +359,7 @@ function renderSalesInvoiceBody(item: any): string {
   const signer = signerName(item)
 
   const invoiceNo = item.invoice_no || '-'
-  const invoiceDate = item.invoice_date || item.created_at || item.due_date
+  const invoiceDate = sale?.sale_date || sale?.date || item.invoice_date || item.created_at || item.due_date
 
   const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
 
@@ -444,10 +444,7 @@ function renderSalesInvoiceBody(item: any): string {
                 <td class="label">Date :</td>
                 <td>${dateStr}</td>
               </tr>
-              <tr>
-                <td class="label">PO NO.:</td>
-                <td style="font-weight: 700; color: #003366;">${poNo || '-'}</td>
-              </tr>
+
               <tr>
                 <td colspan="2" class="bg-blue">To:</td>
               </tr>
