@@ -7,6 +7,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { useAuth } from '@/composables/useAuth'
+import { normalizeRole } from '@/router/role-access'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -18,7 +19,13 @@ const { serviceReports, products, findCustomer, findTechnician, refreshInBackgro
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
-const job = computed(() => reportRecord.value || serviceReports.value.find(sr => String(sr.id) === serviceId))
+const job = computed(() => {
+  if (reportRecord.value) return reportRecord.value
+  return (serviceReports.value || []).find((sr: any) =>
+    String(sr.id) === serviceId || String(sr.job_order_id) === serviceId
+  )
+})
+const realServiceReportId = computed(() => reportRecord.value?.id || job.value?.id || serviceId)
 const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
 
 const form = ref({
@@ -46,8 +53,23 @@ const productOptions = computed(() => [
 
 onMounted(async () => {
   try {
-    const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
-    reportRecord.value = response.data
+    await refreshInBackground()
+    let data: any = null
+    try {
+      const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`, true, false)
+      data = (response as any)?.data?.data || (response as any)?.data || response
+    } catch {
+      const fromStore = (serviceReports.value || []).find((sr: any) =>
+        String(sr.job_order_id) === serviceId || String(sr.id) === serviceId
+      )
+      if (fromStore?.id) {
+        const response2 = await api.get<{ data: any }>(`/service-reports/${fromStore.id}`, true, false)
+        data = (response2 as any)?.data?.data || (response2 as any)?.data || response2
+      }
+    }
+    if (data && data.id) {
+      reportRecord.value = data
+    }
     if (!job.value) throw new Error('Service report not found')
     form.value = {
       remarks: job.value.remarks || '',
@@ -74,11 +96,14 @@ onMounted(async () => {
   }
 })
 
-const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
+const isDeliveredOrCompleted = computed(() => {
+  const s = String(job.value?.status || '').toLowerCase()
+  return s === 'delivered' || s === 'completed' || !!job.value?.is_completed
+})
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
-  if (currentUser.value?.role !== 'technician') return false
-  return true
+  const r = normalizeRole(currentUser.value?.role)
+  return r === 'technician' || r === 'admin'
 })
 
 const fileInputBefore = ref<HTMLInputElement | null>(null)
@@ -166,15 +191,15 @@ async function saveSpareparts() {
         await resources.serviceSpareparts.update(sp.id, payload)
       } else {
         await api.post('/service-spareparts/', {
-          service_report_id: serviceId,
+          service_report_id: realServiceReportId.value,
           technician_id: job.value?.technician_id || currentUser.value?.id,
           ...payload,
         })
       }
     }
     removedSparepartIds.value = []
-    const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
-    reportRecord.value = response.data
+    const response = await api.get<{ data: any }>(`/service-reports/${realServiceReportId.value}`, true, false)
+    reportRecord.value = (response as any)?.data?.data || (response as any)?.data || response
     form.value.spareparts = (reportRecord.value?.service_spareparts || []).map((item: any) => ({
       id: String(item.id),
       mode: item.product_id ? 'db' : 'manual',
@@ -201,7 +226,7 @@ async function saveForm() {
   isSaving.value = true
   try {
     if (!(await saveSpareparts())) return
-    await api.patch(`/service-reports/${serviceId}`, {
+    await api.patch(`/service-reports/${realServiceReportId.value}`, {
       remarks: form.value.remarks,
       notes: form.value.notes,
       is_tested: form.value.is_tested,
@@ -228,7 +253,17 @@ async function saveForm() {
     <div class="card p-lg mt-md">
       <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
       <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
-      <div v-else-if="!isEditable" class="text-center p-xl text-muted">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</div>
+      <div v-else-if="!isEditable" class="text-center p-xl text-muted">
+        <p class="mb-md">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</p>
+        <div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn btn-primary" @click="router.push(`/shared/service-reports/${realServiceReportId}`)">
+            View Technical Report
+          </button>
+          <button type="button" class="btn btn-outline" @click="router.back()">
+            Back
+          </button>
+        </div>
+      </div>
       <template v-else>
       <!-- 1. Customer Type -->
       <div class="form-group">

@@ -13,6 +13,7 @@ import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { hasDeliveryHistory } from '@/utils/printDeliveryHistory'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
+import { normalizeRole } from '@/router/role-access'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -93,20 +94,13 @@ const contract = computed(() => {
 })
 
 // ── Delivery jobs (JO dari delivery order) ──
-const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
-const isTechnician = computed(() => {
-  const r = String(currentUser.value?.role || '').trim().toLowerCase()
-  return r === 'technician'
-})
-const isSuperadminOrAdmin = computed(() => {
-  const r = String(currentUser.value?.role || '').trim().toLowerCase()
-  return r === 'superadmin' || r === 'admin'
-})
+const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()) || !!job.value?.is_completed)
+const userRole = computed(() => normalizeRole(currentUser.value?.role))
+const isTechnician = computed(() => userRole.value === 'technician')
+const isSuperadminOrAdmin = computed(() => userRole.value === 'admin')
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
-  const r = String(currentUser.value?.role || '').trim().toLowerCase()
-  if (r !== 'technician' && r !== 'superadmin' && r !== 'admin') return false
-  return true
+  return userRole.value === 'technician' || userRole.value === 'admin'
 })
 const canManageSr = computed(() => isEditable.value && (can('service_report:update') || isTechnician.value || isSuperadminOrAdmin.value))
 const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
@@ -566,8 +560,13 @@ async function acceptJob() {
 
   if (job.value.status === 'in_progress') {
     try {
-      await ensureServiceReport(new Date().toISOString())
+      const report = await ensureServiceReport(new Date().toISOString())
       toast.success('Inspection form is ready to use.')
+      if (isVisitJob.value) {
+        router.push(`/technician/call-services/${report.id}/copier-report`)
+      } else if (!isDeliveryJob.value) {
+        router.push(`/technician/call-services/${report.id}/technical-report`)
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to prepare inspection form')
     } finally {
@@ -599,6 +598,12 @@ async function confirmAcceptJob() {
       fetchFullServiceReport(),
     ])
     void refreshOnly(['jobOrders', 'serviceReports'])
+
+    if (isVisitJob.value) {
+      router.push(`/technician/call-services/${report.id}/copier-report`)
+    } else if (!isDeliveryJob.value) {
+      router.push(`/technician/call-services/${report.id}/technical-report`)
+    }
   } catch (err: any) {
     toast.error(err.message || 'Failed to accept job')
   } finally {
@@ -837,12 +842,12 @@ async function handleDeleteStandalone() {
           <div class="responsive-flex mb-md">
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Time In (Auto)</label>
-              <input v-if="currentUser?.role === 'technician' || isEditable" v-model="doForm.time_in" type="time" class="form-input" readonly disabled>
+              <input v-if="isTechnician || isEditable" v-model="doForm.time_in" type="time" class="form-input" readonly disabled>
               <input v-else :value="formatTimeWithDate(doForm.time_in, job?.created_at)" type="text" class="form-input" readonly disabled />
             </div>
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Time Out (Auto)</label>
-              <input v-if="currentUser?.role === 'technician' || isEditable" v-model="doForm.time_out" type="time" class="form-input" readonly disabled placeholder="Auto at completion">
+              <input v-if="isTechnician || isEditable" v-model="doForm.time_out" type="time" class="form-input" readonly disabled placeholder="Auto at completion">
               <input v-else :value="formatTimeWithDate(doForm.time_out, job?.updated_at)" type="text" class="form-input" readonly disabled />
             </div>
           </div>

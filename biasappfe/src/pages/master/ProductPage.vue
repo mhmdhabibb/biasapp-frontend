@@ -747,14 +747,11 @@ function exportStockPdf() {
           </div>
           <div class="form-group">
             <label class="form-label">Storage Type</label>
-            <CustomSelect
+            <input
               v-model="form.specsData.storage_type"
-              :options="[
-                { value: 'SSD', label: 'SSD' },
-                { value: 'HDD', label: 'HDD' },
-                { value: 'NVMe', label: 'NVMe' },
-              ]"
-              placeholder="Select Type"
+              type="text"
+              class="form-input"
+              placeholder="e.g. SSD, HDD, NVMe"
             />
           </div>
           <div class="form-group">

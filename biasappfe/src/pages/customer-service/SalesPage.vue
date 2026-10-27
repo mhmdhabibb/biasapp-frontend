@@ -1477,7 +1477,7 @@ const combinedItemOptions = computed(() => {
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
-              <CustomSelect v-model="item.specs.storage_type" :options="storageTypeOptions" placeholder="Select" class="form-select" />
+              <input v-model="item.specs.storage_type" type="text" class="form-input" placeholder="E.g. SSD, HDD, NVMe">
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>

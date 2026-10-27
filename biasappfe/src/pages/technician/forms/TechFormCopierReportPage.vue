@@ -7,6 +7,7 @@ import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
 import { api } from '@/services/api'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
+import { normalizeRole } from '@/router/role-access'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -18,7 +19,13 @@ const { serviceReports, contractItems, monthlyMeterReadings, findUnit, findCusto
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
-const job = computed(() => reportRecord.value || serviceReports.value.find((sr: any) => String(sr.id) === serviceId))
+const job = computed(() => {
+  if (reportRecord.value) return reportRecord.value
+  return (serviceReports.value || []).find((sr: any) =>
+    String(sr.id) === serviceId || String(sr.job_order_id) === serviceId
+  )
+})
+const realServiceReportId = computed(() => reportRecord.value?.id || job.value?.id || serviceId)
 const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
 
 const unit = computed(() => {
@@ -85,11 +92,14 @@ const form = ref({
 const isLoading = ref(true)
 const isSaving = ref(false)
 
-const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
+const isDeliveredOrCompleted = computed(() => {
+  const s = String(job.value?.status || '').toLowerCase()
+  return s === 'delivered' || s === 'completed' || !!job.value?.is_completed
+})
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
-  if (currentUser.value?.role !== 'technician') return false
-  return true
+  const r = normalizeRole(currentUser.value?.role)
+  return r === 'technician' || r === 'admin'
 })
 
 const copyQualityOptions = [
@@ -276,8 +286,22 @@ const paperTypes = computed(() => {
 onMounted(async () => {
   try {
     await refreshInBackground()
-    const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
-    reportRecord.value = response.data
+    let data: any = null
+    try {
+      const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`, true, false)
+      data = (response as any)?.data?.data || (response as any)?.data || response
+    } catch {
+      const fromStore = (serviceReports.value || []).find((sr: any) =>
+        String(sr.job_order_id) === serviceId || String(sr.id) === serviceId
+      )
+      if (fromStore?.id) {
+        const response2 = await api.get<{ data: any }>(`/service-reports/${fromStore.id}`, true, false)
+        data = (response2 as any)?.data?.data || (response2 as any)?.data || response2
+      }
+    }
+    if (data && data.id) {
+      reportRecord.value = data
+    }
     if (!job.value) throw new Error('Service report not found')
     const after = Number(job.value.meter_reading_after ?? job.value.reading_counter ?? 0)
     form.value.meter_after = after > 0 ? after : beforeMeter.value
@@ -359,11 +383,11 @@ async function saveForm() {
           start_meter: f.row.before,
           end_meter: f.after,
           reading_date: new Date().toISOString(),
-          service_report_id: serviceId,
+          service_report_id: realServiceReportId.value,
         })
       }
     }
-    await api.patch(`/service-reports/${serviceId}`, {
+    await api.patch(`/service-reports/${realServiceReportId.value}`, {
       meter_reading_before: legacyBefore,
       meter_reading_after: legacyAfter,
       customer_signature_copier: form.value.customer_signature,
@@ -387,7 +411,17 @@ async function saveForm() {
     <div class="card p-lg mt-md">
       <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
       <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
-      <div v-else-if="!isEditable" class="text-center p-xl text-muted">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</div>
+      <div v-else-if="!isEditable" class="text-center p-xl text-muted">
+        <p class="mb-md">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</p>
+        <div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn btn-primary" @click="router.push(`/shared/service-reports/${realServiceReportId}`)">
+            View Copier Reports
+          </button>
+          <button type="button" class="btn btn-outline" @click="router.back()">
+            Back
+          </button>
+        </div>
+      </div>
       <template v-else>
       <template v-if="meterSections.length > 0">
         <div v-for="sec in meterSections" :key="sec.paper_size_id || 'general'" class="size-card">

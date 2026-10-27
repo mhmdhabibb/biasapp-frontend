@@ -10,6 +10,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAuth } from '@/composables/useAuth'
+import { normalizeRole } from '@/router/role-access'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,7 +20,13 @@ const { serviceReports, products, findCustomer, findTechnician, refreshInBackgro
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
-const job = computed(() => reportRecord.value || serviceReports.value.find(sr => String(sr.id) === serviceId))
+const job = computed(() => {
+  if (reportRecord.value) return reportRecord.value
+  return (serviceReports.value || []).find((sr: any) =>
+    String(sr.id) === serviceId || String(sr.job_order_id) === serviceId
+  )
+})
+const realServiceReportId = computed(() => reportRecord.value?.id || job.value?.id || serviceId)
 const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
 
 const form = ref({
@@ -47,8 +54,23 @@ const productOptions = computed(() =>
 
 onMounted(async () => {
   try {
-    const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
-    reportRecord.value = response.data
+    await refreshInBackground()
+    let data: any = null
+    try {
+      const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`, true, false)
+      data = (response as any)?.data?.data || (response as any)?.data || response
+    } catch {
+      const fromStore = (serviceReports.value || []).find((sr: any) =>
+        String(sr.job_order_id) === serviceId || String(sr.id) === serviceId
+      )
+      if (fromStore?.id) {
+        const response2 = await api.get<{ data: any }>(`/service-reports/${fromStore.id}`, true, false)
+        data = (response2 as any)?.data?.data || (response2 as any)?.data || response2
+      }
+    }
+    if (data && data.id) {
+      reportRecord.value = data
+    }
     if (!job.value) throw new Error('Service report not found')
     form.value = {
       repair_action: job.value.repair_action || '',
@@ -73,11 +95,14 @@ onMounted(async () => {
   }
 })
 
-const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()))
+const isDeliveredOrCompleted = computed(() => {
+  const s = String(job.value?.status || '').toLowerCase()
+  return s === 'delivered' || s === 'completed' || !!job.value?.is_completed
+})
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
-  if (currentUser.value?.role !== 'technician') return false
-  return true
+  const r = normalizeRole(currentUser.value?.role)
+  return r === 'technician' || r === 'admin'
 })
 
 function handlePhoto(event: Event, type: 'before' | 'after') {
@@ -135,7 +160,7 @@ async function saveRepairAction() {
   if (isLoading.value || !job.value || isSaving.value) return
   isSaving.value = true
   try {
-    await api.patch(`/service-reports/${serviceId}`, {
+    await api.patch(`/service-reports/${realServiceReportId.value}`, {
       repair_action: form.value.repair_action,
       photo_before: form.value.photo_before,
       photo_after: form.value.photo_after,
@@ -183,14 +208,14 @@ async function saveSparepartsAndContinue() {
         await resources.serviceSpareparts.update(sp.id, payload)
       } else {
         await api.post('/service-spareparts/', {
-          service_report_id: serviceId,
+          service_report_id: realServiceReportId.value,
           technician_id: job.value?.technician_id || currentUser.value?.id,
           ...payload,
         })
       }
     }
-    const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`)
-    reportRecord.value = response.data
+    const response = await api.get<{ data: any }>(`/service-reports/${realServiceReportId.value}`, true, false)
+    reportRecord.value = (response as any)?.data?.data || (response as any)?.data || response
     await refreshInBackground()
     form.value.spareparts = (reportRecord.value?.service_spareparts || []).map((item: any) => ({
       id: String(item.id),
@@ -216,7 +241,7 @@ async function saveSignatures() {
   if (isLoading.value || !job.value || isSaving.value) return
   isSaving.value = true
   try {
-    await api.patch(`/service-reports/${serviceId}`, {
+    await api.patch(`/service-reports/${realServiceReportId.value}`, {
       customer_signature: form.value.customer_signature,
       technician_signature: form.value.technician_signature,
       customer_name: form.value.customer_name,
@@ -238,7 +263,17 @@ async function saveSignatures() {
     <div class="card p-lg mt-md">
       <div v-if="isLoading" class="form-loading" role="status">Loading service report...</div>
       <div v-else-if="!job" class="form-loading" role="alert">Service report not found. No new data created.</div>
-      <div v-else-if="!isEditable" class="text-center p-xl text-muted">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</div>
+      <div v-else-if="!isEditable" class="text-center p-xl text-muted">
+        <p class="mb-md">Form is read-only because it has been completed or you are not authorized to edit it. Please view the digital report instead.</p>
+        <div style="display: flex; justify-content: center; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn btn-primary" @click="router.push(`/shared/service-reports/${realServiceReportId}`)">
+            View Service Report
+          </button>
+          <button type="button" class="btn btn-outline" @click="router.back()">
+            Back
+          </button>
+        </div>
+      </div>
       <div v-else>
         <div class="wizard-steps" aria-label="Service report steps">
           <div v-for="(label, index) in ['Action', 'Sparepart', 'Signature']" :key="label" class="wizard-step" :class="{ active: currentStep === index + 1, complete: currentStep > index + 1 }">
