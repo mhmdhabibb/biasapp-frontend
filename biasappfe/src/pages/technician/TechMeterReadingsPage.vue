@@ -371,9 +371,49 @@ async function submitReading() {
         </table>
       </div>
 
+      <!-- Mobile Cards View -->
+      <div class="mobile-readings-list">
+        <div v-for="reading in paginatedData" :key="reading.id" class="mobile-reading-card">
+          <div class="m-mr-header">
+            <span class="m-mr-title font-bold">{{ getCustomerName(reading.contract_item_id) }}</span>
+            <span class="badge badge-info">
+              {{ reading.created_at ? new Date(reading.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short" }) : "-" }}
+            </span>
+          </div>
+
+          <div class="m-mr-body">
+            <div class="m-row">
+              <span class="m-label">Unit:</span>
+              <span class="m-val">{{ getUnitName(reading.contract_item_id) }} ({{ getSerialNumber(reading.contract_item_id) }})</span>
+            </div>
+            <div class="m-row" v-if="getPaperSizeName(reading) !== '-'">
+              <span class="m-label">Paper Size:</span>
+              <span class="m-val">{{ getPaperSizeName(reading) }}</span>
+            </div>
+            <div class="m-meter-box">
+              <div class="m-meter-item">
+                <span class="m-label">Start:</span>
+                <span class="m-val font-semibold">{{ reading.start_meter }}</span>
+              </div>
+              <div class="m-meter-arrow">→</div>
+              <div class="m-meter-item">
+                <span class="m-label">End:</span>
+                <span class="m-val font-semibold">{{ reading.end_meter }}</span>
+              </div>
+              <div class="m-usage-badge">
+                +{{ reading.total_usage }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-if="data.length === 0" class="text-center py-lg text-muted">
+          No meter reading data yet.
+        </div>
+      </div>
+
       <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
         <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
-          Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, data.length) }} dari {{ data.length }} data
+          Showing {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, data.length) }} of {{ data.length }} entries
         </div>
         <div class="pagination-buttons" style="display: flex; gap: 6px;">
           <button class="btn btn-outline btn-sm" :disabled="currentPage === 1" @click="currentPage--">Prev</button>
@@ -612,5 +652,97 @@ async function submitReading() {
 }
 .mb-md {
   margin-bottom: var(--space-md);
+}
+
+.mobile-readings-list {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .table-responsive {
+    display: none;
+  }
+
+  .mobile-readings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .mobile-reading-card {
+    background: var(--color-surface, #ffffff);
+    border: 1px solid var(--color-border-light, #e2e8f0);
+    border-radius: var(--radius-md, 10px);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+  }
+
+  .m-mr-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .m-mr-title {
+    font-size: 14px;
+    color: var(--color-text, #0f172a);
+  }
+
+  .m-mr-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .m-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .m-label {
+    color: var(--color-text-muted, #64748b);
+  }
+
+  .m-val {
+    text-align: right;
+  }
+
+  .m-meter-box {
+    margin-top: 4px;
+    padding: 10px 12px;
+    background: var(--color-surface-raised, #f8fafc);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+  }
+
+  .m-meter-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .m-meter-arrow {
+    color: var(--color-text-muted, #94a3b8);
+    font-weight: 700;
+  }
+
+  .m-usage-badge {
+    padding: 3px 8px;
+    background: rgba(16, 185, 129, 0.12);
+    color: #059669;
+    font-weight: 700;
+    border-radius: 6px;
+    font-size: 12px;
+  }
 }
 </style>

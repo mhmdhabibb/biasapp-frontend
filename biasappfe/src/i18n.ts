@@ -225,12 +225,16 @@ const messages = {
       system: 'Sistem & Pengguna',
       system_settings: 'Pengaturan Sistem',
       notifications: 'Notifikasi',
-      my_jobs: 'Pekerjaan Saya',
-      call_service: 'Call Service',
+      technician_menu: 'Technician',
+      my_jobs: 'My Jobs',
+      call_service: 'Call Services',
       maintenance: 'Maintenance',
-      service_history: 'Riwayat Servis',
-      technician_menu: 'Teknisi',
-      references: 'Referensi',
+      service_history: 'Service History',
+      standalone_service_history: 'Standalone Service History',
+      sparepart_requests: 'Sparepart Requests',
+      meter_readings: 'Meter Readings',
+      tech_dashboard: 'Tech Dashboard',
+      references: 'References',
     }
   }
 }

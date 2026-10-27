@@ -53,25 +53,8 @@ const productOptions = computed(() =>
 )
 
 onMounted(async () => {
-  try {
-    await refreshInBackground()
-    let data: any = null
-    try {
-      const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`, true, false)
-      data = (response as any)?.data?.data || (response as any)?.data || response
-    } catch {
-      const fromStore = (serviceReports.value || []).find((sr: any) =>
-        String(sr.job_order_id) === serviceId || String(sr.id) === serviceId
-      )
-      if (fromStore?.id) {
-        const response2 = await api.get<{ data: any }>(`/service-reports/${fromStore.id}`, true, false)
-        data = (response2 as any)?.data?.data || (response2 as any)?.data || response2
-      }
-    }
-    if (data && data.id) {
-      reportRecord.value = data
-    }
-    if (!job.value) throw new Error('Service report not found')
+  // If job is already available in memory, initialize form instantly (0ms loading!)
+  if (job.value) {
     form.value = {
       repair_action: job.value.repair_action || '',
       spareparts: (job.value.service_spareparts || []).map((item: any) => ({
@@ -88,8 +71,48 @@ onMounted(async () => {
       photo_before: job.value.photo_before || '',
       photo_after: job.value.photo_after || '',
     }
+    isLoading.value = false
+  }
+
+  try {
+    let data: any = null
+    try {
+      const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`, !job.value, true)
+      data = (response as any)?.data?.data || (response as any)?.data || response
+    } catch {
+      const fromStore = (serviceReports.value || []).find((sr: any) =>
+        String(sr.job_order_id) === serviceId || String(sr.id) === serviceId
+      )
+      if (fromStore?.id) {
+        const response2 = await api.get<{ data: any }>(`/service-reports/${fromStore.id}`, !job.value, true)
+        data = (response2 as any)?.data?.data || (response2 as any)?.data || response2
+      }
+    }
+    if (data && data.id) {
+      reportRecord.value = data
+      form.value = {
+        repair_action: data.repair_action || form.value.repair_action || '',
+        spareparts: (data.service_spareparts || []).map((item: any) => ({
+          id: String(item.id),
+          mode: item.product_id ? 'db' : 'manual',
+          product_id: item.product_id ? String(item.product_id) : '',
+          item_name: item.item_name || (item.product?.name || ''),
+          qty: Number(item.qty) || 1,
+        })),
+        customer_signature: data.customer_signature || form.value.customer_signature || '',
+        technician_signature: data.technician_signature || form.value.technician_signature || '',
+        customer_name: data.customer_name || form.value.customer_name || '',
+        technician_name: data.technician_name || form.value.technician_name || '',
+        photo_before: data.photo_before || form.value.photo_before || '',
+        photo_after: data.photo_after || form.value.photo_after || '',
+      }
+    }
+    if (!job.value) throw new Error('Service report not found')
+    void refreshInBackground()
   } catch (err: any) {
-    toast.error(err.message || 'Failed to load service report')
+    if (!job.value) {
+      toast.error(err.message || 'Failed to load service report')
+    }
   } finally {
     isLoading.value = false
   }

@@ -255,6 +255,12 @@ export const allMenuGroups: MenuGroup[] = [
         route: "/technician/sparepart-request",
         roles: ["technician"],
       },
+      {
+        label: "sidebar.meter_readings",
+        icon: "activity",
+        route: "/technician/meter-readings",
+        roles: ["technician"],
+      },
     ],
   },
 ];

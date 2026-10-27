@@ -254,7 +254,7 @@ async function submitRequest() {
                     style="color: var(--color-danger);"
                     @click="deleteRequest(req)"
                   >
-                    Hapus
+                    Delete
                   </button>
                 </div>
               </td>
@@ -263,9 +263,55 @@ async function submitRequest() {
         </table>
       </div>
 
+      <!-- Mobile Cards View -->
+      <div class="mobile-sparepart-list">
+        <div v-for="req in paginatedRequests" :key="req.id" class="mobile-sparepart-card">
+          <div class="m-sp-header">
+            <span class="m-sp-title font-bold">{{ getSparepartDisplayName(req) }}</span>
+            <span class="badge" :class="req.status === 'completed' || req.status === 'approved' ? 'badge-success' : req.status === 'rejected' ? 'badge-danger' : req.status === 'po_created' ? 'badge-info' : 'badge-warning'">
+              {{ req.status === 'completed' ? 'Completed' : req.status === 'po_created' ? 'PO Created' : req.status || 'pending' }}
+            </span>
+          </div>
+
+          <div class="m-sp-body">
+            <div class="m-row">
+              <span class="m-label">Service No:</span>
+              <span class="m-val">{{ getServiceReportNo(req.service_report_id) }}</span>
+            </div>
+            <div class="m-row">
+              <span class="m-label">Qty:</span>
+              <span class="m-val font-semibold">{{ req.qty }}</span>
+            </div>
+            <div class="m-row">
+              <span class="m-label">Date:</span>
+              <span class="m-val">{{ new Date(req.created_at || '').toLocaleDateString('en-GB') }}</span>
+            </div>
+          </div>
+
+          <div class="m-sp-footer" v-if="req.status === 'pending'">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              style="flex: 1;"
+              @click="openEdit(req)"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline btn-danger"
+              style="flex: 1;"
+              @click="deleteRequest(req)"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
         <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
-          Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, myRequests.length) }} dari {{ myRequests.length }} data
+          Showing {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, myRequests.length) }} of {{ myRequests.length }} entries
         </div>
         <div class="pagination-buttons" style="display: flex; gap: 6px;">
           <button class="btn btn-outline btn-sm" :disabled="currentPage === 1" @click="currentPage--">Prev</button>
@@ -343,4 +389,72 @@ async function submitRequest() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.mobile-sparepart-list {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .table-responsive {
+    display: none;
+  }
+
+  .mobile-sparepart-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .mobile-sparepart-card {
+    background: var(--color-surface, #ffffff);
+    border: 1px solid var(--color-border-light, #e2e8f0);
+    border-radius: var(--radius-md, 10px);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+  }
+
+  .m-sp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .m-sp-title {
+    font-size: 14px;
+    color: var(--color-text, #0f172a);
+  }
+
+  .m-sp-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+  }
+
+  .m-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .m-label {
+    color: var(--color-text-muted, #64748b);
+  }
+
+  .m-val {
+    text-align: right;
+  }
+
+  .m-sp-footer {
+    display: flex;
+    gap: 8px;
+    border-top: 1px dashed var(--color-border-light, #e2e8f0);
+    padding-top: 10px;
+  }
+}
+</style>
 

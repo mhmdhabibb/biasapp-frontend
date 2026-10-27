@@ -17,6 +17,7 @@ const {
   jobOrders,
   serviceReports,
   technicians,
+  sparepartRequests,
   findCustomer,
   findUnit,
   refresh,
@@ -32,6 +33,7 @@ useAutoRefresh(10000, [
   "technicians",
   "customers",
   "units",
+  "sparepartRequests",
 ]);
 
 // Find the technician record that belongs to the current logged-in user
@@ -42,6 +44,22 @@ const myTechnician = computed(() => {
       t.user_id === currentUser.value?.id || t.user_id == currentUser.value?.id,
   );
 });
+
+const activeCallServicesCount = computed(() =>
+  myJobs.value.filter(
+    (j) => j.job_type !== 'maintenance' && j.job_type !== 'meter_reading' && j.status !== 'completed' && j.status !== 'cancelled'
+  ).length
+);
+const activeMaintenanceCount = computed(() =>
+  myJobs.value.filter(
+    (j) => j.job_type === 'maintenance' && j.status !== 'completed' && j.status !== 'cancelled'
+  ).length
+);
+const pendingSparepartCount = computed(() =>
+  (sparepartRequests?.value || []).filter(
+    (s: any) => String(s.technician_id) === String(myTechnician.value?.id) && s.status === 'pending'
+  ).length
+);
 
 const myJobs = computed(() => {
   const techId = myTechnician.value?.id;
@@ -130,6 +148,72 @@ function goToDetail(id: number) {
           Hello, {{ currentUser?.name || "Technician" }}! 👋
         </h1>
         <p class="greeting-subtitle">Here is your job summary for today.</p>
+      </div>
+    </div>
+
+    <!-- Technician Quick Features Launcher Grid (Mobile & Desktop) -->
+    <div class="tech-quick-features">
+      <div class="quick-features-header">
+        <h2 class="quick-features-title">Technician Services</h2>
+        <span class="quick-features-sub">Quick access to all operational features</span>
+      </div>
+      <div class="quick-features-grid">
+        <button class="quick-feature-card" @click="router.push('/technician/call-services')">
+          <div class="qf-icon-box" style="background: rgba(59, 130, 246, 0.12); color: #2563eb;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+          </div>
+          <div class="qf-info">
+            <span class="qf-title">My Jobs</span>
+            <span class="qf-badge" v-if="activeCallServicesCount > 0">{{ activeCallServicesCount }} active</span>
+          </div>
+        </button>
+
+        <button class="quick-feature-card" @click="router.push('/technician/maintenance')">
+          <div class="qf-icon-box" style="background: rgba(16, 185, 129, 0.12); color: #059669;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="m9 16 2 2 4-4"></path></svg>
+          </div>
+          <div class="qf-info">
+            <span class="qf-title">Maintenance</span>
+            <span class="qf-badge" v-if="activeMaintenanceCount > 0">{{ activeMaintenanceCount }} scheduled</span>
+          </div>
+        </button>
+
+        <button class="quick-feature-card" @click="router.push('/technician/sparepart-request')">
+          <div class="qf-icon-box" style="background: rgba(245, 158, 11, 0.12); color: #d97706;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+          </div>
+          <div class="qf-info">
+            <span class="qf-title">Sparepart</span>
+            <span class="qf-badge" v-if="pendingSparepartCount > 0">{{ pendingSparepartCount }} pending</span>
+          </div>
+        </button>
+
+        <button class="quick-feature-card" @click="router.push('/technician/service-history')">
+          <div class="qf-icon-box" style="background: rgba(139, 92, 246, 0.12); color: #7c3aed;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+          </div>
+          <div class="qf-info">
+            <span class="qf-title">Unit History</span>
+          </div>
+        </button>
+
+        <button class="quick-feature-card" @click="router.push('/technician/standalone-service-history')">
+          <div class="qf-icon-box" style="background: rgba(14, 165, 233, 0.12); color: #0284c7;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          </div>
+          <div class="qf-info">
+            <span class="qf-title">Standalone Service</span>
+          </div>
+        </button>
+
+        <button class="quick-feature-card" @click="router.push('/technician/meter-readings')">
+          <div class="qf-icon-box" style="background: rgba(236, 72, 153, 0.12); color: #db2777;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          </div>
+          <div class="qf-info">
+            <span class="qf-title">Meter Readings</span>
+          </div>
+        </button>
       </div>
     </div>
 
@@ -729,5 +813,93 @@ function goToDetail(id: number) {
   margin: 0;
   font-size: 14px;
   color: var(--color-text-muted);
+}
+
+/* Quick Features Launcher Styles */
+.tech-quick-features {
+  margin-bottom: var(--space-lg, 20px);
+}
+
+.quick-features-header {
+  margin-bottom: 12px;
+}
+
+.quick-features-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text, #0f172a);
+  margin: 0 0 2px 0;
+}
+
+.quick-features-sub {
+  font-size: 12px;
+  color: var(--color-text-muted, #64748b);
+}
+
+.quick-features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .quick-features-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+}
+
+.quick-feature-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: 14px;
+  padding: 14px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+  -webkit-tap-highlight-color: transparent;
+}
+
+.quick-feature-card:active {
+  transform: scale(0.96);
+  background: var(--color-surface-raised, #f8fafc);
+}
+
+.qf-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.qf-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.qf-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text, #0f172a);
+  line-height: 1.2;
+}
+
+.qf-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
 }
 </style>

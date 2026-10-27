@@ -402,6 +402,47 @@ function exportToExcel() {
         </table>
       </div>
 
+      <!-- Mobile History Card List View -->
+      <div class="mobile-history-list">
+        <div v-for="job in paginatedHistory" :key="job.id" class="mobile-history-card">
+          <div class="m-history-header">
+            <span class="m-history-date font-bold">{{ formatCompletionDate(job) }}</span>
+            <span class="badge" :class="job.service_type === 'maintenance' ? 'badge-info' : job.service_type === 'meter_reading' ? 'badge-secondary' : 'badge-primary'">
+              {{ getServiceTypeLabel(job.service_type) }}
+            </span>
+          </div>
+
+          <div class="m-history-body">
+            <div class="m-row">
+              <span class="m-label">Customer</span>
+              <span class="m-val font-semibold">{{ getCustomerName(job.customer_id) }}</span>
+            </div>
+            <div class="m-row">
+              <span class="m-label">Unit</span>
+              <span class="m-val">{{ getUnitName(job.unit_id) }}</span>
+            </div>
+            <div class="m-problem-box" v-if="job.machine_problem || job.repair_action">
+              <div v-if="job.machine_problem"><strong>Problem:</strong> {{ job.machine_problem }}</div>
+              <div v-if="job.repair_action" style="margin-top: 2px;"><strong>Action:</strong> {{ job.repair_action }}</div>
+            </div>
+          </div>
+
+          <div class="m-history-footer">
+            <div class="m-photo-links">
+              <a v-if="job.photo_before" :href="job.photo_before" target="_blank" class="btn btn-xs btn-outline">Before</a>
+              <a v-if="job.photo_after" :href="job.photo_after" target="_blank" class="btn btn-xs btn-outline">After</a>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn btn-sm btn-outline" @click="openDetail(job)">Detail</button>
+              <button type="button" class="btn btn-sm btn-primary" @click="openPrintModal(job)">Print</button>
+            </div>
+          </div>
+        </div>
+        <div v-if="filteredHistory.length === 0" class="text-center py-lg text-muted">
+          No service history found.
+        </div>
+      </div>
+
       <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
         <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
           Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, filteredHistory.length) }} dari {{ filteredHistory.length }} data
@@ -432,15 +473,15 @@ function exportToExcel() {
             <div style="font-weight: 600;">{{ getUnitName(selectedHistory.unit_id) }}</div>
           </div>
           <div>
-            <div style="color: var(--color-text-muted); font-size: 11px;">Tanggal Selesai</div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Completion Date</div>
             <div>{{ formatCompletionDate(selectedHistory) }}</div>
           </div>
           <div>
-            <div style="color: var(--color-text-muted); font-size: 11px;">Tipe Service</div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Service Type</div>
             <div>{{ getServiceTypeLabel(selectedHistory.service_type) }}</div>
           </div>
           <div>
-            <div style="color: var(--color-text-muted); font-size: 11px;">Teknisi</div>
+            <div style="color: var(--color-text-muted); font-size: 11px;">Technician</div>
             <div>{{ getTechName(selectedHistory.technician_id) }}</div>
           </div>
           <div>
@@ -450,14 +491,14 @@ function exportToExcel() {
         </div>
 
         <div>
-          <label style="font-weight: 600; display: block; margin-bottom: 4px;">Problem / Masalah Mesin:</label>
+          <label style="font-weight: 600; display: block; margin-bottom: 4px;">Machine Problem / Issue:</label>
           <div style="background: var(--color-surface-sunken, #f1f5f9); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap;">
             {{ selectedHistory.machine_problem || '-' }}
           </div>
         </div>
 
         <div>
-          <label style="font-weight: 600; display: block; margin-bottom: 4px;">Action / Tindakan Perbaikan:</label>
+          <label style="font-weight: 600; display: block; margin-bottom: 4px;">Action / Repair Performed:</label>
           <div style="background: var(--color-surface-sunken, #f1f5f9); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap;">
             {{ selectedHistory.repair_action || '-' }}
           </div>
@@ -465,14 +506,14 @@ function exportToExcel() {
 
         <div v-if="selectedHistory.photo_before || selectedHistory.photo_after" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div>
-            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Foto Awal:</label>
-            <img v-if="selectedHistory.photo_before" :src="selectedHistory.photo_before" alt="Foto Awal" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
-            <span v-else class="text-muted text-xs">Tidak ada foto</span>
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Before Photo:</label>
+            <img v-if="selectedHistory.photo_before" :src="selectedHistory.photo_before" alt="Before Photo" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
+            <span v-else class="text-muted text-xs">No photo</span>
           </div>
           <div>
-            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Foto Akhir:</label>
-            <img v-if="selectedHistory.photo_after" :src="selectedHistory.photo_after" alt="Foto Akhir" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
-            <span v-else class="text-muted text-xs">Tidak ada foto</span>
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">After Photo:</label>
+            <img v-if="selectedHistory.photo_after" :src="selectedHistory.photo_after" alt="After Photo" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
+            <span v-else class="text-muted text-xs">No photo</span>
           </div>
         </div>
       </div>
@@ -486,7 +527,7 @@ function exportToExcel() {
             </svg>
             Print Report
           </button>
-          <button type="button" class="btn btn-outline" style="flex: 1;" @click="showDetailModal = false">Tutup</button>
+          <button type="button" class="btn btn-outline" style="flex: 1;" @click="showDetailModal = false">Close</button>
         </div>
       </template>
     </FormModal>
@@ -690,5 +731,88 @@ function exportToExcel() {
   height: 8px;
   border-radius: 50%;
   background: var(--color-primary, #2563eb);
+}
+
+.mobile-history-list {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .table-responsive {
+    display: none;
+  }
+
+  .mobile-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .mobile-history-card {
+    background: var(--color-surface, #ffffff);
+    border: 1px solid var(--color-border-light, #e2e8f0);
+    border-radius: var(--radius-md, 10px);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+  }
+
+  .m-history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .m-history-date {
+    font-size: 13.5px;
+    color: var(--color-text, #0f172a);
+  }
+
+  .m-history-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+  }
+
+  .m-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .m-label {
+    color: var(--color-text-muted, #64748b);
+  }
+
+  .m-val {
+    text-align: right;
+  }
+
+  .m-problem-box {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: var(--color-surface-raised, #f8fafc);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--color-text, #334155);
+  }
+
+  .m-history-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px dashed var(--color-border-light, #e2e8f0);
+    padding-top: 10px;
+    gap: 8px;
+  }
+
+  .m-photo-links {
+    display: flex;
+    gap: 4px;
+  }
 }
 </style>

@@ -179,6 +179,50 @@ watch([filterStatus, filterDate, filterCustomer, filterServiceNo], () => {
         </table>
       </div>
 
+      <!-- Mobile Card List View -->
+      <div class="mobile-jobs-list">
+        <div
+          v-for="job in paginatedJobs"
+          :key="job.id"
+          class="mobile-job-card"
+          @click="goToDetail(job.id)"
+        >
+          <div class="mobile-job-header">
+            <span class="mobile-job-no">{{ jobRefNo(job) }}</span>
+            <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'pending' || job.status === 'assigned' ? 'warning' : job.status === 'completed' ? 'success' : 'secondary')">
+              {{ job.status.toUpperCase().replace('_', ' ') }}
+            </span>
+          </div>
+
+          <div class="mobile-job-body">
+            <div class="m-row">
+              <span class="m-label">Customer</span>
+              <span class="m-val font-semibold">{{ getCustomerName(jobCustomerId(job)) }}</span>
+            </div>
+            <div class="m-row" v-if="!isDeliveryJob(job)">
+              <span class="m-label">Unit</span>
+              <span class="m-val">{{ getUnitName(jobUnitId(job)) }}</span>
+            </div>
+            <div class="m-row">
+              <span class="m-label">Schedule</span>
+              <span class="m-val">{{ jobDate(job) ? new Date(jobDate(job)).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }) : '-' }}</span>
+            </div>
+          </div>
+
+          <div class="mobile-job-footer">
+            <span class="badge" :class="isDeliveryJob(job) ? 'badge-info' : 'badge-primary'">
+              {{ isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE' }}
+            </span>
+            <button class="btn btn-sm btn-primary" @click.stop="goToDetail(job.id)">
+              Detail & Work →
+            </button>
+          </div>
+        </div>
+        <div v-if="filteredJobs.length === 0" class="text-center py-lg text-muted">
+          No call service found.
+        </div>
+      </div>
+
       <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
         <div class="pagination-info" style="font-size: 13px; color: var(--color-text-muted);">
           Menampilkan {{ (currentPage - 1) * perPage + 1 }}-{{ Math.min(currentPage * perPage, filteredJobs.length) }} dari {{ filteredJobs.length }} data
@@ -199,5 +243,79 @@ watch([filterStatus, filterDate, filterCustomer, filterServiceNo], () => {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--space-md);
   align-items: end;
+}
+
+.mobile-jobs-list {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .table-responsive {
+    display: none;
+  }
+
+  .mobile-jobs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .mobile-job-card {
+    background: var(--color-surface, #ffffff);
+    border: 1px solid var(--color-border-light, #e2e8f0);
+    border-radius: var(--radius-md, 10px);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+    cursor: pointer;
+  }
+
+  .mobile-job-card:active {
+    background: var(--color-surface-raised, #f8fafc);
+  }
+
+  .mobile-job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .mobile-job-no {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--color-text, #0f172a);
+  }
+
+  .mobile-job-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+  }
+
+  .m-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .m-label {
+    color: var(--color-text-muted, #64748b);
+  }
+
+  .m-val {
+    text-align: right;
+  }
+
+  .mobile-job-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px dashed var(--color-border-light, #e2e8f0);
+    padding-top: 10px;
+  }
 }
 </style>

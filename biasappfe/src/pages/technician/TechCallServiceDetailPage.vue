@@ -427,9 +427,11 @@ const isAllFormsCompleted = computed(() => {
 })
 
 onMounted(async () => {
-  await fetchDirectJob()
   initDoForm(true)
-  await fetchFullServiceReport()
+  await Promise.all([
+    fetchDirectJob(),
+    fetchFullServiceReport(),
+  ])
 })
 
 // Re-fetch full data when store updates (e.g., after returning from form pages)

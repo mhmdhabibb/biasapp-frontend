@@ -131,7 +131,7 @@ const pageTitle = computed(() => {
       <TopBar
         :title="pageTitle"
         @toggle-sidebar="sidebarOpen = !sidebarOpen"
-        :hideHamburger="useMobileLayout"
+        :hideHamburger="false"
       />
       <main
         class="admin-content"

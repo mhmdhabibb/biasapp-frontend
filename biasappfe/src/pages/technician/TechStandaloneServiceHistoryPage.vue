@@ -93,7 +93,7 @@ async function removeStandalone(row: any) {
     <PageHeader title="Service History Mandiri" />
 
     <div class="card mb-lg p-lg hint">
-      Form tersendiri <strong>tanpa assign job</strong>. Customer detail sudah diisi CS — teknisi tinggal isi <strong>Product Detail</strong>.
+      Standalone form <strong>without assigned job</strong>. Customer details are filled by CS — technician only fills <strong>Product Detail</strong>.
     </div>
 
     <div class="card">
@@ -102,8 +102,8 @@ async function removeStandalone(row: any) {
           <thead>
             <tr>
               <th>Customer</th>
-              <th>Tanggal</th>
-              <th>Status Produk</th>
+              <th>Date</th>
+              <th>Product Status</th>
               <th></th>
             </tr>
           </thead>
@@ -116,9 +116,9 @@ async function removeStandalone(row: any) {
               <td>{{ row.delivery_date ? new Date(row.delivery_date).toLocaleDateString('en-GB') : '-' }}</td>
               <td>
                 <span class="badge" :class="row.status === 'draft' ? 'badge-secondary' : isFilled(row) ? 'badge-success' : 'badge-warning'">
-                  {{ row.status === 'draft' ? 'DRAFT' : isFilled(row) ? 'SUDAH DIISI' : 'BELUM DIISI' }}
+                  {{ row.status === 'draft' ? 'DRAFT' : isFilled(row) ? 'COMPLETED' : 'PENDING' }}
                 </span>
-                <div class="text-xs text-muted mt-xs">Teknisi: {{ techName(row.technician_id) }}</div>
+                <div class="text-xs text-muted mt-xs">Technician: {{ techName(row.technician_id) }}</div>
               </td>
               <td>
                 <button
@@ -126,7 +126,7 @@ async function removeStandalone(row: any) {
                   class="btn btn-sm btn-primary"
                   @click="router.push(`/technician/standalone-service-history/${row.id}`)"
                 >
-                  {{ row.status === 'draft' ? 'Lanjut Draft' : isFilled(row) ? 'Lihat / Lanjut' : 'Isi Product Detail' }}
+                  {{ row.status === 'draft' ? 'Continue Draft' : isFilled(row) ? 'View / Continue' : 'Fill Product Detail' }}
                 </button>
                 <button
                   v-if="can('delivery_order:delete') && isPending(row)"
@@ -136,15 +136,65 @@ async function removeStandalone(row: any) {
                   :disabled="deletingId === String(row.id)"
                   @click="removeStandalone(row)"
                 >
-                  {{ deletingId === String(row.id) ? 'Menghapus...' : 'Hapus' }}
+                  {{ deletingId === String(row.id) ? 'Deleting...' : 'Delete' }}
                 </button>
               </td>
             </tr>
             <tr v-if="standaloneList.length === 0">
-              <td colspan="5" class="text-center py-lg text-muted">Belum ada form dari CS.</td>
+              <td colspan="5" class="text-center py-lg text-muted">No forms from CS yet.</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Mobile Cards View -->
+      <div class="mobile-standalone-list">
+        <div v-for="row in paginatedList" :key="row.id" class="mobile-standalone-card">
+          <div class="m-sa-header">
+            <span class="m-sa-title font-bold">{{ customerName(row.customer_id) }}</span>
+            <span class="badge" :class="row.status === 'draft' ? 'badge-secondary' : isFilled(row) ? 'badge-success' : 'badge-warning'">
+              {{ row.status === 'draft' ? 'DRAFT' : isFilled(row) ? 'COMPLETED' : 'PENDING' }}
+            </span>
+          </div>
+
+          <div class="m-sa-body">
+            <div class="m-row" v-if="row.delivery_address">
+              <span class="m-label">Address:</span>
+              <span class="m-val">{{ row.delivery_address }}</span>
+            </div>
+            <div class="m-row">
+              <span class="m-label">Date:</span>
+              <span class="m-val">{{ row.delivery_date ? new Date(row.delivery_date).toLocaleDateString('en-GB') : '-' }}</span>
+            </div>
+            <div class="m-row">
+              <span class="m-label">Technician:</span>
+              <span class="m-val">{{ techName(row.technician_id) }}</span>
+            </div>
+          </div>
+
+          <div class="m-sa-footer">
+            <button
+              type="button"
+              class="btn btn-sm btn-primary w-full"
+              @click="router.push(`/technician/standalone-service-history/${row.id}`)"
+            >
+              {{ row.status === 'draft' ? 'Continue Draft →' : isFilled(row) ? 'View / Continue Detail →' : 'Fill Product Detail →' }}
+            </button>
+            <button
+              v-if="can('delivery_order:delete') && isPending(row)"
+              type="button"
+              class="btn btn-sm btn-outline btn-danger"
+              style="margin-top: 6px;"
+              :disabled="deletingId === String(row.id)"
+              @click="removeStandalone(row)"
+            >
+              {{ deletingId === String(row.id) ? 'Deleting...' : 'Delete Form' }}
+            </button>
+          </div>
+        </div>
+        <div v-if="standaloneList.length === 0" class="text-center py-lg text-muted">
+          No forms from CS yet.
+        </div>
       </div>
 
       <div v-if="totalPages > 1" class="pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--color-border-light);">
@@ -172,4 +222,72 @@ async function removeStandalone(row: any) {
 .text-xs { font-size: 12px; }
 .text-muted { color: var(--color-text-muted); }
 .mt-xs { margin-top: 4px; }
+
+.mobile-standalone-list {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .table-responsive {
+    display: none;
+  }
+
+  .mobile-standalone-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .mobile-standalone-card {
+    background: var(--color-surface, #ffffff);
+    border: 1px solid var(--color-border-light, #e2e8f0);
+    border-radius: var(--radius-md, 10px);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04));
+  }
+
+  .m-sa-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .m-sa-title {
+    font-size: 14px;
+    color: var(--color-text, #0f172a);
+  }
+
+  .m-sa-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+  }
+
+  .m-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .m-label {
+    color: var(--color-text-muted, #64748b);
+  }
+
+  .m-val {
+    text-align: right;
+  }
+
+  .m-sa-footer {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px dashed var(--color-border-light, #e2e8f0);
+    padding-top: 10px;
+  }
+}
 </style>

@@ -284,25 +284,8 @@ const paperTypes = computed(() => {
 })
 
 onMounted(async () => {
-  try {
-    await refreshInBackground()
-    let data: any = null
-    try {
-      const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`, true, false)
-      data = (response as any)?.data?.data || (response as any)?.data || response
-    } catch {
-      const fromStore = (serviceReports.value || []).find((sr: any) =>
-        String(sr.job_order_id) === serviceId || String(sr.id) === serviceId
-      )
-      if (fromStore?.id) {
-        const response2 = await api.get<{ data: any }>(`/service-reports/${fromStore.id}`, true, false)
-        data = (response2 as any)?.data?.data || (response2 as any)?.data || response2
-      }
-    }
-    if (data && data.id) {
-      reportRecord.value = data
-    }
-    if (!job.value) throw new Error('Service report not found')
+  // If job is already available in memory, initialize form instantly (0ms loading!)
+  if (job.value) {
     const after = Number(job.value.meter_reading_after ?? job.value.reading_counter ?? 0)
     form.value.meter_after = after > 0 ? after : beforeMeter.value
     form.value.customer_signature = job.value.customer_signature_copier || ''
@@ -310,8 +293,39 @@ onMounted(async () => {
     form.value.customer_name = job.value.customer_name_copier || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || ''
     form.value.technician_name = job.value.technician_name_copier || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || ''
     initSectionAfters()
+    isLoading.value = false
+  }
+
+  try {
+    let data: any = null
+    try {
+      const response = await api.get<{ data: any }>(`/service-reports/${serviceId}`, !job.value, true)
+      data = (response as any)?.data?.data || (response as any)?.data || response
+    } catch {
+      const fromStore = (serviceReports.value || []).find((sr: any) =>
+        String(sr.job_order_id) === serviceId || String(sr.id) === serviceId
+      )
+      if (fromStore?.id) {
+        const response2 = await api.get<{ data: any }>(`/service-reports/${fromStore.id}`, !job.value, true)
+        data = (response2 as any)?.data?.data || (response2 as any)?.data || response2
+      }
+    }
+    if (data && data.id) {
+      reportRecord.value = data
+      const after = Number(data.meter_reading_after ?? data.reading_counter ?? 0)
+      form.value.meter_after = after > 0 ? after : beforeMeter.value
+      form.value.customer_signature = data.customer_signature_copier || ''
+      form.value.technician_signature = data.technician_signature_copier || ''
+      form.value.customer_name = data.customer_name_copier || findCustomer(data.customer_id)?.pic_name || data.customer?.pic_name || ''
+      form.value.technician_name = data.technician_name_copier || findTechnician(data.technician_id)?.name || data.technician?.name || currentUser.value?.name || ''
+      initSectionAfters()
+    }
+    if (!job.value) throw new Error('Service report not found')
+    void refreshInBackground()
   } catch (err: any) {
-    toast.error(err.message || 'Failed to load service report')
+    if (!job.value) {
+      toast.error(err.message || 'Failed to load service report')
+    }
   } finally {
     isLoading.value = false
   }

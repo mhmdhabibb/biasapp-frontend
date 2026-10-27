@@ -186,7 +186,7 @@ watch(
           }}</span>
         </div>
       </div>
-      <button class="btn-logout" title="Ubah Password" @click="openPwdModal">
+      <button class="btn-logout" title="Change Password" @click="openPwdModal">
         <svg
           width="16"
           height="16"
@@ -222,38 +222,38 @@ watch(
 
   <FormModal
     :open="showPwdModal"
-    title="Ubah Password"
+    title="Change Password"
     max-width="420px"
     @close="showPwdModal = false"
     @submit="submitPwdChange"
   >
     <div class="form-group">
-      <label class="form-label">Password Lama</label>
+      <label class="form-label">Current Password</label>
       <input
         v-model="pwdForm.old_password"
         type="password"
         class="form-input"
-        placeholder="Password saat ini"
+        placeholder="Current password"
         autocomplete="current-password"
       />
     </div>
     <div class="form-group">
-      <label class="form-label">Password Baru (min. 6 karakter)</label>
+      <label class="form-label">New Password (min. 6 characters)</label>
       <input
         v-model="pwdForm.new_password"
         type="password"
         class="form-input"
-        placeholder="Password baru"
+        placeholder="New password"
         autocomplete="new-password"
       />
     </div>
     <div class="form-group">
-      <label class="form-label">Konfirmasi Password Baru</label>
+      <label class="form-label">Confirm New Password</label>
       <input
         v-model="pwdForm.confirm_password"
         type="password"
         class="form-input"
-        placeholder="Ulangi password baru"
+        placeholder="Repeat new password"
         autocomplete="new-password"
       />
     </div>

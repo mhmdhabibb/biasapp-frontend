@@ -108,12 +108,13 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/accounting/delivery-orders": ["deliveryOrders", "purchaseOrders", "customers"],
 
   // Technician Operational Pages
+  "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests"],
   "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
   "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units"],
-  "/technician/service-history": ["serviceReports", "technicians", "units"],
-  "/technician/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units"],
+  "/technician/service-history": ["serviceReports", "technicians", "units", "customers"],
+  "/technician/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units", "customers"],
 
   // Master Data Pages
   "/master/users": ["users"],
@@ -344,17 +345,8 @@ export function useMasterStore() {
     if (picked.length === 0) return Promise.resolve();
 
     return (async () => {
-      const concurrency = 6;
-      const queue = picked.slice();
-      const workers: Promise<void>[] = [];
-      async function worker() {
-        while (queue.length) {
-          const task = queue.shift();
-          if (task) await task();
-        }
-      }
-      for (let i = 0; i < Math.min(concurrency, queue.length); i++) workers.push(worker());
-      await Promise.all(workers);
+      // Execute all targeted tasks in parallel for instant network throughput
+      await Promise.all(picked.map((task) => task()));
       if (names) names.forEach((n) => loadedResources.value.add(n));
       if (isFullSync) lastFullSyncAt = Date.now();
     })();
@@ -405,14 +397,13 @@ export function useMasterStore() {
 
   function ensureResourcesLoaded(path: string) {
     const needed = getResourcesForPath(path);
-    const combined = Array.from(new Set([
-      ...(CRITICAL_RESOURCES as unknown as string[]),
-      ...needed,
-    ]));
+    // Only load what this active page actually requires instead of flooding
+    // the network queue with 8-10 unrelated critical master resources.
+    const targetResources = needed.length > 0 ? needed : (CRITICAL_RESOURCES as unknown as string[]);
 
-    const notLoaded = combined.filter((r) => !loadedResources.value.has(r));
+    const notLoaded = targetResources.filter((r) => !loadedResources.value.has(r));
     if (notLoaded.length > 0) {
-      // First visit: load not-yet-cached critical & needed resources
+      // First visit: load not-yet-cached resources for this page directly in parallel
       return runSyncTasks(notLoaded, false);
     }
 
