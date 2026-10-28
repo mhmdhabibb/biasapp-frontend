@@ -1349,7 +1349,7 @@ async function exportToPdf() {
             </svg>
           </button>
           <button
-            v-if="isAdmin && can('rental:delete')"
+            v-if="can('rental:delete')"
             class="action-btn action-btn--delete"
             title="Delete Rental"
             @click.stop="openDeleteRentalModal(row)"

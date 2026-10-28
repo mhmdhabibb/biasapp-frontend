@@ -138,7 +138,7 @@ async function handleDelete() {
       <template #actions="{ row }">
         <button class="action-btn" title="Perpanjang" @click="openRenew(row)">Perpanjang</button>
         <button
-          v-if="isAdmin && can('contract:delete')"
+          v-if="can('contract:delete')"
           class="action-btn action-btn--delete"
           title="Delete Contract"
           @click="openDelete(row)"
