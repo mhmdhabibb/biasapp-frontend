@@ -59,20 +59,48 @@ const route = useRoute();
 
 const hardDelete = useHardDelete(
   (id, cascade) => resources.rentals.hardRemove(id, cascade),
-  fetchRentals,
+  async () => {
+    invalidateCache("units");
+    invalidateCache("rents");
+    invalidateCache("contracts");
+    await fetchRentals();
+    await refreshOnly(["units", "contracts", "products"], true);
+  },
   "rental:delete",
 );
 
-async function handleDeleteRental(row: any) {
-  if (!confirm(`Hapus rental ${row.rental_no || ''}?`)) return;
+const showDeleteRentalModal = ref(false);
+const deletingRental = ref<any>(null);
+const rentalDeleteReason = ref("");
+const rentalConfirmAgree = ref(false);
+const isDeletingRental = ref(false);
+
+function openDeleteRentalModal(row: any) {
+  deletingRental.value = row;
+  rentalDeleteReason.value = "";
+  rentalConfirmAgree.value = false;
+  showDeleteRentalModal.value = true;
+}
+
+async function handleConfirmDeleteRental() {
+  if (!deletingRental.value || !rentalDeleteReason.value.trim() || !rentalConfirmAgree.value) return;
+  isDeletingRental.value = true;
   try {
-    await resources.rentals.remove(row.id);
-    toast.success("Rental berhasil dihapus.");
-    fetchRentals();
+    await resources.rentals.remove(deletingRental.value.id, false, rentalDeleteReason.value.trim());
+    toast.success("Rental berhasil dihapus dan unit telah kembali menjadi available.");
+    showDeleteRentalModal.value = false;
+    invalidateCache("units");
+    invalidateCache("rents");
+    invalidateCache("contracts");
+    await fetchRentals();
+    await refreshOnly(["units", "contracts", "products"], true);
   } catch (err: any) {
     toast.error("Gagal menghapus rental: " + (err?.message || "Error"));
+  } finally {
+    isDeletingRental.value = false;
   }
 }
+
 
 const columns = computed<TableColumn[]>(() => [
   { key: "rental_no", label: t("rentals.no") },
@@ -1307,18 +1335,6 @@ async function exportToPdf() {
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
           <button
-            v-if="can('rental:update')"
-            class="action-btn action-btn--edit"
-            title="Edit"
-            @click.stop="openEdit(row)"
-            style="width: 32px; height: 32px;"
-          >
-            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-            </svg>
-          </button>
-          <button
             v-if="!hasActiveRentalDO(row) && can('rental:update')"
             class="action-btn action-btn--edit"
             title="Buat Surat Jalan (DO)"
@@ -1333,10 +1349,10 @@ async function exportToPdf() {
             </svg>
           </button>
           <button
-            v-if="can('rental:delete')"
+            v-if="isAdmin && can('rental:delete')"
             class="action-btn action-btn--delete"
-            title="Delete"
-            @click.stop="handleDeleteRental(row)"
+            title="Delete Rental"
+            @click.stop="openDeleteRentalModal(row)"
             style="width: 32px; height: 32px;"
           >
             <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1374,6 +1390,88 @@ async function exportToPdf() {
       @confirm="hardDelete.confirm"
       @close="hardDelete.close"
     />
+
+    <!-- Modal Hapus Rental (Standar Keuangan) -->
+    <FormModal
+      :open="showDeleteRentalModal"
+      title="Hapus Rental (Standar Kepatuhan Keuangan)"
+      max-width="580px"
+      @close="showDeleteRentalModal = false"
+    >
+      <div v-if="deletingRental" class="delete-rental-modal">
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+          <div style="font-weight: 600; color: #dc2626; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+            ⚠️ Perhatian Standar Keuangan
+          </div>
+          <div style="font-size: 0.88em; color: var(--color-text-secondary); line-height: 1.5;">
+            Sistem tidak mengizinkan fitur edit data transaksi rental untuk menjaga kepatuhan dan integritas audit keuangan. Menghapus rental ini akan <strong>otomatis menghapus seluruh invoice terkait beserta riwayat pembayaran dan meter details</strong>, melepaskan unit yang disewa kembali ke status <strong>available</strong>, serta membersihkan kontrak otomatis terkait. Nomor kontrak setelahnya akan mengisi nomor kontrak yang dihapus agar selalu berurutan tanpa loncat.
+          </div>
+        </div>
+
+        <div style="background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 0.9em; display: grid; gap: 8px;">
+          <div>
+            <span style="color: var(--color-text-secondary);">No. Rental:</span>
+            <strong style="margin-left: 8px; color: var(--color-primary);">{{ deletingRental.rental_no }}</strong>
+          </div>
+          <div>
+            <span style="color: var(--color-text-secondary);">No. Kontrak:</span>
+            <span style="margin-left: 8px; font-weight: 500;">{{ deletingRental.contract?.contract_no || deletingRental.contract_no || '-' }}</span>
+          </div>
+          <div>
+            <span style="color: var(--color-text-secondary);">Customer:</span>
+            <span style="margin-left: 8px; font-weight: 500;">{{ deletingRental.company || deletingRental.customer?.company_name || '-' }}</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" style="font-weight: 600;">
+            Alasan Penghapusan <span style="color: #dc2626;">*</span>
+          </label>
+          <textarea
+            v-model="rentalDeleteReason"
+            class="form-input"
+            rows="3"
+            placeholder="Wajib diisi, contoh: Salah pemilihan customer / transaksi sewa dibatalkan klien"
+            required
+            style="resize: vertical;"
+          ></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 0.9em; color: var(--color-text);">
+            <input
+              type="checkbox"
+              v-model="rentalConfirmAgree"
+              style="margin-top: 3px;"
+            />
+            <span>
+              Saya menyetujui untuk menghapus data <strong>{{ deletingRental.rental_no }}</strong> dan contract <strong>{{ deletingRental.contract?.contract_no || deletingRental.contract_no || '-' }}</strong> beserta seluruh invoice terkait, dan memahami bahwa persetujuan ini akan otomatis dicatat dalam log audit keuangan.
+            </span>
+          </label>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="showDeleteRentalModal = false"
+            :disabled="isDeletingRental"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            @click="handleConfirmDeleteRental"
+            :disabled="!rentalDeleteReason.trim() || !rentalConfirmAgree || isDeletingRental"
+            style="background: #dc2626; color: white;"
+          >
+            <span v-if="isDeletingRental">Menghapus...</span>
+            <span v-else>Setujui & Hapus Rental</span>
+          </button>
+        </div>
+      </div>
+    </FormModal>
 
     <!-- Modal Detail Rental Items -->
     <FormModal

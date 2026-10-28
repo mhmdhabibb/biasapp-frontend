@@ -1,28 +1,30 @@
 <script setup lang="ts">
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import type { Contract, TableColumn } from '@/types'
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useContractsStore } from '@/stores/contracts.store'
 import { useToast } from '@/composables/useToast'
 import { useHardDelete } from '@/composables/useHardDelete'
+import { usePermission } from '@/composables/usePermission'
 
 const toast = useToast()
+const { can, isAdmin } = usePermission()
 
 const columns: TableColumn[] = [
   { key: 'contract_no', label: 'Contract No' },
+  { key: 'customer_name', label: 'Customer' },
+  { key: 'period', label: 'Period' },
   { key: 'status', label: 'Status' },
   { key: 'terms_notes', label: 'Free Quota Terms' },
 ]
 
 const {
-  contracts: data,
+  contracts: rawData,
   fetchAll,
   create,
-  update,
   remove,
   hardRemove,
   renew,
@@ -38,43 +40,33 @@ const {
   setPageSize,
 } = useContractsStore()
 fetchAll()
-const showModal = ref(false)
-const showConfirm = ref(false)
+
+const data = computed(() => {
+  return (rawData.value || []).map((c: any) => ({
+    ...c,
+    customer_name: c.customer?.company_name || c.customer?.name || '-',
+    period: c.start_date && c.end_date
+      ? `${new Date(c.start_date).toLocaleDateString('id-ID')} - ${new Date(c.end_date).toLocaleDateString('id-ID')}`
+      : '-',
+  }))
+})
+
 const showRenewModal = ref(false)
-const editingItem = ref<Contract | null>(null)
+const showDeleteModal = ref(false)
 const deletingItem = ref<Contract | null>(null)
+const deleteReason = ref('')
+const confirmAgree = ref(false)
+const isDeleting = ref(false)
+
 const renewingItem = ref<Contract | null>(null)
-const form = reactive<any>({})
 const renewForm = reactive({
   end_date: '',
 })
-
-function openAdd() {
-  editingItem.value = null
-  for (let k in form) form[k] = ''
-  showModal.value = true
-}
-
-function openEdit(item: Contract) {
-  editingItem.value = item
-  Object.assign(form, item)
-  showModal.value = true
-}
 
 function openRenew(item: Contract) {
   renewingItem.value = item
   renewForm.end_date = item.end_date ? String(item.end_date).slice(0, 10) : ''
   showRenewModal.value = true
-}
-
-async function handleSubmit() {
-  if (editingItem.value) {
-    await update(String(editingItem.value.id), form)
-  } else {
-    await create(form)
-  }
-  showModal.value = false
-  toast.success(editingItem.value ? 'Contract updated successfully!' : 'Contract saved successfully!')
 }
 
 async function handleRenew() {
@@ -85,13 +77,45 @@ async function handleRenew() {
   toast.success('Contract renewed successfully!')
 }
 
-const hardDelete = useHardDelete(hardRemove, fetchAll)
+import { invalidateCache } from '@/utils/requestCache'
+import { useMasterStore } from '@/composables/useMasterStore'
 
-function openDelete(item: Contract) { deletingItem.value = item; showConfirm.value = true }
+const masterStore = useMasterStore()
+
+const hardDelete = useHardDelete(
+  hardRemove,
+  async () => {
+    invalidateCache('units')
+    invalidateCache('contracts')
+    invalidateCache('rents')
+    await fetchAll()
+    await masterStore.refreshOnly(['units', 'contracts', 'products'], true)
+  }
+)
+
+function openDelete(item: Contract) {
+  deletingItem.value = item
+  deleteReason.value = ''
+  confirmAgree.value = false
+  showDeleteModal.value = true
+}
+
 async function handleDelete() {
-  if (deletingItem.value) await remove(String(deletingItem.value.id))
-  showConfirm.value = false
-  toast.success('Contract deleted successfully!')
+  if (!deletingItem.value || !deleteReason.value.trim() || !confirmAgree.value) return
+  isDeleting.value = true
+  try {
+    await remove(String(deletingItem.value.id), deleteReason.value.trim())
+    showDeleteModal.value = false
+    invalidateCache('units')
+    invalidateCache('contracts')
+    invalidateCache('rents')
+    await masterStore.refreshOnly(['units', 'contracts', 'products'], true)
+    toast.success('Kontrak berhasil dihapus dan unit terkait telah kembali menjadi available.')
+  } catch (err: any) {
+    toast.error('Gagal menghapus kontrak: ' + (err?.message || 'Error'))
+  } finally {
+    isDeleting.value = false
+  }
 }
 </script>
 
@@ -112,9 +136,15 @@ async function handleDelete() {
       @page-change="setPage"
     >
       <template #actions="{ row }">
-        <button class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)">Edit</button>
         <button class="action-btn" title="Perpanjang" @click="openRenew(row)">Perpanjang</button>
-        <button class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)">Delete</button>
+        <button
+          v-if="isAdmin && can('contract:delete')"
+          class="action-btn action-btn--delete"
+          title="Delete Contract"
+          @click="openDelete(row)"
+        >
+          Delete
+        </button>
         <button v-if="hardDelete.isSuperadmin" class="action-btn action-btn--hard" title="Hapus permanen dari database (superadmin)" @click="hardDelete.open(row)">Hard Delete</button>
       </template>
     </DataTable>
@@ -125,9 +155,92 @@ async function handleDelete() {
         <input v-model="renewForm.end_date" type="date" class="form-input" required>
       </div>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Contract" message="Are you sure you want to delete this item?" @close="showConfirm = false" @confirm="handleDelete" />
+
+    <!-- Modal Hapus Kontrak (Standar Keuangan) -->
+    <FormModal
+      :open="showDeleteModal"
+      title="Hapus Kontrak (Standar Kepatuhan Keuangan)"
+      max-width="580px"
+      @close="showDeleteModal = false"
+    >
+      <div v-if="deletingItem" class="delete-contract-modal">
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
+          <div style="font-weight: 600; color: #dc2626; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+            ⚠️ Perhatian Standar Keuangan
+          </div>
+          <div style="font-size: 0.88em; color: var(--color-text-secondary); line-height: 1.5;">
+            Sistem tidak mengizinkan fitur edit data kontrak demi kepatuhan dan integritas audit keuangan. Menghapus kontrak ini akan melepaskan unit terkait kembali ke status <strong>available</strong>. Nomor kontrak ini akan dialokasikan kembali untuk kontrak baru berikutnya agar penomoran selalu berurutan tanpa loncat.
+          </div>
+        </div>
+
+        <div style="background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 0.9em; display: grid; gap: 8px;">
+          <div>
+            <span style="color: var(--color-text-secondary);">No. Kontrak:</span>
+            <strong style="margin-left: 8px; color: var(--color-primary);">{{ deletingItem.contract_no }}</strong>
+          </div>
+          <div>
+            <span style="color: var(--color-text-secondary);">Customer:</span>
+            <span style="margin-left: 8px; font-weight: 500;">{{ (deletingItem as any).customer?.company_name || (deletingItem as any).customer?.name || '-' }}</span>
+          </div>
+          <div>
+            <span style="color: var(--color-text-secondary);">Jumlah Item/Unit:</span>
+            <span style="margin-left: 8px;">{{ (deletingItem as any).contract_items?.length || 0 }} Unit</span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" style="font-weight: 600;">
+            Alasan Penghapusan <span style="color: #dc2626;">*</span>
+          </label>
+          <textarea
+            v-model="deleteReason"
+            class="form-input"
+            rows="3"
+            placeholder="Wajib diisi, contoh: Salah pemilihan customer / dibatalkan sebelum masa sewa"
+            required
+            style="resize: vertical;"
+          ></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 0.9em; color: var(--color-text);">
+            <input
+              type="checkbox"
+              v-model="confirmAgree"
+              style="margin-top: 3px;"
+            />
+            <span>
+              Saya menyetujui untuk menghapus data <strong>{{ deletingItem.contract_no }}</strong> dan memahami bahwa persetujuan ini akan otomatis dicatat dalam log audit keuangan.
+            </span>
+          </label>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="showDeleteModal = false"
+            :disabled="isDeleting"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            @click="handleDelete"
+            :disabled="!deleteReason.trim() || !confirmAgree || isDeleting"
+            style="background: #dc2626; color: white;"
+          >
+            <span v-if="isDeleting">Menghapus...</span>
+            <span v-else>Setujui & Hapus Kontrak</span>
+          </button>
+        </div>
+      </div>
+    </FormModal>
+
     <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Contract" :item-label="hardDelete.expected"
       :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
+

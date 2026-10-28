@@ -68,7 +68,27 @@ const totalUnitCount = computed(() => (data.value || []).length)
 const totalAvailableCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'available').length)
 const totalLockCount = computed(() => (data.value || []).filter(u => ['lock', 'locked'].includes((u.status || '').toLowerCase())).length)
 const totalRentedCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'rented').length)
+const totalMaintenanceCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'maintenance').length)
+const totalBrokenCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'broken').length)
+const totalSoldCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'sold').length)
 const totalUnitValue = computed(() => (data.value || []).reduce((acc, u) => acc + (Number((u as any).price) || 0), 0))
+
+const selectedStatus = ref<string>('all')
+
+const filteredData = computed(() => {
+  const list = data.value || []
+  if (selectedStatus.value === 'all' || !selectedStatus.value) {
+    return list
+  }
+  const filterVal = selectedStatus.value.toLowerCase()
+  return list.filter(u => {
+    const st = (u.status || '').toLowerCase()
+    if (filterVal === 'lock' || filterVal === 'locked') {
+      return st === 'lock' || st === 'locked'
+    }
+    return st === filterVal
+  })
+})
 
 let unitTimer: any = null
 async function silentRefresh() {
@@ -423,17 +443,23 @@ const badgeFalse = {
 }
 
 async function exportStockExcel() {
-  if (!data.value.length) {
+  const exportItems = filteredData.value
+  if (!exportItems.length) {
     toast.error("Tidak ada data stok unit untuk diekspor")
     return
   }
 
   const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+  const totalItems = exportItems.length
+  const availableItems = exportItems.filter(u => (u.status || '').toLowerCase() === 'available').length
+  const rentedItems = exportItems.filter(u => (u.status || '').toLowerCase() === 'rented').length
+  const exportTotalVal = exportItems.reduce((acc, u) => acc + (Number((u as any).price) || 0), 0)
+
   const rows: StyledCell[][] = [
     [{ v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 8, style: 'titleCell' }],
     [{ v: 'LAPORAN STOK & DAFTAR ASET UNIT (PRINTER, COPIER, PC / LAPTOP)', mergeAcross: 8, style: 'plainBoldCenter' }],
     [{ v: 'Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia | Phone: +62 811 7045 657', mergeAcross: 8, style: 'subTitleCell' }],
-    [{ v: `Tanggal Cetak: ${dateStr}`, mergeAcross: 8, style: 'subTitleCell' }],
+    [{ v: `Tanggal Cetak: ${dateStr}${selectedStatus.value !== 'all' ? ` | Filter Status: ${formatStatus(selectedStatus.value)}` : ''}`, mergeAcross: 8, style: 'subTitleCell' }],
     [],
     [
       { v: 'RINGKASAN STATUS & VALUASI UNIT', mergeAcross: 8, style: 'plainBoldCenter' },
@@ -445,10 +471,10 @@ async function exportStockExcel() {
       { v: 'Total Estimasi Nilai Unit (Rp)', style: 'headerCell', mergeAcross: 2 }, {}, {},
     ],
     [
-      { v: `${totalUnitCount.value} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
-      { v: `${totalAvailableCount.value} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
-      { v: `${totalRentedCount.value} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
-      { v: totalUnitValue.value, style: 'grandTotalCell', mergeAcross: 2, numFmt: NUMFMT_RP }, {}, {},
+      { v: `${totalItems} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
+      { v: `${availableItems} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
+      { v: `${rentedItems} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
+      { v: exportTotalVal, style: 'grandTotalCell', mergeAcross: 2, numFmt: NUMFMT_RP }, {}, {},
     ],
     [],
     [
@@ -464,7 +490,7 @@ async function exportStockExcel() {
     ],
   ]
 
-  data.value.forEach((u, idx) => {
+  exportItems.forEach((u, idx) => {
     const priceVal = Number((u as any).price) || 0
     const meterStr = u.is_copier ? `${u.current_meter_bw || 0} / ${u.current_meter_color || 0}` : '-'
     const brandName = getBrandName(u.brand_id)
@@ -487,7 +513,7 @@ async function exportStockExcel() {
   rows.push([
     { v: 'GRAND TOTAL', mergeAcross: 7, style: 'grandTotalCell' },
     {}, {}, {}, {}, {}, {}, {},
-    { v: totalUnitValue.value, style: 'grandTotalCell', numFmt: NUMFMT_RP },
+    { v: exportTotalVal, style: 'grandTotalCell', numFmt: NUMFMT_RP },
   ])
 
   const columnWidths = [6, 20, 36, 16, 18, 18, 16, 20, 22]
@@ -499,17 +525,19 @@ async function exportStockExcel() {
 }
 
 function exportStockPdf() {
-  if (!data.value.length) {
+  const exportItems = filteredData.value
+  if (!exportItems.length) {
     toast.error("Tidak ada data stok unit untuk diekspor")
     return
   }
   const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-  const totalItems = totalUnitCount.value
-  const availableItems = totalAvailableCount.value
-  const rentedItems = totalRentedCount.value
-  const totalValStr = formatRupiah(totalUnitValue.value)
+  const totalItems = exportItems.length
+  const availableItems = exportItems.filter(u => (u.status || '').toLowerCase() === 'available').length
+  const rentedItems = exportItems.filter(u => (u.status || '').toLowerCase() === 'rented').length
+  const exportTotalVal = exportItems.reduce((acc, u) => acc + (Number((u as any).price) || 0), 0)
+  const totalValStr = formatRupiah(exportTotalVal)
 
-  const rowsHtml = data.value.map((u, idx) => {
+  const rowsHtml = exportItems.map((u, idx) => {
     const priceVal = Number((u as any).price) || 0
     const meterStr = u.is_copier ? `${(u.current_meter_bw || 0).toLocaleString('id-ID')} / ${(u.current_meter_color || 0).toLocaleString('id-ID')}` : '-'
     const brandName = getBrandName(u.brand_id)
@@ -671,19 +699,39 @@ function exportStockPdf() {
 
     <!-- Summary Cards -->
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px;">
-      <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
+      <div
+        class="card p-md summary-card"
+        :class="{ 'card-active': selectedStatus === 'all' }"
+        title="Klik untuk menampilkan semua unit"
+        @click="selectedStatus = 'all'"
+      >
         <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Total Unit Aset</div>
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: var(--color-text);">{{ totalUnitCount }} Unit</div>
       </div>
-      <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
+      <div
+        class="card p-md summary-card"
+        :class="{ 'card-active': selectedStatus === 'available' }"
+        title="Klik untuk memfilter unit Available (Siap)"
+        @click="selectedStatus = selectedStatus === 'available' ? 'all' : 'available'"
+      >
         <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Available (Siap)</div>
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #16a34a;">{{ totalAvailableCount }} Unit</div>
       </div>
-      <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
+      <div
+        class="card p-md summary-card"
+        :class="{ 'card-active': selectedStatus === 'lock' }"
+        title="Klik untuk memfilter unit Lock (Terkunci)"
+        @click="selectedStatus = selectedStatus === 'lock' ? 'all' : 'lock'"
+      >
         <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Lock (Terkunci)</div>
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #d97706;">{{ totalLockCount }} Unit</div>
       </div>
-      <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
+      <div
+        class="card p-md summary-card"
+        :class="{ 'card-active': selectedStatus === 'rented' }"
+        title="Klik untuk memfilter unit Rented (Disewa)"
+        @click="selectedStatus = selectedStatus === 'rented' ? 'all' : 'rented'"
+      >
         <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Rented (Disewa)</div>
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #0284c7;">{{ totalRentedCount }} Unit</div>
       </div>
@@ -692,9 +740,35 @@ function exportStockPdf() {
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #003366;">{{ formatRupiah(totalUnitValue) }}</div>
       </div>
     </div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Search products..." permission="unit" @edit="openEdit"
+    <DataTable :columns="columns" :data="filteredData" search-placeholder="Search products..." permission="unit" @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #toolbar>
+        <div style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">
+          <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Status:</label>
+          <select
+            v-model="selectedStatus"
+            class="form-select filter-status-select"
+            style="min-width: 175px; height: 36px; padding: 0 10px; font-size: 13px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface, #fff); color: var(--color-text); cursor: pointer;"
+          >
+            <option value="all">All Status ({{ totalUnitCount }})</option>
+            <option value="available">Available / Siap ({{ totalAvailableCount }})</option>
+            <option value="lock">Lock / Terkunci ({{ totalLockCount }})</option>
+            <option value="rented">Rented / Disewa ({{ totalRentedCount }})</option>
+            <option value="maintenance">Maintenance ({{ totalMaintenanceCount }})</option>
+            <option value="broken">Broken ({{ totalBrokenCount }})</option>
+            <option value="sold">Sold ({{ totalSoldCount }})</option>
+          </select>
+          <button
+            v-if="selectedStatus !== 'all'"
+            type="button"
+            class="btn btn-outline"
+            style="height: 36px; padding: 0 10px; font-size: 12px;"
+            title="Reset filter status"
+            @click="selectedStatus = 'all'"
+          >
+            Reset
+          </button>
+        </div>
         <ExcelImportButtons master-key="unit" @imported="fetchData" />
       </template>
       <template #cell-name="{ row }">
@@ -851,3 +925,30 @@ function exportStockPdf() {
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
+
+<style scoped>
+.summary-card {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  user-select: none;
+}
+.summary-card:hover {
+  border-color: #2563eb;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+}
+.summary-card.card-active {
+  border-color: #2563eb !important;
+  background: #f0f7ff !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2) !important;
+}
+.filter-status-select:focus {
+  border-color: #2563eb;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+</style>

@@ -43,8 +43,11 @@ export function createResourceService<T extends ResourceRecord>(
     update(id: string, data: Partial<T>) {
       return api.put<ApiResponse<T>>(`${path}/${id}`, data);
     },
-    remove(id: string, cascade = false) {
-      const q = cascade ? '?cascade=true' : '';
+    remove(id: string, cascade = false, reason?: string) {
+      const params = new URLSearchParams();
+      if (cascade) params.set("cascade", "true");
+      if (reason) params.set("reason", reason);
+      const q = params.toString() ? `?${params.toString()}` : "";
       return api.delete<ApiResponse<null>>(`${path}/${id}${q}`);
     },
     /**
@@ -52,11 +55,15 @@ export function createResourceService<T extends ResourceRecord>(
      * `?permanent=true` is sent by a superadmin; other roles get 403
      * and the row stays soft-deleted at most.
      */
-    hardRemove(id: string, cascade = false) {
-      const q = cascade ? '?permanent=true&cascade=true' : '?permanent=true';
-      return api.delete<ApiResponse<null>>(`${path}/${id}${q}`);
+    hardRemove(id: string, cascade = false, reason?: string) {
+      const params = new URLSearchParams();
+      params.set("permanent", "true");
+      if (cascade) params.set("cascade", "true");
+      if (reason) params.set("reason", reason);
+      return api.delete<ApiResponse<null>>(`${path}/${id}?${params.toString()}`);
     },
   };
+
 }
 
 export const resources = {

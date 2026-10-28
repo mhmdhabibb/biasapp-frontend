@@ -68,13 +68,13 @@ export function useContractsStore() {
     await fetchAll();
   }
 
-  async function remove(id: string) {
-    await contractService.remove(id);
+  async function remove(id: string, reason?: string) {
+    await contractService.remove(id, reason);
     await fetchAll();
   }
 
-  async function hardRemove(id: string) {
-    await contractService.hardRemove(id);
+  async function hardRemove(id: string, reason?: string) {
+    await contractService.hardRemove(id, reason);
     await fetchAll();
   }
 

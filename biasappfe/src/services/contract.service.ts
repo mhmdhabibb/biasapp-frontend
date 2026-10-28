@@ -26,11 +26,13 @@ export const contractService = {
   update(id: string, data: Partial<Contract>) {
     return api.put<ApiResponse<null>>(`/contracts/${id}`, data);
   },
-  remove(id: string) {
-    return api.delete<ApiResponse<null>>(`/contracts/${id}`);
+  remove(id: string, reason?: string) {
+    const q = reason ? `?reason=${encodeURIComponent(reason)}` : "";
+    return api.delete<ApiResponse<null>>(`/contracts/${id}${q}`);
   },
-  hardRemove(id: string) {
-    return api.delete<ApiResponse<null>>(`/contracts/${id}?permanent=true`);
+  hardRemove(id: string, reason?: string) {
+    const q = reason ? `&reason=${encodeURIComponent(reason)}` : "";
+    return api.delete<ApiResponse<null>>(`/contracts/${id}?permanent=true${q}`);
   },
   renew(id: string, data: { end_date: string }) {
     return api.post<ApiResponse<null>>(`/contracts/${id}/renew`, data);

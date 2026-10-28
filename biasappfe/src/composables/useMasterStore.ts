@@ -84,7 +84,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
 
   // Customer Service Operational Pages
   "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments"],
-  "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units"],
+  "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units", "rents", "products", "brands", "unitTypes"],
   "/customer-service/sales": ["sales", "salesInvoices", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "technicians", "units", "customers", "products"],
@@ -112,7 +112,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
   "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
-  "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units"],
+  "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "technicians", "serviceReports"],
   "/technician/service-history": ["serviceReports", "technicians", "units", "customers"],
   "/technician/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units", "customers"],
 

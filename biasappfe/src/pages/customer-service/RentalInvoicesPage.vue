@@ -22,20 +22,27 @@ import { useRoute } from 'vue-router'
 
 const toast = useToast()
 const route = useRoute()
+const masterStore = useMasterStore()
 const {
   rentalInvoices: data,
   contractItems,
   customers,
   payments,
+  units,
+  products,
+  rents,
   findContractItem,
   findCustomer,
   findUnit,
+  findProduct,
+  findBrand,
+  findUnitType,
   refresh,
   refreshInBackground,
   ensureResourcesLoaded,
   formatUnitDisplayName,
   formatProductDisplayName,
-} = useMasterStore()
+} = masterStore
 
 const isLoading = ref(false)
 let rentalInvTimer: any = null
@@ -109,8 +116,15 @@ function isPaymentBlocked(item: any): boolean {
 function isCopierUnit(unit: any): boolean {
   if (!unit) return false
   if (unit.is_computer === true || unit.is_computer === 1) return false
+  const modelStr = `${unit.model || ''} ${unit.name || ''}`.toLowerCase()
   return unit.is_copier === true || unit.is_copier === 1 ||
-    String(unit.model || '').toLowerCase().includes('copier')
+    modelStr.includes('copier') ||
+    modelStr.includes('fotocopy') ||
+    modelStr.includes('fotokopi') ||
+    modelStr.includes('bizhub') ||
+    modelStr.includes('am-c') ||
+    modelStr.includes('imagerunner') ||
+    modelStr.includes('workforce')
 }
 
 function invoicePayments(item: any) {
@@ -222,7 +236,7 @@ const filteredData = computed(() => {
   return items
 })
 
-function renderRentalInvoiceBody(item: any): string {
+function resolveInvoiceAsset(item: any) {
   const customer = findCustomer(item.customer_id)
   const custName = customer?.company_name || customer?.name || '-'
   const custAddress = customer?.address || '-'
@@ -234,124 +248,332 @@ function renderRentalInvoiceBody(item: any): string {
   const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
   const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
 
-  const dateStr = item.invoice_date
-    ? new Date(item.invoice_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
-    : (item.monthly_date ? new Date(item.monthly_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '-')
-
-  let periodStr = '-'
-  if (item.period_start) {
-    periodStr = new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  const rawDate = item.invoice_date || item.monthly_date || item.period_end
+  let dateStr = '-'
+  if (rawDate) {
+    const d = new Date(rawDate)
+    if (!isNaN(d.getTime())) {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      dateStr = `${d.getDate()}-${months[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`
+    }
   }
 
-  const ci = findContractItem(item.contract_item_id) || (contractItems.value as any[]).find(c => String(c.contract_id) === String(item.contract_id))
-  const unit = findUnit(ci?.unit_id)
-  const isCopier = isCopierUnit(unit)
-  const unitDesc = unit ? formatUnitDisplayName(unit) : (ci?.description || unit?.model || 'Mesin Fotocopy / Printer')
+  const periodDate = item.period_start ? new Date(item.period_start) : (item.monthly_date ? new Date(item.monthly_date) : (item.invoice_date ? new Date(item.invoice_date) : new Date()))
+  let periodStr = '-'
+  if (!isNaN(periodDate.getTime())) {
+    periodStr = periodDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+  }
+
+  // Contract Item
+  const ci = findContractItem(item.contract_item_id) ||
+    (contractItems.value as any[]).find((c: any) => String(c.id) === String(item.contract_item_id)) ||
+    (contractItems.value as any[]).find((c: any) => String(c.contract_id) === String(item.contract_id))
+
+  // Direct or Contract Unit
+  let unit = ci?.unit_id ? findUnit(ci.unit_id) : (ci?.unit || null)
+  if (!unit && item.unit_id) {
+    unit = findUnit(item.unit_id)
+  }
+  if (!unit && item.unit) {
+    unit = item.unit
+  }
+
+  // From meter details if available
+  const meterDetails: any[] = item.meter_details || []
+  if (!unit && meterDetails.length > 0) {
+    for (const md of meterDetails) {
+      if (md.contract_item?.unit) {
+        unit = md.contract_item.unit
+        break
+      }
+      if (md.contract_item_id) {
+        const mdCi = findContractItem(md.contract_item_id)
+        if (mdCi?.unit_id) {
+          unit = findUnit(mdCi.unit_id)
+          if (unit) break
+        }
+      }
+    }
+  }
+
+  // From Rental & Rental Items
+  const rentsList = (rents?.value || (masterStore as any).rents || []) as any[]
+  const rental = item.rental || (item.rental_id ? rentsList.find((r: any) => String(r.id) === String(item.rental_id)) : null)
+  let rentalItem: any = null
+  let product: any = item.product || (item.product_id && findProduct ? findProduct(item.product_id) : null)
+
+  if (rental) {
+    const rawItems = rental.rental_items || rental.rentalItems || []
+    if (Array.isArray(rawItems) && rawItems.length > 0) {
+      rentalItem = rawItems[0]
+      if (!unit && rentalItem.unit_id) {
+        unit = findUnit(rentalItem.unit_id)
+      }
+      if (!unit && rentalItem.unit) {
+        unit = rentalItem.unit
+      }
+      if (!product && rentalItem.product_id && findProduct) {
+        product = findProduct(rentalItem.product_id)
+      }
+      if (!product && rentalItem.product) {
+        product = rentalItem.product
+      }
+    }
+  }
+
+  // Determine if copier
+  let isCopier = false
+  if (meterDetails.length > 0) {
+    isCopier = true
+  } else if (unit) {
+    isCopier = isCopierUnit(unit)
+  } else if (item.meter_start || item.meter_end || ci?.start_meter_bw) {
+    isCopier = true
+  }
+
+  // Serial Number
+  let serialNo = ''
+  if (item.serial_no || item.sn) {
+    serialNo = String(item.serial_no || item.sn).trim()
+  } else if (unit?.serial_no) {
+    serialNo = String(unit.serial_no).trim()
+  } else if (rentalItem?.unit?.serial_no) {
+    serialNo = String(rentalItem.unit.serial_no).trim()
+  } else if (ci?.unit?.serial_no) {
+    serialNo = String(ci.unit.serial_no).trim()
+  } else if (ci?.serial_no) {
+    serialNo = String(ci.serial_no).trim()
+  } else if (rentalItem?.specs) {
+    try {
+      const parsed = typeof rentalItem.specs === 'string' ? JSON.parse(rentalItem.specs) : rentalItem.specs
+      serialNo = parsed.serial_no || parsed.sn || ''
+    } catch {
+      const match = String(rentalItem.specs).match(/(?:s\/n|sn|serial)\s*[:=]\s*([^\s,;]+)/i)
+      if (match) serialNo = match[1]
+    }
+  } else if (ci?.specs) {
+    try {
+      const parsed = typeof ci.specs === 'string' ? JSON.parse(ci.specs) : ci.specs
+      serialNo = parsed.serial_no || parsed.sn || ''
+    } catch {
+      const match = String(ci.specs).match(/(?:s\/n|sn|serial)\s*[:=]\s*([^\s,;]+)/i)
+      if (match) serialNo = match[1]
+    }
+  }
+  if (!serialNo && product?.sku) {
+    serialNo = product.sku
+  }
+  if (!serialNo && product?.serial_no) {
+    serialNo = product.serial_no
+  }
+
+  // Brand and Model description
+  let brandModel = ''
+  let assetCategory = isCopier ? 'Mesin Fotocopy' : 'Unit'
+
+  if (unit) {
+    const brand = unit.brand?.name || (findBrand ? findBrand(unit.brand_id)?.name : '') || ''
+    const model = unit.model || unit.name || ''
+    brandModel = [brand, model].filter(Boolean).join(' ')
+    if (!isCopier) {
+      if (unit.is_computer || /computer|komputer|laptop|pc/i.test(model)) {
+        assetCategory = 'Komputer'
+      } else if (unit.type?.name) {
+        assetCategory = unit.type.name
+      } else {
+        assetCategory = 'Unit'
+      }
+    }
+  } else if (product) {
+    brandModel = product.name || ''
+    if (!isCopier) {
+      assetCategory = product.is_computer ? 'Komputer' : (product.category?.name || 'Unit')
+    }
+  } else if (ci?.description) {
+    brandModel = ci.description
+  } else {
+    brandModel = isCopier ? 'Mesin Fotocopy' : 'Product / Unit Rental'
+  }
+
+  if (!isCopier && /copier|fotocopy|fotokopi|bizhub|am-c|imagerunner|workforce/i.test(brandModel)) {
+    isCopier = true
+    assetCategory = 'Mesin Fotocopy'
+  }
+
+  const poNo = (item.po_no || item.rental?.po_no || rental?.po_no || '').trim()
+
+  return {
+    customer,
+    custName,
+    custAddress,
+    picDisplay,
+    signer,
+    dateStr,
+    periodStr,
+    unit,
+    product,
+    ci,
+    rental,
+    rentalItem,
+    isCopier,
+    serialNo,
+    assetCategory,
+    brandModel,
+    meterDetails,
+    poNo,
+  }
+}
+
+function renderRentalInvoiceBody(item: any): string {
+  const assetInfo = resolveInvoiceAsset(item)
+  const {
+    custName,
+    custAddress,
+    picDisplay,
+    signer,
+    dateStr,
+    periodStr,
+    isCopier,
+    serialNo,
+    assetCategory,
+    brandModel,
+    meterDetails,
+    poNo,
+    ci,
+  } = assetInfo
+
   const baseRentalFee = item.base_rental_fee || item.basis_rental_fee || 0
 
-  const meterDetails: any[] = item.meter_details || []
-  const bwDetails = meterDetails.filter((d: any) => (d.color_mode || '').toLowerCase().includes('bw') || (d.color_mode || '').toLowerCase().includes('mono') || (d.color_mode || '').toLowerCase() === 'b/w')
-  const colDetails = meterDetails.filter((d: any) => (d.color_mode || '').toLowerCase().includes('colour') || (d.color_mode || '').toLowerCase().includes('color'))
+  const fmtVal = (n: number) => n === 0 ? '-' : n.toLocaleString('id-ID')
+  const fmtPcs = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : n === 0 ? '-' : n.toLocaleString('id-ID')
 
-  const legacyBwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
-  const legacyBwEnd = item.meter_end || item.meter_end_bw || legacyBwStart
-  const legacyFree = item.free_copies || ci?.free_copy_quota || 2000
-  const legacyRateBw = item.rate_per_page || 150
-
-  const fmtPcsPrint = (n: number) => n === 0 ? '-' : n.toLocaleString('id-ID')
-  const fmtNetPrint = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : n === 0 ? '-' : n.toLocaleString('id-ID')
-
-  function meterDetailRows(details: any[], label: string): string {
-    if (details.length === 0) return ''
-    return details.map(d => {
-      const start = d.start_meter_reading || 0
-      const last = d.last_meter_reading || 0
-      const total = d.total_copies ?? (last - start)
-      const free = d.free_quota ?? 0
-      const net = total - free
-      const sizeLabel = d.paper_size?.name || d.color_mode || label
-      return `
-        <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
-          <b>${sizeLabel}</b><br>
-          <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
-            <span>Start Meter Reading</span><span style="text-align:right;">${start.toLocaleString('id-ID')}</span><span></span>
-            <span>Last Meter Reading</span><span style="text-align:right;">${last.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-            <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(total)}</b></span><span></span>
-            <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(free)}</span><span style="padding-left:4px;">(-)</span>
-            <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(net)}</b></span><span></span>
-          </div>
-        </td></tr>`
-    }).join('')
+  function renderMeterBlock(label: string, start: number, last: number, free: number, total: number, net: number): string {
+    return `
+      <div style="margin-top: 10px; width: 310px;">
+        <div style="font-weight: 700; font-size: 11px; margin-bottom: 2px;">${label}</div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px; line-height: 1.5; border: none;">
+          <tr>
+            <td style="border: none; padding: 1px 0; text-align: left;">Start Meter Reading</td>
+            <td style="border: none; padding: 1px 6px; text-align: right; width: 85px;">${fmtVal(start)}</td>
+            <td style="border: none; padding: 1px 0 1px 4px; width: 24px; text-align: left;"></td>
+          </tr>
+          <tr>
+            <td style="border: none; padding: 1px 0; text-align: left;">Last Meter Reading</td>
+            <td style="border: none; border-bottom: 1.5px solid #111; padding: 1px 6px; text-align: right; width: 85px;">${fmtVal(last)}</td>
+            <td style="border: none; border-bottom: 1.5px solid #111; padding: 1px 0 1px 4px; width: 24px; text-align: left;">(-)</td>
+          </tr>
+          <tr>
+            <td style="border: none; padding: 1px 0; text-align: left;">Total Copies</td>
+            <td style="border: none; padding: 1px 6px; text-align: right; font-weight: 700; width: 85px;">${fmtPcs(total)}</td>
+            <td style="border: none; padding: 1px 0 1px 4px; width: 24px; text-align: left;"></td>
+          </tr>
+          <tr>
+            <td style="border: none; padding: 1px 0; text-align: left;">Free Copies</td>
+            <td style="border: none; border-bottom: 1.5px solid #111; padding: 1px 6px; text-align: right; width: 85px;">${fmtVal(free)}</td>
+            <td style="border: none; border-bottom: 1.5px solid #111; padding: 1px 0 1px 4px; width: 24px; text-align: left;">(-)</td>
+          </tr>
+          <tr>
+            <td style="border: none; padding: 1px 0; text-align: left;">Total Copies</td>
+            <td style="border: none; padding: 1px 6px; text-align: right; font-weight: 700; width: 85px;">${fmtPcs(net)}</td>
+            <td style="border: none; padding: 1px 0 1px 4px; width: 24px; text-align: left;"></td>
+          </tr>
+        </table>
+      </div>`
   }
 
-  function chargeRows(details: any[], rowNum: number): string {
-    return details.map((d, i) => {
-      const sizeLabel = d.paper_size?.name ? `Copies Charges ${d.color_mode?.toUpperCase() || ''} ${d.paper_size.name}` : `Copies Charges ${d.color_mode?.toUpperCase() || ''}`
-      const rate = d.rate_per_page || 0
-      const amount = d.total_amount || 0
-      return `<tr>
-        <td class="no-col">${rowNum + i}</td>
-        <td>${sizeLabel}</td>
-        <td style="text-align:center;">(x)</td>
-        <td style="text-align:right;">${rate > 0 ? `Rp&nbsp;${rate.toLocaleString('id-ID')}` : '-'}</td>
+  function renderChargeRow(num: number, label: string, rate: number, amount: number): string {
+    return `
+      <tr>
+        <td class="no-col">${num}</td>
+        <td colspan="3" style="padding: 6px 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span>${label}</span>
+            <span style="padding-right: 20px;">(x)&nbsp;&nbsp;Rp&nbsp;&nbsp;${rate.toLocaleString('id-ID')}</span>
+          </div>
+        </td>
         <td class="rp-col">Rp</td>
         <td class="val-col">${amount > 0 ? amount.toLocaleString('id-ID') : '-'}</td>
       </tr>`
-    }).join('')
   }
 
-  const legacyBwTotal = Math.max(0, legacyBwEnd - legacyBwStart)
-  const legacyBwNet = legacyBwTotal - legacyFree
-  const legacyBwBillable = Math.max(0, legacyBwNet)
-  const legacyBwAmount = legacyBwBillable * legacyRateBw
+  let meterBlocksHtml = ''
+  let chargeRowsHtml = ''
 
-  const legacyColStart = ci?.start_meter_color || 0
-  const legacyColEnd = legacyColStart
-  const legacyColFree = ci?.free_quota_color || 0
-  const legacyColTotal = Math.max(0, legacyColEnd - legacyColStart)
-  const legacyColNet = legacyColTotal - legacyColFree
+  if (isCopier) {
+    if (meterDetails.length > 0) {
+      const byPaperSize = new Map<string, any[]>()
+      for (const detail of meterDetails) {
+        const psName = detail.paper_size?.name || 'A4'
+        const ptName = detail.paper_type?.name || ''
+        const key = ptName ? `${psName}/${ptName}` : psName
+        if (!byPaperSize.has(key)) byPaperSize.set(key, [])
+        byPaperSize.get(key)!.push(detail)
+      }
 
-  const legacyBodyRows = (meterDetails.length === 0 && isCopier) ? `
-    <tr><td></td><td colspan="3" style="padding:2px 8px; font-weight:normal;">
-      <b>B/W</b><br>
-      <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
-        <span>Start Meter Reading</span><span style="text-align:right;">${legacyBwStart.toLocaleString('id-ID')}</span><span></span>
-        <span>Last Meter Reading</span><span style="text-align:right;">${legacyBwEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyBwTotal)}</b></span><span></span>
-        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyFree)}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyBwNet)}</b></span><span></span>
-      </div>
+      let rowIdx = 2
+      for (const [paperSize, details] of byPaperSize) {
+        const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
+        const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
 
-      ${legacyColStart > 0 || legacyColFree > 0 ? `
-      <br><b>Color</b><br>
-      <div style="display:grid; grid-template-columns:1fr 80px 20px; line-height:1.6; padding-left:8px;">
-        <span>Start Meter Reading</span><span style="text-align:right;">${legacyColStart.toLocaleString('id-ID')}</span><span></span>
-        <span>Last Meter Reading</span><span style="text-align:right;">${legacyColEnd.toLocaleString('id-ID')}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${fmtPcsPrint(legacyColTotal)}</b></span><span></span>
-        <span>Free Copies</span><span style="text-align:right;">${fmtPcsPrint(legacyColFree)}</span><span style="padding-left:4px;">(-)</span>
-        <span>Total Copies</span><span style="text-align:right;"><b>${fmtNetPrint(legacyColNet)}</b></span><span></span>
-      </div>
-      ` : ''}
-    </td></tr>
-    <tr>
-      <td class="no-col">2</td><td>Copies Charges B/W</td>
-      <td style="text-align:center;">(x)</td>
-      <td style="text-align:right;">${legacyRateBw > 0 ? `Rp&nbsp;${legacyRateBw.toLocaleString('id-ID')}` : '-'}</td>
-      <td class="rp-col">Rp</td>
-      <td class="val-col">${legacyBwAmount > 0 ? legacyBwAmount.toLocaleString('id-ID') : '-'}</td>
-    </tr>` : ''
+        for (const d of bwDetails) {
+          const start = d.start_meter_reading || 0
+          const last = d.last_meter_reading || 0
+          const total = d.total_copies ?? (last - start)
+          const free = d.free_quota ?? 0
+          const net = total - free
+          meterBlocksHtml += renderMeterBlock(`B/W ${paperSize}`, start, last, free, total, net)
+          chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges B/W ${paperSize}`, d.rate_per_page || 0, d.total_amount || 0)
+        }
+
+        for (const d of colorDetails) {
+          const start = d.start_meter_reading || 0
+          const last = d.last_meter_reading || 0
+          const total = d.total_copies ?? (last - start)
+          const free = d.free_quota ?? 0
+          const net = total - free
+          meterBlocksHtml += renderMeterBlock(`Colour ${paperSize}`, start, last, free, total, net)
+          chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges Colour ${paperSize}`, d.rate_per_page || 0, d.total_amount || 0)
+        }
+      }
+    } else {
+      // Legacy copier meter readings
+      const legacyBwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
+      const legacyBwEnd = item.meter_end || item.meter_end_bw || legacyBwStart
+      const legacyFree = item.free_copies || ci?.free_copy_quota || 2000
+      const legacyRateBw = item.rate_per_page || 150
+      const legacyBwTotal = legacyBwEnd - legacyBwStart
+      const legacyBwNet = legacyBwTotal - legacyFree
+      const legacyBwBillable = Math.max(0, legacyBwNet)
+      const legacyBwAmount = legacyBwBillable * legacyRateBw
+
+      meterBlocksHtml += renderMeterBlock('B/W A4', legacyBwStart, legacyBwEnd, legacyFree, legacyBwTotal, legacyBwNet)
+      chargeRowsHtml += renderChargeRow(2, 'Copies Charges B/W A4', legacyRateBw, legacyBwAmount)
+
+      const legacyColStart = ci?.start_meter_color || 0
+      const legacyColEnd = item.meter_end_colour || legacyColStart
+      const legacyColFree = ci?.free_quota_color || 0
+      const legacyRateCol = ci?.rate_per_page_color || 1000
+      if (legacyColStart > 0 || legacyColFree > 0 || legacyColEnd > legacyColStart) {
+        const legacyColTotal = legacyColEnd - legacyColStart
+        const legacyColNet = legacyColTotal - legacyColFree
+        const legacyColBillable = Math.max(0, legacyColNet)
+        const legacyColAmount = legacyColBillable * legacyRateCol
+        meterBlocksHtml += renderMeterBlock('Colour A4', legacyColStart, legacyColEnd, legacyColFree, legacyColTotal, legacyColNet)
+        chargeRowsHtml += renderChargeRow(3, 'Copies Charges Colour A4', legacyRateCol, legacyColAmount)
+      }
+    }
+  }
 
   const totalNum = item.subtotal || baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0)
   const taxNum = item.tax || 0
-  const totalPayNum = item.total_pay || 0
+  const totalPayNum = item.total_pay || (totalNum + taxNum)
   const total = totalNum === 0 ? '-' : totalNum.toLocaleString('id-ID')
-  const tax = taxNum === 0 ? '-' : taxNum.toLocaleString('id-ID')
   const totalPay = totalPayNum === 0 ? '-' : totalPayNum.toLocaleString('id-ID')
 
-  // Stempel label Lunas dihilangkan pada rental invoice (hanya ada pada bukti pembayaran / kwitansi)
-  const stampHtml = ''
+  const dppVal = taxNum > 0 ? totalNum.toLocaleString('id-ID') : ''
+  const taxVal = taxNum > 0 ? taxNum.toLocaleString('id-ID') : ''
 
-  const poNo = (item.po_no || item.rental?.po_no || '').trim()
+  const snDisplay = serialNo ? `S/N : ${serialNo}` : 'S/N : -'
 
   return `
 <div class="inv-container">
@@ -374,47 +596,59 @@ function renderRentalInvoiceBody(item: any): string {
     </div>
     <div class="right-box">
       <table class="right-table">
-        <tr><td class="lbl">Inv No. :</td><td>${item.invoice_no || '-'}</td></tr>
-        <tr><td class="lbl">Date :</td><td>${dateStr}</td></tr>
-        ${poNo ? `<tr><td class="lbl">PO No. :</td><td style="font-weight: 700; color: #1a56db;">${poNo}</td></tr>` : ''}
-        <tr><td colspan="2" style="text-align:center; font-weight:bold;">To:</td></tr>
-        <tr><td colspan="2" class="cust-name">${custName}</td></tr>
-        <tr><td colspan="2" style="font-weight:normal; min-height:36px; vertical-align:top;">${custAddress}</td></tr>
-        <tr><td class="lbl">Attn</td><td>${picDisplay}</td></tr>
+        <tr>
+          <td class="lbl">Inv No. :</td>
+          <td class="val">${item.invoice_no || '-'}</td>
+        </tr>
+        <tr>
+          <td class="lbl">Date :</td>
+          <td class="val">${dateStr}</td>
+        </tr>
+        ${poNo ? `<tr><td class="lbl">PO No. :</td><td class="val" style="font-weight: 700;">${poNo}</td></tr>` : ''}
+        <tr>
+          <td colspan="2" class="kepada-lbl">Kepada Yth.</td>
+        </tr>
+        <tr>
+          <td colspan="2" class="cust-name">${custName}</td>
+        </tr>
+        <tr>
+          <td colspan="2" class="cust-addr">${custAddress}</td>
+        </tr>
+        <tr>
+          <td class="up-lbl">Up</td>
+          <td class="up-val">${picDisplay}</td>
+        </tr>
       </table>
     </div>
   </div>
 
   <div class="inv-title-wrap"><div class="inv-title">INVOICE</div></div>
-  <div class="period">Period: ${periodStr}</div>
+  <div class="period-header">Periode : ${periodStr}</div>
 
   <!-- Main Table -->
   <table class="main-table">
     <thead>
       <tr>
         <th class="no-col">No</th>
-        <th>Description</th>
-        <th></th>
-        <th></th>
-        <th class="center">Rp</th>
-        <th style="text-align:right; width:90px;">Amount</th>
+        <th colspan="3">Description</th>
+        <th class="rp-col">Rp</th>
+        <th style="text-align:right; width:110px;">${baseRentalFee.toLocaleString('id-ID')}</th>
       </tr>
     </thead>
     <tbody>
-      <!-- Row 1: Rental charge -->
+      <!-- Row 1: Rental charge and machine details -->
       <tr>
         <td class="no-col">1</td>
-        <td colspan="3" style="font-weight:bold;">Rental Charges ${unitDesc} 1 Unit</td>
-        <td class="rp-col">Rp</td>
-        <td class="val-col">${baseRentalFee.toLocaleString('id-ID')}</td>
+        <td colspan="3" style="vertical-align: top;">
+          <div style="font-weight: 700; font-size: 11px; margin-bottom: 3px;">Rental Charges ${assetCategory} ${custName}</div>
+          <div style="font-weight: 700; font-size: 11px; margin-bottom: 6px;">${brandModel} ${snDisplay} 1 Unit</div>
+          ${meterBlocksHtml}
+        </td>
+        <td class="rp-col"></td>
+        <td class="val-col"></td>
       </tr>
 
-      ${meterDetails.length > 0
-      ? meterDetailRows(bwDetails, 'B/W') + meterDetailRows(colDetails, 'Colour')
-      : legacyBodyRows
-    }
-
-      ${meterDetails.length > 0 ? chargeRows([...bwDetails, ...colDetails], 2) : ''}
+      ${chargeRowsHtml}
 
       <!-- Total rows -->
       <tr class="total-row">
@@ -423,9 +657,14 @@ function renderRentalInvoiceBody(item: any): string {
         <td class="val-col">${total}</td>
       </tr>
       <tr class="total-row">
-        <td colspan="4" class="total-lbl">TAX</td>
-        <td class="rp-col">Rp</td>
-        <td class="val-col">${tax === '0' ? '-' : tax}</td>
+        <td colspan="4" class="total-lbl">D.P.P</td>
+        <td class="rp-col">${taxNum > 0 ? 'Rp' : ''}</td>
+        <td class="val-col">${dppVal}</td>
+      </tr>
+      <tr class="total-row">
+        <td colspan="4" class="total-lbl">PPN</td>
+        <td class="rp-col">${taxNum > 0 ? 'Rp' : ''}</td>
+        <td class="val-col">${taxVal}</td>
       </tr>
       <tr class="total-row grand">
         <td colspan="4" class="total-lbl">TOTAL PAY</td>
@@ -435,11 +674,10 @@ function renderRentalInvoiceBody(item: any): string {
     </tbody>
   </table>
 
-  ${stampHtml}
   <!-- Footer -->
   <div class="bottom-wrap">
     <div class="bank-box">
-      <div class="bank-header">Payment by transfer to account:</div>
+      <div class="bank-header">Pembayaran Transfer ke rekening :</div>
       <div class="bank-header">PT. BIAS SURYA TEKNOLOGI</div>
       NPWP : 0941.8395.0822.5000<br>
       <span class="bank-name">BANK RIAU KEPRI SYARIAH CAB. BATAM</span><br>
@@ -492,34 +730,36 @@ function renderRentalInvoicesPdf(items: any[], title: string): string {
     .left-box .co-addr { font-size: 10.5px; color: #374151; line-height: 1.6; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #bfdbfe; }
     .left-box .co-contact { font-size: 10.5px; color: #374151; line-height: 1.8; }
     .right-box { width: 54%; }
-    .right-table { width: 100%; border-collapse: collapse; font-size: 11px; border-radius: 8px; overflow: hidden; }
-    .right-table td { border: 1px solid #e5e7eb; padding: 5px 10px; vertical-align: top; }
-    .right-table tr:first-child td:first-child { border-radius: 8px 0 0 0; }
-    .right-table .lbl { width: 80px; font-weight: 600; color: #6b7280; background: #f9fafb; white-space: nowrap; }
-    .right-table .kepada { text-align: center; font-weight: 700; background: #1a56db; color: #fff; letter-spacing: 0.5px; }
-    .right-table .cust-name { font-weight: 700; font-size: 12px; }
+    .right-table { width: 100%; border-collapse: collapse; font-size: 11px; border: 1.5px solid #2563eb; background: #fff; }
+    .right-table td { border: 1px solid #60a5fa; padding: 4px 8px; vertical-align: top; color: #111827; }
+    .right-table .lbl { width: 85px; font-weight: 700; text-align: right; white-space: nowrap; }
+    .right-table .val { font-weight: 400; text-align: left; }
+    .right-table .kepada-lbl { font-weight: 700; font-size: 11px; text-align: left; padding-top: 5px; padding-bottom: 5px; }
+    .right-table .cust-name { font-weight: 700; font-size: 11.5px; text-align: left; }
+    .right-table .cust-addr { font-weight: 400; font-size: 10.5px; line-height: 1.45; text-align: left; min-height: 38px; }
+    .right-table .up-lbl { width: 85px; font-weight: 700; text-align: left; }
+    .right-table .up-val { font-weight: 700; font-size: 11px; text-align: center; }
 
     /* Invoice Title */
-    .inv-title-wrap { text-align: center; margin: 16px 0 6px; }
+    .inv-title-wrap { text-align: center; margin: 14px 0 4px; }
     .inv-title { font-size: 26px; font-weight: 800; letter-spacing: 6px; color: #111827; }
-    .period { text-align: center; font-style: italic; font-size: 11.5px; color: #4b5563; margin-bottom: 14px; }
+    .period-header { font-style: italic; font-size: 11px; font-weight: 700; color: #111827; margin: 10px 0 4px 0; text-align: left; }
 
     /* Main Table */
-    .main-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11px; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-    .main-table thead tr { background: #1a56db; color: #fff; }
-    .main-table th { padding: 8px 10px; font-weight: 600; font-size: 11px; text-align: left; letter-spacing: 0.3px; }
+    .main-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11px; border: 1.5px solid #2563eb; }
+    .main-table thead tr { background: #f8fafc; color: #111827; }
+    .main-table th { border: 1px solid #60a5fa; padding: 6px 10px; font-weight: 700; font-size: 11px; text-align: left; }
     .main-table th.center { text-align: center; }
-    .main-table td { border: 1px solid #e5e7eb; padding: 6px 10px; vertical-align: top; }
-    .main-table tbody tr:nth-child(even) { background: #f9fafb; }
-    .no-col { width: 28px; text-align: center; }
-    .rp-col { width: 22px; border-right: none !important; text-align: center; color: #6b7280; font-size: 10px; }
-    .val-col { border-left: none !important; text-align: right; width: 90px; font-weight: 600; }
+    .main-table td { border: 1px solid #93c5fd; padding: 6px 10px; vertical-align: top; }
+    .main-table tbody tr { background: #fff; }
+    .no-col { width: 32px; text-align: center; font-weight: 700; }
+    .rp-col { width: 28px; border-right: none !important; text-align: left; font-weight: 700; font-size: 11px; }
+    .val-col { border-left: none !important; text-align: right; width: 110px; font-weight: 700; font-size: 11px; }
 
     /* Total rows */
-    .total-row td { font-weight: 600; background: #f9fafb; border: 1px solid #e5e7eb; padding: 6px 10px; }
-    .total-row.grand td { background: #1a56db; color: #fff; font-size: 12px; font-weight: 700; }
-    .total-lbl { text-align: right; padding-right: 12px; color: #4b5563; }
-    .total-row.grand .total-lbl { color: #fff; }
+    .total-row td { font-weight: 700; background: #fff; border: 1px solid #93c5fd; padding: 5px 10px; }
+    .total-row.grand td { font-weight: 800; font-size: 11.5px; background: #f0f7ff; color: #1e3a8a; }
+    .total-lbl { text-align: right; padding-right: 12px; font-weight: 700; color: #111827; }
 
     /* Footer */
     .bottom-wrap { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 16px; }
@@ -532,9 +772,6 @@ function renderRentalInvoicesPdf(items: any[], title: string): string {
     .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
     .sig-name { font-weight: 700; font-size: 11px; }
     .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
-    .paid-stamp { display: inline-block; border: 3px double #166534; border-radius: 12px; color: #166534; font-weight: 900; font-size: 26px; letter-spacing: 4px; padding: 6px 22px; transform: rotate(-8deg); margin-top: 10px; }
-    .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
-    .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
   </style>
 </head>
 <body>
@@ -584,38 +821,37 @@ async function exportInvoicesToExcel(
   const columnWidths = [4.2, 39.2, 7.8, 13, 31.2]
 
   for (const item of sortedItems) {
-    const customer = findCustomer(item.customer_id)
-    const custName = customer?.company_name || customer?.name || ''
-    const custShort = custName ? custName.replace(/PT\.?\s*/i, '').trim().slice(0, 15) : ''
-    const baseName = custShort && item.invoice_no
-      ? `${custShort} - ${item.invoice_no}`
-      : (item.invoice_no || custName || `Inv_${item.id}`)
-    const sheetName = uniqueSheetName(baseName, usedSheetNames)
+    const assetInfo = resolveInvoiceAsset(item)
+    const { isCopier, assetCategory, brandModel, serialNo, custName, custAddress, picDisplay, poNo, signer, ci } = assetInfo
 
     const rows: StyledCell[][] = []
-    const addRow = (cells: StyledCell[]) => rows.push(cells)
+    const addRow = (r: StyledCell[] = []) => rows.push(r)
+    let rawSheetName = (item.invoice_no || `Inv_${item.id || 'draft'}`).replace(/[:\\/?*[\]]/g, '_').slice(0, 31)
+    let sheetName = rawSheetName
+    let counter = 1
+    while (usedSheetNames.has(sheetName)) {
+      sheetName = `${rawSheetName.slice(0, 28)}_${counter++}`
+    }
+    usedSheetNames.add(sheetName)
 
-    const custAddress = customer?.address || '-'
-    const ci = findContractItem(item.contract_item_id)
-    const unit = findUnit(ci?.unit_id)
-    const isCopier = isCopierUnit(unit)
-    const invoiceDate = item.invoice_date || item.monthly_date || item.period_start
-    const dateLabel = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'
-    const periodLabel = item.period_start
-      ? new Date(item.period_start).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-      : '-'
-    const baseRentalFee = item.base_rental_fee ?? item.basis_rental_fee ?? 0
+    const dateVal = item.invoice_date || item.monthly_date || item.period_end || ''
+    const dateLabel = dateVal ? formatDate(dateVal) : '-'
 
-    const pic = customer?.pic_name || ''
-    const picGender = customer?.pic_gender
-    const picPhone = customer?.phone || ''
-    const picPrefix = picGender === 'L' ? 'Bapak' : picGender === 'P' ? 'Ibu' : 'Bapak/Ibu'
-    const picDisplay = pic ? ('PIC ' + (picPrefix ? picPrefix + ' ' : '') + pic + (picPhone ? ' - ' + picPhone : '')) : 'PIC Finance'
-
-    const brandName = unit?.brand?.name || unit?.brand_name || ''
-    const modelDesc = unit?.model || ci?.description || ''
-    const serialNo = unit?.serial_no || ''
-    const poNo = (item.po_no || item.rental?.po_no || '').trim()
+    let periodLabel = '-'
+    if (item.period_start && item.period_end) {
+      periodLabel = `${formatDate(item.period_start)} - ${formatDate(item.period_end)}`
+    } else if (item.monthly_date) {
+      const d = new Date(item.monthly_date)
+      if (!isNaN(d.getTime())) {
+        periodLabel = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+      }
+    } else if (item.period_start) {
+      const d = new Date(item.period_start)
+      if (!isNaN(d.getTime())) {
+        periodLabel = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+      }
+    }
+    const baseRentalFee = Number(item.base_rental_fee || item.rental_rate || item.basis_rental_fee || ci?.monthly_fee || 0)
 
     // Row 1: Company name + Inv No.
     addRow([
@@ -642,14 +878,12 @@ async function exportInvoicesToExcel(
       addRow([
         { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
-        { v: 'Kepada Yth. ', style: 'borderBoldRight' },
-        { style: 'border' },
+        { v: 'Kepada Yth.', mergeAcross: 1, style: 'borderBold' }, {},
       ])
       addRow([
         { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
-        { v: custName || '-', style: 'borderBold' },
-        { style: 'border' },
+        { v: custName || '-', mergeAcross: 1, style: 'borderBold' }, {},
       ])
       addRow([
         { v: 'www.biassuryateknologi.com', mergeAcross: 1, style: 'borderCenter' }, {},
@@ -659,21 +893,19 @@ async function exportInvoicesToExcel(
       addRow([
         { style: 'border' }, { style: 'border' },
         {},
-        { v: 'Up :', style: 'borderBoldRight' },
-        { v: picDisplay, style: 'borderBold' },
+        { v: 'Up', style: 'borderBold' },
+        { v: picDisplay, style: 'borderBoldCenter' },
       ])
     } else {
       addRow([
         { v: 'Kepulauan Riau - Indonesia', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
-        { v: 'Kepada Yth. ', style: 'borderBoldRight' },
-        { style: 'border' },
+        { v: 'Kepada Yth.', mergeAcross: 1, style: 'borderBold' }, {},
       ])
       addRow([
         { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
-        { v: custName || '-', style: 'borderBold' },
-        { style: 'border' },
+        { v: custName || '-', mergeAcross: 1, style: 'borderBold' }, {},
       ])
       addRow([
         { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
@@ -683,8 +915,8 @@ async function exportInvoicesToExcel(
       addRow([
         { v: 'www.biassuryateknologi.com', mergeAcross: 1, style: 'borderCenter' }, {},
         {},
-        { v: 'Up :', style: 'borderBoldRight' },
-        { v: picDisplay, style: 'borderBold' },
+        { v: 'Up', style: 'borderBold' },
+        { v: picDisplay, style: 'borderBoldCenter' },
       ])
     }
     // Spacer
@@ -704,98 +936,95 @@ async function exportInvoicesToExcel(
       { v: 'Description', style: 'borderBold' },
       { style: 'border' },
       { style: 'border' },
-      { v: 'Amount', style: 'borderBold' },
-    ])
-
-    const fullUnitName = unit ? formatUnitDisplayName(unit) : ([brandName, modelDesc].filter(Boolean).join(' ') || (isCopier ? 'Mesin Fotocopy' : 'Printer'))
-    const machineLine = `Rental Charges ${fullUnitName} 1 Unit`
-    const unitLine2 = serialNo ? `S/N : ${serialNo}` : ''
-    addRow([
-      { v: 1, style: 'borderCenter' },
-      { v: machineLine, style: 'borderBold' },
-      {}, {},
       { v: baseRentalFee, style: 'borderBoldRight', numFmt: NUMFMT_RP },
     ])
-    if (unitLine2) {
-      addRow([
-        {},
-        { v: unitLine2, style: 'border' },
-        { style: 'border' }, { style: 'border' },
-        { style: 'border' },
-      ])
-    }
 
-    const meterDetails: any[] = item.meter_details || []
+    const snDisplay = serialNo ? `S/N : ${serialNo}` : 'S/N : -'
+    addRow([
+      { v: 1, style: 'borderCenter' },
+      { v: `Rental Charges ${assetCategory} ${custName}`, style: 'borderBold' },
+      {}, {},
+      { style: 'border' },
+    ])
+    addRow([
+      {},
+      { v: `${brandModel} ${snDisplay} 1 Unit`, style: 'borderBold' },
+      {}, {},
+      { style: 'border' },
+    ])
+
     let rowNum = 2
-
-    const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number) => {
-      const total = last - start
-      const net = total - free
-      const billable = Math.max(0, net)
-      addRow([{ style: 'border' }, { v: sectionLabel, style: 'borderBold' }, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-      addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
-      addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
-      addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
-      addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
-      addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
-      return { total, billable }
-    }
-
-    const chargeRow = (desc: string, rate: number, amount: number) => {
-      addRow([
-        { v: rowNum++, style: 'borderCenter' },
-        { v: desc, style: 'border' },
-        { v: '(x)', style: 'borderCenter' },
-        { v: rate, style: 'borderRight', numFmt: NUMFMT_RP_RATE },
-        { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-      ])
-    }
-
-    if (meterDetails.length > 0) {
-      const byPaperSize = new Map<string, any[]>()
-      for (const detail of meterDetails) {
-        const psName = detail.paper_size?.name || 'Tanpa ukuran'
-        const ptName = detail.paper_type?.name || ''
-        const key = ptName ? `${psName}/${ptName}` : psName
-        if (!byPaperSize.has(key)) byPaperSize.set(key, [])
-        byPaperSize.get(key)!.push(detail)
+    if (isCopier) {
+      const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number) => {
+        const total = last - start
+        const net = total - free
+        const billable = Math.max(0, net)
+        addRow([{ style: 'border' }, { v: sectionLabel, style: 'borderBold' }, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+        addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+        addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
+        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+        addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
+        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+        return { total, billable }
       }
 
-      for (const [paperSize, details] of byPaperSize) {
-        const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
-        const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
-
-        for (const detail of bwDetails) {
-          const start = detail.start_meter_reading || 0
-          const last = detail.last_meter_reading || 0
-          const free = detail.free_quota ?? 0
-          pushMeterSection(`B/W ${paperSize}`, start, last, free)
-          chargeRow(`Copies Charges B/W ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
-        }
-
-        for (const detail of colorDetails) {
-          const start = detail.start_meter_reading || 0
-          const last = detail.last_meter_reading || 0
-          const free = detail.free_quota ?? 0
-          pushMeterSection(`Colour ${paperSize}`, start, last, free)
-          chargeRow(`Copies Charges Colour ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
-        }
+      const chargeRow = (desc: string, rate: number, amount: number) => {
+        addRow([
+          { v: rowNum++, style: 'borderCenter' },
+          { v: desc, style: 'border' },
+          { v: '(x)', style: 'borderCenter' },
+          { v: rate, style: 'borderRight', numFmt: NUMFMT_RP_RATE },
+          { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+        ])
       }
-    } else if (isCopier) {
-      const bwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
-      const bwEnd = item.meter_end || item.meter_end_bw || bwStart
-      const bwFree = item.free_copies || ci?.free_copy_quota || 2000
-      const bwRate = item.rate_per_page || 150
-      const bw = pushMeterSection('B/W A4', bwStart, bwEnd, bwFree)
-      chargeRow('Copies Charges B/W A4', bwRate, bw.billable * bwRate)
 
-      const colorStart = ci?.start_meter_color || 0
-      const colorEnd = item.meter_end_colour || colorStart
-      const colorFree = ci?.free_quota_color || 0
-      const colorRate = ci?.rate_per_page_color || bwRate
-      if (colorStart > 0 || colorFree > 0) {
-        const col = pushMeterSection('Colour A4', colorStart, colorEnd, colorFree)
-        chargeRow('Copies Charges Colour A4', colorRate, col.billable * colorRate)
+      const meterDetails: any[] = item.meter_details || []
+      if (meterDetails.length > 0) {
+        const byPaperSize = new Map<string, any[]>()
+        for (const detail of meterDetails) {
+          const psName = detail.paper_size?.name || 'A4'
+          const ptName = detail.paper_type?.name || ''
+          const key = ptName ? `${psName}/${ptName}` : psName
+          if (!byPaperSize.has(key)) byPaperSize.set(key, [])
+          byPaperSize.get(key)!.push(detail)
+        }
+
+        for (const [paperSize, details] of byPaperSize) {
+          const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
+          const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
+
+          for (const detail of bwDetails) {
+            const start = detail.start_meter_reading || 0
+            const last = detail.last_meter_reading || 0
+            const free = detail.free_quota ?? 0
+            pushMeterSection(`B/W ${paperSize}`, start, last, free)
+            chargeRow(`Copies Charges B/W ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
+          }
+
+          for (const detail of colorDetails) {
+            const start = detail.start_meter_reading || 0
+            const last = detail.last_meter_reading || 0
+            const free = detail.free_quota ?? 0
+            pushMeterSection(`Colour ${paperSize}`, start, last, free)
+            chargeRow(`Copies Charges Colour ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
+          }
+        }
+      } else {
+        const bwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
+        const bwEnd = item.meter_end || item.meter_end_bw || bwStart
+        const bwFree = item.free_copies || ci?.free_copy_quota || 2000
+        const bwRate = item.rate_per_page || 150
+        const bw = pushMeterSection('B/W A4', bwStart, bwEnd, bwFree)
+        chargeRow('Copies Charges B/W A4', bwRate, bw.billable * bwRate)
+
+        const colorStart = ci?.start_meter_color || 0
+        const colorEnd = item.meter_end_colour || colorStart
+        const colorFree = ci?.free_quota_color || 0
+        const colorRate = ci?.rate_per_page_color || bwRate
+        if (colorStart > 0 || colorFree > 0 || colorEnd > colorStart) {
+          const col = pushMeterSection('Colour A4', colorStart, colorEnd, colorFree)
+          chargeRow('Copies Charges Colour A4', colorRate, col.billable * colorRate)
+        }
       }
     }
 
@@ -805,29 +1034,34 @@ async function exportInvoicesToExcel(
 
     addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: subtotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
     addRow([
-      { v: 'Payment by transfer to account:', mergeAcross: 1, style: 'border' }, {},
+      { v: 'Pembayaran Transfer ke rekening :', mergeAcross: 1, style: 'border' }, {},
       { style: 'border' },
-      { v: 'TAX', style: 'borderBoldRight' },
-      { v: tax, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+      { v: 'D.P.P', style: 'borderBoldRight' },
+      tax > 0 ? { v: subtotal, style: 'borderBoldRight', numFmt: NUMFMT_RP } : { style: 'border' },
     ])
     addRow([
       { v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {},
       { style: 'border' },
+      { v: 'PPN', style: 'borderBoldRight' },
+      tax > 0 ? { v: tax, style: 'borderBoldRight', numFmt: NUMFMT_RP } : { style: 'border' },
+    ])
+    addRow([
+      { v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }, {},
+      { style: 'border' },
       { v: 'TOTAL PAY', style: 'borderBoldRight' },
       { v: totalPay, style: 'borderBoldRight', numFmt: NUMFMT_RP },
     ])
-    addRow([{ v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
     addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-    addRow([{ v: 'Account No. 1060885757', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+    addRow([{ v: 'Rek No. 1060885757', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
     addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-    addRow([{ v: 'Account No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+    addRow([{ v: 'Rek No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
 
     // Signatures
     addRow([])
     addRow([{ v: 'Received By,', mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'plainBoldCenter' }])
     addRow([])
     addRow([{ v: '_______________________', mergeAcross: 1, style: 'plainCenter' }, {}, {}, { v: '_______________________', mergeAcross: 1, style: 'plainCenter' }])
-    addRow([{ v: picDisplay, mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-', mergeAcross: 1, style: 'plainBoldCenter' }])
+    addRow([{ v: picDisplay, mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: signer, mergeAcross: 1, style: 'plainBoldCenter' }])
     addRow([{}, {}, {}, { v: 'Admin Finance', mergeAcross: 1, style: 'plainCenter' }])
 
     sheets.push({ name: sheetName, columnWidths, rows })
