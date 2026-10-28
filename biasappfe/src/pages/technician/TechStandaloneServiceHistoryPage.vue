@@ -262,7 +262,7 @@ async function saveAssign() {
         instructions: assignForm.instructions,
         status: 'assigned',
       }
-      await api.post('/job-orders/', joPayload)
+      await api.post('/job-orders', joPayload)
       toast.success('Job Order berhasil dibuat dan teknisi di-assign!')
     }
 

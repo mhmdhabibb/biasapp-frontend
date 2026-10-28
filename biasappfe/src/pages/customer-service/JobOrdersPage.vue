@@ -161,7 +161,7 @@ async function fetchDeliveryOrders() {
     const res = await api.get<any>("/delivery-orders?page=1&limit=100", true, true);
     const rawList = extractArray(res);
     deliveryOrders.value = rawList.filter((d: any) =>
-      ["rental", "sale", "inbound"].includes(
+      ["rental", "sale", "inbound", "service"].includes(
         String(d.do_type || d.delivery_type || "").toLowerCase(),
       ),
     );
@@ -217,7 +217,7 @@ async function loadAllData(silent = false) {
 
     const rawDos = extractArray(doRes);
     const filteredDos = rawDos.filter((d: any) =>
-      ["rental", "sale", "inbound"].includes(
+      ["rental", "sale", "inbound", "service"].includes(
         String(d.do_type || d.delivery_type || "").toLowerCase(),
       ),
     );
@@ -874,6 +874,8 @@ function deliveryTypeLabel(type: string | undefined) {
       return "Sparepart Delivery";
     case "sale":
       return "Sales Delivery";
+    case "service":
+      return "Service History";
     default:
       return "Rental Delivery";
   }
@@ -920,6 +922,8 @@ function doCustomerName(d: any): string {
   return (
     job?.customer?.company_name ||
     job?.customer?.name ||
+    findCustomer(job?.customer_id)?.company_name ||
+    findCustomer(job?.customer_id)?.name ||
     job?.customer_name ||
     job?.recipient_name ||
     (typeof job?.customer === "string" ? job.customer : "") ||
@@ -2128,6 +2132,8 @@ async function handleDeleteTech() {
                     job.service_request?.customer?.name ||
                     job.service_report?.customer?.company_name ||
                     job.service_report?.customer?.name ||
+                    findCustomer(job.customer_id || job.delivery_order?.customer_id)?.company_name ||
+                    findCustomer(job.customer_id || job.delivery_order?.customer_id)?.name ||
                     "-"
                   }}</span>
                 </div>

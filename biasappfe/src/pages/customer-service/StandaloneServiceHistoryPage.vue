@@ -8,11 +8,15 @@ import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
+import { useHardDelete } from '@/composables/useHardDelete'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
+import { resources as resourceService } from '@/services/resource.service'
 import { api } from '@/services/api'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import { printServiceReport, type ReportType } from '@/utils/printReport'
@@ -359,7 +363,7 @@ async function handleAssignSubmit() {
 }
 
 // ══════════════════════════════════════════════════
-// MODAL DELETE
+// MODAL DELETE (SOFT DELETE) & HARD DELETE (SUPERADMIN)
 // ══════════════════════════════════════════════════
 const showDelete = ref(false)
 const deletingItem = ref<any>(null)
@@ -381,7 +385,7 @@ async function handleDelete() {
     }
     await resources.remove('deliveryOrders', String(deletingItem.value.id))
     await store.refreshOnly(['deliveryOrders', 'jobOrders'])
-    toast.success('Data dihapus.')
+    toast.success('Service history dihapus.')
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menghapus.')
   } finally {
@@ -389,6 +393,22 @@ async function handleDelete() {
     deletingItem.value = null
   }
 }
+
+const hardDelete = useHardDelete(
+  async (id: string) => {
+    const linkedJO = findJobOrderForDO(id)
+    if (linkedJO) {
+      try {
+        await resourceService.jobOrders.hardRemove(String(linkedJO.id))
+      } catch {}
+    }
+    await resourceService.deliveryOrders.hardRemove(id)
+  },
+  async () => {
+    await store.refreshOnly(['deliveryOrders', 'jobOrders'])
+  },
+  'delivery_order',
+)
 
 // ══════════════════════════════════════════════════
 // DETAIL & PRINT
@@ -626,9 +646,20 @@ async function exportPdf() {
               v-if="can('delivery_order:delete')"
               class="btn btn-sm btn-outline btn-danger"
               @click="openDelete(row)"
-              title="Hapus Data"
+              title="Hapus Data (Soft Delete)"
             >
               Hapus
+            </button>
+            <button
+              v-if="hardDelete.isSuperadmin"
+              class="btn btn-sm btn-outline btn-hard-delete"
+              @click="hardDelete.open(row)"
+              title="Hapus Permanen dari Database (Superadmin)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;">
+                <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"></path>
+              </svg>
+              Hard Delete
             </button>
           </div>
         </template>
@@ -749,13 +780,27 @@ async function exportPdf() {
       </template>
     </FormModal>
 
-    <!-- ═══ MODAL DELETE ═══ -->
-    <FormModal
+    <!-- ═══ MODAL DELETE (SOFT DELETE) ═══ -->
+    <ConfirmDialog
       :open="showDelete"
       title="Hapus Service History"
-      :message="`Hapus '${deletingItem?.do_number || ''}'? Jika ada Job Order terkait, Job Order juga akan dihapus.`"
+      :message="`Apakah Anda yakin ingin menghapus '${deletingItem?.do_number || ''}'? Jika ada Job Order terkait, Job Order juga akan dihapus.`"
+      confirm-label="Hapus"
+      variant="danger"
       @close="showDelete = false"
       @confirm="handleDelete"
+    />
+
+    <!-- ═══ MODAL HARD DELETE (SUPERADMIN) ═══ -->
+    <HardDeleteDialog
+      :open="hardDelete.show"
+      title="Hapus Permanen Service History"
+      :item-label="hardDelete.expected"
+      :expected="hardDelete.expected"
+      :confirm-valid="hardDelete.confirmed"
+      @update:input="hardDelete.input = $event"
+      @confirm="hardDelete.confirm"
+      @close="hardDelete.close"
     />
 
     <!-- ═══ MODAL DETAIL ═══ -->
@@ -955,6 +1000,19 @@ async function exportPdf() {
 .btn-assign-action:hover {
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.btn-hard-delete {
+  background: rgba(153, 27, 27, 0.08);
+  color: #991b1b;
+  border: 1px dashed #991b1b;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-hard-delete:hover {
+  background: #991b1b;
+  color: #fff;
+  border-style: solid;
 }
 
 .assign-summary-box {

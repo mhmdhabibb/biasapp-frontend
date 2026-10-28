@@ -73,6 +73,8 @@ export function displayNameOf(item: any): string {
   if (!item) return ''
   const v =
     item.name ??
+    item.do_number ??
+    item.doNumber ??
     item.rental_no ??
     item.rentalNo ??
     item.sale_no ??
