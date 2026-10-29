@@ -136,6 +136,11 @@ const router = createRouter({
         import("@/pages/customer-service/ServiceReportsPage.vue"),
     },
     {
+      path: "/customer-service/surveys",
+      name: "surveys",
+      component: () => import("@/pages/customer-service/SurveyPage.vue"),
+    },
+    {
       path: "/customer-service/standalone-service-history",
       name: "csStandaloneServiceHistory",
       component: () =>

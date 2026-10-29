@@ -23,7 +23,7 @@ import {
 } from "@/utils/paymentReceipt";
 import type { TableColumn } from "@/types";
 import type { PaymentReceiptData } from "@/utils/paymentReceipt";
-import { computed, onActivated, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onActivated, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { normalizeRole } from "@/router/role-access";
@@ -397,6 +397,18 @@ const form = reactive({
   notes: "",
   po_no: "",
   installation_address: "",
+  technician_id: "",
+  is_new: true,
+});
+
+watch(() => form.is_new, (isNew) => {
+  const newMode = isNew ? "existing" : "unit";
+  for (const item of rentalItems.value) {
+    item.create_mode = newMode;
+    if (typeof onItemModeChange === "function") {
+      try { onItemModeChange(item); } catch (e) {}
+    }
+  }
 });
 
 const calcSubtotal = computed(() => {
@@ -497,10 +509,11 @@ const rentQuotaAppliesToOptions = [
   { value: "bw", label: "BW (Warna ditagih penuh)" },
 ];
 
-function addRentalItem() {
+function addRentalItem(mode?: "existing" | "unit" | "product") {
+  const defaultMode = mode || (form.is_new ? "existing" : "unit");
   rentalItems.value.push({
     selected_item: "",
-    create_mode: "existing",
+    create_mode: defaultMode,
     new_unit: {
       brand_id: "",
       type_id: "",
@@ -705,6 +718,8 @@ async function openAdd() {
     po_no: "",
     notes: "",
     installation_address: "",
+    technician_id: "",
+    is_new: true,
   });
   rentalItems.value = [
     {
@@ -846,7 +861,25 @@ async function openEdit(row: any) {
   } else {
     rentalItems.value = [
       {
+        id: undefined,
         selected_item: "",
+        create_mode: "existing",
+        new_unit: {
+          brand_id: "",
+          type_id: "",
+          model: "",
+          serial_no: "",
+          is_copier: false,
+          current_meter_bw: 0,
+          current_meter_color: 0,
+        },
+        new_product: {
+          name: "",
+          category_id: "",
+          price: 0,
+          stock: 0,
+          is_computer: false,
+        },
         unit_id: null,
         product_id: null,
         qty: 1,
@@ -1070,6 +1103,7 @@ async function handleSubmit() {
     po_no: form.po_no ? String(form.po_no).trim() : "",
     notes: form.notes ? String(form.notes).trim() : "",
     installation_address: form.installation_address ? String(form.installation_address).trim() : "",
+    technician_id: form.technician_id || undefined,
     items: rentalItems.value.map((item) => {
       const isUnit = item.selected_item.startsWith("unit_");
       const isProduct = item.selected_item.startsWith("prod_");
@@ -1493,7 +1527,7 @@ async function exportToPdf() {
       :show-hard-delete="hardDelete.isSuperadmin"
       :search-placeholder="t('rentals.search')"
       @edit="openEdit"
-      @delete="handleDeleteRental"
+      @delete="handleConfirmDeleteRental"
       @hard-delete="hardDelete.open"
     >
       <template #cell-rental_no="{ row, value }">
@@ -2290,6 +2324,21 @@ async function exportToPdf() {
         >
       </div>
 
+      <div class="form-group" style="margin-bottom: var(--space-md)">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" v-model="form.is_new" />
+          isNew (rental baru)
+        </label>
+      </div>
+
+      <div v-if="!form.is_new" class="form-group" style="margin-bottom: var(--space-md)">
+        <label class="form-label">Assign Teknisi (draft visit copier)</label>
+        <CustomSelect v-model="form.technician_id" :options="technicianOptions" placeholder="-- Pilih Teknisi (Opsional) --" />
+        <p style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 4px;">
+          Untuk rental yang sudah berjalan sebelum sistem: assign teknisi langsung ke draft visit copier.
+        </p>
+      </div>
+
       <div class="form-section-title">
         Rented Machines & Initial Meter Input
       </div>
@@ -2306,9 +2355,8 @@ async function exportToPdf() {
             class="form-input"
             @change="onItemModeChange(item)"
           >
-            <option value="existing">Pilih existing (Unit/Produk)</option>
-            <option value="unit">Input Unit baru</option>
-            <option value="product">Input Produk baru</option>
+            <option value="existing">Pilih existing (Produk)</option>
+            <option value="unit">Input Produk baru</option>
           </select>
         </div>
 
@@ -2373,9 +2421,11 @@ async function exportToPdf() {
               <label class="form-label">Serial No (SN)</label>
               <input
                 v-model="item.new_unit.serial_no"
+                @input="item.new_unit.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()"
                 type="text"
                 class="form-input"
                 required
+                style="text-transform: uppercase;"
               />
             </div>
           </div>
@@ -2839,9 +2889,17 @@ async function exportToPdf() {
       <button
         type="button"
         class="btn btn-outline btn-sm mb-4"
-        @click="addRentalItem"
+        @click="addRentalItem()"
       >
         + Add Another Machine
+      </button>
+      <button
+        type="button"
+        class="btn btn-outline btn-sm mb-4"
+        style="margin-left: 8px"
+        @click="addRentalItem('unit')"
+      >
+        + Add New Machine (isNew)
       </button>
 
       <div class="sale-summary mt-4">

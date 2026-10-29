@@ -14,7 +14,7 @@ import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import { resources as resourceService } from '@/services/resource.service'
 import type { Sale, TableColumn } from '@/types'
-import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiRequest } from '@/services/api'
 import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
@@ -162,6 +162,34 @@ onMounted(() => {
   window.addEventListener('focus', silentRefresh)
   window.addEventListener('bias:data-mutated', silentRefresh)
 })
+
+// Prefill from survey (Buat Sale Baru)
+function applySurveyPrefill() {
+  const qCust = route.query.customer_id ? String(route.query.customer_id) : ''
+  const qUnit = route.query.unit_id ? String(route.query.unit_id) : ''
+  if (!qCust) return
+  if (!customers.value || (customers.value as any[]).length === 0) return
+  openAdd()
+  form.customer_id = qCust
+  if (qUnit) {
+    saleItems.value = [
+      {
+        product_id: null as any,
+        unit_id: qUnit,
+        _combined_id: `U_${qUnit}`,
+        qty: 1,
+        unit_price: 0,
+        is_computer: false,
+        specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
+        description: '',
+      },
+    ]
+  }
+}
+
+watch([() => route.query.customer_id, () => route.query.unit_id, customers, units], () => {
+  applySurveyPrefill()
+}, { immediate: true })
 
 onUnmounted(() => {
   if (salesTimer) clearInterval(salesTimer)

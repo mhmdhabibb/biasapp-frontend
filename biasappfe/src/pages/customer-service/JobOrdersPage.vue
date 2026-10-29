@@ -43,6 +43,8 @@ const activeTab = ref("do");
 const draggedTask = ref<any | null>(null);
 
 const searchUnassigned = ref("");
+const unassignedPage = ref(1);
+const unassignedPerPage = 8;
 const searchTech = ref("");
 const dragOverTechId = ref<string | number | null>(null);
 
@@ -535,6 +537,22 @@ const displayedUnassigned = computed<any[]>(() => {
   if (activeTab.value === "visit") return unassignedVisits.value;
   if (activeTab.value === "maintenance") return unassignedMaintenance.value;
   return [];
+});
+
+const unassignedTotalPages = computed(() =>
+  Math.max(1, Math.ceil(displayedUnassigned.value.length / unassignedPerPage)),
+);
+
+const pagedUnassigned = computed(() => {
+  const start = (unassignedPage.value - 1) * unassignedPerPage;
+  return displayedUnassigned.value.slice(start, start + unassignedPerPage);
+});
+
+watch(displayedUnassigned, () => {
+  if (unassignedPage.value > unassignedTotalPages.value) {
+    unassignedPage.value = unassignedTotalPages.value;
+  }
+  if (unassignedPage.value < 1) unassignedPage.value = 1;
 });
 
 const filteredTechs = computed(() => {
@@ -1504,7 +1522,7 @@ async function handleDeleteTech() {
             <span>No new tasks yet</span>
           </div>
           <div
-            v-for="req in displayedUnassigned"
+            v-for="req in pagedUnassigned"
             :key="req.id"
             class="job-card draggble"
             draggable="true"
@@ -1933,6 +1951,11 @@ async function handleDeleteTech() {
                 </template>
               </div>
             </div>
+          </div>
+          <div class="pagination" style="display: flex; justify-content: center; gap: 8px; padding: 8px;">
+            <button class="btn btn-outline btn-sm" :disabled="unassignedPage <= 1" @click="unassignedPage--">Prev</button>
+            <span style="font-size: 12px; line-height: 28px;">{{ unassignedPage }} / {{ unassignedTotalPages }}</span>
+            <button class="btn btn-outline btn-sm" :disabled="unassignedPage >= unassignedTotalPages" @click="unassignedPage++">Next</button>
           </div>
         </div>
       </aside>

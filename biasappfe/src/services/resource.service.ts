@@ -116,6 +116,7 @@ export const resources = {
     "purchase-order-items",
   ),
   payments: createResourceService<ResourceRecord>("payments"),
+  surveys: createResourceService<ResourceRecord>("surveys"),
   stockMovements: {
     ...createResourceService<ResourceRecord>("stock-movements"),
     applyOpname: (data: { product_id: string; actual_stock: number; notes: string }) =>

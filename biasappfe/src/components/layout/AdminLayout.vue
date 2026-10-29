@@ -86,6 +86,7 @@ const pageTitle = computed(() => {
     "/master/warranties": "Warranties",
     "/customer-service/contract-items": "Contract Items",
     "/customer-service/service-reports": "Service Reports",
+    "/customer-service/surveys": "Survey",
     "/customer-service/standalone-service-history": "Service History Mandiri",
     "/customer-service/monthly-meter-readings": "Monthly Meter Readings",
     "/customer-service/sales": "Sales",

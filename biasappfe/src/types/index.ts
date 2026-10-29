@@ -215,6 +215,18 @@ export interface ContractItemRate {
   rate_per_page_color: number;
 }
 
+export interface Survey {
+  id: string;
+  survey_no: string;
+  customer_id: string | null;
+  unit_id: string | null;
+  result: string;
+  status: string;
+  remarks?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ServiceRequest {
   id: string;
   request_no: string;
@@ -224,6 +236,7 @@ export interface ServiceRequest {
   status: string;
   request_date: string;
   is_external?: boolean;
+  external_type?: string;
   external_brand?: string;
   external_model?: string;
   external_serial_no?: string;

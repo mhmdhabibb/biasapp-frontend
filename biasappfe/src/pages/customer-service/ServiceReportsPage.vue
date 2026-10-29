@@ -119,6 +119,7 @@ const activeTab = ref<'service' | 'delivery' | 'sparepart'>('service')
 
 // Filter customer berlaku untuk semua tab (service, delivery, sparepart).
 const customerFilter = ref('')
+const statusFilter = ref('')
 const customerFilterOptions = computed(() => [
   { value: '', label: 'All Customers' },
   ...(customers.value as any[]).map((c: any) => ({
@@ -131,6 +132,17 @@ function matchesCustomer(id: any): boolean {
   if (!customerFilter.value) return true
   return String(id) === customerFilter.value
 }
+
+const statusFilterOptions = computed(() => [
+  { value: '', label: 'All Status' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'open', label: 'Open (legacy)' },
+])
 
 let srRefreshTimer: any = null
 
@@ -543,14 +555,19 @@ const columns: TableColumn[] = [
 // dari list Service Reports.
 const serviceOnlyReports = computed(() =>
   data.value.filter(
-    (item: any) => !isCopierReport(item) && matchesCustomer(item.customer_id),
+    (item: any) =>
+      !isCopierReport(item) &&
+      matchesCustomer(item.customer_id) &&
+      (!statusFilter.value || String(item.status || '').toLowerCase() === statusFilter.value),
   ),
 )
 
 // Sparepart Requests difilter customer via service report induknya.
 const filteredSparepartRequests = computed(() =>
   (sparepartRequests.value as any[]).filter(
-    (row: any) => matchesCustomer(sparepartCustomerId(row)),
+    (row: any) =>
+      matchesCustomer(sparepartCustomerId(row)) &&
+      (!statusFilter.value || String(row.status || '').toLowerCase() === statusFilter.value),
   ),
 )
 
@@ -596,8 +613,7 @@ function computeProjectName() {
     if (form.unit_id) {
       const u: any = findUnit(form.unit_id)
       if (u) {
-        const brand = u.brand_id ? findBrand(u.brand_id) : (u.brand?.name ? u.brand : null)
-        const brandName = brand?.name || brand || ''
+        const brandName = u.brand?.name || u.brand || ''
         unitName = [brandName, u.model || u.name].filter(Boolean).join(' ') || u.model || ''
       }
     }
@@ -756,7 +772,8 @@ const reportSelectOptions = computed(() => {
   }))
 })
 
-function onPrintReportChange(newId: string | number) {
+function onPrintReportChange(newId: string | number | null) {
+  if (newId === null) return;
   selectedPrintReportId.value = String(newId)
   const found = serviceOnlyReports.value.find((r: any) => String(r.id) === String(newId))
   if (found) {
@@ -780,9 +797,11 @@ function openPrintModal(item: any = null) {
   } else {
     // If opened from header button, default to single report on the first displayed item
     if (serviceOnlyReports.value.length > 0) {
-      printTarget.value = serviceOnlyReports.value[0]
-      selectedPrintReportId.value = String(serviceOnlyReports.value[0].id)
-      if (isCopierReport(serviceOnlyReports.value[0])) {
+      const firstReport = serviceOnlyReports.value[0]
+      if (!firstReport) return
+      printTarget.value = firstReport
+      selectedPrintReportId.value = String(firstReport.id)
+      if (isCopierReport(firstReport)) {
         printType.value = 'copier'
       } else {
         printType.value = 'technical'
@@ -860,7 +879,11 @@ function printTable() {
         <label class="filter-label">Customer</label>
         <CustomSelect v-model="customerFilter" :options="customerFilterOptions" class="form-select filter-input" />
       </div>
-      <button v-if="customerFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="customerFilter = ''">
+      <div class="filter-item">
+        <label class="filter-label">Status</label>
+        <CustomSelect v-model="statusFilter" :options="statusFilterOptions" class="form-select filter-input" />
+      </div>
+      <button v-if="customerFilter || statusFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="customerFilter = ''; statusFilter = ''">
         Reset Filter
       </button>
     </div>
@@ -1044,7 +1067,7 @@ function printTable() {
             <strong>{{ srDetailItem.repair_action }}</strong>
           </div>
           <div v-if="srDetailItem.remarks" class="detail-field detail-field--wide">
-            <span>Remarks</span>
+            <label>Remark Teknisi (Pending)</label>
             <strong>{{ srDetailItem.remarks }}</strong>
           </div>
         </div>

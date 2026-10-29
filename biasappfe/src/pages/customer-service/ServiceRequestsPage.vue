@@ -16,7 +16,7 @@ const toast = useToast();
 const { can } = usePermission();
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
-const { customers, units, products, sales, brands, findProduct, findUnit, getUnitsByCustomer, getContractsByCustomer, deliveryOrders, formatUnitDisplayName, formatProductDisplayName } =
+const { customers, units, products, sales, brands, findProduct, findUnit, findCustomer, getUnitsByCustomer, getContractsByCustomer, deliveryOrders, formatUnitDisplayName, formatProductDisplayName } =
   useMasterStore();
 
 const columns: TableColumn[] = [
@@ -77,6 +77,14 @@ const brandSelectOptions = computed(() => [
 
 const externalBrandSelect = ref<string | null>(null);
 
+const externalTypeOptions = [
+  { value: "legacy_rental", label: "Rental yang sudah berjalan sebelum ada sistem" },
+  { value: "external_purchase", label: "Unit dibeli dari toko lain (service di tempat kita)" },
+];
+
+const externalTypeFilter = ref<string>("all");
+const productSourceFilter = ref<string>("all");
+
 const isExternalBrandOther = computed(
   () => externalBrandSelect.value === EXTERNAL_BRAND_OTHER,
 );
@@ -132,6 +140,7 @@ const form = reactive({
   external_model: "",
   external_serial_no: "",
   external_note: "",
+  external_type: "legacy_rental",
 });
 
 watch(externalBrandSelect, (val) => {
@@ -149,12 +158,28 @@ watch(externalBrandSelect, (val) => {
 const internalRequests = computed(() =>
   serviceRequests.value.filter((r: any) => !r.is_external),
 );
-const externalRequests = computed(() =>
-  serviceRequests.value.filter((r: any) => r.is_external),
-);
+const externalRequests = computed(() => {
+  let list = serviceRequests.value.filter((r: any) => r.is_external);
+  if (externalTypeFilter.value !== "all") {
+    list = list.filter(
+      (r: any) => (r.external_type || "legacy_rental") === externalTypeFilter.value,
+    );
+  }
+  return list;
+});
 const displayedRequests = computed(() =>
   listTab.value === "internal" ? internalRequests.value : externalRequests.value,
 );
+
+const filteredCustomerRentalUnits = computed(() => {
+  const list = customerRentalUnits.value;
+  if (productSourceFilter.value === "all") return list;
+  return list.filter((u: any) => {
+    if (productSourceFilter.value === "unit") return u.itemType === "unit";
+    if (productSourceFilter.value === "product") return u.itemType === "product";
+    return u.source === productSourceFilter.value;
+  });
+});
 
 const isEditing = ref(false);
 const editId = ref<string | null>(null);
@@ -177,6 +202,7 @@ function resetCreateForm(tab: "internal" | "external" = listTab.value) {
     external_model: "",
     external_serial_no: "",
     external_note: "",
+    external_type: "legacy_rental",
   });
   externalBrandSelect.value = null;
 }
@@ -213,6 +239,7 @@ async function submitExternalRequest() {
     external_model: form.external_model,
     external_serial_no: form.external_serial_no,
     external_note: form.external_note,
+    external_type: form.external_type,
     project_name: form.project_name,
     problem_description: form.problem_description,
     request_date: new Date(form.request_date).toISOString(),
@@ -726,6 +753,7 @@ function openEdit(row: any) {
     external_model: row.external_model || '',
     external_serial_no: row.external_serial_no || '',
     external_note: row.external_note || '',
+    external_type: row.external_type || 'legacy_rental',
   });
   externalBrandSelect.value = row.external_brand;
   showModal.value = true;
@@ -796,15 +824,30 @@ onUnmounted(() => {
     </div>
 
     <DataTable :columns="tableColumns" :data="displayedRequests" :loading="isLoading"
-      :search-placeholder="listTab === 'internal' ? 'Search complaints...' : 'Search external complaints...'">
-      <template #cell-request_date="{ value }">{{
+       :search-placeholder="listTab === 'internal' ? 'Search complaints...' : 'Search external complaints...'">
+       <template #toolbar>
+         <div v-if="listTab === 'external'" style="display: flex; align-items: center; gap: 8px;">
+           <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Tipe Pembelian:</label>
+           <select v-model="externalTypeFilter" class="form-select" style="min-width: 200px; height: 36px; padding: 0 10px; font-size: 13px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface, #fff); color: var(--color-text); cursor: pointer;">
+             <option value="all">Semua</option>
+             <option value="legacy_rental">Rental lama (sebelum sistem)</option>
+             <option value="external_purchase">Beli dari toko lain</option>
+           </select>
+         </div>
+       </template>
+       <template #cell-request_date="{ value }">{{
         new Date(value).toLocaleDateString("en-GB")
       }}</template>
-      <template #cell-request_no="{ value, row }">
-        <span class="mono">{{ value }}</span>
-        <span v-if="row?.is_external" class="unit-source-badge badge-external"
-          title="Unit di luar milik perusahaan">Eksternal</span>
-      </template>
+       <template #cell-request_no="{ value, row }">
+         <span class="mono">{{ value }}</span>
+         <span v-if="row?.is_external" class="unit-source-badge badge-external"
+           title="Unit di luar milik perusahaan">Eksternal</span>
+         <span v-if="row?.is_external" class="unit-source-badge"
+           :class="(row?.external_type || 'legacy_rental') === 'external_purchase' ? 'badge-outside' : 'badge-running'"
+           :title="(row?.external_type || 'legacy_rental') === 'external_purchase' ? 'Unit dibeli dari toko lain' : 'Rental yang sudah berjalan sebelum ada sistem'">
+           {{ (row?.external_type || 'legacy_rental') === 'external_purchase' ? 'Beli Toko Lain' : 'Rental Lama' }}
+         </span>
+       </template>
       <template #cell-status="{ value }">
         <span class="badge" :class="value === 'assigned' || value === 'in_progress'
           ? 'badge-success'
@@ -995,9 +1038,21 @@ onUnmounted(() => {
             Belum ada barang yang dikirim (delivered) untuk customer ini —
             service request baru bisa dibuat setelah barang/DO diterima customer.
           </div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Filter Product:</label>
+            <select v-model="productSourceFilter" class="form-select" style="min-width: 180px; height: 34px; padding: 0 10px; font-size: 12px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface, #fff); color: var(--color-text); cursor: pointer;">
+              <option value="all">Semua</option>
+              <option value="unit">Unit / Mesin</option>
+              <option value="product">Consumable / Sparepart</option>
+              <option value="rental">Rental</option>
+              <option value="sale">Purchased</option>
+              <option value="delivery">Delivered</option>
+              <option value="contract">Contract</option>
+            </select>
+          </div>
           <div class="unit-checkbox-list">
             <label
-              v-for="u in customerRentalUnits"
+              v-for="u in filteredCustomerRentalUnits"
               :key="u.id"
               class="unit-checkbox-item"
               :class="{ 'unit-disabled': !u.delivered }"
@@ -1060,6 +1115,11 @@ onUnmounted(() => {
           Select a customer first
         </div>
         <div v-else class="external-unit-panel">
+          <div class="form-group" style="margin-bottom: 10px;">
+            <label class="form-label form-label-sm">Tipe Pembelian</label>
+            <CustomSelect v-model="form.external_type" :options="externalTypeOptions"
+              placeholder="-- Pilih Tipe Pembelian --" />
+          </div>
           <div class="form-row external-unit-fields">
             <div class="form-group external-brand-field">
               <label class="form-label form-label-sm">Brand / Merek</label>
@@ -1210,6 +1270,44 @@ onUnmounted(() => {
   background: #fef3c7;
   color: #92400e;
   margin-left: 8px;
+}
+
+.badge-running {
+  background: #dbeafe;
+  color: #1d4ed8;
+  margin-left: 8px;
+}
+
+.badge-outside {
+  background: #fce7f3;
+  color: #be185d;
+  margin-left: 8px;
+}
+
+.badge-sale {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badge-delivery {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.badge-product {
+  background: #e0f2fe;
+  color: #0284c7;
+  border: 1px solid #bae6fd;
+}
+
+.badge-rental {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.badge-contract {
+  background: #f0fdf4;
+  color: #15803d;
 }
 
 .external-unit-panel {

@@ -128,6 +128,11 @@ export const allMenuGroups: MenuGroup[] = [
         route: "/customer-service/service-reports",
       },
       {
+        label: "Survey",
+        icon: "clipboard",
+        route: "/customer-service/surveys",
+      },
+      {
         label: "sidebar.standalone_service_history",
         icon: "file-text",
         route: "/customer-service/standalone-service-history",

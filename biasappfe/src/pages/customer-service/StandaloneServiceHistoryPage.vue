@@ -44,6 +44,7 @@ const filterCustomerOptions = computed(() => [
 ])
 
 const filterTechnician = ref<any>(null)
+const filterStatus = ref<string>('all')
 const filterTechnicianOptions = computed(() => [
   { value: null as any, label: 'Semua Teknisi' },
   { value: 'unassigned', label: 'Belum Ditunjuk / Tanpa Teknisi' },
@@ -67,6 +68,12 @@ const standaloneList = computed(() => {
     } else {
       list = list.filter((d: any) => String(d.technician_id) === String(filterTechnician.value))
     }
+  }
+  if (filterStatus.value !== 'all') {
+    list = list.filter((d: any) => {
+      const lbl = statusLabel(d).toLowerCase().replace(/ /g, '_')
+      return lbl === filterStatus.value
+    })
   }
   return list.sort((a: any, b: any) =>
     String(b.created_at || b.delivery_date || '').localeCompare(String(a.created_at || a.delivery_date || '')),
@@ -296,9 +303,18 @@ const assignTechOptions = computed(() => [
   { value: null as any, label: '-- Pilih Teknisi --' },
   ...((store.technicians?.value || []) as any[]).map((t: any) => ({
     value: t.id,
-    label: t.user?.name || t.name || t.employee_code || `Teknisi ${t.id}`,
+    label: t.user?.name || t.name || `Teknisi ${t.id}`,
   })),
 ])
+
+const filterStatusOptions = [
+  { value: 'all', label: 'Semua Status' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'filled', label: 'Filled' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'draft', label: 'Draft' },
+]
 
 function openAssign(row: any) {
   assigningRow.value = row
@@ -573,6 +589,10 @@ async function exportPdf() {
       <div class="filter-item">
         <span class="filter-label">Filter Teknisi:</span>
         <CustomSelect v-model="filterTechnician" :options="filterTechnicianOptions" class="form-select flex-1" />
+      </div>
+      <div class="filter-item">
+        <span class="filter-label">Filter Status:</span>
+        <CustomSelect v-model="filterStatus" :options="filterStatusOptions" class="form-select flex-1" />
       </div>
     </div>
 
