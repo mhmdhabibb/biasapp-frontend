@@ -356,9 +356,9 @@ async function exportToExcel() {
         <label class="form-label">Customer</label>
         <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
-      <div class="form-group" v-if="!form.id">
-        <label class="form-label">Unit / Machine</label>
-        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" class="form-select" :disabled="!form.customer_id" />
+       <div class="form-group" v-if="!form.id">
+        <label class="form-label">Unit / Machine (opsional, bisa diisi teknisi)</label>
+        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit (opsional) --" class="form-select" :disabled="!form.customer_id" />
       </div>
       <div class="form-group" v-if="!form.id">
         <label class="form-label">Project Name</label>
@@ -378,7 +378,7 @@ async function exportToExcel() {
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="showModal = false">Cancel</button>
-        <button type="button" class="btn btn-primary" :disabled="loading || (!form.id && (!form.customer_id || !form.unit_id))" @click="submitForm">
+          <button type="button" class="btn btn-primary" :disabled="loading || (!form.id && !form.customer_id)" @click="submitForm">
           {{ loading ? 'Saving...' : 'Save' }}
         </button>
       </template>

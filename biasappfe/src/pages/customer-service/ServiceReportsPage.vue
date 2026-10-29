@@ -8,6 +8,7 @@ import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useAuth } from '@/composables/useAuth'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
@@ -25,6 +26,7 @@ const toast = useToast()
 const masterStore = useMasterStore()
 const { ensureResourcesLoaded } = masterStore
 const resources = useResourcesStore()
+const { currentUser } = useAuth()
 
 const {
   serviceReports: data,
@@ -281,7 +283,7 @@ function openCreatePOModal(request: any) {
   const unit = sr?.unit_id ? findUnit(sr.unit_id) : (sr?.unit || null)
   const tech = sprTechName(req)
 
-  poForm.request_form_no = `MRF-${Date.now().toString().slice(-6)}`
+  poForm.request_form_no = ''
   poForm.order_date = new Date().toISOString().slice(0, 10)
   poForm.installation_date = new Date().toISOString().slice(0, 10)
   poForm.priority = 'Normal'
@@ -426,7 +428,7 @@ async function printSparepartRequestForm(row: any) {
     }
   }
 
-  await printPurchaseOrder(po)
+  await printPurchaseOrder(po, currentUser.value)
 }
 // ───────────────────────────────────────────────────────────────────────────
 

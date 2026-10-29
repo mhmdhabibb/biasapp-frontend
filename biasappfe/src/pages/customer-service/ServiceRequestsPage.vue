@@ -973,7 +973,7 @@ onUnmounted(() => {
         </div>
         <div class="form-group">
           <label class="form-label">Received Date</label>
-          <input v-model="form.request_date" type="date" class="form-input" readonly required />
+          <input v-model="form.request_date" type="date" class="form-input" required />
         </div>
       </div>
 

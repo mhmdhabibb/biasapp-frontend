@@ -4,6 +4,7 @@ import DataTable from '@/components/ui/DataTable.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
+import { useAuth } from '@/composables/useAuth'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
@@ -15,6 +16,7 @@ import { useRouter } from 'vue-router'
 const { can } = usePermission()
 const store = useMasterStore()
 const resources = useResourcesStore()
+const { currentUser } = useAuth()
 const toast = useToast()
 const router = useRouter()
 
@@ -49,7 +51,7 @@ function openCreatePOModal(request: SparepartRequest) {
   const unit = sr?.unit_id ? store.findUnit(sr.unit_id) : (sr?.unit || null)
   const tech = getTechnician(request)
 
-  poForm.request_form_no = `MRF-${Date.now().toString().slice(-6)}`
+  poForm.request_form_no = ''
   poForm.order_date = new Date().toISOString().slice(0, 10)
   poForm.installation_date = new Date().toISOString().slice(0, 10)
   poForm.priority = 'Normal'
@@ -238,7 +240,7 @@ async function handlePrintRequestForm(row: any) {
     }
   }
 
-  await printPurchaseOrder(po)
+  await printPurchaseOrder(po, currentUser.value)
 }
 </script>
 

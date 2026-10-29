@@ -228,7 +228,16 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
   const unit = resolvePOUnit(po, store);
 
   // 1. Request Form No.
-  const rawReqNo = po.po_no || po.request_form_no || req?.request_no || (po.id ? `Bi-MRF-${String(po.id).slice(-4)}` : "Bi-MRF-001");
+  const pos = store?.purchaseOrders?.value || store?.purchaseOrders || [];
+  const biMrfs = (pos as any[]).filter((p: any) =>
+    String(p?.po_no || p?.request_form_no || "").startsWith("Bi-MRF-"),
+  );
+  const nextBiMrf = `Bi-MRF-${String(biMrfs.length + 1).padStart(3, "0")}`;
+  const rawReqNo =
+    po.po_no ||
+    po.request_form_no ||
+    req?.request_no ||
+    nextBiMrf;
   const requestFormNo = escapeHtml(rawReqNo);
 
   // 2. Dates
@@ -255,17 +264,29 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
     : "-";
 
   // 3. Pemohon Info
+  const users = store?.users?.value || store?.users || [];
+  const poUser =
+    po.user ||
+    (po.user_id
+      ? (users as any[]).find((u: any) => String(u?.id) === String(po.user_id))
+      : null) ||
+    (currentUser?.value || currentUser || null);
+  const roleName =
+    poUser?.role?.name ||
+    poUser?.role ||
+    currentUser?.value?.role ||
+    currentUser?.role ||
+    "Technical / Service";
   const namaPemohon = escapeHtml(
-    tech?.user?.name ||
-    tech?.user?.username ||
-    tech?.name ||
+    poUser?.name ||
+    poUser?.username ||
     po.requester_name ||
     currentUser?.value?.name ||
     currentUser?.name ||
-    "tech"
+    "tech",
   );
-  const divisiDepartemen = escapeHtml(po.department || "Technical / Service");
-  const posisi = escapeHtml(po.requester_position || "Technician");
+  const divisiDepartemen = escapeHtml(roleName);
+  const posisi = escapeHtml(po.requester_position || roleName);
   const idCard = escapeHtml(tech?.code || tech?.id_card || tech?.id ? String(tech.code || tech.id_card || tech.id) : "-");
   const prioritas = escapeHtml(po.priority || "Normal / Mendesak");
 

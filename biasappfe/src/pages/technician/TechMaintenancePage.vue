@@ -23,6 +23,7 @@ const {
   findCustomer,
   findTechnician,
   findUnit,
+  getUnitsByCustomer,
   contractItems,
   monthlyMeterReadings,
   refreshInBackground,
@@ -51,6 +52,7 @@ const completedJobs = computed(() => myJobs.value.filter(j => j.status === 'comp
 // ── Detail & Form State ───────────────────────────────────────────────────
 const showForm = ref(false)
 const selectedJob = ref<any>(null)
+const selectedUnitId = ref<string>('')
 const photoZoom = ref<string | null>(null)
 
 const form = ref({
@@ -166,9 +168,25 @@ function removePhoto(type: 'before' | 'after') {
   }
 }
 
+const customerUnitOptions = computed(() => {
+  const cid = selectedJob.value ? jobCustomerId(selectedJob.value) : null
+  if (!cid) return []
+  return (getUnitsByCustomer(cid) || []).map((u: any) => ({
+    value: u.id,
+    label: `${u.model || u.name || 'Unit'}${u.serial_no ? ` (SN: ${u.serial_no})` : ''}`,
+  }))
+})
+
+function effectiveUnitId() {
+  const fromJob = jobUnitId(selectedJob.value)
+  if (fromJob) return String(fromJob)
+  return selectedUnitId.value ? String(selectedUnitId.value) : ''
+}
+
 // ── Open / Start Job ──────────────────────────────────────────────────────
 function openJob(job: any) {
   selectedJob.value = job
+  selectedUnitId.value = jobUnitId(job) ? String(jobUnitId(job)) : ''
   // Pre-fill saved data if any
   const sr = serviceReports.value.find(s => String(s.job_order_id) === String(job.id))
   const tech: any = findTechnician(job.technician_id)
@@ -222,8 +240,14 @@ async function completeJob() {
   isSaving.value = true
 
   try {
-    const unitId = jobUnitId(selectedJob.value)
-    const customerId = jobCustomerId(selectedJob.value)
+  const unitId = effectiveUnitId()
+  const customerId = jobCustomerId(selectedJob.value)
+
+  if (!unitId) {
+    toast.error('Pilih unit/mesin terlebih dahulu.')
+    isSaving.value = false
+    return
+  }
 
     const reportPayload = {
       machine_problem: jobProblem(selectedJob.value),
@@ -257,7 +281,11 @@ async function completeJob() {
         ...reportPayload,
       })
     }
-    await api.patch(`/job-orders/${selectedJob.value.id}`, { status: 'completed' })
+    const jobPatch: any = { status: 'completed' }
+    if (selectedUnitId.value && !jobUnitId(selectedJob.value)) {
+      jobPatch.unit_id = selectedUnitId.value
+    }
+    await api.patch(`/job-orders/${selectedJob.value.id}`, jobPatch)
 
     selectedJob.value.status = 'completed'
     showForm.value = false
@@ -370,7 +398,16 @@ async function completeJob() {
               </div>
               <div class="mf-info-field">
                 <span class="mf-info-label">Product / Unit</span>
-                <span class="mf-info-value">{{ getUnitName(jobUnitId(selectedJob)) }}</span>
+                <span class="mf-info-value">{{ effectiveUnitId() ? getUnitName(effectiveUnitId()) : 'Belum dipilih teknisi' }}</span>
+              </div>
+              <div v-if="!jobUnitId(selectedJob)" class="mf-info-field mf-info-field--wide">
+                <span class="mf-info-label">Pilih Unit / Machine</span>
+                <select v-model="selectedUnitId" class="form-input" style="width: 100%;">
+                  <option value="">-- Select Unit --</option>
+                  <option v-for="u in customerUnitOptions" :key="u.value" :value="u.value">
+                    {{ u.label }}
+                  </option>
+                </select>
               </div>
               <div class="mf-info-field mf-info-field--wide">
                 <span class="mf-info-label">Project Name</span>

@@ -36,6 +36,8 @@ const {
   customers,
   units,
   products,
+  brands,
+  unitTypes,
   payments,
   technicians,
   deliveryOrders,
@@ -331,11 +333,29 @@ const visibleRentalInvoices = computed(() => {
 
 const paperSizes = ref<{ id: string; name: string }[]>([]);
 const paperTypes = ref<{ id: string; name: string }[]>([]);
+const productCategories = ref<any[]>([]);
 
 const rentalItems = ref<
   {
     id?: string;
     selected_item: string;
+    create_mode: "existing" | "unit" | "product";
+    new_unit: {
+      brand_id: string;
+      type_id: string;
+      model: string;
+      serial_no: string;
+      is_copier: boolean;
+      current_meter_bw: number;
+      current_meter_color: number;
+    };
+    new_product: {
+      name: string;
+      category_id: string;
+      price: number;
+      stock: number;
+      is_computer: boolean;
+    };
     unit_id: string | null;
     product_id: string | null;
     qty: number;
@@ -480,6 +500,23 @@ const rentQuotaAppliesToOptions = [
 function addRentalItem() {
   rentalItems.value.push({
     selected_item: "",
+    create_mode: "existing",
+    new_unit: {
+      brand_id: "",
+      type_id: "",
+      model: "",
+      serial_no: "",
+      is_copier: false,
+      current_meter_bw: 0,
+      current_meter_color: 0,
+    },
+    new_product: {
+      name: "",
+      category_id: "",
+      price: 0,
+      stock: 0,
+      is_computer: false,
+    },
     unit_id: null,
     product_id: null,
     qty: 1,
@@ -614,11 +651,52 @@ function onItemSelectChange(item: any) {
   }
 }
 
+function onItemModeChange(item: any) {
+  if (item.create_mode === "existing") {
+    item.selected_item = "";
+    item.is_copier = false;
+    item.is_computer = false;
+  } else if (item.create_mode === "unit") {
+    item.selected_item = "";
+    item.is_copier = !!item.new_unit.is_copier;
+    item.start_meter_bw = item.new_unit.current_meter_bw || 0;
+    item.start_meter_color = item.new_unit.current_meter_color || 0;
+  } else if (item.create_mode === "product") {
+    item.selected_item = "";
+    item.is_copier = false;
+    item.is_computer = !!item.new_product.is_computer;
+    if (item.new_product.price && !item.monthly_rent) {
+      item.monthly_rent = item.new_product.price;
+    }
+  }
+}
+
+function syncNewUnitMeter(item: any) {
+  if (item.create_mode === "unit" && item.new_unit.is_copier) {
+    item.is_copier = true;
+    item.start_meter_bw = item.new_unit.current_meter_bw || 0;
+    item.start_meter_color = item.new_unit.current_meter_color || 0;
+  } else if (item.create_mode === "unit") {
+    item.is_copier = false;
+  }
+}
+
 const editingRental = ref<any>(null);
 
 async function openAdd() {
   editingRental.value = null;
-  await refreshOnly(["customers", "units", "products"]);
+  await refreshOnly(["customers", "units", "products", "brands", "unitTypes"]);
+  try {
+    const res = await resources.productCategories.list();
+    const list = Array.isArray((res as any)?.data)
+      ? (res as any).data
+      : Array.isArray(res)
+        ? res
+        : [];
+    productCategories.value = list as any;
+  } catch (e) {
+    console.warn("Could not load product categories:", e);
+  }
   Object.assign(form, {
     customer_id: "",
     start_date: new Date().toISOString().slice(0, 10),
@@ -631,6 +709,23 @@ async function openAdd() {
   rentalItems.value = [
     {
       selected_item: "",
+      create_mode: "existing",
+      new_unit: {
+        brand_id: "",
+        type_id: "",
+        model: "",
+        serial_no: "",
+        is_copier: false,
+        current_meter_bw: 0,
+        current_meter_color: 0,
+      },
+      new_product: {
+        name: "",
+        category_id: "",
+        price: 0,
+        stock: 0,
+        is_computer: false,
+      },
       unit_id: null,
       product_id: null,
       qty: 1,
@@ -696,9 +791,26 @@ async function openEdit(row: any) {
       const isCopier = unit ? !!unit.is_copier : false;
       const isComputer = unit ? !!(unit as any).is_computer : false;
 
-      return {
+       return {
         id: item.id,
         selected_item: selectedItem,
+        create_mode: "existing",
+        new_unit: {
+          brand_id: "",
+          type_id: "",
+          model: "",
+          serial_no: "",
+          is_copier: false,
+          current_meter_bw: 0,
+          current_meter_color: 0,
+        },
+        new_product: {
+          name: "",
+          category_id: "",
+          price: 0,
+          stock: 0,
+          is_computer: false,
+        },
         unit_id: item.unit_id || null,
         product_id: item.product_id || null,
         qty: item.qty || 1,
@@ -797,7 +909,7 @@ async function handleSubmit() {
   // Validation: copier requires an initial meter (paper size/kind rates are optional)
   for (let idx = 0; idx < rentalItems.value.length; idx++) {
     const item = rentalItems.value[idx]!;
-    if (!item?.selected_item) {
+    if (item.create_mode !== "unit" && item.create_mode !== "product" && !item?.selected_item) {
       toast.error(`Item #${idx + 1}: pilih Unit / Produk terlebih dahulu.`);
       return;
     }
@@ -842,7 +954,86 @@ async function handleSubmit() {
     }
   }
 
+  const createdUnitIds: string[] = [];
+  const createdProductIds: string[] = [];
+
+  // Validasi item baru sebelum create
+  for (let idx = 0; idx < rentalItems.value.length; idx++) {
+    const it = rentalItems.value[idx]!;
+    if (it.create_mode === "unit") {
+      if (!it.new_unit.brand_id || !it.new_unit.type_id || !String(it.new_unit.model || "").trim() || !String(it.new_unit.serial_no || "").trim()) {
+        toast.error(`Item #${idx + 1}: lengkapi Brand, Tipe, Model, dan Serial No untuk unit baru.`);
+        return;
+      }
+    } else if (it.create_mode === "product") {
+      if (!String(it.new_product.name || "").trim() || !it.new_product.category_id) {
+        toast.error(`Item #${idx + 1}: lengkapi Nama dan Kategori untuk produk baru.`);
+        return;
+      }
+    } else if (!it.selected_item) {
+      toast.error(`Item #${idx + 1}: pilih Unit / Produk terlebih dahulu.`);
+      return;
+    }
+  }
+
   isLoading.value = true;
+
+  // Buat unit/produk baru terlebih dahulu
+  try {
+    for (const item of rentalItems.value) {
+      if (item.create_mode === "unit") {
+        const res: any = await resources.units.create({
+          name: item.new_unit.model || "Unit",
+          brand_id: item.new_unit.brand_id,
+          type_id: item.new_unit.type_id,
+          model: item.new_unit.model,
+          serial_no: String(item.new_unit.serial_no || "").trim().toUpperCase(),
+          is_copier: !!item.new_unit.is_copier,
+          is_external: true,
+          status: "available",
+          current_meter_bw: Number(item.new_unit.current_meter_bw) || 0,
+          current_meter_color: Number(item.new_unit.current_meter_color) || 0,
+        });
+        const newId = String(res?.data?.id || res?.id || "");
+        if (!newId) throw new Error("Gagal membuat unit baru");
+        item.selected_item = "unit_" + newId;
+        createdUnitIds.push(newId);
+        item.is_copier = !!item.new_unit.is_copier;
+        item.start_meter_bw = Number(item.new_unit.current_meter_bw) || 0;
+        item.start_meter_color = Number(item.new_unit.current_meter_color) || 0;
+      } else if (item.create_mode === "product") {
+        const res: any = await resources.products.create({
+          name: item.new_product.name,
+          category_id: item.new_product.category_id,
+          price: Number(item.new_product.price) || 0,
+          stock: Number(item.new_product.stock) || 0,
+          is_computer: !!item.new_product.is_computer,
+        });
+        const newId = String(res?.data?.id || res?.id || "");
+        if (!newId) throw new Error("Gagal membuat produk baru");
+        item.selected_item = "prod_" + newId;
+        createdProductIds.push(newId);
+        item.is_computer = !!item.new_product.is_computer;
+        if (item.new_product.price && !item.monthly_rent) {
+          item.monthly_rent = item.new_product.price;
+        }
+      }
+    }
+  } catch (err: any) {
+    for (const id of createdUnitIds) {
+      try {
+        await resources.units.remove(id);
+      } catch (e) {}
+    }
+    for (const id of createdProductIds) {
+      try {
+        await resources.products.remove(id);
+      } catch (e) {}
+    }
+    isLoading.value = false;
+    toast.error("Gagal membuat unit/produk baru: " + (err?.message || "Error"));
+    return;
+  }
 
   const startDateObj = form.start_date ? new Date(form.start_date) : new Date();
   const startDateIso = isNaN(startDateObj.getTime())
@@ -918,6 +1109,16 @@ async function handleSubmit() {
     }
   } catch (error: any) {
     console.error("Failed to save rental:", error);
+    for (const id of createdUnitIds) {
+      try {
+        await resources.units.remove(id);
+      } catch (e) {}
+    }
+    for (const id of createdProductIds) {
+      try {
+        await resources.products.remove(id);
+      } catch (e) {}
+    }
     let errMessage = error.message || t("rentals.network_error");
     if (error.response?.data?.message) {
       errMessage = error.response.data.message;
@@ -940,7 +1141,7 @@ async function handleSubmit() {
   // Refresh data secara aman setelah modal tertutup
   try {
     await fetchRentals();
-    await refreshOnly(["deliveryOrders"]);
+    await refreshOnly(["units", "products", "deliveryOrders"]);
   } catch (refreshErr) {
     console.warn("Background refresh after rental save encountered an issue:", refreshErr);
   }
@@ -2079,6 +2280,23 @@ async function exportToPdf() {
         class="rental-item-box"
       >
         <div class="form-group" style="margin-bottom: var(--space-md)">
+          <label class="form-label">Sumber Item</label>
+          <select
+            v-model="item.create_mode"
+            class="form-input"
+            @change="onItemModeChange(item)"
+          >
+            <option value="existing">Pilih existing (Unit/Produk)</option>
+            <option value="unit">Input Unit baru</option>
+            <option value="product">Input Produk baru</option>
+          </select>
+        </div>
+
+        <div
+          v-if="item.create_mode === 'existing'"
+          class="form-group"
+          style="margin-bottom: var(--space-md)"
+        >
           <label class="form-label">Select Item (Unit / Mesin or Consumable / Sparepart)</label>
           <CustomSelect
             v-model="item.selected_item"
@@ -2087,6 +2305,159 @@ async function exportToPdf() {
             class="form-select"
             @update:modelValue="onItemSelectChange(item)"
           />
+        </div>
+
+        <div
+          v-if="item.create_mode === 'unit'"
+          style="margin-bottom: var(--space-md); padding: 10px; border: 1px dashed var(--color-border-light); border-radius: 8px;"
+        >
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Brand</label>
+              <select v-model="item.new_unit.brand_id" class="form-input" required>
+                <option value="">-- Brand --</option>
+                <option
+                  v-for="b in (brands as any)"
+                  :key="b.id"
+                  :value="b.id"
+                >
+                  {{ b.name }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tipe Unit</label>
+              <select v-model="item.new_unit.type_id" class="form-input" required>
+                <option value="">-- Tipe --</option>
+                <option
+                  v-for="t in (unitTypes as any)"
+                  :key="t.id"
+                  :value="t.id"
+                >
+                  {{ t.name }}
+                </option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Model</label>
+              <input
+                v-model="item.new_unit.model"
+                type="text"
+                class="form-input"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Serial No (SN)</label>
+              <input
+                v-model="item.new_unit.serial_no"
+                type="text"
+                class="form-input"
+                required
+              />
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: var(--space-md)">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input
+                v-model="item.new_unit.is_copier"
+                type="checkbox"
+                @change="syncNewUnitMeter(item)"
+              />
+              <span>Copier Machine (perlu meter awal)</span>
+            </label>
+          </div>
+          <div
+            v-if="item.new_unit.is_copier"
+            class="form-row"
+          >
+            <div class="form-group">
+              <label class="form-label">Current Meter BW</label>
+              <input
+                v-model.number="item.new_unit.current_meter_bw"
+                type="number"
+                class="form-input"
+                min="0"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Current Meter Color</label>
+              <input
+                v-model.number="item.new_unit.current_meter_color"
+                type="number"
+                class="form-input"
+                min="0"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="item.create_mode === 'product'"
+          style="margin-bottom: var(--space-md); padding: 10px; border: 1px dashed var(--color-border-light); border-radius: 8px;"
+        >
+          <div class="form-group">
+            <label class="form-label">Nama Produk</label>
+            <input
+              v-model="item.new_product.name"
+              type="text"
+              class="form-input"
+              required
+            />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Kategori</label>
+              <select
+                v-model="item.new_product.category_id"
+                class="form-input"
+                required
+              >
+                <option value="">-- Kategori --</option>
+                <option
+                  v-for="c in productCategories"
+                  :key="c.id"
+                  :value="c.id"
+                >
+                  {{ c.name }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Harga</label>
+              <input
+                v-model.number="item.new_product.price"
+                type="number"
+                class="form-input"
+                min="0"
+                required
+              />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Stok</label>
+              <input
+                v-model.number="item.new_product.stock"
+                type="number"
+                class="form-input"
+                min="0"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 24px;">
+                <input
+                  v-model="item.new_product.is_computer"
+                  type="checkbox"
+                  @change="item.is_computer = item.new_product.is_computer"
+                />
+                <span>Computer</span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <div
