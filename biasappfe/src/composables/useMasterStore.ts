@@ -110,7 +110,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   // Technician Operational Pages
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests"],
   "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
-  "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers"],
+  "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers", "brands", "unitTypes"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "technicians", "serviceReports"],
   "/technician/service-history": ["serviceReports", "technicians", "units", "customers"],

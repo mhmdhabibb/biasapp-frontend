@@ -7,8 +7,9 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
+import { resources } from '@/services/resource.service'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
-import { computed, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
 const toast = useToast()
@@ -19,6 +20,9 @@ const { ensureResourcesLoaded } = useMasterStore()
 const {
   jobOrders,
   serviceReports,
+  units,
+  brands,
+  unitTypes,
   getTechnicianIdByUser,
   findCustomer,
   findTechnician,
@@ -26,6 +30,7 @@ const {
   getUnitsByCustomer,
   contractItems,
   monthlyMeterReadings,
+  refreshOnly,
   refreshInBackground,
 } = useMasterStore()
 
@@ -54,6 +59,14 @@ const showForm = ref(false)
 const selectedJob = ref<any>(null)
 const selectedUnitId = ref<string>('')
 const photoZoom = ref<string | null>(null)
+const showExternalUnitForm = ref(false)
+const isCreatingExternalUnit = ref(false)
+const externalUnit = reactive({
+  brand_id: '',
+  type_id: '',
+  model: '',
+  serial_no: '',
+})
 
 const form = ref({
   photo_before: '',
@@ -176,6 +189,56 @@ const customerUnitOptions = computed(() => {
     label: `${u.model || u.name || 'Unit'}${u.serial_no ? ` (SN: ${u.serial_no})` : ''}`,
   }))
 })
+
+async function createExternalUnit() {
+  if (!externalUnit.brand_id || !externalUnit.type_id || !String(externalUnit.model || '').trim() || !String(externalUnit.serial_no || '').trim()) {
+    toast.warning('Lengkapi Brand, Tipe, Model, dan Serial No untuk unit baru.')
+    return
+  }
+  isCreatingExternalUnit.value = true
+  try {
+    const serialUpper = String(externalUnit.serial_no || '').trim().toUpperCase()
+    let existing = (units.value || []).find(
+      (u: any) => String(u.serial_no || '').trim().toUpperCase() === serialUpper,
+    )
+    let newId = existing ? String(existing.id || '') : ''
+    if (!newId) {
+      try {
+        const res: any = await resources.units.create({
+          name: externalUnit.model || 'Unit',
+          brand_id: externalUnit.brand_id,
+          type_id: externalUnit.type_id,
+          model: externalUnit.model,
+          serial_no: serialUpper,
+          is_external: true,
+          status: 'available',
+        })
+        newId = String(res?.data?.id || res?.id || '')
+        if (!newId) throw new Error('Gagal membuat unit baru')
+      } catch (createErr: any) {
+        await refreshOnly(['units'], true)
+        const found = (units.value || []).find(
+          (u: any) => String(u.serial_no || '').trim().toUpperCase() === serialUpper,
+        )
+        if (found) {
+          newId = String(found.id || '')
+        } else {
+          throw createErr
+        }
+      }
+    }
+    if (!newId) throw new Error('Gagal membuat unit baru')
+    selectedUnitId.value = newId
+    showExternalUnitForm.value = false
+    Object.assign(externalUnit, { brand_id: '', type_id: '', model: '', serial_no: '' })
+    toast.success('Unit berhasil ditambahkan')
+    await refreshOnly(['units'], true)
+  } catch (err: any) {
+    toast.error(err?.message || 'Gagal menambahkan unit baru')
+  } finally {
+    isCreatingExternalUnit.value = false
+  }
+}
 
 function effectiveUnitId() {
   const fromJob = jobUnitId(selectedJob.value)
@@ -408,6 +471,24 @@ async function completeJob() {
                     {{ u.label }}
                   </option>
                 </select>
+                <button type="button" class="mf-photo-btn" style="margin-top:8px;" @click="showExternalUnitForm = !showExternalUnitForm">
+                  {{ showExternalUnitForm ? 'Tutup Form Unit Baru' : 'Tambah Unit Baru (External)' }}
+                </button>
+                <div v-if="showExternalUnitForm" style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+                  <select v-model="externalUnit.brand_id" class="form-input">
+                    <option value="">-- Pilih Brand --</option>
+                    <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.name }}</option>
+                  </select>
+                  <select v-model="externalUnit.type_id" class="form-input">
+                    <option value="">-- Pilih Tipe --</option>
+                    <option v-for="t in unitTypes" :key="t.id" :value="t.id">{{ t.name }}</option>
+                  </select>
+                  <input v-model="externalUnit.model" type="text" class="form-input" placeholder="Model" />
+                  <input v-model="externalUnit.serial_no" type="text" class="form-input" placeholder="Serial No" @input="externalUnit.serial_no = String(externalUnit.serial_no || '').toUpperCase()" />
+                  <button type="button" class="mf-btn-start" :disabled="isCreatingExternalUnit" @click="createExternalUnit">
+                    {{ isCreatingExternalUnit ? 'Menyimpan...' : 'Simpan Unit Baru' }}
+                  </button>
+                </div>
               </div>
               <div class="mf-info-field mf-info-field--wide">
                 <span class="mf-info-label">Project Name</span>

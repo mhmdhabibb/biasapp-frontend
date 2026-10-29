@@ -982,22 +982,42 @@ async function handleSubmit() {
   try {
     for (const item of rentalItems.value) {
       if (item.create_mode === "unit") {
-        const res: any = await resources.units.create({
-          name: item.new_unit.model || "Unit",
-          brand_id: item.new_unit.brand_id,
-          type_id: item.new_unit.type_id,
-          model: item.new_unit.model,
-          serial_no: String(item.new_unit.serial_no || "").trim().toUpperCase(),
-          is_copier: !!item.new_unit.is_copier,
-          is_external: true,
-          status: "available",
-          current_meter_bw: Number(item.new_unit.current_meter_bw) || 0,
-          current_meter_color: Number(item.new_unit.current_meter_color) || 0,
-        });
-        const newId = String(res?.data?.id || res?.id || "");
+        const serialUpper = String(item.new_unit.serial_no || "").trim().toUpperCase();
+        let existingUnit = (units.value || []).find(
+          (u: any) => String(u.serial_no || "").trim().toUpperCase() === serialUpper,
+        );
+        let newId = existingUnit ? String(existingUnit.id || "") : "";
+        if (!newId) {
+          try {
+            const res: any = await resources.units.create({
+              name: item.new_unit.model || "Unit",
+              brand_id: item.new_unit.brand_id,
+              type_id: item.new_unit.type_id,
+              model: item.new_unit.model,
+              serial_no: serialUpper,
+              is_copier: !!item.new_unit.is_copier,
+              is_external: true,
+              status: "available",
+              current_meter_bw: Number(item.new_unit.current_meter_bw) || 0,
+              current_meter_color: Number(item.new_unit.current_meter_color) || 0,
+            });
+            newId = String(res?.data?.id || res?.id || "");
+            if (!newId) throw new Error("Gagal membuat unit baru");
+            createdUnitIds.push(newId);
+          } catch (createErr: any) {
+            await refreshOnly(["units"], true);
+            const found = (units.value || []).find(
+              (u: any) => String(u.serial_no || "").trim().toUpperCase() === serialUpper,
+            );
+            if (found) {
+              newId = String(found.id || "");
+            } else {
+              throw createErr;
+            }
+          }
+        }
         if (!newId) throw new Error("Gagal membuat unit baru");
         item.selected_item = "unit_" + newId;
-        createdUnitIds.push(newId);
         item.is_copier = !!item.new_unit.is_copier;
         item.start_meter_bw = Number(item.new_unit.current_meter_bw) || 0;
         item.start_meter_color = Number(item.new_unit.current_meter_color) || 0;
