@@ -394,6 +394,7 @@ const form = reactive({
   start_date: new Date().toISOString().slice(0, 10),
   duration_months: 12,
   duration_days: 0,
+  billing_day: null as number | null,
   notes: "",
   po_no: "",
   installation_address: "",
@@ -715,6 +716,7 @@ async function openAdd() {
     start_date: new Date().toISOString().slice(0, 10),
     duration_months: 12,
     duration_days: 0,
+    billing_day: null,
     po_no: "",
     notes: "",
     installation_address: "",
@@ -787,6 +789,7 @@ async function openEdit(row: any) {
     start_date: rentalData.start_date ? String(rentalData.start_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
     duration_months: rentalData.duration_months ?? 12,
     duration_days: rentalData.duration_days ?? 0,
+    billing_day: rentalData.billing_day ?? null,
     po_no: rentalData.po_no || "",
     notes: rentalData.notes || "",
     installation_address: rentalData.installation_address || "",
@@ -1098,6 +1101,7 @@ async function handleSubmit() {
     start_date: startDateIso,
     duration_months: Math.max(0, Math.round(Number(form.duration_months) || 0)),
     duration_days: Math.max(0, Math.round(Number(form.duration_days) || 0)),
+    billing_day: form.billing_day ? Math.min(31, Math.max(1, Number(form.billing_day))) : undefined,
     tax: 0,
     deposit: 0,
     po_no: form.po_no ? String(form.po_no).trim() : "",
@@ -1497,6 +1501,91 @@ async function exportToPdf() {
   }
   html2pdf().set(opt).from(wrapper).save()
 }
+
+// --- Perpanjang Kontrak (Extend Rental) ---
+const showExtendModal = ref(false);
+const extendingRental = ref<any>(null);
+const isSubmittingExtend = ref(false);
+const extendForm = reactive({
+  additional_months: 12,
+  additional_days: 0,
+});
+
+function openExtendModal(rental: any) {
+  extendingRental.value = rental;
+  extendForm.additional_months = 12;
+  extendForm.additional_days = 0;
+  showExtendModal.value = true;
+}
+
+const computedNewEndDate = computed(() => {
+  if (!extendingRental.value?.end_date) return "-";
+  const curr = new Date(extendingRental.value.end_date);
+  if (isNaN(curr.getTime())) return "-";
+  const months = Number(extendForm.additional_months) || 0;
+  const days = Number(extendForm.additional_days) || 0;
+  curr.setMonth(curr.getMonth() + months);
+  curr.setDate(curr.getDate() + days);
+  return curr.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+});
+
+async function submitExtendRental() {
+  if (!extendingRental.value?.id) return;
+  const months = Number(extendForm.additional_months) || 0;
+  const days = Number(extendForm.additional_days) || 0;
+  if (months <= 0 && days <= 0) {
+    toast.error(t("rentals.extend_need_duration") || "Isi tambahan bulan atau hari.");
+    return;
+  }
+  isSubmittingExtend.value = true;
+  try {
+    const res = await api.post<{ message?: string; data?: any }>(
+      `/rentals/${extendingRental.value.id}/extend`,
+      {
+        additional_months: months,
+        additional_days: days,
+      }
+    );
+    toast.success(
+      res.data?.message || t("rentals.extend_success") || "Kontrak berhasil diperpanjang."
+    );
+    showExtendModal.value = false;
+    extendingRental.value = null;
+    await refreshInBackground();
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
+  } catch (err: any) {
+    toast.error(
+      t("rentals.extend_failed", { error: err.message || "Gagal" }) ||
+        `Gagal memperpanjang kontrak: ${err.message || "Error"}`
+    );
+  } finally {
+    isSubmittingExtend.value = false;
+  }
+}
+
+function daysUntilExpiry(endDate: any): number | null {
+  if (!endDate) return null;
+  const d = new Date(endDate);
+  if (isNaN(d.getTime())) return null;
+  const diffTime = d.getTime() - new Date().getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+function isExpiringSoon(row: any): boolean {
+  if (row?.status !== "active") return false;
+  const days = daysUntilExpiry(row.end_date);
+  return days !== null && days <= 30 && days >= 0;
+}
+
+function isExpired(row: any): boolean {
+  if (row?.status !== "active") return false;
+  const days = daysUntilExpiry(row.end_date);
+  return days !== null && days < 0;
+}
 </script>
 
 <template>
@@ -1559,9 +1648,24 @@ async function exportToPdf() {
       <template #cell-start_date="{ value }">{{
         value ? new Date(value).toLocaleDateString("en-GB") : '-'
       }}</template>
-      <template #cell-end_date="{ value }">{{
-        value ? new Date(value).toLocaleDateString("en-GB") : '-'
-      }}</template>
+      <template #cell-end_date="{ row, value }">
+        <div>{{ value ? new Date(value).toLocaleDateString("en-GB") : '-' }}</div>
+        <span
+          v-if="isExpiringSoon(row)"
+          class="badge badge-warning"
+          style="font-size: 0.72rem; margin-top: 2px; display: inline-block; padding: 2px 6px;"
+          :title="`Kontrak akan berakhir dalam ${daysUntilExpiry(row.end_date)} hari`"
+        >
+          ⏳ Sisa {{ daysUntilExpiry(row.end_date) }} hr
+        </span>
+        <span
+          v-else-if="isExpired(row)"
+          class="badge badge-danger"
+          style="font-size: 0.72rem; margin-top: 2px; display: inline-block; padding: 2px 6px;"
+        >
+          ⚠️ Lewat tempo
+        </span>
+      </template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
       <template #cell-do_number="{ row }">
         <span v-if="hasActiveRentalDO(row)" class="badge badge-info" style="font-family: monospace; font-size: 0.78rem;">
@@ -1590,6 +1694,20 @@ async function exportToPdf() {
       </template>
       <template #actions="{ row }">
         <div style="display: flex; align-items: center; gap: 6px;">
+          <button
+            v-if="row.status !== 'cancelled' && can('rental:update')"
+            class="action-btn action-btn--edit"
+            :title="t('rentals.extend_title') || 'Perpanjang Kontrak'"
+            @click.stop="openExtendModal(row)"
+            style="color: #2563eb; width: 32px; height: 32px;"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+              <path d="M3 3v5h5"></path>
+              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+              <path d="M16 21h5v-5"></path>
+            </svg>
+          </button>
           <button
             v-if="!hasActiveRentalDO(row) && can('rental:update')"
             class="action-btn action-btn--edit"
@@ -1871,6 +1989,15 @@ async function exportToPdf() {
           disabled
         >
           ✅ DO: {{ getRentalDONumber(detailRental) }}
+        </button>
+        <button
+          v-if="can('rental:update') && detailRental && detailRental.status !== 'cancelled'"
+          type="button"
+          class="btn btn-outline"
+          style="color: #2563eb; border-color: #2563eb;"
+          @click="showDetailModal = false; openExtendModal(detailRental)"
+        >
+          🔄 Perpanjang Kontrak
         </button>
         <button
           v-if="can('rental:update') && detailRental"
@@ -2281,6 +2408,24 @@ async function exportToPdf() {
             min="0"
           />
         </div>
+        <div class="form-group">
+          <label for="billing-day" class="form-label">Tanggal Penagihan Bulanan (Opsional)</label>
+          <input
+            id="billing-day"
+            v-model.number="form.billing_day"
+            type="number"
+            min="1"
+            max="31"
+            class="form-input"
+            placeholder="Contoh: 15 (default: tgl 1 atau tgl mulai sewa)"
+          />
+          <small class="text-muted" style="font-size: 0.73rem;">
+            Khusus unit non-meter reading / tanggal custom (1–31).
+          </small>
+        </div>
+      </div>
+
+      <div class="form-row">
         <div class="form-group">
           <label for="po-no" class="form-label">PO No (Optional)</label>
           <input
@@ -3048,6 +3193,66 @@ async function exportToPdf() {
             </table>
           </div>
         </div>
+      </div>
+    </FormModal>
+
+    <!-- Modal Perpanjang Kontrak Rental -->
+    <FormModal
+      :open="showExtendModal"
+      :title="`Perpanjang Kontrak - ${extendingRental?.rental_no || ''}`"
+      max-width="540px"
+      submit-label="Konfirmasi Perpanjang"
+      :is-loading="isSubmittingExtend"
+      @close="showExtendModal = false; extendingRental = null;"
+      @submit="submitExtendRental"
+    >
+      <div v-if="extendingRental">
+        <div style="background: var(--color-surface-sunken); padding: 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--color-border-light);">
+          <div style="font-weight: 600; color: var(--color-primary); margin-bottom: 4px; font-size: 1rem;">
+            {{ extendingRental.rental_no }} &mdash; {{ findCustomer(extendingRental.customer_id)?.company_name || extendingRental.customer?.company_name || 'Customer' }}
+          </div>
+          <div style="font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 4px;">
+            Tanggal Selesai Saat Ini: <strong style="color: var(--color-text);">{{ extendingRental.end_date ? new Date(extendingRental.end_date).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }}</strong>
+          </div>
+          <div style="font-size: 0.85rem; color: var(--color-text-muted);">
+            Durasi Berjalan: {{ extendingRental.duration_months }} bulan
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom: 12px;">
+          <div class="form-group">
+            <label class="form-label">Tambahan Bulan (Rekomendasi: 12 Bulan / 1 Tahun) *</label>
+            <input
+              v-model.number="extendForm.additional_months"
+              type="number"
+              class="form-input"
+              min="0"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tambahan Hari</label>
+            <input
+              v-model.number="extendForm.additional_days"
+              type="number"
+              class="form-input"
+              min="0"
+            />
+          </div>
+        </div>
+
+        <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+          <div style="font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 2px;">
+            Pratinjau Tanggal Selesai Baru:
+          </div>
+          <div style="font-size: 1.05rem; font-weight: 700; color: #1d4ed8;">
+            📅 {{ computedNewEndDate }}
+          </div>
+        </div>
+
+        <p style="font-size: 0.8rem; color: var(--color-text-muted); line-height: 1.4; margin: 0;">
+          💡 <em>Invoice bulanan untuk masa perpanjangan akan otomatis diterbitkan terjadwal, dan kontrak terkait ikut diperpanjang masa berlakunya.</em>
+        </p>
       </div>
     </FormModal>
   </div>
