@@ -9,7 +9,7 @@ export function hasDeliveryHistory(d: any): boolean {
   if (d.is_tested || d.is_completed) return true;
   if (d.time_in || d.time_out) return true;
   if (d.customer_signature || d.technician_signature) return true;
-  if (d.photo_before || d.photo_after) return true;
+  if (d.photo_before || d.photo_progress || d.photo_after) return true;
   if (d.action) return true;
   if (d.problem && !String(d.problem).startsWith("Auto-generated")) return true;
   return false;

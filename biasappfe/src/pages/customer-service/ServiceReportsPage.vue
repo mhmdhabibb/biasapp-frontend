@@ -551,12 +551,20 @@ const columns: TableColumn[] = [
   { key: 'status', label: 'Status' },
 ]
 
+function isRunningTransaction(item: any): boolean {
+  if (!item) return false
+  return Boolean(
+    item.is_running_transaction ||
+    String(item.remarks || '').toLowerCase().includes('transaksi sudah berjalan')
+  )
+}
+
 // Copier report punya list tersendiri (CopierReportsPage) — disembunyikan
-// dari list Service Reports.
+// dari list Service Reports, KECUALI report dari transaksi yang sudah berjalan.
 const serviceOnlyReports = computed(() =>
   data.value.filter(
     (item: any) =>
-      !isCopierReport(item) &&
+      (!isCopierReport(item) || isRunningTransaction(item)) &&
       matchesCustomer(item.customer_id) &&
       (!statusFilter.value || String(item.status || '').toLowerCase() === statusFilter.value),
   ),
@@ -900,7 +908,12 @@ function printTable() {
     </div>
     <DataTable v-if="activeTab === 'service'" :columns="columns" :data="serviceOnlyReports" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
       <template #cell-report_no="{ value, row }">
-        <span class="sr-link" @click="openSrDetail(row)">{{ value || row.service_report_no || '-' }}</span>
+        <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span class="sr-link" @click="openSrDetail(row)">{{ value || row.service_report_no || '-' }}</span>
+          <span v-if="isRunningTransaction(row)" class="badge-running-tx">
+            Transaksi sudah berjalan
+          </span>
+        </div>
       </template>
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
@@ -1070,6 +1083,12 @@ function printTable() {
             <label>Remark Teknisi (Pending)</label>
             <strong>{{ srDetailItem.remarks }}</strong>
           </div>
+          <div v-if="isRunningTransaction(srDetailItem)" class="detail-field detail-field--wide">
+            <span>Label Transaksi</span>
+            <strong>
+              <span class="badge-running-tx">Transaksi sudah berjalan</span>
+            </strong>
+          </div>
         </div>
 
         <!-- Photos Section -->
@@ -1083,6 +1102,16 @@ function printTable() {
               <div class="sr-photo-label sr-photo-label--before">Before</div>
               <div class="sr-photo-frame">
                 <img v-if="srDetailItem.photo_before" :src="srDetailItem.photo_before" alt="Photo Before" class="sr-photo-img" @click="srPhotoZoom = srDetailItem.photo_before" />
+                <div v-else class="sr-photo-empty">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <span>No photo</span>
+                </div>
+              </div>
+            </div>
+            <div class="sr-photo-card">
+              <div class="sr-photo-label sr-photo-label--progress">Pengerjaan</div>
+              <div class="sr-photo-frame">
+                <img v-if="srDetailItem.photo_progress" :src="srDetailItem.photo_progress" alt="Photo Progress" class="sr-photo-img" @click="srPhotoZoom = srDetailItem.photo_progress" />
                 <div v-else class="sr-photo-empty">
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                   <span>No photo</span>
@@ -1225,13 +1254,20 @@ function printTable() {
 
           <section class="detail-items" style="margin-top: 24px;">
             <h4>Foto Dokumentasi</h4>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px;">
               <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
                 <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sebelum (Photo Before)</div>
                 <div v-if="doDetailItem?.photo_before">
                   <img :src="doDetailItem.photo_before" alt="Foto Sebelum" style="max-height: 200px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="srPhotoZoom = doDetailItem.photo_before" />
                 </div>
                 <div v-else class="text-muted" style="padding: 30px 0; font-size: 12px;">Tidak ada foto sebelum</div>
+              </div>
+              <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Pengerjaan (Photo Progress)</div>
+                <div v-if="doDetailItem?.photo_progress">
+                  <img :src="doDetailItem.photo_progress" alt="Foto Pengerjaan" style="max-height: 200px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="srPhotoZoom = doDetailItem.photo_progress" />
+                </div>
+                <div v-else class="text-muted" style="padding: 30px 0; font-size: 12px;">Tidak ada foto pengerjaan</div>
               </div>
               <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
                 <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sesudah (Photo After)</div>
@@ -1658,6 +1694,16 @@ function printTable() {
 </template>
 
 <style scoped>
+.badge-running-tx {
+  display: inline-block;
+  background-color: #6366f1;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -1807,7 +1853,7 @@ function printTable() {
 }
 .sr-photos-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
 }
 .sr-photo-card {
@@ -1827,6 +1873,10 @@ function printTable() {
 .sr-photo-label--before {
   background: #fff3cd;
   color: #92620a;
+}
+.sr-photo-label--progress {
+  background: #e0e7ff;
+  color: #3730a3;
 }
 .sr-photo-label--after {
   background: #d1fae5;

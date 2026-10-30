@@ -1104,6 +1104,7 @@ async function handleSubmit() {
     notes: form.notes ? String(form.notes).trim() : "",
     installation_address: form.installation_address ? String(form.installation_address).trim() : "",
     technician_id: form.technician_id || undefined,
+    is_new: Boolean(form.is_new),
     items: rentalItems.value.map((item) => {
       const isUnit = item.selected_item.startsWith("unit_");
       const isProduct = item.selected_item.startsWith("prod_");

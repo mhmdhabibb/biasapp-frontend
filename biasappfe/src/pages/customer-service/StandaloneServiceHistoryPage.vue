@@ -432,9 +432,18 @@ const hardDelete = useHardDelete(
 const showDetailModal = ref(false)
 const detailItem = ref<any>(null)
 
-function openDetail(row: any) {
+async function openDetail(row: any) {
   detailItem.value = row
   showDetailModal.value = true
+  try {
+    const res: any = await api.get(`/delivery-orders/${row.id}`)
+    const full = res.data?.data ?? res.data
+    if (full && detailItem.value?.id === row.id) {
+      detailItem.value = full
+    }
+  } catch (e) {
+    console.warn('Failed to fetch full DO:', e)
+  }
 }
 
 const printModalOpen = ref(false)
@@ -454,9 +463,18 @@ function handlePrint(row: any) {
   printModalOpen.value = true
 }
 
-function handleConfirmPrint() {
+async function handleConfirmPrint() {
   if (printTarget.value) {
-    printServiceReport(printTarget.value, printType.value === 'all' ? undefined : (printType.value as ReportType))
+    let printItem = printTarget.value
+    if (!printItem.customer_signature || !printItem.technician_signature) {
+      try {
+        const res: any = await api.get(`/delivery-orders/${printItem.id}`)
+        printItem = res.data?.data ?? res.data ?? printTarget.value
+      } catch (e) {
+        console.warn('Failed to fetch full DO details for printing:', e)
+      }
+    }
+    printServiceReport(printItem, printType.value === 'all' ? undefined : (printType.value as ReportType))
   }
   printModalOpen.value = false
 }
@@ -858,11 +876,18 @@ async function exportPdf() {
             <div style="font-weight: 500;" :class="detailItem.is_completed ? 'text-success' : ''">{{ detailItem.is_completed ? 'YES' : 'NO' }}</div>
           </div>
         </div>
-        <div v-if="detailItem.photo_before || detailItem.photo_after" class="form-row mt-sm">
+        <div v-if="detailItem.photo_before || detailItem.photo_progress || detailItem.photo_after" class="form-row mt-sm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
           <div class="info-group">
             <label>Foto Awal:</label>
             <div v-if="detailItem.photo_before" class="photo-preview">
               <img :src="detailItem.photo_before" alt="Foto Awal" />
+            </div>
+            <div v-else class="text-muted text-xs">Tidak ada</div>
+          </div>
+          <div class="info-group">
+            <label>Foto Pengerjaan:</label>
+            <div v-if="detailItem.photo_progress" class="photo-preview">
+              <img :src="detailItem.photo_progress" alt="Foto Pengerjaan" />
             </div>
             <div v-else class="text-muted text-xs">Tidak ada</div>
           </div>
@@ -872,6 +897,24 @@ async function exportPdf() {
               <img :src="detailItem.photo_after" alt="Foto Akhir" />
             </div>
             <div v-else class="text-muted text-xs">Tidak ada</div>
+          </div>
+        </div>
+        <div v-if="detailItem.customer_signature || detailItem.technician_signature" class="form-row mt-sm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="info-group">
+            <label>Tanda Tangan Teknisi:</label>
+            <div v-if="detailItem.technician_signature" class="photo-preview" style="background: #fff; padding: 6px; border: 1px solid var(--color-border-light); border-radius: 6px; text-align: center;">
+              <img :src="detailItem.technician_signature" alt="TTD Teknisi" style="max-height: 80px; max-width: 100%; object-fit: contain; margin: 0 auto; display: block;" />
+              <div class="text-xs text-muted" style="margin-top: 4px; font-weight: 600;">{{ detailItem.technician_name || '-' }}</div>
+            </div>
+            <div v-else class="text-muted text-xs">Belum ada</div>
+          </div>
+          <div class="info-group">
+            <label>Tanda Tangan Customer:</label>
+            <div v-if="detailItem.customer_signature" class="photo-preview" style="background: #fff; padding: 6px; border: 1px solid var(--color-border-light); border-radius: 6px; text-align: center;">
+              <img :src="detailItem.customer_signature" alt="TTD Customer" style="max-height: 80px; max-width: 100%; object-fit: contain; margin: 0 auto; display: block;" />
+              <div class="text-xs text-muted" style="margin-top: 4px; font-weight: 600;">{{ detailItem.customer_name || '-' }}</div>
+            </div>
+            <div v-else class="text-muted text-xs">Belum ada</div>
           </div>
         </div>
       </div>

@@ -225,6 +225,7 @@ async function exportToPdf() {
       'Serial Number': u ? (u.serial_no || '-') : '-',
       'Repair Action': (j.service_report?.repair_action || j.instructions || '-').replace('[MAINTENANCE_VISIT]', '').trim(),
       'photoBefore': j.service_report?.photo_before || null,
+      'photoProgress': j.service_report?.photo_progress || null,
       'photoAfter': j.service_report?.photo_after || null
     }
   })
@@ -243,19 +244,21 @@ async function exportToPdf() {
           <tr style="background-color: #5b9bd5; color: white;">
             <th style="width: 5%">No</th>
             <th style="width: 15%">Project Name</th>
-            <th style="width: 15%">Model/Type</th>
+            <th style="width: 13%">Model/Type</th>
             <th style="width: 10%">Serial Number</th>
-            <th style="width: 25%">Repair Action</th>
-            <th style="width: 15%">Foto Dokumentasi Problem</th>
-            <th style="width: 15%">Foto dokumentasi ok diservice</th>
+            <th style="width: 17%">Repair Action</th>
+            <th style="width: 13%">Foto Dokumentasi Problem</th>
+            <th style="width: 13%">Foto Pengerjaan</th>
+            <th style="width: 14%">Foto dokumentasi ok diservice</th>
           </tr>
         </thead>
         <tbody>
   `
   
   data.forEach(row => {
-    const img1 = row.photoBefore ? `<img src="${row.photoBefore}" style="max-height: 90px; max-width: 120px; object-fit: contain;" crossorigin="anonymous" />` : '-'
-    const img2 = row.photoAfter ? `<img src="${row.photoAfter}" style="max-height: 90px; max-width: 120px; object-fit: contain;" crossorigin="anonymous" />` : '-'
+    const img1 = row.photoBefore ? `<img src="${row.photoBefore}" style="max-height: 80px; max-width: 100px; object-fit: contain;" crossorigin="anonymous" />` : '-'
+    const imgProgress = row.photoProgress ? `<img src="${row.photoProgress}" style="max-height: 80px; max-width: 100px; object-fit: contain;" crossorigin="anonymous" />` : '-'
+    const img2 = row.photoAfter ? `<img src="${row.photoAfter}" style="max-height: 80px; max-width: 100px; object-fit: contain;" crossorigin="anonymous" />` : '-'
     
     html += `
       <tr>
@@ -265,6 +268,7 @@ async function exportToPdf() {
         <td>${row['Serial Number']}</td>
         <td>${row['Repair Action']}</td>
         <td style="padding: 4px;">${img1}</td>
+        <td style="padding: 4px;">${imgProgress}</td>
         <td style="padding: 4px;">${img2}</td>
       </tr>
     `
@@ -295,6 +299,7 @@ async function exportToExcel() {
       'Serial Number': u ? (u.serial_no || '-') : '-',
       'Repair Action': j.service_report?.repair_action || j.instructions || '-',
       'Foto Dokumentasi Problem': j.service_report?.photo_before || '-',
+      'Foto Dokumentasi Pengerjaan': j.service_report?.photo_progress || '-',
       'Foto dokumentasi ok diservice': j.service_report?.photo_after || '-'
     }
   })
@@ -447,6 +452,16 @@ async function exportToExcel() {
             </div>
           </div>
           <div class="detail-photo-card">
+            <div class="detail-photo-label detail-photo-label--progress">Pengerjaan</div>
+            <div class="detail-photo-frame">
+              <img v-if="detailRow.service_report?.photo_progress" :src="detailRow.service_report.photo_progress" alt="Pengerjaan" class="detail-photo-img" @click="detailPhotoZoom = detailRow.service_report.photo_progress" />
+              <div v-else class="detail-photo-empty">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <span>No photo</span>
+              </div>
+            </div>
+          </div>
+          <div class="detail-photo-card">
             <div class="detail-photo-label detail-photo-label--after">After</div>
             <div class="detail-photo-frame">
               <img v-if="detailRow.service_report?.photo_after" :src="detailRow.service_report.photo_after" alt="After" class="detail-photo-img" @click="detailPhotoZoom = detailRow.service_report.photo_after" />
@@ -519,7 +534,7 @@ async function exportToExcel() {
 }
 .detail-photos-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
 }
 .detail-photo-card {
@@ -536,6 +551,7 @@ async function exportToExcel() {
   width: fit-content;
 }
 .detail-photo-label--before { background: #fff3cd; color: #92620a; }
+.detail-photo-label--progress { background: #e0e7ff; color: #3730a3; }
 .detail-photo-label--after  { background: #d1fae5; color: #065f46; }
 .detail-photo-frame {
   border: 1px solid var(--color-border-light);

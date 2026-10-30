@@ -169,6 +169,12 @@ const router = createRouter({
         import("@/pages/customer-service/MonthlyMeterReadingsPage.vue"),
     },
     {
+      path: "/customer-service/atlas-great",
+      name: "csAtlasGreat",
+      component: () =>
+        import("@/pages/customer-service/AtlasGreatReadingsPage.vue"),
+    },
+    {
       path: "/customer-service/rentals",
       name: "rentals",
       component: () => import("@/pages/customer-service/RentalsPage.vue"),

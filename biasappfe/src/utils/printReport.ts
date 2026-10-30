@@ -482,16 +482,22 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
 }
 
 function servicePhotosBody(item: any): string {
-  if (!item.photo_before && !item.photo_after) return "";
+  if (!item.photo_before && !item.photo_progress && !item.photo_after) return "";
+  const count = [item.photo_before, item.photo_progress, item.photo_after].filter(Boolean).length;
+  const colWidth = count === 3 ? "31%" : count === 2 ? "48%" : "80%";
   return `
     <div class="container" style="border: none;">
       <div class="title-bar" style="font-size: 22px; margin-bottom: 20px;">SERVICE PHOTOS</div>
-      <div style="display: flex; gap: 20px; justify-content: space-around;">
-        ${item.photo_before ? `<div style="text-align: center; width: 48%;">
+      <div style="display: flex; gap: 20px; justify-content: space-around; flex-wrap: wrap;">
+        ${item.photo_before ? `<div style="text-align: center; width: ${colWidth};">
           <div style="font-weight: bold; margin-bottom: 10px;">BEFORE SERVICE</div>
           <img src="${item.photo_before}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
         </div>` : ""}
-        ${item.photo_after ? `<div style="text-align: center; width: 48%;">
+        ${item.photo_progress ? `<div style="text-align: center; width: ${colWidth};">
+          <div style="font-weight: bold; margin-bottom: 10px;">DURING SERVICE / PROGRESS</div>
+          <img src="${item.photo_progress}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
+        </div>` : ""}
+        ${item.photo_after ? `<div style="text-align: center; width: ${colWidth};">
           <div style="font-weight: bold; margin-bottom: 10px;">AFTER SERVICE</div>
           <img src="${item.photo_after}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
         </div>` : ""}
@@ -532,12 +538,16 @@ function photoDokumentasiBody(items: any[]): string {
     const repairAction = item.repair_action || item.action || "-";
 
     const photoBefore = item.photo_before
-      ? `<img src="${item.photo_before}" style="width:160px; height:120px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
-      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:160px; height:120px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
+      ? `<img src="${item.photo_before}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
+      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
+
+    const photoProgress = item.photo_progress
+      ? `<img src="${item.photo_progress}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
+      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
     const photoAfter = item.photo_after
-      ? `<img src="${item.photo_after}" style="width:160px; height:120px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
-      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:160px; height:120px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
+      ? `<img src="${item.photo_after}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
+      : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
     return `
       <tr>
@@ -547,6 +557,7 @@ function photoDokumentasiBody(items: any[]): string {
         <td>${serialNo}</td>
         <td>${repairAction}</td>
         <td class="pd-photo">${photoBefore}</td>
+        <td class="pd-photo">${photoProgress}</td>
         <td class="pd-photo">${photoAfter}</td>
       </tr>`;
   }).join("");
@@ -564,12 +575,13 @@ function photoDokumentasiBody(items: any[]): string {
         <thead>
           <tr>
             <th class="pd-th pd-center" style="width:4%;">No</th>
-            <th class="pd-th" style="width:16%;">Project Name</th>
-            <th class="pd-th" style="width:16%;">Model/Type</th>
-            <th class="pd-th" style="width:14%;">Serial Number</th>
-            <th class="pd-th" style="width:20%;">Repair Action</th>
-            <th class="pd-th pd-center" style="width:15%;">Foto Dokumentasi Problem</th>
-            <th class="pd-th pd-center" style="width:15%;">Foto dokumentasi at-service</th>
+            <th class="pd-th" style="width:15%;">Project Name</th>
+            <th class="pd-th" style="width:13%;">Model/Type</th>
+            <th class="pd-th" style="width:12%;">Serial Number</th>
+            <th class="pd-th" style="width:15%;">Repair Action</th>
+            <th class="pd-th pd-center" style="width:13%;">Foto Problem / Awal</th>
+            <th class="pd-th pd-center" style="width:14%;">Foto Pengerjaan</th>
+            <th class="pd-th pd-center" style="width:14%;">Foto Selesai / At-Service</th>
           </tr>
         </thead>
         <tbody>

@@ -117,6 +117,11 @@ export const resources = {
   ),
   payments: createResourceService<ResourceRecord>("payments"),
   surveys: createResourceService<ResourceRecord>("surveys"),
+  atlasGreatReadings: {
+    ...createResourceService<ResourceRecord>("atlas-great-readings"),
+    getLatestMeter: (params: { customer_type?: string; unit_id?: string }) =>
+      api.get("/atlas-great-readings/latest-meter", { params }),
+  },
   stockMovements: {
     ...createResourceService<ResourceRecord>("stock-movements"),
     applyOpname: (data: { product_id: string; actual_stock: number; notes: string }) =>

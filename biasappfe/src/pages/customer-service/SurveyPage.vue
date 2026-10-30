@@ -48,9 +48,9 @@ const unitOptions = computed(() =>
 );
 
 const resultOptions = [
+  { value: "pending", label: "Pending" },
   { value: "matched", label: "Cocok (Matched)" },
   { value: "not_matched", label: "Tidak Cocok" },
-  { value: "pending", label: "Pending" },
 ];
 
 const statusOptions = [
@@ -158,13 +158,33 @@ async function handleDelete() {
   }
 }
 
-async function cancelSurvey(item: any) {
+async function handleNextSurvey(item: any) {
   try {
+    isLoading.value = true;
+    await resources.surveys.update(String(item.id), { status: "matched", result: "matched" });
+    toast.success("Survey disetujui. Mengarahkan ke form Sale...");
+    await fetchData();
+    createSaleFromSurvey(item);
+  } catch (e: any) {
+    toast.error("Gagal memproses survey: " + (e?.message || "Error"));
+  } finally {
+    isLoading.value = false;
+  }
+}
+
+async function cancelSurvey(item: any) {
+  if (!confirm("Apakah Anda yakin ingin membatalkan survey ini?")) {
+    return;
+  }
+  try {
+    isLoading.value = true;
     await resources.surveys.update(String(item.id), { status: "cancelled", result: "not_matched" });
-    toast.success("Survey cancelled.");
+    toast.success("Survey dibatalkan.");
     await fetchData();
   } catch (e: any) {
-    toast.error("Gagal cancel survey: " + (e?.message || "Error"));
+    toast.error("Gagal membatalkan survey: " + (e?.message || "Error"));
+  } finally {
+    isLoading.value = false;
   }
 }
 
@@ -196,12 +216,21 @@ onMounted(async () => {
         </span>
       </template>
       <template #actions="{ row }">
-        <button v-if="row.result === 'matched' || row.status === 'matched'" class="btn btn-sm btn-primary" @click="createSaleFromSurvey(row)">
-          Buat Sale Baru
-        </button>
-        <button v-if="row.status !== 'cancelled' && row.result !== 'matched'" class="btn btn-sm btn-outline" @click="cancelSurvey(row)">
-          Cancel
-        </button>
+        <!-- Status pending: tampilkan tombol Next dan Cancel -->
+        <template v-if="row.status === 'pending' || (!row.status && row.result === 'pending')">
+          <button class="btn btn-sm btn-primary" title="Lanjut ke Sale" @click="handleNextSurvey(row)">
+            Next
+          </button>
+          <button class="btn btn-sm btn-outline" title="Cancel Survey" @click="cancelSurvey(row)">
+            Cancel
+          </button>
+        </template>
+        <!-- Status matched: otomatis ada tombol Buat Sale -->
+        <template v-else-if="row.status === 'matched' || row.result === 'matched'">
+          <button class="btn btn-sm btn-primary" title="Buat Sale berdasarkan survey ini" @click="createSaleFromSurvey(row)">
+            Buat Sale
+          </button>
+        </template>
         <button class="action-btn" title="Edit" @click="openEdit(row)">
           <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>

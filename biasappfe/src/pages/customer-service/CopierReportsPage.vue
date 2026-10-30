@@ -82,6 +82,14 @@ function technicianName(id: any): string {
   return t ? t.user?.name || t.name || '-' : '-'
 }
 
+function isRunningTransaction(item: any): boolean {
+  if (!item) return false
+  return Boolean(
+    item.is_running_transaction ||
+    String(item.remarks || '').toLowerCase().includes('transaksi sudah berjalan')
+  )
+}
+
 function formatDate(value: any): string {
   if (!value) return '-'
   const d = new Date(value)
@@ -395,6 +403,14 @@ async function handleDelete() {
       permission="service_report"
       @delete="openDelete"
     >
+      <template #cell-report_no="{ value, row }">
+        <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span style="font-weight: 600;">{{ value || '-' }}</span>
+          <span v-if="isRunningTransaction(row)" class="badge-running-tx">
+            Transaksi sudah berjalan
+          </span>
+        </div>
+      </template>
       <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
       <template #cell-unit_id="{ value }">{{ unitName(value) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
@@ -462,6 +478,11 @@ async function handleDelete() {
 
     <FormModal :open="showDetail" :title="detailItem ? `Copier Report ${detailItem.report_no}` : 'Copier Report'" max-width="560px" @close="showDetail = false">
       <template v-if="detailItem">
+        <div v-if="isRunningTransaction(detailItem)" style="margin-bottom: 12px;">
+          <span class="badge-running-tx">
+            Transaksi sudah berjalan
+          </span>
+        </div>
         <div class="cr-head">
           <div>
             <div class="cr-no">{{ detailItem.report_no || '-' }}</div>
@@ -573,6 +594,17 @@ async function handleDelete() {
 <style scoped>
 .mb-4 {
   margin-bottom: var(--space-lg);
+}
+
+.badge-running-tx {
+  display: inline-block;
+  background-color: #6366f1;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  white-space: nowrap;
 }
 
 .info-alert {

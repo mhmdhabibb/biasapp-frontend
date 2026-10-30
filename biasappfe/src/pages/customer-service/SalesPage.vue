@@ -164,11 +164,15 @@ onMounted(() => {
 })
 
 // Prefill from survey (Buat Sale Baru)
+let lastPrefillKey = ''
 function applySurveyPrefill() {
   const qCust = route.query.customer_id ? String(route.query.customer_id) : ''
   const qUnit = route.query.unit_id ? String(route.query.unit_id) : ''
   if (!qCust) return
+  const currentKey = `${qCust}_${qUnit}`
+  if (lastPrefillKey === currentKey) return
   if (!customers.value || (customers.value as any[]).length === 0) return
+  lastPrefillKey = currentKey
   openAdd()
   form.customer_id = qCust
   if (qUnit) {
@@ -186,6 +190,10 @@ function applySurveyPrefill() {
     ]
   }
 }
+
+watch(() => route.query.customer_id, (newVal) => {
+  if (newVal) lastPrefillKey = ''
+})
 
 watch([() => route.query.customer_id, () => route.query.unit_id, customers, units], () => {
   applySurveyPrefill()

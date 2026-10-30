@@ -301,13 +301,20 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
 
         <section class="detail-items" style="margin-top: 16px;">
           <h4>Foto Dokumentasi</h4>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 8px;">
             <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
               <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sebelum (Photo Before)</div>
               <div v-if="detailItem.photo_before">
                 <img :src="detailItem.photo_before" alt="Foto Sebelum" style="max-height: 180px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_before" />
               </div>
               <div v-else class="text-muted" style="padding: 24px 0; font-size: 12px;">Tidak ada foto sebelum</div>
+            </div>
+            <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+              <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Pengerjaan (Photo Progress)</div>
+              <div v-if="detailItem.photo_progress">
+                <img :src="detailItem.photo_progress" alt="Foto Pengerjaan" style="max-height: 180px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_progress" />
+              </div>
+              <div v-else class="text-muted" style="padding: 24px 0; font-size: 12px;">Tidak ada foto pengerjaan</div>
             </div>
             <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
               <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sesudah (Photo After)</div>

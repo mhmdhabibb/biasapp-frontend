@@ -97,6 +97,11 @@ export const allMenuGroups: MenuGroup[] = [
         route: "/customer-service/rental-invoices",
       },
       {
+        label: "Pencatatan Lembar Pemakaian",
+        icon: "calculator",
+        route: "/customer-service/atlas-great",
+      },
+      {
         label: "Copier Reports",
         icon: "file-text",
         route: "/customer-service/copier-reports",
@@ -309,6 +314,8 @@ export const iconPaths: Record<string, string> = {
   download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M7 10l5 5 5-5 M12 15V3",
   calendar:
     "M19 4H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2z M16 2v4 M8 2v4 M3 10h18",
+  calculator:
+    "M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z M8 6h8 M16 14v4 M8 10h.01 M12 10h.01 M16 10h.01 M8 14h.01 M12 14h.01 M8 18h.01 M12 18h.01",
 };
 
 const moduleKey = (name: string) =>

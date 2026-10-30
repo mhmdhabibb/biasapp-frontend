@@ -260,7 +260,7 @@ function statusColor(s: string) {
         </div>
 
         <!-- Service Photos -->
-        <div class="report-card" v-if="sr.photo_before || sr.photo_after">
+        <div class="report-card" v-if="sr.photo_before || sr.photo_progress || sr.photo_after">
           <div class="report-card-header">
             <div class="report-card-icon" style="background: linear-gradient(135deg, rgba(236,72,153,0.15), rgba(236,72,153,0.05)); color: #ec4899;">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -272,6 +272,10 @@ function statusColor(s: string) {
               <div v-if="sr.photo_before" class="photo-item">
                 <span class="field-label">Before Service</span>
                 <img :src="sr.photo_before" alt="Photo Before" class="photo-img" />
+              </div>
+              <div v-if="sr.photo_progress" class="photo-item">
+                <span class="field-label">During Service / Pengerjaan</span>
+                <img :src="sr.photo_progress" alt="Photo Progress" class="photo-img" />
               </div>
               <div v-if="sr.photo_after" class="photo-item">
                 <span class="field-label">After Service</span>

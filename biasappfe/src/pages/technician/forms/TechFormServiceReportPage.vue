@@ -37,6 +37,7 @@ const form = ref({
   customer_name: '',
   technician_name: '',
   photo_before: '',
+  photo_progress: '',
   photo_after: '',
 })
 const isLoading = ref(true)
@@ -44,6 +45,7 @@ const isSaving = ref(false)
 const currentStep = ref(1)
 const removedSparepartIds = ref<string[]>([])
 const fileInputBefore = ref<HTMLInputElement | null>(null)
+const fileInputProgress = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
 
 const productOptions = computed(() =>
@@ -69,6 +71,7 @@ onMounted(async () => {
       customer_name: job.value.customer_name || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || '',
       technician_name: job.value.technician_name || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || '',
       photo_before: job.value.photo_before || '',
+      photo_progress: job.value.photo_progress || '',
       photo_after: job.value.photo_after || '',
     }
     isLoading.value = false
@@ -104,6 +107,7 @@ onMounted(async () => {
         customer_name: data.customer_name || form.value.customer_name || '',
         technician_name: data.technician_name || form.value.technician_name || '',
         photo_before: data.photo_before || form.value.photo_before || '',
+        photo_progress: data.photo_progress || form.value.photo_progress || '',
         photo_after: data.photo_after || form.value.photo_after || '',
       }
     }
@@ -128,7 +132,7 @@ const isEditable = computed(() => {
   return r === 'technician' || r === 'admin'
 })
 
-function handlePhoto(event: Event, type: 'before' | 'after') {
+function handlePhoto(event: Event, type: 'before' | 'progress' | 'after') {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (file) {
@@ -155,6 +159,8 @@ function handlePhoto(event: Event, type: 'before' | 'after') {
         
         if (type === 'before') {
           form.value.photo_before = compressedUrl
+        } else if (type === 'progress') {
+          form.value.photo_progress = compressedUrl
         } else {
           form.value.photo_after = compressedUrl
         }
@@ -166,10 +172,13 @@ function handlePhoto(event: Event, type: 'before' | 'after') {
   target.value = ''
 }
 
-function clearPhoto(type: 'before' | 'after') {
+function clearPhoto(type: 'before' | 'progress' | 'after') {
   if (type === 'before') {
     form.value.photo_before = ''
     if (fileInputBefore.value) fileInputBefore.value.value = ''
+  } else if (type === 'progress') {
+    form.value.photo_progress = ''
+    if (fileInputProgress.value) fileInputProgress.value.value = ''
   } else {
     form.value.photo_after = ''
     if (fileInputAfter.value) fileInputAfter.value.value = ''
@@ -187,6 +196,7 @@ async function saveRepairAction() {
     await api.patch(`/service-reports/${realServiceReportId.value}`, {
       repair_action: form.value.repair_action,
       photo_before: form.value.photo_before,
+      photo_progress: form.value.photo_progress,
       photo_after: form.value.photo_after,
     })
     currentStep.value = 2
@@ -333,6 +343,26 @@ async function saveSignatures() {
               </div>
             </div>
             
+            <div class="form-group mt-lg">
+              <label class="form-label">Foto Pengerjaan / Progress Service</label>
+              <div v-if="form.photo_progress" class="photo-preview mb-sm">
+                <img :src="form.photo_progress" alt="Foto Pengerjaan" style="max-width: 100%; max-height: 200px; border-radius: 8px;" />
+                <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('progress')">Remove Photo</button>
+              </div>
+              <div v-else class="flex gap-sm mt-xs" style="display: flex; gap: 8px;">
+                <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; text-align: center; cursor: pointer; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                  Ambil Foto
+                  <input type="file" accept="image/*" capture="environment" style="display: none;" @change="e => handlePhoto(e, 'progress')" ref="fileInputProgress" />
+                </label>
+                <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; text-align: center; cursor: pointer; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md);">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                  Pilih File / Galeri
+                  <input type="file" accept="image/*" style="display: none;" @change="e => handlePhoto(e, 'progress')" />
+                </label>
+              </div>
+            </div>
+
             <div class="form-group mt-lg">
               <label class="form-label">Photo After Service</label>
               <div v-if="form.photo_after" class="photo-preview mb-sm">

@@ -374,8 +374,9 @@ function exportToExcel() {
               <td>
                 <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                   <a v-if="job.photo_before" :href="job.photo_before" target="_blank" class="btn btn-sm btn-outline" style="padding: 4px 8px; font-size: 11px;">Before</a>
+                  <a v-if="job.photo_progress" :href="job.photo_progress" target="_blank" class="btn btn-sm btn-outline" style="padding: 4px 8px; font-size: 11px;">Progress</a>
                   <a v-if="job.photo_after" :href="job.photo_after" target="_blank" class="btn btn-sm btn-outline" style="padding: 4px 8px; font-size: 11px;">After</a>
-                  <span v-if="!job.photo_before && !job.photo_after" class="text-muted" style="font-size: 11px;">-</span>
+                  <span v-if="!job.photo_before && !job.photo_progress && !job.photo_after" class="text-muted" style="font-size: 11px;">-</span>
                 </div>
               </td>
               <td>{{ getTechName(job.technician_id) }}</td>
@@ -430,6 +431,7 @@ function exportToExcel() {
           <div class="m-history-footer">
             <div class="m-photo-links">
               <a v-if="job.photo_before" :href="job.photo_before" target="_blank" class="btn btn-xs btn-outline">Before</a>
+              <a v-if="job.photo_progress" :href="job.photo_progress" target="_blank" class="btn btn-xs btn-outline">Progress</a>
               <a v-if="job.photo_after" :href="job.photo_after" target="_blank" class="btn btn-xs btn-outline">After</a>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -504,10 +506,15 @@ function exportToExcel() {
           </div>
         </div>
 
-        <div v-if="selectedHistory.photo_before || selectedHistory.photo_after" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div v-if="selectedHistory.photo_before || selectedHistory.photo_progress || selectedHistory.photo_after" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px;">
           <div>
             <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Before Photo:</label>
             <img v-if="selectedHistory.photo_before" :src="selectedHistory.photo_before" alt="Before Photo" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
+            <span v-else class="text-muted text-xs">No photo</span>
+          </div>
+          <div>
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Progress Photo:</label>
+            <img v-if="selectedHistory.photo_progress" :src="selectedHistory.photo_progress" alt="Progress Photo" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
             <span v-else class="text-muted text-xs">No photo</span>
           </div>
           <div>

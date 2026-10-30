@@ -70,6 +70,7 @@ const externalUnit = reactive({
 
 const form = ref({
   photo_before: '',
+  photo_progress: '',
   photo_after: '',
   repair_action: '',
   work_start: '',
@@ -90,6 +91,8 @@ const isFormCompleted = computed(() =>
 
 const fileInputBeforeCamera = ref<HTMLInputElement | null>(null)
 const fileInputBeforeFile = ref<HTMLInputElement | null>(null)
+const fileInputProgressCamera = ref<HTMLInputElement | null>(null)
+const fileInputProgressFile = ref<HTMLInputElement | null>(null)
 const fileInputAfterCamera = ref<HTMLInputElement | null>(null)
 const fileInputAfterFile = ref<HTMLInputElement | null>(null)
 const isSaving = ref(false)
@@ -127,17 +130,20 @@ function fmtDateTime(iso: string) {
 }
 
 // ── Photo handling ────────────────────────────────────────────────────────
-function triggerPhoto(type: 'before' | 'after', source: 'camera' | 'file' = 'file') {
+function triggerPhoto(type: 'before' | 'progress' | 'after', source: 'camera' | 'file' = 'file') {
   if (type === 'before') {
     if (source === 'camera') fileInputBeforeCamera.value?.click()
     else fileInputBeforeFile.value?.click()
+  } else if (type === 'progress') {
+    if (source === 'camera') fileInputProgressCamera.value?.click()
+    else fileInputProgressFile.value?.click()
   } else {
     if (source === 'camera') fileInputAfterCamera.value?.click()
     else fileInputAfterFile.value?.click()
   }
 }
 
-function handlePhoto(event: Event, type: 'before' | 'after') {
+function handlePhoto(event: Event, type: 'before' | 'progress' | 'after') {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -161,6 +167,7 @@ function handlePhoto(event: Event, type: 'before' | 'after') {
       canvas.getContext('2d')?.drawImage(img, 0, 0, width, height)
       const compressed = canvas.toDataURL('image/jpeg', 0.6)
       if (type === 'before') form.value.photo_before = compressed
+      else if (type === 'progress') form.value.photo_progress = compressed
       else form.value.photo_after = compressed
     }
     img.src = e.target?.result as string
@@ -169,11 +176,15 @@ function handlePhoto(event: Event, type: 'before' | 'after') {
   input.value = ''
 }
 
-function removePhoto(type: 'before' | 'after') {
+function removePhoto(type: 'before' | 'progress' | 'after') {
   if (type === 'before') {
     form.value.photo_before = ''
     if (fileInputBeforeCamera.value) fileInputBeforeCamera.value.value = ''
     if (fileInputBeforeFile.value) fileInputBeforeFile.value.value = ''
+  } else if (type === 'progress') {
+    form.value.photo_progress = ''
+    if (fileInputProgressCamera.value) fileInputProgressCamera.value.value = ''
+    if (fileInputProgressFile.value) fileInputProgressFile.value.value = ''
   } else {
     form.value.photo_after = ''
     if (fileInputAfterCamera.value) fileInputAfterCamera.value.value = ''
@@ -256,6 +267,7 @@ function openJob(job: any) {
   const cust: any = findCustomer(jobCustomerId(job))
   form.value = {
     photo_before: sr?.photo_before || '',
+    photo_progress: sr?.photo_progress || '',
     photo_after: sr?.photo_after || '',
     repair_action: sr?.repair_action || '',
     work_start: sr?.time_in || job.started_at || '',
@@ -318,6 +330,7 @@ async function completeJob() {
       time_in: form.value.work_start,
       time_out: now,
       photo_before: form.value.photo_before || '',
+      photo_progress: form.value.photo_progress || '',
       photo_after: form.value.photo_after || '',
       customer_name: form.value.customer_name,
       technician_name: form.value.technician_name,
@@ -556,6 +569,31 @@ async function completeJob() {
                 </div>
                 <input ref="fileInputBeforeCamera" type="file" accept="image/*" capture="environment" class="mf-file-input" @change="handlePhoto($event, 'before')" />
                 <input ref="fileInputBeforeFile" type="file" accept="image/*" class="mf-file-input" @change="handlePhoto($event, 'before')" />
+              </div>
+
+              <!-- Pengerjaan (Progress) -->
+              <div class="mf-photo-card">
+                <div class="mf-photo-badge" style="background: #3b82f6; color: #fff;">Pengerjaan</div>
+                <div class="mf-photo-frame" @click="form.photo_progress ? photoZoom = form.photo_progress : triggerPhoto('progress', 'file')">
+                  <img v-if="form.photo_progress" :src="form.photo_progress" alt="Pengerjaan" class="mf-photo-img" />
+                  <div v-else class="mf-photo-empty">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    <span>Tap untuk foto / pilih file</span>
+                  </div>
+                </div>
+                <div class="mf-photo-actions">
+                  <button type="button" class="mf-photo-btn" @click="triggerPhoto('progress', 'camera')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    Kamera
+                  </button>
+                  <button type="button" class="mf-photo-btn" @click="triggerPhoto('progress', 'file')">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                    Pilih File
+                  </button>
+                  <button v-if="form.photo_progress" type="button" class="mf-photo-btn mf-photo-btn--remove" @click="removePhoto('progress')">Hapus</button>
+                </div>
+                <input ref="fileInputProgressCamera" type="file" accept="image/*" capture="environment" class="mf-file-input" @change="handlePhoto($event, 'progress')" />
+                <input ref="fileInputProgressFile" type="file" accept="image/*" class="mf-file-input" @change="handlePhoto($event, 'progress')" />
               </div>
 
               <!-- After -->

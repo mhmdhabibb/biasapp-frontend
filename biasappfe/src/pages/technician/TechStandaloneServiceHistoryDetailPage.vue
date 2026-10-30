@@ -71,32 +71,36 @@ const form = reactive({
   customer_name: '',
   technician_name: '',
   photo_before: '',
+  photo_progress: '',
   photo_after: '',
 })
 const isInit = ref(false)
 const isSaving = ref(false)
 const fileInputBefore = ref<HTMLInputElement | null>(null)
+const fileInputProgress = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
 const showCompleteConfirm = ref(false)
 const showNewSHConfirm = ref(false)
 
-function initForm() {
-  if (!item.value || isInit.value) return
+function initForm(overrideData?: any) {
+  const src = overrideData || item.value
+  if (!src || (isInit.value && !overrideData)) return
   const now = new Date()
   const nowHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   Object.assign(form, {
-    problem: item.value.problem || '',
-    action: item.value.action || '',
-    time_in: item.value.time_in || nowHM,
-    time_out: item.value.time_out || '',
-    is_tested: !!item.value.is_tested,
-    is_completed: !!item.value.is_completed,
-    customer_signature: item.value.customer_signature || '',
-    technician_signature: item.value.technician_signature || '',
-    customer_name: item.value.customer_name || customer.value?.pic_name || '',
-    technician_name: item.value.technician_name || currentUser.value?.name || '',
-    photo_before: item.value.photo_before || '',
-    photo_after: item.value.photo_after || '',
+    problem: src.problem || '',
+    action: src.action || '',
+    time_in: src.time_in || nowHM,
+    time_out: src.time_out || '',
+    is_tested: !!src.is_tested,
+    is_completed: !!src.is_completed,
+    customer_signature: src.customer_signature || '',
+    technician_signature: src.technician_signature || '',
+    customer_name: src.customer_name || customer.value?.pic_name || '',
+    technician_name: src.technician_name || currentUser.value?.name || '',
+    photo_before: src.photo_before || '',
+    photo_progress: src.photo_progress || '',
+    photo_after: src.photo_after || '',
   })
   // time_in will be explicitly set when clicking Start Job
 
@@ -124,7 +128,7 @@ const isCompleted = computed(() =>
   !!(form.action || '').trim() && !!form.customer_signature && !!form.technician_signature && !!(form.customer_name || '').trim() && !!form.photo_before && hasItem.value,
 )
 
-function handlePhotoFile(e: Event, type: 'before' | 'after') {
+function handlePhotoFile(e: Event, type: 'before' | 'progress' | 'after') {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -148,6 +152,7 @@ function handlePhotoFile(e: Event, type: 'before' | 'after') {
       canvas.getContext('2d')?.drawImage(img, 0, 0, width, height)
       const compressed = canvas.toDataURL('image/jpeg', 0.6)
       if (type === 'before') form.photo_before = compressed
+      else if (type === 'progress') form.photo_progress = compressed
       else form.photo_after = compressed
     }
     img.src = ev.target?.result as string
@@ -156,10 +161,13 @@ function handlePhotoFile(e: Event, type: 'before' | 'after') {
   input.value = ''
 }
 
-function clearPhoto(type: 'before' | 'after') {
+function clearPhoto(type: 'before' | 'progress' | 'after') {
   if (type === 'before') {
     form.photo_before = ''
     if (fileInputBefore.value) fileInputBefore.value.value = ''
+  } else if (type === 'progress') {
+    form.photo_progress = ''
+    if (fileInputProgress.value) fileInputProgress.value.value = ''
   } else {
     form.photo_after = ''
     if (fileInputAfter.value) fileInputAfter.value.value = ''
@@ -414,7 +422,17 @@ async function saveDraft() {
   try {
     await api.patch(`/delivery-orders/${id}`, { ...form, status: 'draft' })
     await store.refreshOnly(['deliveryOrders'])
-    initFormRefresh()
+    try {
+      const res: any = await api.get(`/delivery-orders/${id}`)
+      const full = res.data?.data ?? res.data
+      if (full) {
+        initFormRefresh(full)
+      } else {
+        initFormRefresh()
+      }
+    } catch {
+      initFormRefresh()
+    }
     toast.success('Product detail tersimpan sebagai draft.')
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menyimpan.')
@@ -423,9 +441,9 @@ async function saveDraft() {
   }
 }
 
-function initFormRefresh() {
+function initFormRefresh(overrideData?: any) {
   isInit.value = false
-  initForm()
+  initForm(overrideData)
 }
 
 function confirmCompleteForm() {
@@ -548,16 +566,35 @@ function handlePrint() {
   }
 }
 
-function handleConfirmPrint() {
+async function handleConfirmPrint() {
   if (item.value) {
-    printServiceReport(item.value, printType.value === 'all' ? undefined : (printType.value as ReportType))
+    let printItem = item.value
+    if (!printItem.customer_signature || !printItem.technician_signature) {
+      try {
+        const res: any = await api.get(`/delivery-orders/${id}`)
+        printItem = res.data?.data ?? res.data ?? item.value
+      } catch (e) {
+        console.warn('Failed to fetch full DO details for printing:', e)
+      }
+    }
+    printServiceReport(printItem, printType.value === 'all' ? undefined : (printType.value as ReportType))
   }
   printModalOpen.value = false
 }
 
 onMounted(async () => {
   await store.refreshOnly(['deliveryOrders', 'technicians', 'customers'])
-  initForm()
+  try {
+    const res: any = await api.get(`/delivery-orders/${id}`)
+    const full = res.data?.data ?? res.data
+    if (full) {
+      initForm(full)
+    } else {
+      initForm()
+    }
+  } catch {
+    initForm()
+  }
   // Preload dropdown modal di background agar saat klik langsung siap.
   void store.refreshOnly(['units', 'products', 'brands', 'unitTypes'])
 })
@@ -639,6 +676,26 @@ onMounted(async () => {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
               Pilih File
               <input type="file" accept="image/*" style="display: none;" @change="handlePhotoFile($event, 'before')" />
+            </label>
+          </div>
+          <div v-else class="text-sm text-muted mt-xs">-</div>
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label class="form-label">Foto Pengerjaan (Proses Dikerjakan)</label>
+          <div v-if="form.photo_progress" class="photo-preview">
+            <img :src="form.photo_progress" alt="Foto Pengerjaan" />
+            <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('progress')">Hapus Foto</button>
+          </div>
+          <div v-else-if="isEditable" class="flex gap-sm mt-xs">
+            <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+              Ambil Foto
+              <input type="file" accept="image/*" capture="environment" style="display: none;" @change="handlePhotoFile($event, 'progress')" />
+            </label>
+            <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+              Pilih File
+              <input type="file" accept="image/*" style="display: none;" @change="handlePhotoFile($event, 'progress')" />
             </label>
           </div>
           <div v-else class="text-sm text-muted mt-xs">-</div>
