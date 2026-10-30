@@ -27,7 +27,8 @@ const { currentUser } = useAuth()
 const store = useMasterStore()
 
 const id = String(route.params.id)
-const item = computed(() => ((store.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === id))
+const localItem = ref<any>(null)
+const item = computed(() => localItem.value || ((store.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === id))
 const customer = computed(() => (item.value ? store.findCustomer(item.value.customer_id) : null))
 
 // ── Items (product detail) ──
@@ -330,6 +331,13 @@ async function addItem() {
     }
 
     await store.refreshOnly(['deliveryOrders'])
+    try {
+      const res: any = await api.get(`/delivery-orders/${id}`)
+      const full = res.data?.data ?? res.data
+      if (full) {
+        localItem.value = full
+      }
+    } catch {}
     showItemModal.value = false
     Object.assign(itemForm, { kind: 'external', unit_id: null, product_id: null, brand_id: null, unit_type_id: null, model: '', serial_no: '', warranty_status: '', warranty_expired_date: '', qty: 1, remarks: '' })
     toast.success('Item produk ditambahkan.')
@@ -345,6 +353,13 @@ async function removeItem(itemId: string) {
   try {
     await resources.deliveryOrderItems.remove(String(itemId))
     await store.refreshOnly(['deliveryOrders'])
+    try {
+      const res: any = await api.get(`/delivery-orders/${id}`)
+      const full = res.data?.data ?? res.data
+      if (full) {
+        localItem.value = full
+      }
+    } catch {}
     toast.success('Item dihapus.')
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menghapus item.')
@@ -426,6 +441,7 @@ async function saveDraft() {
       const res: any = await api.get(`/delivery-orders/${id}`)
       const full = res.data?.data ?? res.data
       if (full) {
+        localItem.value = full
         initFormRefresh(full)
       } else {
         initFormRefresh()
@@ -465,9 +481,9 @@ async function executeCompleteForm() {
     
     // Create follow-up job if unit is not fixed
     if (!form.is_completed) {
-      const doRes = await api.get(`/delivery-orders/${id}`)
-      const doData = doRes.data
-      const newDo = await resources.deliveryOrders.create({
+      const doRes: any = await api.get(`/delivery-orders/${id}`)
+      const doData = doRes.data?.data ?? doRes.data
+      const newDo: any = await resources.deliveryOrders.create({
         do_type: 'service',
         status: 'pending',
         customer_id: item.value.customer_id,
@@ -481,8 +497,8 @@ async function executeCompleteForm() {
         notes: `Lanjutan dari perbaikan ${item.value.do_number || ''}`,
       })
       
-      const newDoId = (newDo as any).data.id
-      if (doData.delivery_order_items && doData.delivery_order_items.length > 0) {
+      const newDoId = (newDo as any).data?.data?.id || (newDo as any).data?.id
+      if (newDoId && doData?.delivery_order_items && doData.delivery_order_items.length > 0) {
         for (const doi of doData.delivery_order_items) {
            await resources.deliveryOrderItems.create({
              delivery_order_id: newDoId,
@@ -505,6 +521,13 @@ async function executeCompleteForm() {
     }
     
     await store.refreshOnly(['deliveryOrders'])
+    try {
+      const res: any = await api.get(`/delivery-orders/${id}`)
+      const full = res.data?.data ?? res.data
+      if (full) {
+        localItem.value = full
+      }
+    } catch {}
     
     showNewSHConfirm.value = true
   } catch (err: any) {
@@ -520,7 +543,7 @@ async function executeNewSH() {
     const newTimeIn = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`
     // Warisi Project Name dari CS (lewati '-' peninggalan data lama).
     const pickName = (...vals: any[]) => vals.map((v) => String(v || '').trim()).find((v) => v && v !== '-') || ''
-    const newDo = await resources.deliveryOrders.create({
+    const newDo: any = await resources.deliveryOrders.create({
         do_type: 'service',
         status: 'pending',
         customer_id: item.value.customer_id,
@@ -534,9 +557,14 @@ async function executeNewSH() {
         notes: item.value.notes,
         time_in: newTimeIn,
     })
+    const newDoId = (newDo as any).data?.data?.id || (newDo as any).data?.id
     toast.success('Service History baru dibuat.')
     await store.refreshOnly(['deliveryOrders'])
-    router.push(`/technician/standalone-service-history/${(newDo as any).data.id}`)
+    if (newDoId) {
+      router.push(`/technician/standalone-service-history/${newDoId}`)
+    } else {
+      router.push('/technician/standalone-service-history')
+    }
   } catch (err: any) {
     toast.error(err?.message || 'Gagal membuat SH baru.')
   } finally {
@@ -588,6 +616,7 @@ onMounted(async () => {
     const res: any = await api.get(`/delivery-orders/${id}`)
     const full = res.data?.data ?? res.data
     if (full) {
+      localItem.value = full
       initForm(full)
     } else {
       initForm()

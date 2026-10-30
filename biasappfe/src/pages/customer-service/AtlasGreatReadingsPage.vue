@@ -40,7 +40,7 @@ const detailItem = ref<any | null>(null)
 
 // --- Aturan Tanggal 7 Khusus Atlas & Great ---
 const currentDay = new Date().getDate()
-const allowOffSchedule = ref(false)
+const allowOffSchedule = ref(true)
 
 // --- Form State ---
 const form = reactive({
@@ -361,7 +361,7 @@ async function onUnitChange(unitId: string) {
 function openAddModal() {
   isEditing.value = false
   editingId.value = null
-  allowOffSchedule.value = false
+  allowOffSchedule.value = true
   form.scheme_type = 'standard'
   form.customer_type = 'standard'
   form.customer_id = ''
@@ -1097,11 +1097,11 @@ function exportCSV() {
 
     <!-- MODAL FORM HITUNG / TAMBAH / EDIT -->
     <FormModal
-      v-model="showModal"
+      :open="showModal"
       :title="isEditing ? 'Edit Pencatatan Lembar' : 'Hitung / Tambah Pencatatan Lembar'"
       :submitLabel="isEditing ? 'Perbarui' : 'Simpan Pencatatan'"
-      :loading="isSaving"
-      size="lg"
+      maxWidth="780px"
+      @close="showModal = false"
       @submit="handleSubmit"
     >
       <div class="form-grid">
@@ -1237,7 +1237,7 @@ function exportCSV() {
             <div class="today-tag">Hari ini: Tanggal {{ currentDay }} (Jadwal normal: Tanggal 7)</div>
             <label class="override-checkbox">
               <input v-model="allowOffSchedule" type="checkbox" />
-              <span>Izinkan pembuatan di luar tanggal 7 (Otorisasi Admin)</span>
+              <span>Mode Pengujian / Otorisasi Admin Aktif (Bebas langsung disimpan dan diuji hari ini)</span>
             </label>
           </div>
         </div>
@@ -1433,10 +1433,11 @@ function exportCSV() {
 
     <!-- MODAL DETAIL & CETAK SLIP -->
     <FormModal
-      v-model="showDetailModal"
+      :open="showDetailModal"
       title="Detail & Laporan Perhitungan Lembar"
       submitLabel="🖨️ Cetak Slip / Download PDF"
-      size="lg"
+      maxWidth="780px"
+      @close="showDetailModal = false"
       @submit="printSlip(detailItem)"
     >
       <div v-if="detailItem" class="detail-container">
