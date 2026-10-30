@@ -793,6 +793,8 @@ async function openEdit(row: any) {
     po_no: rentalData.po_no || "",
     notes: rentalData.notes || "",
     installation_address: rentalData.installation_address || "",
+    technician_id: rentalData.technician_id || "",
+    is_new: rentalData.is_new !== null && rentalData.is_new !== undefined ? Boolean(rentalData.is_new) : true,
   });
 
   const rawItems = rentalData.rental_items || rentalData.rentalItems || [];
@@ -2501,8 +2503,9 @@ function isExpired(row: any): boolean {
             class="form-input"
             @change="onItemModeChange(item)"
           >
-            <option value="existing">Pilih existing (Produk)</option>
-            <option value="unit">Input Produk baru</option>
+            <option value="existing">Pilih dari Inventaris (Unit / Produk)</option>
+            <option value="unit">Input Unit / Mesin Baru</option>
+            <option value="product">Input Produk / Sparepart Baru</option>
           </select>
         </div>
 
@@ -3035,9 +3038,9 @@ function isExpired(row: any): boolean {
       <button
         type="button"
         class="btn btn-outline btn-sm mb-4"
-        @click="addRentalItem()"
+        @click="addRentalItem('existing')"
       >
-        + Add Another Machine
+        + Tambah Item dari Inventaris
       </button>
       <button
         type="button"
@@ -3045,7 +3048,15 @@ function isExpired(row: any): boolean {
         style="margin-left: 8px"
         @click="addRentalItem('unit')"
       >
-        + Add New Machine (isNew)
+        + Input Unit / Mesin Baru
+      </button>
+      <button
+        type="button"
+        class="btn btn-outline btn-sm mb-4"
+        style="margin-left: 8px"
+        @click="addRentalItem('product')"
+      >
+        + Input Produk / Sparepart Baru
       </button>
 
       <div class="sale-summary mt-4">
