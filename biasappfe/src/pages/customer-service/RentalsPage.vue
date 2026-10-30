@@ -45,6 +45,7 @@ const {
   findUnit,
   findProduct,
   refreshOnly,
+  refreshInBackground,
   ensureResourcesLoaded,
   formatUnitDisplayName,
   formatProductDisplayName,
@@ -1546,7 +1547,7 @@ async function submitExtendRental() {
   isSubmittingExtend.value = true;
   try {
     const res = await api.post<{ message?: string; data?: any }>(
-      `/rentals/${extendingRental.value.id}/extend`,
+      `/rents/${extendingRental.value.id}/extend`,
       {
         additional_months: months,
         additional_days: days,
@@ -1557,6 +1558,9 @@ async function submitExtendRental() {
     );
     showExtendModal.value = false;
     extendingRental.value = null;
+    invalidateCache("rents");
+    invalidateCache("contracts");
+    await fetchRentals();
     await refreshInBackground();
     window.dispatchEvent(new CustomEvent("bias:data-mutated"));
   } catch (err: any) {
