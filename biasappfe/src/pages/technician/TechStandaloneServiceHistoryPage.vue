@@ -23,9 +23,32 @@ const { can } = usePermission()
 const { ensureResourcesLoaded } = useMasterStore()
 const { deliveryOrders, jobOrders, technicians, customers, findCustomer, findTechnician, getTechnicianIdByUser, refreshOnly } = useMasterStore()
 
-onMounted(() => {
+const rawDeliveryOrders = ref<any[]>([])
+const isLoading = ref(false)
+
+async function loadStandaloneData() {
+  isLoading.value = true
+  try {
+    const res: any = await api.get('/delivery-orders/?limit=200', true, false)
+    const raw = Array.isArray(res?.data)
+      ? res.data
+      : Array.isArray(res?.data?.items)
+        ? res.data.items
+        : Array.isArray(res)
+          ? res
+          : []
+    rawDeliveryOrders.value = raw
+  } catch (err) {
+    console.error('Failed to load standalone data:', err)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(async () => {
   ensureResourcesLoaded(route.path)
   void refreshOnly(['deliveryOrders', 'technicians', 'customers', 'jobOrders'])
+  await loadStandaloneData()
 })
 const deletingId = ref<string | null>(null)
 
@@ -45,14 +68,17 @@ function isMyStandalone(d: any): boolean {
   return (techId && dTechId === techId) || (userId && dTechId === userId)
 }
 
-const standaloneList = computed(() =>
-  ((deliveryOrders?.value || []) as any[])
-    .filter((d: any) => String(d.do_type || '').toLowerCase() === 'service')
+const standaloneList = computed(() => {
+  const source = rawDeliveryOrders.value.length > 0
+    ? rawDeliveryOrders.value
+    : ((deliveryOrders?.value || []) as any[])
+  return source
+    .filter((d: any) => String(d?.do_type || '').toLowerCase() === 'service')
     .filter(isMyStandalone)
     .sort((a: any, b: any) =>
-      String(b.created_at || b.delivery_date || '').localeCompare(String(a.created_at || a.delivery_date || '')),
-    ),
-)
+      String(b?.created_at || b?.delivery_date || '').localeCompare(String(a?.created_at || a?.delivery_date || '')),
+    )
+})
 
 // ── Job Orders yang terkait DO (by delivery_order_id) ──
 function findJobOrderForDO(doId: string): any {
@@ -121,7 +147,8 @@ async function removeStandalone(row: any) {
       try { await resources.jobOrders.remove(String(linkedJO.id)) } catch {}
     }
     await resources.deliveryOrders.remove(String(row.id))
-    await refreshOnly(['deliveryOrders', 'jobOrders'])
+    await loadStandaloneData()
+    void refreshOnly(['deliveryOrders', 'jobOrders'])
     toast.success('Form stand alone dihapus.')
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menghapus form.')
@@ -194,7 +221,8 @@ async function saveEdit() {
       }
     }
 
-    await refreshOnly(['deliveryOrders', 'jobOrders'])
+    await loadStandaloneData()
+    void refreshOnly(['deliveryOrders', 'jobOrders'])
     showEditModal.value = false
     toast.success('Data berhasil diperbarui.')
   } catch (err: any) {
@@ -266,7 +294,8 @@ async function saveAssign() {
       toast.success('Job Order berhasil dibuat dan teknisi di-assign!')
     }
 
-    await refreshOnly(['deliveryOrders', 'jobOrders'])
+    await loadStandaloneData()
+    void refreshOnly(['deliveryOrders', 'jobOrders'])
     showAssignModal.value = false
   } catch (err: any) {
     toast.error(err?.message || 'Gagal membuat Job Order.')
@@ -593,15 +622,47 @@ async function saveAssign() {
 /* ── Desktop Table Styles ── */
 .table-responsive {
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+  min-height: 250px;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+.table-responsive::-webkit-scrollbar {
+  width: 8px;
+  height: 10px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 6px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 .sa-table {
   min-width: 980px;
   width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .sa-table th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--color-surface, #ffffff);
+  box-shadow: inset 0 -1px 0 var(--color-border-light, #e2e8f0);
   white-space: nowrap;
   font-size: 12px;
   text-transform: uppercase;

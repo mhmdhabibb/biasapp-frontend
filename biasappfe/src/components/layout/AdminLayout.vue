@@ -150,7 +150,9 @@ const pageTitle = computed(() => {
 <style scoped>
 .admin-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   background: var(--color-surface-raised, #f8fafc);
 }
 
@@ -161,8 +163,11 @@ const pageTitle = computed(() => {
 .admin-main {
   flex: 1;
   min-width: 0;
+  height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .admin-main.mobile-app-container {

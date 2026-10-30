@@ -140,15 +140,56 @@ const customerFilterOptions = computed(() => {
   ]
 })
 
-const unitOptions = computed(() => {
-  let list = units.value || []
-  if (form.customer_id) {
-    // Filter unit yang terhubung ke customer terpilih bila ada
-    const matched = list.filter((u: any) => u.customer_id === form.customer_id)
-    if (matched.length > 0) list = matched
+const customerRentedUnits = ref<any[]>([])
+const isLoadingCustomerUnits = ref(false)
+const showAllUnitsFallback = ref(false)
+
+async function loadUnitsForCustomer(customerId: string) {
+  if (!customerId) {
+    customerRentedUnits.value = []
+    return
   }
-  return list.map((u: any) => {
-    const disp = formatUnitDisplayName ? formatUnitDisplayName(u) : `${u.model_name || u.model || ''} - ${u.serial_number || ''}`
+  isLoadingCustomerUnits.value = true
+  try {
+    const res: any = await resources.atlasGreatReadings.getCustomerUnits(customerId)
+    const items = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+    customerRentedUnits.value = items
+
+    // Jika customer hanya punya 1 unit mesin rental dan mode tambah, langsung auto-select
+    if (!isEditing.value && items.length === 1 && !form.unit_id) {
+      form.unit_id = items[0].id
+      await onUnitChange(items[0].id)
+    }
+  } catch (err) {
+    console.error('Failed to load customer units:', err)
+    customerRentedUnits.value = []
+  } finally {
+    isLoadingCustomerUnits.value = false
+  }
+}
+
+const unitOptions = computed(() => {
+  if (!form.customer_id) {
+    return []
+  }
+
+  // Jika customer memiliki unit rental terdaftar
+  if (customerRentedUnits.value.length > 0 && !showAllUnitsFallback.value) {
+    return customerRentedUnits.value.map((u: any) => {
+      const brandStr = u.brand?.name ? `${u.brand.name} ` : ''
+      const modelStr = u.model || u.name || 'Unit'
+      const snStr = u.serial_no ? ` (SN: ${u.serial_no})` : ''
+      return {
+        value: u.id,
+        label: `${brandStr}${modelStr}${snStr}`,
+      }
+    })
+  }
+
+  // Fallback: Jika belum ada kontrak rental atau user memilih opsi lihat semua unit copier
+  const allUnitsList = (units.value || []).filter((u: any) => u.is_copier || showAllUnitsFallback.value)
+  return allUnitsList.map((u: any) => {
+    const disp = formatUnitDisplayName ? formatUnitDisplayName(u) : `${u.name || u.model || 'Unit'}${u.serial_no ? ` (SN: ${u.serial_no})` : ''}`
     return {
       value: u.id,
       label: disp,
@@ -157,8 +198,22 @@ const unitOptions = computed(() => {
 })
 
 // Deteksi otomatis apakah customer adalah Atlas atau Great saat memilih customer
-watch(() => form.customer_id, (newCustId) => {
-  if (isEditing.value || !newCustId) return
+watch(() => form.customer_id, async (newCustId, oldCustId) => {
+  if (!newCustId) {
+    customerRentedUnits.value = []
+    form.unit_id = ''
+    return
+  }
+
+  // Jika ganti customer saat tambah data, reset unit_id
+  if (!isEditing.value && newCustId !== oldCustId) {
+    form.unit_id = ''
+  }
+
+  await loadUnitsForCustomer(newCustId)
+
+  if (isEditing.value) return
+
   const cust = (customers.value || []).find((c: any) => c.id === newCustId)
   if (cust) {
     const name = getCustomerName(cust).toLowerCase()
@@ -362,6 +417,8 @@ function openAddModal() {
   isEditing.value = false
   editingId.value = null
   allowOffSchedule.value = true
+  showAllUnitsFallback.value = false
+  customerRentedUnits.value = []
   form.scheme_type = 'standard'
   form.customer_type = 'standard'
   form.customer_id = ''
@@ -384,6 +441,7 @@ function openEditModal(item: any) {
   isEditing.value = true
   editingId.value = item.id
   allowOffSchedule.value = true
+  showAllUnitsFallback.value = false
 
   const cType = item.customer_type || 'standard'
   if (cType === 'atlas' || cType === 'great') {
@@ -397,6 +455,10 @@ function openEditModal(item: any) {
   form.customer_type = cType
   form.customer_id = item.customer_id || ''
   form.unit_id = item.unit_id || ''
+
+  if (item.customer_id) {
+    void loadUnitsForCustomer(item.customer_id)
+  }
 
   const dt = item.period_date ? new Date(item.period_date) : new Date()
   form.period_month = dt.getMonth() + 1
@@ -943,6 +1005,7 @@ function exportCSV() {
         :data="filteredReadings"
         :loading="loading"
         searchPlaceholder=""
+        maxHeight="calc(100vh - 350px)"
       >
         <template #cell(period)="{ item }">
           <div class="font-medium text-slate-800">
@@ -1116,13 +1179,30 @@ function exportCSV() {
         </div>
 
         <div class="form-group">
-          <label class="form-label required">Unit Mesin</label>
+          <label class="form-label required">
+            Unit Mesin Rented
+            <span v-if="isLoadingCustomerUnits" style="font-weight: normal; font-size: 11px; color: var(--color-text-muted); margin-left: 4px;">
+              (Memuat unit rental...)
+            </span>
+          </label>
           <CustomSelect
             v-model="form.unit_id"
             :options="unitOptions"
-            placeholder="Pilih Unit Mesin..."
+            :placeholder="!form.customer_id ? 'Pilih Customer terlebih dahulu...' : isLoadingCustomerUnits ? 'Sedang memuat unit rental...' : unitOptions.length === 0 ? 'Tidak ada unit rental untuk customer ini' : 'Pilih Unit Mesin...'"
+            :disabled="!form.customer_id || isLoadingCustomerUnits"
             @update:modelValue="onUnitChange"
           />
+          <div v-if="form.customer_id && !isLoadingCustomerUnits && customerRentedUnits.length === 0" style="margin-top: 6px; font-size: 12px; color: #d97706; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span>Customer ini belum memiliki unit rental terdaftar di kontrak/rental.</span>
+            <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--color-primary); font-weight: 500;">
+              <input type="checkbox" v-model="showAllUnitsFallback" />
+              Tampilkan semua unit mesin
+            </label>
+          </div>
+          <div v-else-if="form.customer_id && customerRentedUnits.length > 0" style="margin-top: 4px; font-size: 12px; color: #059669; display: flex; align-items: center; gap: 4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Menampilkan {{ customerRentedUnits.length }} unit mesin rental customer ini
+          </div>
         </div>
 
         <!-- Skema Perhitungan Selector -->
@@ -1692,6 +1772,15 @@ function exportCSV() {
   border: 1px solid #e2e8f0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   overflow: hidden;
+}
+
+.table-card :deep(.data-table) {
+  min-width: 1250px;
+}
+
+.table-card :deep(.table-scroll) {
+  max-height: calc(100vh - 350px);
+  min-height: 250px;
 }
 
 /* Badges */

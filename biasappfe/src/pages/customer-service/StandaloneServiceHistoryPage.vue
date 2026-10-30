@@ -29,54 +29,80 @@ const { ensureResourcesLoaded } = useMasterStore()
 const store = useMasterStore()
 const resources = useResourcesStore()
 
-onMounted(() => {
+const rawDeliveryOrders = ref<any[]>([])
+const isLoading = ref(false)
+
+async function loadStandaloneData() {
+  isLoading.value = true
+  try {
+    const res: any = await api.get('/delivery-orders/?limit=200', true, false)
+    const raw = Array.isArray(res?.data)
+      ? res.data
+      : Array.isArray(res?.data?.items)
+        ? res.data.items
+        : Array.isArray(res)
+          ? res
+          : []
+    rawDeliveryOrders.value = raw
+  } catch (err) {
+    console.error('Failed to load standalone data:', err)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(async () => {
   ensureResourcesLoaded(route.path)
   void store.refreshOnly(['deliveryOrders', 'jobOrders', 'technicians', 'customers'])
+  await loadStandaloneData()
 })
 
-const filterCustomer = ref<any>(null)
+const filterCustomer = ref<string>('all')
 const filterCustomerOptions = computed(() => [
-  { value: null as any, label: 'Semua Customer' },
+  { value: 'all', label: 'Semua Customer' },
   ...((store.customers?.value || []) as any[]).map((c: any) => ({
-    value: c.id,
+    value: String(c.id),
     label: c.company_name || c.name || `Customer ${c.id}`,
   })),
 ])
 
-const filterTechnician = ref<any>(null)
+const filterTechnician = ref<string>('all')
 const filterStatus = ref<string>('all')
 const filterTechnicianOptions = computed(() => [
-  { value: null as any, label: 'Semua Teknisi' },
+  { value: 'all', label: 'Semua Teknisi' },
   { value: 'unassigned', label: 'Belum Ditunjuk / Tanpa Teknisi' },
   ...((store.technicians?.value || []) as any[]).map((t: any) => ({
-    value: t.id,
+    value: String(t.id),
     label: t.user?.name || t.name || `Teknisi ${t.id}`,
   })),
 ])
 
 // Hanya DO mandiri bertipe service (bukan rental/sale/inbound)
 const standaloneList = computed(() => {
-  let list = ((store.deliveryOrders?.value || []) as any[]).filter(
-    (d: any) => String(d.do_type || '').toLowerCase() === 'service',
+  const source = rawDeliveryOrders.value.length > 0
+    ? rawDeliveryOrders.value
+    : ((store.deliveryOrders?.value || []) as any[])
+  let list = source.filter(
+    (d: any) => String(d?.do_type || '').toLowerCase() === 'service',
   )
-  if (filterCustomer.value) {
-    list = list.filter((d: any) => String(d.customer_id) === String(filterCustomer.value))
+  if (filterCustomer.value && filterCustomer.value !== 'all') {
+    list = list.filter((d: any) => String(d?.customer_id) === String(filterCustomer.value))
   }
-  if (filterTechnician.value) {
+  if (filterTechnician.value && filterTechnician.value !== 'all') {
     if (filterTechnician.value === 'unassigned') {
-      list = list.filter((d: any) => !d.technician_id)
+      list = list.filter((d: any) => !d?.technician_id)
     } else {
-      list = list.filter((d: any) => String(d.technician_id) === String(filterTechnician.value))
+      list = list.filter((d: any) => String(d?.technician_id) === String(filterTechnician.value))
     }
   }
-  if (filterStatus.value !== 'all') {
+  if (filterStatus.value && filterStatus.value !== 'all') {
     list = list.filter((d: any) => {
       const lbl = statusLabel(d).toLowerCase().replace(/ /g, '_')
       return lbl === filterStatus.value
     })
   }
   return list.sort((a: any, b: any) =>
-    String(b.created_at || b.delivery_date || '').localeCompare(String(a.created_at || a.delivery_date || '')),
+    String(b?.created_at || b?.delivery_date || '').localeCompare(String(a?.created_at || a?.delivery_date || '')),
   )
 })
 
@@ -278,7 +304,8 @@ async function handleSubmit() {
       })
       toast.success('Form service history baru dibuat.')
     }
-    await store.refreshOnly(['deliveryOrders', 'jobOrders', 'technicians', 'customers'])
+    await loadStandaloneData()
+    void store.refreshOnly(['deliveryOrders', 'jobOrders', 'technicians', 'customers'])
     showModal.value = false
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menyimpan.')
@@ -369,7 +396,8 @@ async function handleAssignSubmit() {
       toast.success('Job Order berhasil dibuat dan teknisi di-assign!')
     }
 
-    await store.refreshOnly(['deliveryOrders', 'jobOrders', 'technicians'])
+    await loadStandaloneData()
+    void store.refreshOnly(['deliveryOrders', 'jobOrders', 'technicians'])
     showAssignModal.value = false
   } catch (err: any) {
     toast.error(err?.message || 'Gagal meng-assign teknisi.')
@@ -400,7 +428,8 @@ async function handleDelete() {
       } catch {}
     }
     await resources.remove('deliveryOrders', String(deletingItem.value.id))
-    await store.refreshOnly(['deliveryOrders', 'jobOrders'])
+    await loadStandaloneData()
+    void store.refreshOnly(['deliveryOrders', 'jobOrders'])
     toast.success('Service history dihapus.')
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menghapus.')
@@ -421,7 +450,8 @@ const hardDelete = useHardDelete(
     await resourceService.deliveryOrders.hardRemove(id)
   },
   async () => {
-    await store.refreshOnly(['deliveryOrders', 'jobOrders'])
+    await loadStandaloneData()
+    void store.refreshOnly(['deliveryOrders', 'jobOrders'])
   },
   'delivery_order',
 )
@@ -574,6 +604,10 @@ async function exportPdf() {
       @add="openAdd"
     >
       <template #actions>
+        <button class="btn btn-outline btn-header-action" :disabled="isLoading" @click="loadStandaloneData" title="Segarkan Data">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ 'animate-spin': isLoading }"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          {{ isLoading ? 'Memuat...' : 'Refresh' }}
+        </button>
         <button class="btn btn-outline btn-header-action" @click="exportPdf">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           Export PDF
@@ -616,7 +650,7 @@ async function exportPdf() {
 
     <!-- Wide table container with horizontal scroll support -->
     <div class="standalone-table-card">
-      <DataTable :columns="columns" :data="standaloneList" search-placeholder="Cari customer, DO, atau tanggal...">
+      <DataTable :columns="columns" :data="standaloneList" :loading="isLoading" search-placeholder="Cari customer, DO, atau tanggal..." maxHeight="calc(100vh - 350px)">
         <template #cell-do_number="{ value }">
           <span class="badge badge-secondary font-mono">{{ value || '-' }}</span>
         </template>
@@ -1025,12 +1059,16 @@ async function exportPdf() {
   border-radius: 10px;
   border: 1px solid var(--color-border-light);
   box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
 }
 
 :deep(.data-table) {
-  min-width: 1100px;
+  min-width: 1200px;
+}
+
+:deep(.table-scroll) {
+  max-height: calc(100vh - 350px);
+  min-height: 250px;
 }
 
 .jo-badge {

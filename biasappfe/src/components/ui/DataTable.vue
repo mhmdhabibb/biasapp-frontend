@@ -26,6 +26,8 @@ const props = withDefaults(
     currentPage?: number;
     /** Whether data is loading (shows shimmer skeleton) */
     loading?: boolean;
+    /** Maximum height for internal scrollable data body (default: 'calc(100vh - 280px)') */
+    maxHeight?: string;
   }>(),
   {
     columns: () => [],
@@ -37,6 +39,7 @@ const props = withDefaults(
     totalPages: 1,
     currentPage: 1,
     loading: false,
+    maxHeight: "calc(100vh - 280px)",
   },
 );
 
@@ -62,7 +65,7 @@ const showDefaultActions = computed(() => showEdit.value || showDelete.value);
 // ACTION column: always shown when a custom #actions slot decides its own content,
 // otherwise only when at least one default action button is visible.
 const showActionsColumn = computed(
-  () => Boolean(slots.actions) || showDefaultActions.value,
+  () => Boolean(slots.actions) || Boolean(slots['cell(actions)']) || Boolean(slots['cell-actions']) || showDefaultActions.value,
 );
 
 const searchQuery = ref("");
@@ -217,7 +220,7 @@ const visiblePages = computed(() => {
     </div>
 
     <!-- Skeleton Loading State -->
-    <div v-if="loading" class="table-scroll">
+    <div v-if="loading" class="table-scroll" :style="maxHeight && maxHeight !== 'none' ? { maxHeight } : {}">
       <table class="data-table skeleton-table">
         <thead>
           <tr>
@@ -285,7 +288,7 @@ const visiblePages = computed(() => {
       <p class="empty-desc">No data matches "{{ searchQuery }}"</p>
     </div>
 
-    <div v-else class="table-scroll">
+    <div v-else class="table-scroll" :style="maxHeight && maxHeight !== 'none' ? { maxHeight } : {}">
       <table class="data-table">
         <thead>
           <tr>
@@ -304,12 +307,16 @@ const visiblePages = computed(() => {
           <tr v-for="(row, idx) in displayData" :key="row.id ?? idx" @click="$emit('row-click', row)" style="cursor: pointer;">
             <td class="td-num">{{ (currentPage - 1) * perPage + idx + 1 }}</td>
             <td v-for="col in columns" :key="col.key">
-              <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row">
-                {{ row[col.key] ?? "-" }}
+              <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row" :item="row">
+                <slot :name="`cell(${col.key})`" :value="row[col.key]" :row="row" :item="row">
+                  {{ row[col.key] ?? "-" }}
+                </slot>
               </slot>
             </td>
             <td v-if="showActionsColumn" class="td-actions">
-              <slot name="actions" :row="row">
+              <slot name="actions" :row="row" :item="row">
+                <slot name="cell(actions)" :row="row" :item="row">
+                  <slot name="cell-actions" :row="row" :item="row">
                 <button
                   v-if="showEdit"
                   class="action-btn action-btn--edit"
@@ -384,6 +391,8 @@ const visiblePages = computed(() => {
                     <line x1="12" y1="11" x2="12" y2="17"></line>
                   </svg>
                 </button>
+                  </slot>
+                </slot>
               </slot>
             </td>
           </tr>
@@ -526,21 +535,54 @@ const visiblePages = computed(() => {
 
 .table-scroll {
   overflow-x: auto;
+  overflow-y: auto;
+  min-height: 200px;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+/* Scrollbar styles to ensure scrollbar is always prominent and easily draggable */
+.table-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 10px;
+}
+
+.table-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 6px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
+}
+
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 .data-table {
   width: 100%;
   font-size: var(--font-size-sm);
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   padding: var(--space-md) var(--space-lg);
   text-align: left;
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
-  background: transparent;
-  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-surface, #ffffff);
+  border-bottom: 2px solid var(--color-border-light, #e2e8f0);
+  box-shadow: inset 0 -1px 0 var(--color-border-light, #e2e8f0);
   white-space: nowrap;
 }
 

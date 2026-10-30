@@ -119,8 +119,15 @@ export const resources = {
   surveys: createResourceService<ResourceRecord>("surveys"),
   atlasGreatReadings: {
     ...createResourceService<ResourceRecord>("atlas-great-readings"),
-    getLatestMeter: (params: { customer_type?: string; unit_id?: string }) =>
-      api.get("/atlas-great-readings/latest-meter", { params }),
+    getLatestMeter: (params: { customer_type?: string; unit_id?: string }) => {
+      const q = new URLSearchParams()
+      if (params.customer_type) q.append('customer_type', params.customer_type)
+      if (params.unit_id) q.append('unit_id', params.unit_id)
+      const qs = q.toString()
+      return api.get(`/atlas-great-readings/latest-meter${qs ? `?${qs}` : ''}`, true, false)
+    },
+    getCustomerUnits: (customerId: string) =>
+      api.get(`/atlas-great-readings/customer-units?customer_id=${encodeURIComponent(customerId)}`, true, false),
   },
   stockMovements: {
     ...createResourceService<ResourceRecord>("stock-movements"),
