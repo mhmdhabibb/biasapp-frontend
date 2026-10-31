@@ -650,7 +650,7 @@ async function exportPdf() {
 
     <!-- Wide table container with horizontal scroll support -->
     <div class="standalone-table-card">
-      <DataTable :columns="columns" :data="standaloneList" :loading="isLoading" search-placeholder="Cari customer, DO, atau tanggal..." maxHeight="calc(100vh - 350px)">
+      <DataTable :columns="columns" :data="standaloneList" :loading="isLoading" search-placeholder="Cari customer, DO, atau tanggal..." maxHeight="calc(100vh - 400px)">
         <template #cell-do_number="{ value }">
           <span class="badge badge-secondary font-mono">{{ value || '-' }}</span>
         </template>
@@ -1067,8 +1067,10 @@ async function exportPdf() {
 }
 
 :deep(.table-scroll) {
-  max-height: calc(100vh - 350px);
+  max-height: calc(100vh - 400px) !important;
   min-height: 250px;
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 .jo-badge {

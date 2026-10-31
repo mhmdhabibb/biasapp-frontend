@@ -9,11 +9,13 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { useResourcesStore } from '@/stores/resources.store'
 import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
+import { useAuth } from '@/composables/useAuth'
 import type { TableColumn } from '@/types'
 
 const toast = useToast()
 const master = useMasterStore()
 const resourceStore = useResourcesStore()
+const { currentUser } = useAuth()
 
 const { customers, units, formatUnitDisplayName } = master
 
@@ -36,6 +38,7 @@ const showDeleteConfirm = ref(false)
 const itemToDelete = ref<any | null>(null)
 
 const showDetailModal = ref(false)
+const detailTab = ref<'formula' | 'epson'>('formula')
 const detailItem = ref<any | null>(null)
 
 // --- Aturan Tanggal 7 Khusus Atlas & Great ---
@@ -55,20 +58,38 @@ const form = reactive({
   end_meter_bw: 0,
   start_meter_color: 0,
   end_meter_color: 0,
+  gross_meter_bw: 0,
+  gross_meter_color: 0,
+  a3_meter_bw: 0,
+  a3_meter_color: 0,
   percentage_bw: 88,
   percentage_color: 12,
   remarks: '',
 })
 
+
+function onGrossOrA3Change() {
+  if (form.gross_meter_bw > 0 || form.a3_meter_bw > 0) {
+    form.end_meter_bw = Math.max(0, Number(form.gross_meter_bw || 0) - Number(form.a3_meter_bw || 0))
+  }
+  if (form.gross_meter_color > 0 || form.a3_meter_color > 0) {
+    form.end_meter_color = Math.max(0, Number(form.gross_meter_color || 0) - Number(form.a3_meter_color || 0))
+  }
+}
+
 // --- Live Calculations ---
 const calcBaseUsageBW = computed(() => {
-  const diff = Number(form.end_meter_bw || 0) - Number(form.start_meter_bw || 0)
-  return Math.abs(diff)
+  const start = Number(form.start_meter_bw || 0)
+  const end = Number(form.end_meter_bw || 0)
+  if (end <= start) return 0
+  return end - start
 })
 
 const calcBaseUsageColor = computed(() => {
-  const diff = Number(form.end_meter_color || 0) - Number(form.start_meter_color || 0)
-  return Math.abs(diff)
+  const start = Number(form.start_meter_color || 0)
+  const end = Number(form.end_meter_color || 0)
+  if (end <= start) return 0
+  return end - start
 })
 
 const calcAllocatedColorToBW = computed(() => {
@@ -310,11 +331,14 @@ async function fetchReadings() {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    resourceStore.fetchAll('customers', { per_page: 500 }, false),
-    resourceStore.fetchAll('units', { per_page: 500 }, false),
-  ])
-  await fetchReadings()
+  const fetchPromises: Promise<any>[] = [fetchReadings()]
+  if (!customers.value || customers.value.length === 0) {
+    fetchPromises.push(resourceStore.fetchAll('customers', { per_page: 500 }, false))
+  }
+  if (!units.value || units.value.length === 0) {
+    fetchPromises.push(resourceStore.fetchAll('units', { per_page: 500 }, false))
+  }
+  await Promise.all(fetchPromises)
 })
 
 // --- Filtered Data ---
@@ -368,6 +392,8 @@ async function handleAutoFetchMeter() {
     const res: any = await resources.atlasGreatReadings.getLatestMeter({
       customer_type: form.customer_type,
       unit_id: form.unit_id || undefined,
+      month: form.period_month || undefined,
+      year: form.period_year || undefined,
     })
 
     const payload = res?.data || res
@@ -404,6 +430,13 @@ async function handleAutoFetchMeter() {
   }
 }
 
+// Otomatis tarik meter saat periode bulan / tahun diubah ketika form sedang terbuka
+watch([() => form.period_month, () => form.period_year], async () => {
+  if (form.unit_id && !isEditing.value && showModal.value) {
+    await handleAutoFetchMeter()
+  }
+})
+
 // Saat unit dipilih di form tambah, tawarkan/auto-tarik meter teknisi
 async function onUnitChange(unitId: string) {
   form.unit_id = unitId
@@ -430,6 +463,10 @@ function openAddModal() {
   form.end_meter_bw = 0
   form.start_meter_color = 0
   form.end_meter_color = 0
+  form.gross_meter_bw = 0
+  form.gross_meter_color = 0
+  form.a3_meter_bw = 0
+  form.a3_meter_color = 0
   form.percentage_bw = 0
   form.percentage_color = 100
   form.remarks = ''
@@ -469,6 +506,10 @@ function openEditModal(item: any) {
   form.end_meter_bw = Number(item.counter_akhir_bw || 0)
   form.start_meter_color = Number(item.counter_awal_color || 0)
   form.end_meter_color = Number(item.counter_akhir_color || 0)
+  form.gross_meter_bw = Number(item.gross_counter_bw || 0)
+  form.gross_meter_color = Number(item.gross_counter_color || 0)
+  form.a3_meter_bw = Number(item.a3_counter_bw || 0)
+  form.a3_meter_color = Number(item.a3_counter_color || 0)
 
   form.percentage_bw = Number(item.percentage_bw || (form.scheme_type === 'standard' ? 0 : 88))
   form.percentage_color = Number(item.percentage_color || (form.scheme_type === 'standard' ? 100 : 12))
@@ -511,6 +552,10 @@ async function handleSubmit() {
       counter_akhir_bw: Number(form.end_meter_bw || 0),
       counter_awal_color: Number(form.start_meter_color || 0),
       counter_akhir_color: Number(form.end_meter_color || 0),
+      gross_counter_bw: Number(form.gross_meter_bw || 0),
+      gross_counter_color: Number(form.gross_meter_color || 0),
+      a3_counter_bw: Number(form.a3_meter_bw || 0),
+      a3_counter_color: Number(form.a3_meter_color || 0),
       percentage_bw: form.scheme_type === 'standard' ? 0 : Number(form.percentage_bw || 88),
       percentage_color: form.scheme_type === 'standard' ? 100 : Number(form.percentage_color || 12),
       notes: form.remarks,
@@ -555,262 +600,674 @@ async function handleDelete() {
 // --- Detail & Print Slip ---
 function openDetail(item: any) {
   detailItem.value = item
+  detailTab.value = 'formula'
   showDetailModal.value = true
 }
 
 function printSlip(item: any) {
-  const printWindow = window.open('', '_blank', 'width=900,height=750')
+  const printWindow = window.open('', '_blank', 'width=980,height=800')
   if (!printWindow) {
     toast.error('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak.')
     return
   }
 
   const custName = getCustomerName(item.customer)
-  const unitInfo = item.unit ? `${item.unit.model_name || item.unit.model || ''} - SN: ${item.unit.serial_number || '-'}` : '-'
+  const unitModel = item.unit?.model_name || item.unit?.model || 'WF-C878R'
+  const unitSN = item.unit?.serial_number || item.unit?.serial_no || '-'
+  const branchLoc = item.customer?.address || '20242 (Cab.Batam)'
   const periodStr = item.period_label || (item.period_date ? new Date(item.period_date).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '-')
-  const isStd = item.customer_type === 'standard' || Number(item.percentage_bw) === 0
 
-  const html = `
-<!DOCTYPE html>
+  const bwA3 = Number(item.a3_counter_bw || 0)
+  const colA3 = Number(item.a3_counter_color || 0)
+  const bwGross = Number(item.gross_counter_bw || (Number(item.counter_akhir_bw || 0) + bwA3))
+  const colGross = Number(item.gross_counter_color || (Number(item.counter_akhir_color || 0) + colA3))
+  const bwAkhir = Number(item.counter_akhir_bw || (bwGross - bwA3))
+  const colAkhir = Number(item.counter_akhir_color || (colGross - colA3))
+  const totalPages = bwGross + colGross
+
+  const bwAwal = Number(item.counter_awal_bw || 0)
+  const colAwal = Number(item.counter_awal_color || 0)
+  const bwPemakaian = Number(item.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+  const colPemakaian = Number(item.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+
+  const printDateStr = item.period_date
+    ? new Date(item.period_date).toLocaleDateString('en-GB') + ' 00:00:00'
+    : '30/03/2023 00:00:00'
+  const signerName = currentUser.value?.name || currentUser.value?.username || 'Tim Accounting'
+
+  const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Laporan Perhitungan Pemakaian Lembar - ${custName}</title>
+  <title>Printer Usage Report - ${unitModel} (${custName})</title>
   <style>
-    @page { size: A4; margin: 18mm; }
+    @page { size: A4 portrait; margin: 10mm 12mm; }
+    * { box-sizing: border-box; }
     body {
-      font-family: Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       color: #1f2937;
       margin: 0;
-      padding: 16px;
-      font-size: 13px;
+      padding: 0;
+      background: #ffffff;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
-    .header-table {
-      width: 100%;
-      border-bottom: 2px solid #111827;
-      padding-bottom: 12px;
-      margin-bottom: 20px;
+
+    .epson-header {
+      background: #1e1e1e !important;
+      color: #ffffff;
+      padding: 16px 20px 10px 20px;
+      border-radius: 4px 4px 0 0;
     }
-    .company-title {
-      font-size: 18px;
-      font-weight: bold;
-      color: #111827;
+    .epson-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
     }
-    .company-sub {
+    .epson-title-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .epson-model {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: #ffffff;
+    }
+    .epson-meta-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
       font-size: 11px;
-      color: #4b5563;
+      color: #cbd5e1;
       margin-top: 2px;
     }
-    .doc-title {
-      text-align: center;
-      font-size: 15px;
+    .meta-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .epson-status-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-pill {
+      background: rgba(255,255,255,0.12);
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      color: #e2e8f0;
+      font-family: monospace;
+    }
+    .status-ready {
+      background: #15803d !important;
+      color: #ffffff;
       font-weight: bold;
-      text-transform: uppercase;
-      margin: 16px 0 18px 0;
-      text-decoration: underline;
     }
-    .meta-table {
-      width: 100%;
-      margin-bottom: 20px;
+
+    .epson-tabs {
+      display: flex;
+      gap: 22px;
+      border-top: 1px solid #334155;
+      padding-top: 8px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    .epson-tab {
+      padding-bottom: 4px;
+      cursor: default;
+    }
+    .epson-tab.active {
+      color: #ffffff;
+      font-weight: 700;
+      border-bottom: 2px solid #38bdf8;
+    }
+
+    .epson-body {
+      padding: 20px 20px 10px 20px;
+    }
+    .epson-section-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 2px;
+    }
+    .epson-first-print {
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 18px;
+    }
+    .first-date {
+      color: #0f172a;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+
+    .epson-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .metric-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 14px 16px;
+      background: #f8fafc;
+    }
+    .metric-label {
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .metric-val-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .metric-icon {
+      font-size: 20px;
+    }
+    .metric-val {
+      font-size: 24px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+    }
+
+    .table-title {
       font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 8px;
     }
-    .meta-table td {
-      padding: 4px 6px;
-      vertical-align: top;
-    }
-    .data-table {
+    .epson-table {
       width: 100%;
       border-collapse: collapse;
+      font-size: 11px;
       margin-bottom: 20px;
     }
-    .data-table th, .data-table td {
-      border: 1px solid #9ca3af;
+    .epson-table th {
+      border-bottom: 1.5px solid #cbd5e1;
       padding: 8px 10px;
+      color: #475569;
+      font-weight: 700;
+      text-align: right;
+    }
+    .epson-table th:first-child {
       text-align: left;
     }
-    .data-table th {
-      background-color: #f3f4f6;
-      font-weight: bold;
-      font-size: 12px;
-      text-transform: uppercase;
+    .epson-table td {
+      border-bottom: 1px solid #f1f5f9;
+      padding: 7px 10px;
+      text-align: right;
+      color: #334155;
     }
-    .text-right { text-align: right !important; }
-    .text-center { text-align: center !important; }
-    .highlight-yellow {
-      background-color: #fef08a !important;
-      font-weight: bold;
+    .epson-table td:first-child {
+      text-align: left;
+      font-weight: 500;
+      color: #0f172a;
     }
-    .highlight-total {
-      background-color: #dcfce7 !important;
-      font-weight: bold;
-      font-size: 14px;
+    .row-highlight {
+      background: #f8fafc;
+      font-weight: 700;
     }
-    .summary-box {
-      border: 2px solid #22c55e;
-      background: #f0fdf4;
-      border-radius: 8px;
-      padding: 14px 20px;
-      margin-bottom: 26px;
+    .row-highlight td {
+      color: #0f172a;
+      font-weight: 700;
     }
-    .summary-grid {
+
+    .audit-box {
+      border: 1px dashed #94a3b8;
+      border-radius: 6px;
+      background: #f8fafc;
+      padding: 10px 14px;
+      font-size: 11px;
+      margin-top: 15px;
+      line-height: 1.5;
+    }
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .audit-note {
+      color: #1e40af;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 4px;
+      padding: 6px 10px;
+      margin-top: 6px;
+      font-size: 10.5px;
+    }
+
+    .signatures-row {
       display: flex;
-      justify-content: space-around;
-      text-align: center;
-    }
-    .summary-val {
-      font-size: 20px;
-      font-weight: bold;
-      color: #15803d;
-      margin-top: 4px;
-    }
-    .signatures {
-      width: 100%;
-      margin-top: 36px;
+      justify-content: space-between;
+      margin-top: 25px;
       page-break-inside: avoid;
     }
-    .signatures td {
-      width: 33.33%;
+    .sig-col {
+      width: 45%;
       text-align: center;
-      vertical-align: top;
-    }
-    .sig-space {
-      height: 65px;
+      font-size: 11px;
     }
     .sig-line {
-      display: inline-block;
-      width: 75%;
-      border-bottom: 1px solid #1f2937;
-      margin-top: 4px;
+      height: 55px;
+      border-bottom: 1px solid #334155;
+      margin-bottom: 4px;
     }
-  </style>
+  
+/* Epson Device Usage Report Modal Styles */
+.epson-modal-wrapper {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.epson-dark-header {
+  background: #1e1e1e;
+  color: #ffffff;
+  padding: 16px 20px 0 20px;
+}
+
+.epson-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.epson-machine-model {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+.epson-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.epson-meta-line strong {
+  color: #e2e8f0;
+}
+
+.meta-sep {
+  color: #64748b;
+}
+
+.epson-status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.epson-ip-badge {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #cbd5e1;
+}
+
+.epson-ready-badge {
+  background: #15803d;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.epson-tab-bar {
+  display: flex;
+  gap: 16px;
+  border-top: 1px solid #334155;
+  padding-top: 8px;
+  font-size: 11px;
+  color: #94a3b8;
+  overflow-x: auto;
+}
+
+.epson-tab-bar .tab-item {
+  padding-bottom: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.epson-tab-bar .tab-item.active {
+  color: #ffffff;
+  font-weight: 700;
+  border-bottom: 2px solid #38bdf8;
+}
+
+.epson-body-content {
+  padding: 18px 20px;
+}
+
+.epson-title-row {
+  margin-bottom: 14px;
+}
+
+.epson-main-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.epson-first-time {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.epson-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.epson-metric-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.metric-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.metric-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.metric-icon {
+  font-size: 18px;
+}
+
+.metric-num {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+}
+
+.epson-table-header-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.epson-table-container {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.epson-device-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.epson-device-table th {
+  background: #f1f5f9;
+  padding: 8px 10px;
+  font-weight: 700;
+  color: #475569;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.epson-device-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.epson-device-table tr.highlight-row {
+  background: #f8fafc;
+}
+
+.epson-usage-strip {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 11px;
+}
+
+.usage-strip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.usage-strip-note {
+  font-size: 10.5px;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+
+.detail-nav-pills {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.nav-pill-btn {
+  flex: 1;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-pill-btn.active {
+  background: #ffffff;
+  color: #1e40af;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+</style>
 </head>
 <body>
-  <table class="header-table">
-    <tr>
-      <td>
-        <div class="company-title">PT. BIAS SURYA TEKNOLOGI</div>
-        <div class="company-sub">Office Solution & Multifunction Copier Rental System</div>
-        <div class="company-sub">Batam - Kepulauan Riau, Indonesia</div>
-      </td>
-      <td class="text-right" style="vertical-align: bottom;">
-        <span style="font-size: 11px; color: #6b7280;">Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')}</span>
-      </td>
-    </tr>
-  </table>
-
-  <div class="doc-title">Laporan Perhitungan Pemakaian Lembar Cetak</div>
-
-  <table class="meta-table">
-    <tr>
-      <td style="width: 18%;"><strong>Customer</strong></td>
-      <td style="width: 2%;">:</td>
-      <td style="width: 40%;"><strong>${custName}</strong></td>
-      <td style="width: 18%;"><strong>Periode</strong></td>
-      <td style="width: 2%;">:</td>
-      <td style="width: 20%;"><strong>${periodStr}</strong></td>
-    </tr>
-    <tr>
-      <td><strong>Unit Mesin</strong></td>
-      <td>:</td>
-      <td>${unitInfo}</td>
-      <td><strong>Skema Hitung</strong></td>
-      <td>:</td>
-      <td>${isStd ? 'Standar (100% Murni)' : `Alokasi (${Number(item.percentage_bw || 88)}% BW / ${Number(item.percentage_color || 12)}% CL)`}</td>
-    </tr>
-  </table>
-
-  <h4 style="margin: 0 0 8px 0;">1. Data Pembacaan Counter (Meter Reading)</h4>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th style="width: 25%;">Kategori</th>
-        <th class="text-right" style="width: 25%;">Counter Awal</th>
-        <th class="text-right" style="width: 25%;">Counter Akhir</th>
-        <th class="text-right" style="width: 25%;">Pemakaian Dasar</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><strong>Black & White (BW)</strong></td>
-        <td class="text-right">${Number(item.counter_awal_bw || 0).toLocaleString('id-ID')}</td>
-        <td class="text-right">${Number(item.counter_akhir_bw || 0).toLocaleString('id-ID')}</td>
-        <td class="text-right highlight-yellow">${Number(item.pemakaian_bw_dasar || 0).toLocaleString('id-ID')}</td>
-      </tr>
-      <tr>
-        <td><strong>Color (CL)</strong></td>
-        <td class="text-right">${Number(item.counter_awal_color || 0).toLocaleString('id-ID')}</td>
-        <td class="text-right">${Number(item.counter_akhir_color || 0).toLocaleString('id-ID')}</td>
-        <td class="text-right highlight-yellow">${Number(item.pemakaian_color_dasar || 0).toLocaleString('id-ID')}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  ${!isStd ? `
-  <h4 style="margin: 0 0 8px 0;">2. Perhitungan Alokasi Lembar (${Number(item.percentage_bw || 88)}% : ${Number(item.percentage_color || 12)}%)</h4>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Jenis</th>
-        <th class="text-center">Perhitungan Alokasi</th>
-        <th class="text-right">Hasil Alokasi</th>
-        <th class="text-right">Ditambah BW Dasar</th>
-        <th class="text-right">Total Akhir Lembar</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><strong>BW (Black & White)</strong></td>
-        <td class="text-center">${Number(item.pemakaian_color_dasar || 0).toLocaleString('id-ID')} &times; ${Number(item.percentage_bw || 88)}%</td>
-        <td class="text-right">${Number(item.allocation_bw || 0).toLocaleString('id-ID', { minimumFractionDigits: 2 })}</td>
-        <td class="text-right">+ ${Number(item.pemakaian_bw_dasar || 0).toLocaleString('id-ID')}</td>
-        <td class="text-right highlight-total">${Number(item.total_bw || 0).toLocaleString('id-ID', { minimumFractionDigits: 2 })} Lembar</td>
-      </tr>
-      <tr>
-        <td><strong>Color (CL)</strong></td>
-        <td class="text-center">${Number(item.pemakaian_color_dasar || 0).toLocaleString('id-ID')} &times; ${Number(item.percentage_color || 12)}%</td>
-        <td class="text-right highlight-yellow">${Number(item.allocation_color || 0).toLocaleString('id-ID', { minimumFractionDigits: 2 })}</td>
-        <td class="text-right">-</td>
-        <td class="text-right highlight-total">${Number(item.total_color || 0).toLocaleString('id-ID', { minimumFractionDigits: 2 })} Lembar</td>
-      </tr>
-    </tbody>
-  </table>
-  ` : ''}
-
-  <div class="summary-box">
-    <div class="summary-grid">
-      <div>
-        <div style="font-size: 13px; color: #374151; font-weight: 600;">TOTAL PEMAKAIAN LEMBAR BW</div>
-        <div class="summary-val">${Number(item.total_bw || 0).toLocaleString('id-ID', { minimumFractionDigits: 2 })} <span style="font-size: 13px; font-weight: normal;">Lembar</span></div>
+  <div class="epson-header">
+    <div class="epson-header-top">
+      <div class="epson-title-left">
+        <div class="epson-model">${unitModel}</div>
+        <div class="epson-meta-row">
+          <div class="meta-chip">
+            <span>SN: <strong>${unitSN}</strong></span>
+          </div>
+          <div class="meta-chip">
+            <span>Customer: <strong>${custName}</strong></span>
+          </div>
+          <div class="meta-chip">
+            <span>Lokasi: <strong>${branchLoc}</strong></span>
+          </div>
+        </div>
       </div>
-      <div style="border-left: 2px solid #bbf7d0; padding-left: 30px;">
-        <div style="font-size: 13px; color: #374151; font-weight: 600;">TOTAL PEMAKAIAN LEMBAR COLOR</div>
-        <div class="summary-val" style="color: #2563eb;">${Number(item.total_color || 0).toLocaleString('id-ID', { minimumFractionDigits: 2 })} <span style="font-size: 13px; font-weight: normal;">Lembar</span></div>
+      <div class="epson-status-right">
+        <span class="status-pill">10.0.0.1</span>
+        <span class="status-pill status-ready">Ready</span>
       </div>
+    </div>
+
+    <div class="epson-tabs">
+      <div class="epson-tab">Status</div>
+      <div class="epson-tab">Settings</div>
+      <div class="epson-tab active">
+        <span>📊 Usage</span>
+      </div>
+      <div class="epson-tab">Remote Operation</div>
+      <div class="epson-tab">Extended Service Information</div>
     </div>
   </div>
 
-  <table class="signatures">
-    <tr>
-      <td>
-        <div>Dibuat Oleh:</div>
-        <div class="sig-space"></div>
-        <div class="sig-line"></div>
-        <div>( Admin / Rental )</div>
-      </td>
-      <td>
-        <div>Diperiksa Oleh:</div>
-        <div class="sig-space"></div>
-        <div class="sig-line"></div>
-        <div>( Accounting )</div>
-      </td>
-      <td>
-        <div>Disetujui Oleh:</div>
-        <div class="sig-space"></div>
-        <div class="sig-line"></div>
-        <div>( ${custName} )</div>
-      </td>
-    </tr>
-  </table>
+  <div class="epson-body">
+    <div class="epson-section-title">Printing</div>
+    <div class="epson-first-print">
+      First Time Printing: <span class="first-date">${printDateStr}</span>
+    </div>
+
+    <div class="epson-cards">
+      <div class="metric-card">
+        <div class="metric-label">Total Number of Pages</div>
+        <div class="metric-val-wrap">
+          <div class="metric-icon">📑</div>
+          <div class="metric-val">${totalPages.toLocaleString('id-ID')}</div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Total Number of B&amp;W Pages</div>
+        <div class="metric-val-wrap">
+          <div class="metric-icon">📄</div>
+          <div class="metric-val">${bwAkhir.toLocaleString('id-ID')}</div>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">Total Number of Color Pages</div>
+        <div class="metric-val-wrap">
+          <div class="metric-icon" style="color: #2563eb;">🎨</div>
+          <div class="metric-val">${colAkhir.toLocaleString('id-ID')}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-title">Sorted by Paper Size</div>
+    <table class="epson-table">
+      <thead>
+        <tr>
+          <th>Paper Size</th>
+          <th>1-Sided B&amp;W</th>
+          <th>1-Sided Color</th>
+          <th>2-Sided B&amp;W</th>
+          <th>2-Sided Color</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>A3/Ledger</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+        <tr class="row-highlight">
+          <td><strong>A4/Letter</strong></td>
+          <td>${bwAkhir.toLocaleString('id-ID')}</td>
+          <td>${colAkhir.toLocaleString('id-ID')}</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+        <tr>
+          <td>A5</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+        <tr>
+          <td>A6</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+        <tr>
+          <td>B4/Legal</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+        <tr>
+          <td>B5</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+        <tr>
+          <td>Envelope</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+        <tr>
+          <td>Other</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="audit-note" style="margin-top: 15px; background: #f8fafc; border: 1px dashed #94a3b8; border-radius: 6px; padding: 10px 14px; font-size: 11px; font-family: monospace; line-height: 1.6;">
+      <strong>Note :</strong><br>
+      Last Meter B&amp;W (dari admin Emas) -<br>
+      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;B&amp;W&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Colour<br>
+      Total Mesin : ${bwGross.toLocaleString('en-US')}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${colGross.toLocaleString('en-US')}<br>
+      Deduksi A3&nbsp;&nbsp;: ${bwA3.toLocaleString('en-US')}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${colA3.toLocaleString('en-US')} (-)<br>
+      Last Meter&nbsp;&nbsp;: <strong>${bwAkhir.toLocaleString('en-US')}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${colAkhir.toLocaleString('en-US')}</strong>
+    </div>
+
+    <div class="signatures-row" style="display: flex; justify-content: space-between; margin-top: 45px; page-break-inside: avoid;">
+      <div class="sig-col" style="width: 42%; text-align: center; font-size: 11px;">
+        <div style="font-weight: 600; color: #475569; margin-bottom: 55px;">Diterima &amp; Diverifikasi Oleh:</div>
+        <div class="sig-line" style="border-bottom: 1.5px solid #334155; margin-bottom: 5px;"></div>
+        <div style="font-weight: 700; color: #0f172a;">${custName}</div>
+        <div style="font-size: 10px; color: #64748b;">Customer</div>
+      </div>
+      <div class="sig-col" style="width: 42%; text-align: center; font-size: 11px;">
+        <div style="font-weight: 600; color: #475569; margin-bottom: 55px;">Dicetak &amp; Dibuat Oleh (Accounting):</div>
+        <div class="sig-line" style="border-bottom: 1.5px solid #334155; margin-bottom: 5px;"></div>
+        <div style="font-weight: 700; color: #0f172a;">${signerName}</div>
+        <div style="font-size: 10px; color: #64748b;">Admin Finance / Accounting</div>
+      </div>
+    </div>
+
+  </div>
 
   <script>
     window.onload = function() {
@@ -818,8 +1275,7 @@ function printSlip(item: any) {
     };
   <\/script>
 </body>
-</html>
-`
+</html>`
 
   printWindow.document.write(html)
   printWindow.document.close()
@@ -1005,7 +1461,7 @@ function exportCSV() {
         :data="filteredReadings"
         :loading="loading"
         searchPlaceholder=""
-        maxHeight="calc(100vh - 350px)"
+        maxHeight="calc(100vh - 400px)"
       >
         <template #cell(period)="{ item }">
           <div class="font-medium text-slate-800">
@@ -1374,13 +1830,39 @@ function exportCSV() {
                 />
               </div>
               <div class="form-group">
-                <label class="form-label">Counter Akhir BW</label>
+                <label class="form-label">Counter Mesin Total (Gross BW)</label>
+                <input
+                  v-model.number="form.gross_meter_bw"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                  placeholder="Contoh: 16311"
+                  @input="onGrossOrA3Change"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Deduksi Ukuran A3 B&amp;W (-)</label>
+                <input
+                  v-model.number="form.a3_meter_bw"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                  placeholder="Contoh: 7"
+                  @input="onGrossOrA3Change"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Counter Akhir / Last Meter BW</label>
                 <input
                   v-model.number="form.end_meter_bw"
                   type="number"
                   min="0"
                   class="form-input"
+                  style="font-weight: 700; color: #1e3a8a;"
                 />
+                <small v-if="form.gross_meter_bw > 0" class="text-muted" style="font-size: 11px;">
+                  = Total {{ form.gross_meter_bw }} - A3 {{ form.a3_meter_bw }}
+                </small>
               </div>
               <div class="counter-calc-badge">
                 <span>Pemakaian Dasar BW:</span>
@@ -1401,13 +1883,39 @@ function exportCSV() {
                 />
               </div>
               <div class="form-group">
-                <label class="form-label">Counter Akhir Color</label>
+                <label class="form-label">Counter Mesin Total (Gross Color)</label>
+                <input
+                  v-model.number="form.gross_meter_color"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                  placeholder="Contoh: 16458"
+                  @input="onGrossOrA3Change"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Deduksi Ukuran A3 Color (-)</label>
+                <input
+                  v-model.number="form.a3_meter_color"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                  placeholder="Contoh: 15"
+                  @input="onGrossOrA3Change"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Counter Akhir / Last Meter Color</label>
                 <input
                   v-model.number="form.end_meter_color"
                   type="number"
                   min="0"
                   class="form-input"
+                  style="font-weight: 700; color: #1e3a8a;"
                 />
+                <small v-if="form.gross_meter_color > 0" class="text-muted" style="font-size: 11px;">
+                  = Total {{ form.gross_meter_color }} - A3 {{ form.a3_meter_color }}
+                </small>
               </div>
               <div class="counter-calc-badge color-calc-badge">
                 <span>Pemakaian Dasar Color:</span>
@@ -1452,6 +1960,18 @@ function exportCSV() {
               </tr>
             </tbody>
           </table>
+
+          <div
+            v-if="(Number(form.start_meter_bw) > 0 && Number(form.start_meter_bw) === Number(form.end_meter_bw)) || (Number(form.start_meter_color) > 0 && Number(form.start_meter_color) === Number(form.end_meter_color))"
+            class="counter-warning-hint"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span>Counter Awal &amp; Counter Akhir bernilai sama (Pemakaian = 0). Masukkan Counter Akhir dari pencatatan fisik terbaru teknisi.</span>
+          </div>
 
           <div class="formula-breakdown">
             <template v-if="form.scheme_type !== 'standard'">
@@ -1514,109 +2034,304 @@ function exportCSV() {
     <!-- MODAL DETAIL & CETAK SLIP -->
     <FormModal
       :open="showDetailModal"
-      title="Detail & Laporan Perhitungan Lembar"
+      title="Detail Pencatatan & Laporan Mesin"
       submitLabel="🖨️ Cetak Slip / Download PDF"
-      maxWidth="780px"
+      maxWidth="840px"
       @close="showDetailModal = false"
       @submit="printSlip(detailItem)"
     >
-      <div v-if="detailItem" class="detail-container">
-        <!-- Letterhead Info -->
-        <div class="detail-letterhead">
-          <div class="detail-brand">PT. BIAS SURYA TEKNOLOGI</div>
-          <div class="detail-subbrand">Laporan Perhitungan Pemakaian Lembar Cetak (Meter Reading)</div>
+      <div v-if="detailItem">
+        <!-- Tab Selector: Rumus Pencatatan vs Output Mesin Epson -->
+        <div class="detail-nav-pills">
+          <button
+            type="button"
+            class="nav-pill-btn"
+            :class="{ active: detailTab === 'formula' }"
+            @click="detailTab = 'formula'"
+          >
+            📋 Detail Pencatatan &amp; Rumus Alokasi
+          </button>
+          <button
+            type="button"
+            class="nav-pill-btn"
+            :class="{ active: detailTab === 'epson' }"
+            @click="detailTab = 'epson'"
+          >
+            🖨️ Format Output Mesin (Epson)
+          </button>
         </div>
 
-        <div class="detail-meta-grid">
-          <div>
-            <span class="meta-label">Customer / Perusahaan:</span>
-            <div class="meta-value font-semibold">
-              {{ getCustomerName(detailItem.customer) }}
+        <!-- VIEW 1: PENCATATAN ATLAS & GREAT BESERTA RUMUSNYA -->
+        <div v-if="detailTab === 'formula'" class="detail-container">
+          <!-- Letterhead Info -->
+          <div class="detail-letterhead">
+            <div class="detail-brand">PT. BIAS SURYA TEKNOLOGI</div>
+            <div class="detail-subbrand">Laporan Perhitungan Pemakaian Lembar Cetak (Meter Reading)</div>
+          </div>
+
+          <div class="detail-meta-grid">
+            <div>
+              <span class="meta-label">Customer / Perusahaan:</span>
+              <div class="meta-value font-semibold">
+                {{ getCustomerName(detailItem.customer) }}
+              </div>
+            </div>
+            <div>
+              <span class="meta-label">Periode:</span>
+              <div class="meta-value font-semibold">
+                {{ detailItem.period_label || (detailItem.period_date ? new Date(detailItem.period_date).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '-') }}
+              </div>
+            </div>
+            <div>
+              <span class="meta-label">Unit Mesin:</span>
+              <div class="meta-value">
+                {{ detailItem.unit?.model_name || detailItem.unit?.model || 'Unit' }} (SN: {{ detailItem.unit?.serial_number || detailItem.unit?.serial_no || '-' }})
+              </div>
+            </div>
+            <div>
+              <span class="meta-label">Skema Perhitungan:</span>
+              <div class="meta-value font-medium">
+                {{ detailItem.customer_type === 'standard' || Number(detailItem.percentage_bw) === 0 ? 'Standar (100% Murni)' : `Alokasi (${Number(detailItem.percentage_bw || 88)}% BW : ${Number(detailItem.percentage_color || 12)}% CL)` }}
+              </div>
             </div>
           </div>
-          <div>
-            <span class="meta-label">Periode:</span>
-            <div class="meta-value font-semibold">
-              {{ detailItem.period_label || (detailItem.period_date ? new Date(detailItem.period_date).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '-') }}
+
+          <!-- Counter Summary -->
+          <div class="detail-table-wrap">
+            <table class="detail-table">
+              <thead>
+                <tr>
+                  <th>Tipe</th>
+                  <th class="text-right">Counter Awal</th>
+                  <th class="text-right">Counter Akhir</th>
+                  <th class="text-right">Pemakaian Dasar</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Black &amp; White (BW)</strong></td>
+                  <td class="text-right">{{ Number(detailItem.counter_awal_bw || 0).toLocaleString('id-ID') }}</td>
+                  <td class="text-right">{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}</td>
+                  <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_bw_dasar || 0).toLocaleString('id-ID') }}</td>
+                </tr>
+                <tr>
+                  <td><strong>Color (CL)</strong></td>
+                  <td class="text-right">{{ Number(detailItem.counter_awal_color || 0).toLocaleString('id-ID') }}</td>
+                  <td class="text-right">{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</td>
+                  <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Formula Breakdown (Rumus Alokasi 88% : 12%) -->
+          <div v-if="Number(detailItem.percentage_bw || (detailItem.customer_type === 'atlas' || detailItem.customer_type === 'great' ? 88 : 0)) > 0" class="detail-formula-box">
+            <div class="detail-formula-title">Perhitungan Alokasi Lembar ({{ Number(detailItem.percentage_bw || 88) }}% : {{ Number(detailItem.percentage_color || 12) }}%)</div>
+            <div class="detail-formula-item">
+              <div class="item-calc">
+                <strong>BW:</strong> {{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }} &times; {{ Number(detailItem.percentage_bw || 88) }}% = {{ Number(detailItem.allocation_bw || (Number(detailItem.pemakaian_color_dasar || 0) * 0.88)).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} + {{ Number(detailItem.pemakaian_bw_dasar || 0).toLocaleString('id-ID') }}
+              </div>
+              <div class="item-total text-green-700">
+                <strong>{{ Number(detailItem.total_bw || (Number(detailItem.pemakaian_bw_dasar || 0) + (Number(detailItem.pemakaian_color_dasar || 0) * 0.88))).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong> Lembar BW
+              </div>
+            </div>
+            <div class="detail-formula-item mt-2">
+              <div class="item-calc">
+                <strong>CL:</strong> {{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }} &times; {{ Number(detailItem.percentage_color || 12) }}% =
+              </div>
+              <div class="item-total text-blue-700">
+                <strong>{{ Number(detailItem.total_color || (Number(detailItem.pemakaian_color_dasar || 0) * 0.12)).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong> Lembar Color
+              </div>
             </div>
           </div>
-          <div>
-            <span class="meta-label">Unit Mesin:</span>
-            <div class="meta-value">
-              {{ detailItem.unit?.model_name || detailItem.unit?.model || 'Unit' }} (SN: {{ detailItem.unit?.serial_number || '-' }})
+          <div v-else class="detail-formula-box">
+            <div class="detail-formula-title">Perhitungan Lembar Standar (100% Murni)</div>
+            <div class="detail-formula-item">
+              <div class="item-calc">Total Lembar BW:</div>
+              <div class="item-total text-green-700"><strong>{{ Number(detailItem.total_bw || detailItem.pemakaian_bw_dasar || 0).toLocaleString('id-ID') }}</strong> Lembar</div>
+            </div>
+            <div class="detail-formula-item mt-2">
+              <div class="item-calc">Total Lembar Color:</div>
+              <div class="item-total text-blue-700"><strong>{{ Number(detailItem.total_color || detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }}</strong> Lembar</div>
             </div>
           </div>
-          <div>
-            <span class="meta-label">Skema Perhitungan:</span>
-            <div class="meta-value font-medium">
-              {{ detailItem.customer_type === 'standard' || Number(detailItem.percentage_bw) === 0 ? 'Standar (100% Murni)' : `Alokasi (${Number(detailItem.percentage_bw)}% BW : ${Number(detailItem.percentage_color)}% CL)` }}
-            </div>
+
+          <!-- Catatan -->
+          <div v-if="detailItem.notes" class="detail-remarks mt-3">
+            <strong>Catatan:</strong> {{ detailItem.notes }}
           </div>
         </div>
 
-        <!-- Counter Summary -->
-        <div class="detail-table-wrap">
-          <table class="detail-table">
-            <thead>
-              <tr>
-                <th>Tipe</th>
-                <th class="text-right">Counter Awal</th>
-                <th class="text-right">Counter Akhir</th>
-                <th class="text-right">Pemakaian Dasar</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Black & White (BW)</strong></td>
-                <td class="text-right">{{ Number(detailItem.counter_awal_bw || 0).toLocaleString() }}</td>
-                <td class="text-right">{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString() }}</td>
-                <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_bw_dasar || 0).toLocaleString() }}</td>
-              </tr>
-              <tr>
-                <td><strong>Color (CL)</strong></td>
-                <td class="text-right">{{ Number(detailItem.counter_awal_color || 0).toLocaleString() }}</td>
-                <td class="text-right">{{ Number(detailItem.counter_akhir_color || 0).toLocaleString() }}</td>
-                <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString() }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <!-- VIEW 2: FORMAT OUTPUT MESIN EPSON -->
+        <div v-else class="epson-modal-wrapper">
+          <!-- Dark Top Bar Header -->
+          <div class="epson-dark-header">
+            <div class="epson-header-top">
+              <div class="epson-info-left">
+                <div class="epson-machine-model">{{ detailItem.unit?.model_name || detailItem.unit?.model || 'WF-C878R' }}</div>
+                <div class="epson-meta-line">
+                  <span class="meta-tag">SN: <strong>{{ detailItem.unit?.serial_number || detailItem.unit?.serial_no || '-' }}</strong></span>
+                  <span class="meta-sep">&bull;</span>
+                  <span class="meta-tag">Customer: <strong>{{ getCustomerName(detailItem.customer) }}</strong></span>
+                  <span class="meta-sep">&bull;</span>
+                  <span class="meta-tag">Lokasi: <strong>{{ detailItem.customer?.address || '20242 (Cab.Batam)' }}</strong></span>
+                </div>
+              </div>
+              <div class="epson-status-right">
+                <span class="epson-ip-badge">10.0.0.1</span>
+                <span class="epson-ready-badge">Ready</span>
+              </div>
+            </div>
 
-        <!-- Formula Breakdown -->
-        <div v-if="Number(detailItem.percentage_bw) > 0" class="detail-formula-box">
-          <div class="detail-formula-title">Perhitungan Alokasi Lembar ({{ Number(detailItem.percentage_bw) }}% : {{ Number(detailItem.percentage_color) }}%)</div>
-          <div class="detail-formula-item">
-            <div class="item-calc">
-              BW: {{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString() }} &times; {{ Number(detailItem.percentage_bw) }}% = {{ Number(detailItem.allocation_bw || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }} + {{ Number(detailItem.pemakaian_bw_dasar || 0).toLocaleString() }}
-            </div>
-            <div class="item-total text-green-700">
-              <strong>{{ Number(detailItem.total_bw || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong> Lembar BW
+            <!-- Navigation Tabs Bar -->
+            <div class="epson-tab-bar">
+              <span class="tab-item">Status</span>
+              <span class="tab-item">Settings</span>
+              <span class="tab-item active">📊 Usage</span>
+              <span class="tab-item">Remote Operation</span>
+              <span class="tab-item">Extended Service Information</span>
             </div>
           </div>
-          <div class="detail-formula-item mt-2">
-            <div class="item-calc">
-              CL: {{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString() }} &times; {{ Number(detailItem.percentage_color) }}% =
-            </div>
-            <div class="item-total text-blue-700">
-              <strong>{{ Number(detailItem.total_color || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong> Lembar Color
-            </div>
-          </div>
-        </div>
-        <div v-else class="detail-formula-box">
-          <div class="detail-formula-title">Perhitungan Lembar Standar (100% Murni)</div>
-          <div class="detail-formula-item">
-            <div class="item-calc">Total Lembar BW:</div>
-            <div class="item-total text-green-700"><strong>{{ Number(detailItem.total_bw || 0).toLocaleString() }}</strong> Lembar</div>
-          </div>
-          <div class="detail-formula-item mt-2">
-            <div class="item-calc">Total Lembar Color:</div>
-            <div class="item-total text-blue-700"><strong>{{ Number(detailItem.total_color || 0).toLocaleString() }}</strong> Lembar</div>
-          </div>
-        </div>
 
-        <!-- Catatan -->
-        <div v-if="detailItem.notes" class="detail-remarks">
-          <strong>Catatan:</strong> {{ detailItem.notes }}
+          <!-- Report Body -->
+          <div class="epson-body-content">
+            <div class="epson-title-row">
+              <div class="epson-main-heading">Printing</div>
+              <div class="epson-first-time">
+                First Time Printing:
+                <span class="font-medium text-slate-800">
+                  {{ detailItem.period_date ? new Date(detailItem.period_date).toLocaleDateString('en-GB') + ' 00:00:00' : '30/03/2023 00:00:00' }}
+                </span>
+              </div>
+            </div>
+
+            <!-- 3 Big Metric Cards -->
+            <div class="epson-metrics-grid">
+              <div class="epson-metric-box">
+                <div class="metric-title">Total Number of Pages</div>
+                <div class="metric-value-row">
+                  <span class="metric-icon">📑</span>
+                  <span class="metric-num">{{ ((Number(detailItem.gross_counter_bw || (Number(detailItem.counter_akhir_bw || 0) + Number(detailItem.a3_counter_bw || 0)))) + (Number(detailItem.gross_counter_color || (Number(detailItem.counter_akhir_color || 0) + Number(detailItem.a3_counter_color || 0))))).toLocaleString('id-ID') }}</span>
+                </div>
+              </div>
+
+              <div class="epson-metric-box">
+                <div class="metric-title">Total Number of B&amp;W Pages</div>
+                <div class="metric-value-row">
+                  <span class="metric-icon">📄</span>
+                  <span class="metric-num">{{ (Number(detailItem.gross_counter_bw || (Number(detailItem.counter_akhir_bw || 0) + Number(detailItem.a3_counter_bw || 0)))).toLocaleString('id-ID') }}</span>
+                </div>
+              </div>
+
+              <div class="epson-metric-box">
+                <div class="metric-title">Total Number of Color Pages</div>
+                <div class="metric-value-row">
+                  <span class="metric-icon" style="color: #2563eb;">🎨</span>
+                  <span class="metric-num">{{ (Number(detailItem.gross_counter_color || (Number(detailItem.counter_akhir_color || 0) + Number(detailItem.a3_counter_color || 0)))).toLocaleString('id-ID') }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sorted by Paper Size Table -->
+            <div class="epson-table-header-title">Sorted by Paper Size</div>
+            <div class="epson-table-container">
+              <table class="epson-device-table">
+                <thead>
+                  <tr>
+                    <th class="text-left">Paper Size</th>
+                    <th class="text-right">1-Sided B&amp;W</th>
+                    <th class="text-right">1-Sided Color</th>
+                    <th class="text-right">2-Sided B&amp;W</th>
+                    <th class="text-right">2-Sided Color</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="font-medium">A3/Ledger</td>
+                    <td class="text-right font-semibold">{{ Number(detailItem.a3_counter_bw || 0).toLocaleString('id-ID') }}</td>
+                    <td class="text-right font-semibold text-blue-700">{{ Number(detailItem.a3_counter_color || 0).toLocaleString('id-ID') }}</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                  <tr class="highlight-row">
+                    <td class="font-bold text-slate-900">A4/Letter</td>
+                    <td class="text-right font-bold text-slate-900">{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}</td>
+                    <td class="text-right font-bold text-blue-700">{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                  <tr>
+                    <td>A5</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                  <tr>
+                    <td>A6</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                  <tr>
+                    <td>B4/Legal</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                  <tr>
+                    <td>B5</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                  <tr>
+                    <td>Envelope</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                  <tr>
+                    <td>Other</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Note Perhitungan Deduksi A3 (Admin Emas) -->
+            <div style="margin: 16px 20px 0 20px; background: #f8fafc; border: 1px dashed #94a3b8; border-radius: 6px; padding: 10px 14px; font-size: 11px; font-family: monospace; line-height: 1.6;">
+              <strong>Note :</strong><br>
+              Last Meter B&amp;W (dari admin Emas) -<br>
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;B&amp;W&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Colour<br>
+              Total Mesin : {{ (Number(detailItem.gross_counter_bw || (Number(detailItem.counter_akhir_bw || 0) + Number(detailItem.a3_counter_bw || 0)))).toLocaleString('id-ID') }}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ (Number(detailItem.gross_counter_color || (Number(detailItem.counter_akhir_color || 0) + Number(detailItem.a3_counter_color || 0)))).toLocaleString('id-ID') }}<br>
+              Deduksi A3&nbsp;&nbsp;: {{ Number(detailItem.a3_counter_bw || 0).toLocaleString('id-ID') }}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ Number(detailItem.a3_counter_color || 0).toLocaleString('id-ID') }} (-)<br>
+              Last Meter&nbsp;&nbsp;: <strong>{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</strong>
+            </div>
+
+            <!-- Signatures Section: Accounting & Customer -->
+            <div class="epson-modal-signatures">
+              <div class="epson-sig-col">
+                <div class="sig-col-title">Diterima &amp; Diverifikasi Oleh:</div>
+                <div class="sig-col-line"></div>
+                <div class="sig-col-name">{{ getCustomerName(detailItem.customer) }}</div>
+                <div class="sig-col-role">Customer</div>
+              </div>
+              <div class="epson-sig-col">
+                <div class="sig-col-title">Dicetak &amp; Dibuat Oleh (Accounting):</div>
+                <div class="sig-col-line"></div>
+                <div class="sig-col-name">{{ currentUser?.name || currentUser?.username || 'Tim Accounting' }}</div>
+                <div class="sig-col-role">Admin Finance / Accounting</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </FormModal>
@@ -1634,6 +2349,42 @@ function exportCSV() {
 </template>
 
 <style scoped>
+/* Epson Modal Signatures */
+.epson-modal-signatures {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 32px;
+  padding: 16px 20px 8px 20px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.epson-sig-col {
+  width: 42%;
+  text-align: center;
+  font-size: 11px;
+}
+
+.sig-col-title {
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 50px;
+}
+
+.sig-col-line {
+  border-bottom: 1.5px solid #334155;
+  margin-bottom: 5px;
+}
+
+.sig-col-name {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sig-col-role {
+  font-size: 10px;
+  color: #64748b;
+}
+
 .atlas-great-page {
   padding: 1.5rem;
   max-width: 1400px;
@@ -1779,7 +2530,7 @@ function exportCSV() {
 }
 
 .table-card :deep(.table-scroll) {
-  max-height: calc(100vh - 350px);
+  max-height: calc(100vh - 400px);
   min-height: 250px;
 }
 
@@ -2314,6 +3065,19 @@ function exportCSV() {
   to { transform: rotate(360deg); }
 }
 
+.counter-warning-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+}
+
 /* Cutoff Notice Card Khusus Atlas & Great */
 .cutoff-notice-card {
   background: #f0fdf4;
@@ -2366,4 +3130,246 @@ function exportCSV() {
   color: #78350f;
   font-weight: 500;
 }
+
+/* Epson Device Usage Report Modal Styles */
+.epson-modal-wrapper {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.epson-dark-header {
+  background: #1e1e1e;
+  color: #ffffff;
+  padding: 16px 20px 0 20px;
+}
+
+.epson-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.epson-machine-model {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+.epson-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.epson-meta-line strong {
+  color: #e2e8f0;
+}
+
+.meta-sep {
+  color: #64748b;
+}
+
+.epson-status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.epson-ip-badge {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #cbd5e1;
+}
+
+.epson-ready-badge {
+  background: #15803d;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.epson-tab-bar {
+  display: flex;
+  gap: 16px;
+  border-top: 1px solid #334155;
+  padding-top: 8px;
+  font-size: 11px;
+  color: #94a3b8;
+  overflow-x: auto;
+}
+
+.epson-tab-bar .tab-item {
+  padding-bottom: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.epson-tab-bar .tab-item.active {
+  color: #ffffff;
+  font-weight: 700;
+  border-bottom: 2px solid #38bdf8;
+}
+
+.epson-body-content {
+  padding: 18px 20px;
+}
+
+.epson-title-row {
+  margin-bottom: 14px;
+}
+
+.epson-main-heading {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.epson-first-time {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.epson-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.epson-metric-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+
+.metric-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.metric-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.metric-icon {
+  font-size: 18px;
+}
+
+.metric-num {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+}
+
+.epson-table-header-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.epson-table-container {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.epson-device-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.epson-device-table th {
+  background: #f1f5f9;
+  padding: 8px 10px;
+  font-weight: 700;
+  color: #475569;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.epson-device-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.epson-device-table tr.highlight-row {
+  background: #f8fafc;
+}
+
+.epson-usage-strip {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 11px;
+}
+
+.usage-strip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.usage-strip-note {
+  font-size: 10.5px;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+
+.detail-nav-pills {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.nav-pill-btn {
+  flex: 1;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-pill-btn.active {
+  background: #ffffff;
+  color: #1e40af;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
 </style>

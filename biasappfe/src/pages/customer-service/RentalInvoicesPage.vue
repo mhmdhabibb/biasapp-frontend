@@ -46,9 +46,11 @@ const {
 
 const isLoading = ref(false)
 let rentalInvTimer: any = null
+let lastSilentRefresh = 0
 
 function silentRefresh() {
-  if (document.visibilityState === 'visible') {
+  if (document.visibilityState === 'visible' && Date.now() - lastSilentRefresh > 15000) {
+    lastSilentRefresh = Date.now()
     void refreshInBackground()
   }
 }
@@ -448,6 +450,7 @@ function renderRentalInvoiceBody(item: any): string {
   const fmtPcs = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : n === 0 ? '-' : n.toLocaleString('id-ID')
 
   function renderMeterBlock(label: string, start: number, last: number, free: number, total: number, net: number): string {
+    const hasFree = free > 0
     return `
       <div style="margin-top: 10px; width: 310px;">
         <div style="font-weight: 700; font-size: 11px; margin-bottom: 2px;">${label}</div>
@@ -467,6 +470,7 @@ function renderRentalInvoiceBody(item: any): string {
             <td style="border: none; padding: 1px 6px; text-align: right; font-weight: 700; width: 85px;">${fmtPcs(total)}</td>
             <td style="border: none; padding: 1px 0 1px 4px; width: 24px; text-align: left;"></td>
           </tr>
+          ${hasFree ? `
           <tr>
             <td style="border: none; padding: 1px 0; text-align: left;">Free Copies</td>
             <td style="border: none; border-bottom: 1.5px solid #111; padding: 1px 6px; text-align: right; width: 85px;">${fmtVal(free)}</td>
@@ -476,7 +480,7 @@ function renderRentalInvoiceBody(item: any): string {
             <td style="border: none; padding: 1px 0; text-align: left;">Total Copies</td>
             <td style="border: none; padding: 1px 6px; text-align: right; font-weight: 700; width: 85px;">${fmtPcs(net)}</td>
             <td style="border: none; padding: 1px 0 1px 4px; width: 24px; text-align: left;"></td>
-          </tr>
+          </tr>` : ''}
         </table>
       </div>`
   }
@@ -500,12 +504,21 @@ function renderRentalInvoiceBody(item: any): string {
   let chargeRowsHtml = ''
 
   if (isCopier) {
+    const contractRates = ci?.rates || rentalItem?.rates || item.contract_item?.rates || item.rental?.rental_items?.[0]?.rates || []
+    const hasConfiguredPaperSize = Array.isArray(contractRates) && contractRates.length > 0 && contractRates.some((r: any) => Boolean(r.paper_size_id && String(r.paper_size_id).trim() !== ''))
+    const distinctSizes = new Set(
+      meterDetails
+        .map((d: any) => d.paper_size?.name || d.paper_size_name || '')
+        .filter((s: string) => Boolean(s.trim()))
+    )
+    const hasExplicitPaperSize = hasConfiguredPaperSize || distinctSizes.size > 1
+
     if (meterDetails.length > 0) {
       const byPaperSize = new Map<string, any[]>()
       for (const detail of meterDetails) {
-        const psName = detail.paper_size?.name || 'A4'
+        const psName = hasExplicitPaperSize ? (detail.paper_size?.name || '') : ''
         const ptName = detail.paper_type?.name || ''
-        const key = ptName ? `${psName}/${ptName}` : psName
+        const key = ptName ? (psName ? `${psName}/${ptName}` : ptName) : psName
         if (!byPaperSize.has(key)) byPaperSize.set(key, [])
         byPaperSize.get(key)!.push(detail)
       }
@@ -514,6 +527,8 @@ function renderRentalInvoiceBody(item: any): string {
       for (const [paperSize, details] of byPaperSize) {
         const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
         const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
+        // Jika tidak ada ukuran kertasnya kosongin aja
+        const sizeLabel = (paperSize && paperSize.trim() && hasExplicitPaperSize) ? ` ${paperSize.trim()}` : ''
 
         for (const d of bwDetails) {
           const start = d.start_meter_reading || 0
@@ -521,8 +536,8 @@ function renderRentalInvoiceBody(item: any): string {
           const total = d.total_copies ?? (last - start)
           const free = d.free_quota ?? 0
           const net = total - free
-          meterBlocksHtml += renderMeterBlock(`B/W ${paperSize}`, start, last, free, total, net)
-          chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges B/W ${paperSize}`, d.rate_per_page || 0, d.total_amount || 0)
+          meterBlocksHtml += renderMeterBlock(`B/W${sizeLabel}`, start, last, free, total, net)
+          chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges B/W${sizeLabel}`, d.rate_per_page || 0, d.total_amount || 0)
         }
 
         for (const d of colorDetails) {
@@ -531,35 +546,37 @@ function renderRentalInvoiceBody(item: any): string {
           const total = d.total_copies ?? (last - start)
           const free = d.free_quota ?? 0
           const net = total - free
-          meterBlocksHtml += renderMeterBlock(`Colour ${paperSize}`, start, last, free, total, net)
-          chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges Colour ${paperSize}`, d.rate_per_page || 0, d.total_amount || 0)
+          meterBlocksHtml += renderMeterBlock(`Colour${sizeLabel}`, start, last, free, total, net)
+          chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges Colour${sizeLabel}`, d.rate_per_page || 0, d.total_amount || 0)
         }
       }
     } else {
-      // Legacy copier meter readings
-      const legacyBwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
-      const legacyBwEnd = item.meter_end || item.meter_end_bw || legacyBwStart
-      const legacyFree = item.free_copies || ci?.free_copy_quota || 2000
-      const legacyRateBw = item.rate_per_page || 150
-      const legacyBwTotal = legacyBwEnd - legacyBwStart
-      const legacyBwNet = legacyBwTotal - legacyFree
-      const legacyBwBillable = Math.max(0, legacyBwNet)
-      const legacyBwAmount = legacyBwBillable * legacyRateBw
+      // Standar copier meter readings (persis foto invoice)
+      const bwStart = Number(item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0)
+      const bwEnd = Number(item.meter_end || item.meter_end_bw || bwStart)
+      const bwFree = Number(item.free_copies ?? ci?.free_copy_quota ?? 0)
+      const bwRate = Number(item.rate_per_page || 150)
+      const bwTotal = Math.max(0, bwEnd - bwStart)
+      const bwNet = bwTotal - bwFree
+      const bwBillable = Math.max(0, bwNet)
+      const bwAmount = bwBillable * bwRate
+      // Tanpa ukuran kertas jika tidak dikonfigurasi (kosongin aja)
+      const sizeSuffix = ''
 
-      meterBlocksHtml += renderMeterBlock('B/W A4', legacyBwStart, legacyBwEnd, legacyFree, legacyBwTotal, legacyBwNet)
-      chargeRowsHtml += renderChargeRow(2, 'Copies Charges B/W A4', legacyRateBw, legacyBwAmount)
+      meterBlocksHtml += renderMeterBlock(`B/W${sizeSuffix}`, bwStart, bwEnd, bwFree, bwTotal, bwNet)
+      chargeRowsHtml += renderChargeRow(2, `Copies Charges B/W${sizeSuffix}`, bwRate, bwAmount)
 
-      const legacyColStart = ci?.start_meter_color || 0
-      const legacyColEnd = item.meter_end_colour || legacyColStart
-      const legacyColFree = ci?.free_quota_color || 0
-      const legacyRateCol = ci?.rate_per_page_color || 1000
-      if (legacyColStart > 0 || legacyColFree > 0 || legacyColEnd > legacyColStart) {
-        const legacyColTotal = legacyColEnd - legacyColStart
-        const legacyColNet = legacyColTotal - legacyColFree
-        const legacyColBillable = Math.max(0, legacyColNet)
-        const legacyColAmount = legacyColBillable * legacyRateCol
-        meterBlocksHtml += renderMeterBlock('Colour A4', legacyColStart, legacyColEnd, legacyColFree, legacyColTotal, legacyColNet)
-        chargeRowsHtml += renderChargeRow(3, 'Copies Charges Colour A4', legacyRateCol, legacyColAmount)
+      const colStart = Number(ci?.start_meter_color || item.meter_start_colour || item.meter_start_color || 0)
+      const colEnd = Number(item.meter_end_colour || item.meter_end_color || colStart)
+      const colFree = Number(ci?.free_quota_color || 0)
+      const colRate = Number(ci?.rate_per_page_color || 1000)
+      if (colStart > 0 || colFree > 0 || colEnd > colStart) {
+        const colTotal = Math.max(0, colEnd - colStart)
+        const colNet = colTotal - colFree
+        const colBillable = Math.max(0, colNet)
+        const colAmount = colBillable * colRate
+        meterBlocksHtml += renderMeterBlock(`Colour${sizeSuffix}`, colStart, colEnd, colFree, colTotal, colNet)
+        chargeRowsHtml += renderChargeRow(3, `Copies Charges Colour${sizeSuffix}`, colRate, colAmount)
       }
     }
   }
@@ -772,7 +789,61 @@ function renderRentalInvoicesPdf(items: any[], title: string): string {
     .sig-line { width: 85%; border-bottom: 1.5px solid #374151; margin-bottom: 4px; }
     .sig-name { font-weight: 700; font-size: 11px; }
     .sig-role { font-style: italic; font-size: 10px; color: #6b7280; }
-  </style>
+  
+/* Per-Row Export Action Buttons & Separator */
+.row-actions-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
+.action-btn--pdf {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+  border: 1px solid #fca5a5 !important;
+}
+.action-btn--pdf:hover {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.35);
+}
+
+.action-btn--excel {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+  border: 1px solid #86efac !important;
+}
+.action-btn--excel:hover {
+  background: #15803d !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(21, 128, 61, 0.35);
+}
+
+.action-btn--receipt {
+  background: #e0f2fe !important;
+  color: #0284c7 !important;
+  border: 1px solid #7dd3fc !important;
+}
+.action-btn--receipt:hover {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);
+}
+
+.action-divider {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background-color: #cbd5e1;
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+</style>
 </head>
 <body>
   ${bodyContent}
@@ -955,16 +1026,28 @@ async function exportInvoicesToExcel(
 
     let rowNum = 2
     if (isCopier) {
-      const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number) => {
-        const total = last - start
+      const contractRates = ci?.rates || rentalItem?.rates || item.contract_item?.rates || item.rental?.rental_items?.[0]?.rates || []
+      const hasConfiguredPaperSize = Array.isArray(contractRates) && contractRates.length > 0 && contractRates.some((r: any) => Boolean(r.paper_size_id && String(r.paper_size_id).trim() !== ''))
+      const distinctSizes = new Set(
+        (item.meter_details || [])
+          .map((d: any) => d.paper_size?.name || d.paper_size_name || '')
+          .filter((s: string) => Boolean(s.trim()))
+      )
+      const hasExplicitPaperSize = hasConfiguredPaperSize || distinctSizes.size > 1
+
+      // Format Excel persis foto invoice: Start, Last (-), Total Copies (dan Free Copies HANYA jika free > 0)
+      const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number, explicitTotal?: number) => {
+        const total = explicitTotal !== undefined ? explicitTotal : (last - start)
         const net = total - free
         const billable = Math.max(0, net)
         addRow([{ style: 'border' }, { v: sectionLabel, style: 'borderBold' }, { style: 'border' }, { style: 'border' }, { style: 'border' }])
         addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
         addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
         addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
-        addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
-        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+        if (free > 0) {
+          addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
+          addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+        }
         return { total, billable }
       }
 
@@ -979,12 +1062,13 @@ async function exportInvoicesToExcel(
       }
 
       const meterDetails: any[] = item.meter_details || []
+
       if (meterDetails.length > 0) {
         const byPaperSize = new Map<string, any[]>()
         for (const detail of meterDetails) {
-          const psName = detail.paper_size?.name || 'A4'
+          const psName = hasExplicitPaperSize ? (detail.paper_size?.name || '') : ''
           const ptName = detail.paper_type?.name || ''
-          const key = ptName ? `${psName}/${ptName}` : psName
+          const key = ptName ? (psName ? `${psName}/${ptName}` : ptName) : psName
           if (!byPaperSize.has(key)) byPaperSize.set(key, [])
           byPaperSize.get(key)!.push(detail)
         }
@@ -992,38 +1076,41 @@ async function exportInvoicesToExcel(
         for (const [paperSize, details] of byPaperSize) {
           const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
           const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
+          // Jika tidak ada ukuran kertasnya kosongin aja
+          const sizeLabel = (paperSize && paperSize.trim() && hasExplicitPaperSize) ? ` ${paperSize.trim()}` : ''
 
           for (const detail of bwDetails) {
             const start = detail.start_meter_reading || 0
             const last = detail.last_meter_reading || 0
             const free = detail.free_quota ?? 0
-            pushMeterSection(`B/W ${paperSize}`, start, last, free)
-            chargeRow(`Copies Charges B/W ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
+            pushMeterSection(`B/W${sizeLabel}`, start, last, free)
+            chargeRow(`Copies Charges B/W${sizeLabel}`, detail.rate_per_page || 0, detail.total_amount || 0)
           }
 
           for (const detail of colorDetails) {
             const start = detail.start_meter_reading || 0
             const last = detail.last_meter_reading || 0
             const free = detail.free_quota ?? 0
-            pushMeterSection(`Colour ${paperSize}`, start, last, free)
-            chargeRow(`Copies Charges Colour ${paperSize}`, detail.rate_per_page || 0, detail.total_amount || 0)
+            pushMeterSection(`Colour${sizeLabel}`, start, last, free)
+            chargeRow(`Copies Charges Colour${sizeLabel}`, detail.rate_per_page || 0, detail.total_amount || 0)
           }
         }
       } else {
         const bwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
         const bwEnd = item.meter_end || item.meter_end_bw || bwStart
-        const bwFree = item.free_copies || ci?.free_copy_quota || 2000
+        const bwFree = item.free_copies ?? ci?.free_copy_quota ?? 0
         const bwRate = item.rate_per_page || 150
-        const bw = pushMeterSection('B/W A4', bwStart, bwEnd, bwFree)
-        chargeRow('Copies Charges B/W A4', bwRate, bw.billable * bwRate)
+        const sizeSuffix = '' // Kosongin jika tidak ada ukuran kertas
+        const bw = pushMeterSection(`B/W${sizeSuffix}`, bwStart, bwEnd, bwFree)
+        chargeRow(`Copies Charges B/W${sizeSuffix}`, bwRate, bw.billable * bwRate)
 
         const colorStart = ci?.start_meter_color || 0
         const colorEnd = item.meter_end_colour || colorStart
         const colorFree = ci?.free_quota_color || 0
         const colorRate = ci?.rate_per_page_color || bwRate
         if (colorStart > 0 || colorFree > 0 || colorEnd > colorStart) {
-          const col = pushMeterSection('Colour A4', colorStart, colorEnd, colorFree)
-          chargeRow('Copies Charges Colour A4', colorRate, col.billable * colorRate)
+          const col = pushMeterSection(`Colour${sizeSuffix}`, colorStart, colorEnd, colorFree)
+          chargeRow(`Copies Charges Colour${sizeSuffix}`, colorRate, col.billable * colorRate)
         }
       }
     }
@@ -1395,14 +1482,33 @@ async function printReceiptAsync(item: any, approved: any) {
   if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
 }
 
-function printInvoice(item: any) {
-  if (item.status !== 'approved') {
-    toast.warning('Invoice is not approved yet, cannot print receipt')
-    return
-  }
+function exportSingleRentalInvoiceToPdf(item: any) {
   const html = invoiceHtml(item)
   const w = window.open('', '_blank')
-  if (w) { w.document.write(html); w.document.close() }
+  if (w) {
+    w.document.write(html)
+    w.document.close()
+  } else {
+    toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
+  }
+}
+
+async function exportSingleRentalInvoiceToExcel(item: any) {
+  if (isExporting.value) return
+  isExporting.value = true
+  try {
+    const invNo = (item.invoice_no || `Inv_${item.id || 'draft'}`).replace(/[:\\/?*[\]]/g, '_')
+    await exportInvoicesToExcel([item], `RentalInvoice_${invNo}`, [])
+    toast.success(`Excel Rental Invoice ${item.invoice_no || ''} berhasil diunduh`)
+  } catch (err: any) {
+    toast.error('Gagal export Excel: ' + (err?.message || 'Error'))
+  } finally {
+    isExporting.value = false
+  }
+}
+
+function printInvoice(item: any) {
+  exportSingleRentalInvoiceToPdf(item)
 }
 </script>
 
@@ -1513,11 +1619,62 @@ function printInvoice(item: any) {
         </span>
       </template>
       <template #actions="{ row }">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <!-- Approval dimatikan: invoice auto-approved via payment, tombol Approve/Reject dihapus. -->
+        <div class="row-actions-container">
+          <!-- GROUP 1: EXPORT DOKUMEN PER BARIS (PDF & EXCEL) -->
+          <button
+            v-if="can('rental_invoice:read')"
+            class="action-btn action-btn--pdf"
+            :title="`Export PDF / Cetak Invoice (${row.invoice_no || 'Draft'})`"
+            @click.stop="exportSingleRentalInvoiceToPdf(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+          </button>
+
+          <button
+            v-if="can('rental_invoice:read')"
+            class="action-btn action-btn--excel"
+            :title="`Export Excel Invoice (${row.invoice_no || 'Draft'})`"
+            :disabled="isExporting"
+            @click.stop="exportSingleRentalInvoiceToExcel(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="8" y1="13" x2="16" y2="13"></line>
+              <line x1="8" y1="17" x2="16" y2="17"></line>
+              <line x1="12" y1="11" x2="12" y2="19"></line>
+            </svg>
+          </button>
+
+          <button
+            v-if="row.payment_status === 'paid' && can('rental_invoice:read')"
+            class="action-btn action-btn--receipt"
+            :title="`Cetak Bukti Pembayaran Struk (${row.invoice_no || ''})`"
+            @click.stop="printReceipt(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"></path>
+              <line x1="8" y1="10" x2="16" y2="10"></line>
+              <line x1="8" y1="14" x2="16" y2="14"></line>
+            </svg>
+          </button>
+
+          <!-- Divider Pemisah Kategori -->
+          <span class="action-divider"></span>
+
+          <!-- GROUP 2: STATUS & OPERASIONAL (Bayar, Detail, Edit, Hapus) -->
           <button
             v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'partially_paid') && (can('payment:create') || can('rental_invoice:update'))"
-            class="action-btn action-btn--edit" title="Payment" @click="openPaymentModal(row)"
+            class="action-btn action-btn--edit" title="Bayar (Input Payment)" @click.stop="openPaymentModal(row)"
             style="color: #059669; width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1537,46 +1694,24 @@ function printInvoice(item: any) {
               <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2"></line>
             </svg>
           </button>
-          <button v-if="can('rental_invoice:read')" class="action-btn action-btn--edit" title="Detail"
-            @click="openDetail(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
+          <button v-if="can('rental_invoice:read')" class="action-btn action-btn--edit" title="Lihat Detail Invoice"
+            @click.stop="openDetail(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
               <circle cx="12" cy="12" r="3"></circle>
             </svg>
           </button>
-          <button v-if="row.status === 'approved' && can('rental_invoice:read')" class="action-btn action-btn--edit"
-            title="Print Receipt" @click="printInvoice(row)"
-            style="color: var(--color-primary); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 6 2 18 2 18 9"></polyline>
-              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
-              <rect x="6" y="14" width="12" height="8"></rect>
-            </svg>
-          </button>
-          <button v-if="row.status === 'approved' && row.payment_status === 'paid' && can('rental_invoice:read')"
-            class="action-btn action-btn--edit" title="Bukti Bayar" @click="printReceipt(row)"
-            style="color: #0e7490; width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-          </button>
-          <button v-if="can('rental_invoice:update')" class="action-btn action-btn--edit" title="Edit"
-            @click="openEdit(row)" style="width: 36px; height: 36px;">
+          <button v-if="can('rental_invoice:update')" class="action-btn action-btn--edit" title="Edit Invoice"
+            @click.stop="openEdit(row)" style="width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
               <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
             </svg>
           </button>
-          <button v-if="can('rental_invoice:delete')" class="action-btn action-btn--delete" title="Delete"
-            @click="openDelete(row)" style="width: 36px; height: 36px;">
+          <button v-if="can('rental_invoice:delete')" class="action-btn action-btn--delete" title="Hapus Invoice"
+            @click.stop="openDelete(row)" style="width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
@@ -1589,7 +1724,7 @@ function printInvoice(item: any) {
             v-if="hardDelete.isSuperadmin"
             class="action-btn action-btn--hard"
             title="Hapus permanen dari database (superadmin)"
-            @click="hardDelete.open(row)"
+            @click.stop="hardDelete.open(row)"
             style="width: 36px; height: 36px;"
           >
             <svg
@@ -1906,4 +2041,58 @@ function printInvoice(item: any) {
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
+
+/* Per-Row Export Action Buttons & Separator */
+.row-actions-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
+.action-btn--pdf {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+  border: 1px solid #fca5a5 !important;
+}
+.action-btn--pdf:hover {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.35);
+}
+
+.action-btn--excel {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+  border: 1px solid #86efac !important;
+}
+.action-btn--excel:hover {
+  background: #15803d !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(21, 128, 61, 0.35);
+}
+
+.action-btn--receipt {
+  background: #e0f2fe !important;
+  color: #0284c7 !important;
+  border: 1px solid #7dd3fc !important;
+}
+.action-btn--receipt:hover {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);
+}
+
+.action-divider {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background-color: #cbd5e1;
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
 </style>

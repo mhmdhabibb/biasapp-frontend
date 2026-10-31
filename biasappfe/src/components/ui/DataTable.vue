@@ -39,7 +39,7 @@ const props = withDefaults(
     totalPages: 1,
     currentPage: 1,
     loading: false,
-    maxHeight: "calc(100vh - 280px)",
+    maxHeight: "calc(100vh - 360px)",
   },
 );
 
@@ -446,6 +446,10 @@ const visiblePages = computed(() => {
   background: var(--color-surface);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .data-table-toolbar {

@@ -21,7 +21,7 @@ const columns: TableColumn[] = [
   { key: "survey_no", label: "Survey No" },
   { key: "_customer", label: "Customer" },
   { key: "_unit", label: "Unit" },
-  { key: "result", label: "Result" },
+  { key: "price", label: "Harga" },
   { key: "status", label: "Status" },
   { key: "remarks", label: "Remarks" },
 ];
@@ -62,9 +62,25 @@ const statusOptions = [
 const form = reactive({
   customer_id: "",
   unit_id: null as string | null,
+  price: null as number | null,
   result: "pending",
   status: "pending",
   remarks: "",
+});
+
+import { watch } from "vue";
+watch(() => form.unit_id, (uId) => {
+  if (!uId) return;
+  const found = (units.value as any[]).find((u: any) => u.id === uId);
+  if (found && found.price != null && Number(found.price) > 0) {
+    form.price = Number(found.price);
+  }
+});
+
+const selectedUnitHasPrice = computed(() => {
+  if (!form.unit_id) return false;
+  const found = (units.value as any[]).find((u: any) => u.id === form.unit_id);
+  return !!(found && found.price != null && Number(found.price) > 0);
 });
 
 async function fetchData() {
@@ -93,6 +109,7 @@ function openAdd() {
   Object.assign(form, {
     customer_id: "",
     unit_id: null,
+    price: null,
     result: "pending",
     status: "pending",
     remarks: "",
@@ -105,6 +122,7 @@ function openEdit(item: any) {
   Object.assign(form, {
     customer_id: item.customer_id || "",
     unit_id: item.unit_id || null,
+    price: item.price != null ? Number(item.price) : (item.unit?.price != null ? Number(item.unit.price) : null),
     result: item.result || "pending",
     status: item.status || "pending",
     remarks: item.remarks || "",
@@ -120,11 +138,23 @@ async function handleSubmit() {
   const payload: any = {
     customer_id: form.customer_id,
     unit_id: form.unit_id,
-    result: form.result,
-    status: form.status,
+    price: form.price ? Number(form.price) : null,
+    result: form.result || "pending",
+    status: form.status || "pending",
     remarks: form.remarks,
   };
   try {
+    if (form.price && form.unit_id) {
+      const targetUnit = (units.value as any[]).find((u: any) => u.id === form.unit_id);
+      if (targetUnit && (!targetUnit.price || Number(targetUnit.price) === 0)) {
+        try {
+          await resources.units.update(form.unit_id, { price: Number(form.price) });
+          targetUnit.price = Number(form.price);
+        } catch (err) {
+          console.warn("Could not update unit price:", err);
+        }
+      }
+    }
     if (editingItem.value) {
       await resources.surveys.update(String(editingItem.value.id), payload);
       toast.success("Survey updated.");
@@ -205,9 +235,9 @@ onMounted(async () => {
   <div>
     <PageHeader title="Survey" button-label="Add Survey" permission="survey:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search surveys..." permission="survey">
-      <template #cell-result="{ value }">
-        <span class="badge" :class="value === 'matched' ? 'badge-success' : value === 'not_matched' ? 'badge-danger' : 'badge-warning'">
-          {{ value || 'pending' }}
+      <template #cell-price="{ value }">
+        <span class="font-medium" style="font-weight: 600; color: #1e3a8a;">
+          {{ value ? 'Rp ' + Number(value).toLocaleString('id-ID') : '-' }}
         </span>
       </template>
       <template #cell-status="{ value }">
@@ -256,8 +286,19 @@ onMounted(async () => {
         <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" />
       </div>
       <div class="form-group mt-3">
-        <label class="form-label">Result</label>
-        <CustomSelect v-model="form.result" :options="resultOptions" placeholder="-- Select Result --" />
+        <label class="form-label">Harga (Rp)</label>
+        <input
+          v-model.number="form.price"
+          type="number"
+          class="form-input"
+          placeholder="Masukkan harga jika unit belum ada harga"
+        />
+        <div v-if="selectedUnitHasPrice" style="font-size: 11px; color: #15803d; margin-top: 4px;">
+          ✓ Harga terisi otomatis dari master data unit. Anda dapat mengubahnya jika perlu.
+        </div>
+        <div v-else-if="form.unit_id" style="font-size: 11px; color: #b45309; margin-top: 4px;">
+          * Unit ini belum memiliki harga di master data. Harga yang diisi akan otomatis disimpan ke unit ini.
+        </div>
       </div>
       <div class="form-group mt-3">
         <label class="form-label">Status</label>

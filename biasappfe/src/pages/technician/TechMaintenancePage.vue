@@ -28,6 +28,7 @@ const {
   findTechnician,
   findUnit,
   getUnitsByCustomer,
+  fetchUnitsByCustomer,
   contractItems,
   monthlyMeterReadings,
   refreshOnly,
@@ -195,7 +196,15 @@ function removePhoto(type: 'before' | 'progress' | 'after') {
 const customerUnitOptions = computed(() => {
   const cid = selectedJob.value ? jobCustomerId(selectedJob.value) : null
   if (!cid) return []
-  return (getUnitsByCustomer(cid) || []).map((u: any) => ({
+  const list = getUnitsByCustomer(cid) || []
+  if (list.length > 0) {
+    return list.map((u: any) => ({
+      value: u.id,
+      label: `${u.model || u.name || 'Unit'}${u.serial_no ? ` (SN: ${u.serial_no})` : ''} (Unit Rented)`,
+    }))
+  }
+  // Fallback tampilkan semua unit
+  return (units.value || []).map((u: any) => ({
     value: u.id,
     label: `${u.model || u.name || 'Unit'}${u.serial_no ? ` (SN: ${u.serial_no})` : ''}`,
   }))

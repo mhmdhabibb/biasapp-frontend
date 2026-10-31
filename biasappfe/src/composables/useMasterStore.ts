@@ -83,7 +83,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units"],
 
   // Customer Service Operational Pages
-  "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments"],
+  "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments", "technicians"],
   "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units", "rents", "products", "brands", "unitTypes"],
   "/customer-service/sales": ["sales", "salesInvoices", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes"],
@@ -629,24 +629,86 @@ export function useMasterStore() {
 
   function getUnitsByCustomer(customerId: number | string | null): Unit[] {
     if (!customerId) return [];
-    const relevantContracts = (store.contractItems || []).filter((c) => {
-      const custIdStr = String(customerId);
-      const cCustId = c.customer_id ? String(c.customer_id) : undefined;
-      const cCustIdNested = c.contract?.customer_id
-        ? String(c.contract.customer_id)
-        : undefined;
-      return cCustId === custIdStr || cCustIdNested === custIdStr;
+    const custIdStr = String(customerId).trim().toLowerCase();
+    const unitIds = new Set<string>();
+
+    // 1. From Rents / Rentals (Unit yang dirental customer)
+    (store.rents || []).forEach((r: any) => {
+      const rCust = String(r.customer_id || r.customer?.id || "").trim().toLowerCase();
+      if (rCust === custIdStr) {
+        if (Array.isArray(r.rental_items)) {
+          r.rental_items.forEach((item: any) => {
+            if (item.unit_id) unitIds.add(String(item.unit_id).toLowerCase());
+          });
+        }
+      }
     });
-    const unitIds = [
-      ...new Set(
-        relevantContracts
-          .map((c) => c.unit_id)
-          .filter((id): id is number | string => id != null),
-      ),
-    ];
-    if (unitIds.length === 0) return [];
+
+    // 2. From Contract Items & Contracts
+    (store.contractItems || []).forEach((c: any) => {
+      const cCust = String(c.customer_id || c.contract?.customer_id || "").trim().toLowerCase();
+      if (cCust === custIdStr && c.unit_id) {
+        unitIds.add(String(c.unit_id).toLowerCase());
+      }
+    });
+
+    // 3. From Delivery Orders
+    (store.deliveryOrders || []).forEach((d: any) => {
+      const dCust = String(d.customer_id || "").trim().toLowerCase();
+      if (dCust === custIdStr) {
+        if (d.unit_id) unitIds.add(String(d.unit_id).toLowerCase());
+        if (Array.isArray(d.delivery_order_items)) {
+          d.delivery_order_items.forEach((doi: any) => {
+            if (doi.unit_id) unitIds.add(String(doi.unit_id).toLowerCase());
+          });
+        }
+      }
+    });
+
+    // 4. From Service Reports
+    (store.serviceReports || []).forEach((sr: any) => {
+      const srCust = String(sr.customer_id || "").trim().toLowerCase();
+      if (srCust === custIdStr && sr.unit_id) {
+        unitIds.add(String(sr.unit_id).toLowerCase());
+      }
+    });
+
+    // 5. From Sales
+    (store.sales || []).forEach((s: any) => {
+      const sCust = String(s.customer_id || "").trim().toLowerCase();
+      if (sCust === custIdStr) {
+        if (s.unit_id) unitIds.add(String(s.unit_id).toLowerCase());
+        if (Array.isArray(s.sale_items)) {
+          s.sale_items.forEach((si: any) => {
+            if (si.unit_id) unitIds.add(String(si.unit_id).toLowerCase());
+          });
+        }
+      }
+    });
+
+    if (unitIds.size === 0) return [];
     const allUnits = store.units || [];
-    return allUnits.filter((u) => unitIds.includes(u.id as number | string));
+    return allUnits.filter((u) => unitIds.has(String(u.id).toLowerCase()));
+  }
+
+  async function fetchUnitsByCustomer(customerId: number | string | null): Promise<Unit[]> {
+    if (!customerId) return [];
+    try {
+      const { data } = await import('@/services/api').then(m => m.default.get(`/atlas-great/customer-units?customer_id=${customerId}`));
+      const fetched = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+      if (fetched.length > 0) {
+        const existingMap = new Map((store.units || []).map((u: any) => [String(u.id).toLowerCase(), u]));
+        fetched.forEach((u: any) => {
+          if (!existingMap.has(String(u.id).toLowerCase())) {
+            store.units.push(u);
+          }
+        });
+        return fetched;
+      }
+    } catch (e) {
+      console.warn("fetchUnitsByCustomer fallback:", e);
+    }
+    return getUnitsByCustomer(customerId);
   }
 
   function getContractsByCustomer(
@@ -693,7 +755,7 @@ export function useMasterStore() {
   return {
     ...toRefs(store),
     refresh: syncFromApi,
-    refreshInBackground: () => syncFromApi(true, false),
+    refreshInBackground,
     refreshOnly,
     refreshIfStale,
     loadCriticalResources,
@@ -713,6 +775,7 @@ export function useMasterStore() {
     findSale,
     findSalesInvoice,
     getUnitsByCustomer,
+    fetchUnitsByCustomer,
     getContractsByCustomer,
     getTechnicianIdByUser,
     getServiceReportsByTechnician,

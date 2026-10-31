@@ -66,6 +66,12 @@ const hardDelete = useHardDelete(
     invalidateCache("units");
     invalidateCache("rents");
     invalidateCache("contracts");
+    invalidateCache("job_orders");
+    invalidateCache("service_reports");
+    invalidateCache("delivery_orders");
+    invalidateCache("rental_invoices");
+    invalidateCache("monthly_meter_readings");
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
     await fetchRentals();
     await refreshOnly(["units", "contracts", "products"], true);
   },
@@ -90,11 +96,17 @@ async function handleConfirmDeleteRental() {
   isDeletingRental.value = true;
   try {
     await resources.rentals.remove(deletingRental.value.id, false, rentalDeleteReason.value.trim());
-    toast.success("Rental berhasil dihapus dan unit telah kembali menjadi available.");
+    toast.success("Rental berhasil dihapus. Kontrak, Job Order, dan Invoice terkait telah dibersihkan, dan unit kembali available.");
     showDeleteRentalModal.value = false;
     invalidateCache("units");
     invalidateCache("rents");
     invalidateCache("contracts");
+    invalidateCache("job_orders");
+    invalidateCache("service_reports");
+    invalidateCache("delivery_orders");
+    invalidateCache("rental_invoices");
+    invalidateCache("monthly_meter_readings");
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
     await fetchRentals();
     await refreshOnly(["units", "contracts", "products"], true);
   } catch (err: any) {
@@ -346,6 +358,7 @@ const rentalItems = ref<
       type_id: string;
       model: string;
       serial_no: string;
+      print_tech: string;
       is_copier: boolean;
       current_meter_bw: number;
       current_meter_color: number;
@@ -511,6 +524,47 @@ const rentQuotaAppliesToOptions = [
   { value: "bw", label: "BW (Warna ditagih penuh)" },
 ];
 
+function getTypeName(id: string | null): string {
+  if (!id) return '';
+  const t = ((unitTypes.value as any[]) || []).find((t: any) => String(t.id) === String(id));
+  return t ? t.name : '';
+}
+
+function getBrandName(id: string | null): string {
+  if (!id) return '';
+  const b = ((brands.value as any[]) || []).find((b: any) => String(b.id) === String(id));
+  return b ? b.name : '';
+}
+
+function isUnitPrinterOrCopier(typeId: string | null, isCopier = false): boolean {
+  const tName = getTypeName(typeId).toLowerCase().trim();
+  return (
+    tName === 'printer' ||
+    tName.includes('printer') ||
+    tName === 'photocopy machine' ||
+    tName.includes('photocopy') ||
+    tName.includes('copier') ||
+    Boolean(isCopier)
+  );
+}
+
+function computeUnitName(typeId: string | null, printTech: string, brandId: string | null, model: string, isCopier = false): string {
+  const typeName = getTypeName(typeId).trim();
+  const brandName = getBrandName(brandId);
+  const validBrand = (brandName && brandName !== '-') ? brandName.trim() : '';
+  const validModel = (model || '').trim();
+
+  const tLower = typeName.toLowerCase();
+  const isPrintOrCopy = tLower.includes('printer') || tLower.includes('copier') || tLower.includes('photocopy') || isCopier;
+
+  if (isPrintOrCopy) {
+    const tech = (printTech || '').trim();
+    return [typeName, tech, validBrand, validModel].filter(Boolean).join(' ').trim();
+  } else {
+    return [typeName, validBrand, validModel].filter(Boolean).join(' ').trim();
+  }
+}
+
 function addRentalItem(mode?: "existing" | "unit" | "product") {
   const defaultMode = mode || (form.is_new ? "existing" : "unit");
   rentalItems.value.push({
@@ -521,6 +575,7 @@ function addRentalItem(mode?: "existing" | "unit" | "product") {
       type_id: "",
       model: "",
       serial_no: "",
+      print_tech: "",
       is_copier: false,
       current_meter_bw: 0,
       current_meter_color: 0,
@@ -700,7 +755,7 @@ const editingRental = ref<any>(null);
 
 async function openAdd() {
   editingRental.value = null;
-  await refreshOnly(["customers", "units", "products", "brands", "unitTypes"]);
+  await refreshOnly(["customers", "units", "products", "brands", "unitTypes", "technicians"]);
   try {
     const res = await resources.productCategories.list();
     const list = Array.isArray((res as any)?.data)
@@ -733,6 +788,7 @@ async function openAdd() {
         type_id: "",
         model: "",
         serial_no: "",
+        print_tech: "",
         is_copier: false,
         current_meter_bw: 0,
         current_meter_color: 0,
@@ -821,6 +877,7 @@ async function openEdit(row: any) {
           type_id: "",
           model: "",
           serial_no: "",
+          print_tech: "",
           is_copier: false,
           current_meter_bw: 0,
           current_meter_color: 0,
@@ -875,6 +932,7 @@ async function openEdit(row: any) {
           type_id: "",
           model: "",
           serial_no: "",
+          print_tech: "",
           is_copier: false,
           current_meter_bw: 0,
           current_meter_color: 0,
@@ -1004,6 +1062,10 @@ async function handleSubmit() {
         toast.error(`Item #${idx + 1}: lengkapi Brand, Tipe, Model, dan Serial No untuk unit baru.`);
         return;
       }
+      if (isUnitPrinterOrCopier(it.new_unit.type_id, it.new_unit.is_copier) && !it.new_unit.print_tech) {
+        toast.error(`Item #${idx + 1}: pilih Kategori Cetak (Laser atau Inject) untuk unit printer/copier.`);
+        return;
+      }
     } else if (it.create_mode === "product") {
       if (!String(it.new_product.name || "").trim() || !it.new_product.category_id) {
         toast.error(`Item #${idx + 1}: lengkapi Nama dan Kategori untuk produk baru.`);
@@ -1028,12 +1090,22 @@ async function handleSubmit() {
         let newId = existingUnit ? String(existingUnit.id || "") : "";
         if (!newId) {
           try {
+            const isPrintOrCopy = isUnitPrinterOrCopier(item.new_unit.type_id, item.new_unit.is_copier);
+            const techVal = isPrintOrCopy ? (item.new_unit.print_tech || "") : "";
+            const computedName = computeUnitName(
+              item.new_unit.type_id,
+              techVal,
+              item.new_unit.brand_id,
+              item.new_unit.model,
+              item.new_unit.is_copier,
+            );
             const res: any = await resources.units.create({
-              name: item.new_unit.model || "Unit",
+              name: computedName || item.new_unit.model || "Unit",
               brand_id: item.new_unit.brand_id,
               type_id: item.new_unit.type_id,
               model: item.new_unit.model,
               serial_no: serialUpper,
+              print_tech: techVal,
               is_copier: !!item.new_unit.is_copier,
               is_external: true,
               status: "available",
@@ -1404,15 +1476,17 @@ async function loadPaperLookups() {
 }
 
 function hydrateRentalLookups() {
-  void refreshOnly(["customers", "units", "products", "payments"]);
+  void refreshOnly(["customers", "units", "products", "payments", "technicians"]);
   void loadPaperLookups();
 }
 
 let skipNextRentalActivate = true;
 let rentalPollTimer: any = null;
+let lastSilentRentalSync = 0;
 
 function silentSyncRentals() {
-  if (document.visibilityState === "visible") {
+  if (document.visibilityState === "visible" && Date.now() - lastSilentRentalSync > 15000) {
+    lastSilentRentalSync = Date.now();
     fetchRentals(true);
   }
 }
@@ -2509,7 +2583,6 @@ function isExpired(row: any): boolean {
           >
             <option value="existing">Pilih dari Inventaris (Unit / Produk)</option>
             <option value="unit">Input Unit / Mesin Baru</option>
-            <option value="product">Input Produk / Sparepart Baru</option>
           </select>
         </div>
 
@@ -2559,6 +2632,20 @@ function isExpired(row: any): boolean {
                 </option>
               </select>
             </div>
+          </div>
+          <div
+            v-if="isUnitPrinterOrCopier(item.new_unit.type_id, item.new_unit.is_copier)"
+            class="form-group"
+            style="margin-bottom: var(--space-md)"
+          >
+            <label class="form-label">
+              Kategori Cetak (Laser / Inject) <span class="text-danger">*</span>
+            </label>
+            <select v-model="item.new_unit.print_tech" class="form-input" required>
+              <option value="">-- Pilih Laser atau Inject --</option>
+              <option value="Laser">Laser</option>
+              <option value="Inject">Inject</option>
+            </select>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -3053,14 +3140,6 @@ function isExpired(row: any): boolean {
         @click="addRentalItem('unit')"
       >
         + Input Unit / Mesin Baru
-      </button>
-      <button
-        type="button"
-        class="btn btn-outline btn-sm mb-4"
-        style="margin-left: 8px"
-        @click="addRentalItem('product')"
-      >
-        + Input Produk / Sparepart Baru
       </button>
 
       <div class="sale-summary mt-4">

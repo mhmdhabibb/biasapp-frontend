@@ -77,12 +77,57 @@ const beforeMeter = computed(() => {
   const ci = (contractItems.value || []).find((c: any) =>
     unitId && String(c.unit_id || c.unit?.id || '') === unitId
   )
-  const fromContract = num((ci as any)?.start_mono_value) || num((ci as any)?.start_color_value) || num((ci as any)?.start_meter_bw) || num((ci as any)?.start_meter_color)
+  const fromContract = num((ci as any)?.start_mono_value) || num((ci as any)?.start_meter_bw)
   return fromContract > 0 ? fromContract : 0
+})
+
+const beforeMeterColor = computed(() => {
+  // 1. Saved value in this report
+  const saved = num(job.value?.meter_reading_color_before)
+  if (saved > 0) return saved
+  // 2. Monthly meter readings linked to this report with color mode
+  const readings: any[] =
+    job.value?.monthly_meter_readings || job.value?.monthlyMeterReadings || []
+  for (const r of readings) {
+    if (normMeterMode(r.color_mode) === 'color') {
+      const v = num(r.end_meter) || num(r.start_meter)
+      if (v > 0) return v
+    }
+  }
+  // 2b. Latest reading of this unit from store
+  const unitIdForHistory = String(job.value?.unit_id || unit.value?.id || '')
+  if (unitIdForHistory) {
+    const storeReadings: any[] = (monthlyMeterReadings as any)?.value || (monthlyMeterReadings as any) || []
+    const forUnit = storeReadings.filter(
+      (r: any) => String(r.unit_id || r.unit?.id || '') === unitIdForHistory && normMeterMode(r.color_mode) === 'color'
+    )
+    forUnit.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    if (forUnit.length > 0) {
+      const last = num(forUnit[0].end_meter) || num(forUnit[0].start_meter)
+      if (last > 0) return last
+    }
+  }
+  // 3. Current unit color meter
+  const fromUnit = num(unit.value?.current_meter_color)
+  if (fromUnit > 0) return fromUnit
+  // 4. Contract initial value
+  const ci = contractItemForUnit()
+  const fromContract = num((ci as any)?.start_meter_color) || num((ci as any)?.start_color_value)
+  return fromContract > 0 ? fromContract : 0
+})
+
+const hasColorMeter = computed(() => {
+  return (
+    beforeMeterColor.value > 0 ||
+    num(unit.value?.current_meter_color) > 0 ||
+    num(job.value?.meter_reading_color_before) > 0 ||
+    num(job.value?.meter_reading_color_after) > 0
+  )
 })
 
 const form = ref({
   meter_after: 0,
+  meter_color_after: 0,
   copy_quality: 'Good',
   customer_signature: '',
   technician_signature: '',
@@ -215,6 +260,40 @@ const meterSections = computed(() => {
     }
   }
 
+  // Jika belum ada readings maupun contract rates, buat default section Standar
+  // agar B/W dan Colour selalu tampil dan bisa dicatat.
+  if (sections.size === 0) {
+    const defaultRows: CopierMeterRow[] = [
+      {
+        key: 'default|bw',
+        paper_size_id: '',
+        paper_size_name: 'Standar (General)',
+        paper_type_id: null,
+        color_mode: 'bw',
+        color_label: 'B/W',
+        reading_id: null,
+        before: beforeMeter.value,
+      },
+    ]
+    if (beforeMeterColor.value > 0 || num(unit.value?.current_meter_color) > 0 || num(job.value?.meter_reading_color_before) > 0) {
+      defaultRows.push({
+        key: 'default|color',
+        paper_size_id: '',
+        paper_size_name: 'Standar (General)',
+        paper_type_id: null,
+        color_mode: 'color',
+        color_label: 'Colour',
+        reading_id: null,
+        before: beforeMeterColor.value,
+      })
+    }
+    sections.set('default', {
+      paper_size_id: '',
+      paper_size_name: 'Standar (General)',
+      rows: defaultRows,
+    })
+  }
+
   return [...sections.values()]
     .map((sec) => ({
       ...sec,
@@ -236,7 +315,9 @@ function initSectionAfters() {
         ? readings.find((r: any) => String(r.id) === String(row.reading_id))
         : null
       const savedEnd = num(linked?.end_meter)
-      next[row.key] = savedEnd > 0 ? savedEnd : row.before
+      const isColor = row.color_mode === 'color'
+      const reportMeterAfter = isColor ? num(job.value?.meter_reading_color_after) : num(job.value?.meter_reading_after)
+      next[row.key] = savedEnd > 0 ? savedEnd : (reportMeterAfter > 0 ? reportMeterAfter : row.before)
     }
   }
   sectionAfters.value = next
@@ -288,6 +369,8 @@ onMounted(async () => {
   if (job.value) {
     const after = Number(job.value.meter_reading_after ?? job.value.reading_counter ?? 0)
     form.value.meter_after = after > 0 ? after : beforeMeter.value
+    const colorAfter = Number(job.value.meter_reading_color_after ?? 0)
+    form.value.meter_color_after = colorAfter > 0 ? colorAfter : beforeMeterColor.value
     form.value.customer_signature = job.value.customer_signature_copier || ''
     form.value.technician_signature = job.value.technician_signature_copier || ''
     form.value.customer_name = job.value.customer_name_copier || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || ''
@@ -314,6 +397,8 @@ onMounted(async () => {
       reportRecord.value = data
       const after = Number(data.meter_reading_after ?? data.reading_counter ?? 0)
       form.value.meter_after = after > 0 ? after : beforeMeter.value
+      const colorAfter = Number(data.meter_reading_color_after ?? 0)
+      form.value.meter_color_after = colorAfter > 0 ? colorAfter : beforeMeterColor.value
       form.value.customer_signature = data.customer_signature_copier || ''
       form.value.technician_signature = data.technician_signature_copier || ''
       form.value.customer_name = data.customer_name_copier || findCustomer(data.customer_id)?.pic_name || data.customer?.pic_name || ''
@@ -367,14 +452,13 @@ async function saveForm() {
     return
   }
 
-  // Sinkron field tunggal legacy: pakai baris B/W pertama yang diisi (else baris pertama).
-  let legacyBefore = beforeMeter.value
-  let legacyAfter = Number(form.value.meter_after || 0)
-  if (filled.length > 0) {
-    const primary = filled.find((f) => f.row.color_mode === 'bw') || filled[0]!
-    legacyBefore = primary.row.before
-    legacyAfter = primary.after
-  }
+  // Sinkron field tunggal: pakai baris B/W dan Colour yang diisi
+  const bwRow = filled.find((f) => f.row.color_mode === 'bw')
+  const colorRow = filled.find((f) => f.row.color_mode === 'color')
+  let legacyBefore = bwRow ? bwRow.row.before : beforeMeter.value
+  let legacyAfter = bwRow ? bwRow.after : Number(form.value.meter_after || 0)
+  let legacyColorBefore = colorRow ? colorRow.row.before : beforeMeterColor.value
+  let legacyColorAfter = colorRow ? colorRow.after : Number(form.value.meter_color_after || 0)
 
   isSaving.value = true
   try {
@@ -386,7 +470,7 @@ async function saveForm() {
           start_meter: f.row.before,
           end_meter: f.after,
         })
-      } else {
+      } else if (f.row.paper_size_id && ci) {
         await api.post('/monthly-meter-readings/', {
           user_id: currentUser.value?.id,
           contract_item_id: ci.id,
@@ -404,11 +488,25 @@ async function saveForm() {
     await api.patch(`/service-reports/${realServiceReportId.value}`, {
       meter_reading_before: legacyBefore,
       meter_reading_after: legacyAfter,
+      meter_reading_color_before: legacyColorBefore,
+      meter_reading_color_after: legacyColorAfter,
       customer_signature_copier: form.value.customer_signature,
       technician_signature_copier: form.value.technician_signature,
       customer_name_copier: form.value.customer_name,
       technician_name_copier: form.value.technician_name,
     })
+    if (unitId) {
+      const unitPatch: any = {}
+      if (legacyAfter > 0) unitPatch.current_meter_bw = legacyAfter
+      if (legacyColorAfter > 0) unitPatch.current_meter_color = legacyColorAfter
+      if (Object.keys(unitPatch).length > 0) {
+        try {
+          await api.patch(`/units/${unitId}`, unitPatch)
+        } catch (e) {
+          console.warn('Could not update unit meters:', e)
+        }
+      }
+    }
     toast.success('Copier Report saved successfully')
     await refreshInBackground()
     router.back()
@@ -465,13 +563,24 @@ async function saveForm() {
       </div>
       <div class="meter-grid">
         <div class="form-group">
-          <label class="form-label">Before Meter (Read Only)</label>
+          <label class="form-label">B/W — Before Meter (Read Only)</label>
           <input type="number" :value="beforeMeter" class="form-input" readonly disabled>
           <p class="form-hint">Initial meter automatically from latest data.</p>
         </div>
         <div class="form-group">
-          <label class="form-label">After Meter <span class="text-danger">*</span></label>
-          <input type="number" v-model.number="form.meter_after" class="form-input" :min="beforeMeter" placeholder="Enter meter after service">
+          <label class="form-label">B/W — After Meter <span class="text-danger">*</span></label>
+          <input type="number" v-model.number="form.meter_after" class="form-input" :min="beforeMeter" placeholder="Enter B/W meter after service">
+        </div>
+      </div>
+      <div v-if="beforeMeterColor > 0 || hasColorMeter" class="meter-grid" style="margin-top: 12px;">
+        <div class="form-group">
+          <label class="form-label">Colour — Before Meter (Read Only)</label>
+          <input type="number" :value="beforeMeterColor" class="form-input" readonly disabled>
+          <p class="form-hint">Initial color meter automatically from latest data.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Colour — After Meter <span class="text-danger">*</span></label>
+          <input type="number" v-model.number="form.meter_color_after" class="form-input" :min="beforeMeterColor" placeholder="Enter colour meter after service">
         </div>
       </div>
       </template>

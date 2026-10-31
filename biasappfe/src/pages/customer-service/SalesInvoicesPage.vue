@@ -599,7 +599,61 @@ function renderSalesInvoicesPdf(items: any[], title: string): string {
       .paid-stamp.partial { border-color: #b45309; color: #b45309; font-size: 16px; letter-spacing: 2px; }
       .paid-stamp.unpaid { border-color: #57534e; color: #57534e; font-size: 16px; letter-spacing: 2px; }
       .stamp-wrap { text-align: center; clear: both; padding-top: 10px; }
-    </style>
+    
+/* Per-Row Export Action Buttons & Separator */
+.row-actions-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
+.action-btn--pdf {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+  border: 1px solid #fca5a5 !important;
+}
+.action-btn--pdf:hover {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.35);
+}
+
+.action-btn--excel {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+  border: 1px solid #86efac !important;
+}
+.action-btn--excel:hover {
+  background: #15803d !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(21, 128, 61, 0.35);
+}
+
+.action-btn--receipt {
+  background: #e0f2fe !important;
+  color: #0284c7 !important;
+  border: 1px solid #7dd3fc !important;
+}
+.action-btn--receipt:hover {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);
+}
+
+.action-divider {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background-color: #cbd5e1;
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+</style>
   </head>
   <body>
     ${bodyContent}
@@ -940,18 +994,34 @@ function invoiceHtml(item: any): string {
   return renderSalesInvoicesPdf([item], `Invoice - ${item.invoice_no || 'Sales'}`)
 }
 
-async function printInvoice(item: any) {
-  if (item.status !== 'approved') {
-    toast.warning('Invoice is not approved yet, cannot print receipt')
-    return
-  }
+async function exportSingleSalesInvoiceToPdf(item: any) {
   await resolveInvoiceFullData(item)
   const html = renderSalesInvoicesPdf([item], `Invoice - ${item.invoice_no || 'Sales'}`)
   const printWindow = window.open('', '_blank')
   if (printWindow) {
     printWindow.document.write(html)
     printWindow.document.close()
+  } else {
+    toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
   }
+}
+
+async function exportSingleSalesInvoiceToExcel(item: any) {
+  if (isExporting.value) return
+  isExporting.value = true
+  try {
+    const invNo = (item.invoice_no || `Inv_${item.id || 'draft'}`).replace(/[:\\/?*[\]]/g, '_')
+    await exportInvoicesToExcel([item], `SalesInvoice_${invNo}`, [])
+    toast.success(`Excel Sales Invoice ${item.invoice_no || ''} berhasil diunduh`)
+  } catch (err: any) {
+    toast.error('Gagal export Excel: ' + (err?.message || 'Error'))
+  } finally {
+    isExporting.value = false
+  }
+}
+
+async function printInvoice(item: any) {
+  await exportSingleSalesInvoiceToPdf(item)
 }
 
 function hasApprovedPayment(item: any) {
@@ -1064,33 +1134,72 @@ async function printReceiptAsync(item: any, approved: any) {
         </span>
       </template>
       <template #actions="{ row }">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <!-- Approval dimatikan: invoice auto-approved via payment, tombol Approve/Reject dihapus. -->
-          <button v-if="row.status === 'approved' && can('sales_invoice:read')" class="action-btn action-btn--edit" title="Print Receipt" @click="printInvoice(row)" style="color: var(--color-primary); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 9V2h12v7"></path>
-              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
-              <rect x="6" y="14" width="12" height="8"></rect>
+        <div class="row-actions-container">
+          <!-- GROUP 1: EXPORT DOKUMEN PER BARIS (PDF & EXCEL) -->
+          <button
+            v-if="can('sales_invoice:read')"
+            class="action-btn action-btn--pdf"
+            :title="`Export PDF / Cetak Invoice (${row.invoice_no || 'Draft'})`"
+            @click.stop="exportSingleSalesInvoiceToPdf(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
           </button>
-          <button v-if="hasApprovedPayment(row) && can('sales_invoice:read')" class="action-btn action-btn--edit" title="Print Struk Bukti Bayar" @click="printReceipt(row)" style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z M8 10h8 M8 14h8 M8 18h5"></path>
+
+          <button
+            v-if="can('sales_invoice:read')"
+            class="action-btn action-btn--excel"
+            :title="`Export Excel Invoice (${row.invoice_no || 'Draft'})`"
+            :disabled="isExporting"
+            @click.stop="exportSingleSalesInvoiceToExcel(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="8" y1="13" x2="16" y2="13"></line>
+              <line x1="8" y1="17" x2="16" y2="17"></line>
+              <line x1="12" y1="11" x2="12" y2="19"></line>
             </svg>
           </button>
-          <button v-if="can('sales_invoice:read')" class="action-btn action-btn--edit" title="Detail" @click="openDetail(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
+
+          <button
+            v-if="hasApprovedPayment(row) && can('sales_invoice:read')"
+            class="action-btn action-btn--receipt"
+            :title="`Cetak Bukti Pembayaran Struk (${row.invoice_no || ''})`"
+            @click.stop="printReceipt(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"></path>
+              <line x1="8" y1="10" x2="16" y2="10"></line>
+              <line x1="8" y1="14" x2="16" y2="14"></line>
+            </svg>
+          </button>
+
+          <!-- Divider Pemisah Kategori -->
+          <span class="action-divider"></span>
+
+          <!-- GROUP 2: STATUS & OPERASIONAL (Detail, Edit, Hapus) -->
+          <button v-if="can('sales_invoice:read')" class="action-btn action-btn--edit" title="Lihat Detail Invoice" @click.stop="openDetail(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
               <circle cx="12" cy="12" r="3"></circle>
             </svg>
           </button>
-          <button v-if="can('sales_invoice:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)" style="width: 36px; height: 36px;">
+          <button v-if="can('sales_invoice:update')" class="action-btn action-btn--edit" title="Edit Invoice" @click.stop="openEdit(row)" style="width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
               <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
             </svg>
           </button>
-          <button v-if="can('sales_invoice:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="width: 36px; height: 36px;">
+          <button v-if="can('sales_invoice:delete')" class="action-btn action-btn--delete" title="Hapus Invoice" @click.stop="openDelete(row)" style="width: 36px; height: 36px;">
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
@@ -1102,7 +1211,7 @@ async function printReceiptAsync(item: any, approved: any) {
             v-if="hardDelete.isSuperadmin"
             class="action-btn action-btn--hard"
             title="Hapus permanen dari database (superadmin)"
-            @click="hardDelete.open(row)"
+            @click.stop="hardDelete.open(row)"
             style="width: 36px; height: 36px;"
           >
             <svg
@@ -1381,4 +1490,58 @@ async function printReceiptAsync(item: any, approved: any) {
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
+
+/* Per-Row Export Action Buttons & Separator */
+.row-actions-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
+.action-btn--pdf {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+  border: 1px solid #fca5a5 !important;
+}
+.action-btn--pdf:hover {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.35);
+}
+
+.action-btn--excel {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+  border: 1px solid #86efac !important;
+}
+.action-btn--excel:hover {
+  background: #15803d !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(21, 128, 61, 0.35);
+}
+
+.action-btn--receipt {
+  background: #e0f2fe !important;
+  color: #0284c7 !important;
+  border: 1px solid #7dd3fc !important;
+}
+.action-btn--receipt:hover {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);
+}
+
+.action-divider {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background-color: #cbd5e1;
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
 </style>

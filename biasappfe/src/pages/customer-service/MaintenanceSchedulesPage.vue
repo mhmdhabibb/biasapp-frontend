@@ -75,7 +75,10 @@ async function fetchJobs() {
 }
 
 let skipNextActivate = true
-onMounted(() => {
+onMounted(async () => {
+  if (typeof (store as any).ensureResourcesLoaded === 'function') {
+    await (store as any).ensureResourcesLoaded('/customer-service/maintenance')
+  }
   fetchJobs()
 })
 
@@ -102,12 +105,27 @@ const customerOptions = computed(() =>
 const unitOptions = computed(() => {
   if (!form.value.customer_id) return []
   const validUnits = store.getUnitsByCustomer(form.value.customer_id)
-  return validUnits.map((u: any) => ({ value: u.id, label: `${u.serial_no || '-'} - ${u.model || u.name}` }))
+  if (validUnits && validUnits.length > 0) {
+    return validUnits.map((u: any) => ({
+      value: u.id,
+      label: `${u.serial_no || '-'} - ${u.model || u.name} (Unit Rented)`,
+    }))
+  }
+  // Fallback ke seluruh unit jika belum terasosiasi di rental
+  return (store.units.value || []).map((u: any) => ({
+    value: u.id,
+    label: `${u.serial_no || '-'} - ${u.model || u.name}`,
+  }))
 })
 
 import { watch } from 'vue'
-watch(() => form.value.customer_id, (newVal, oldVal) => {
+watch(() => form.value.customer_id, async (newVal, oldVal) => {
   if (oldVal !== null) form.value.unit_id = null
+  if (newVal) {
+    if (typeof (store as any).fetchUnitsByCustomer === 'function') {
+      await (store as any).fetchUnitsByCustomer(newVal)
+    }
+  }
 })
 
 function getCustomerName(row: any) {
