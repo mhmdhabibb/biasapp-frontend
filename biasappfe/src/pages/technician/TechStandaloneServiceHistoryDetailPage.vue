@@ -690,7 +690,7 @@ onMounted(async () => {
       </div>
       <div class="responsive-flex mb-md">
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Foto Awal (Sebelum Dikerjakan) <span class="text-danger">*</span></label>
+          <label class="form-label">1. Foto Pengantaran / Problem <span class="text-danger">*</span></label>
           <div v-if="form.photo_before" class="photo-preview">
             <img :src="form.photo_before" alt="Foto Awal" />
             <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('before')">Hapus Foto</button>
@@ -710,7 +710,7 @@ onMounted(async () => {
           <div v-else class="text-sm text-muted mt-xs">-</div>
         </div>
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Foto Pengerjaan (Proses Dikerjakan)</label>
+          <label class="form-label">2. Foto Instal / Service</label>
           <div v-if="form.photo_progress" class="photo-preview">
             <img :src="form.photo_progress" alt="Foto Pengerjaan" />
             <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('progress')">Hapus Foto</button>
@@ -730,7 +730,7 @@ onMounted(async () => {
           <div v-else class="text-sm text-muted mt-xs">-</div>
         </div>
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Foto Akhir (Sesudah Dikerjakan)</label>
+          <label class="form-label">3. Foto Selesai</label>
           <div v-if="form.photo_after" class="photo-preview">
             <img :src="form.photo_after" alt="Foto Akhir" />
             <button v-if="isEditable" type="button" class="btn btn-sm btn-outline btn-danger" @click="clearPhoto('after')">Hapus Foto</button>

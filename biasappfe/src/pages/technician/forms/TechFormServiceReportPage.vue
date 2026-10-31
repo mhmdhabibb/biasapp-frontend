@@ -280,6 +280,9 @@ async function saveSignatures() {
       technician_signature: form.value.technician_signature,
       customer_name: form.value.customer_name,
       technician_name: form.value.technician_name,
+      photo_before: form.value.photo_before,
+      photo_progress: form.value.photo_progress,
+      photo_after: form.value.photo_after,
     })
     toast.success('Service Report successfully updated.')
     await refreshInBackground()
@@ -324,7 +327,7 @@ async function saveSignatures() {
             </div>
             
             <div class="form-group mt-lg">
-              <label class="form-label">Photo Before Service</label>
+              <label class="form-label">1. Foto Pengantaran / Problem</label>
               <div v-if="form.photo_before" class="photo-preview mb-sm">
                 <img :src="form.photo_before" alt="Photo Before" style="max-width: 100%; max-height: 200px; border-radius: 8px;" />
                 <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('before')">Remove Photo</button>
@@ -344,7 +347,7 @@ async function saveSignatures() {
             </div>
             
             <div class="form-group mt-lg">
-              <label class="form-label">Foto Pengerjaan / Progress Service</label>
+              <label class="form-label">2. Foto Instal / Service</label>
               <div v-if="form.photo_progress" class="photo-preview mb-sm">
                 <img :src="form.photo_progress" alt="Foto Pengerjaan" style="max-width: 100%; max-height: 200px; border-radius: 8px;" />
                 <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('progress')">Remove Photo</button>
@@ -364,7 +367,7 @@ async function saveSignatures() {
             </div>
 
             <div class="form-group mt-lg">
-              <label class="form-label">Photo After Service</label>
+              <label class="form-label">3. Foto Selesai</label>
               <div v-if="form.photo_after" class="photo-preview mb-sm">
                 <img :src="form.photo_after" alt="Photo After" style="max-width: 100%; max-height: 200px; border-radius: 8px;" />
                 <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('after')">Remove Photo</button>

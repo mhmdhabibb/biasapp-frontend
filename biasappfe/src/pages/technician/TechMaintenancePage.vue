@@ -557,7 +557,7 @@ async function completeJob() {
             <div class="mf-photos-grid">
               <!-- Before -->
               <div class="mf-photo-card">
-                <div class="mf-photo-badge mf-photo-badge--before">Before</div>
+                <div class="mf-photo-badge mf-photo-badge--before">1. Foto Pengantaran / Problem</div>
                 <div class="mf-photo-frame" @click="form.photo_before ? photoZoom = form.photo_before : triggerPhoto('before', 'file')">
                   <img v-if="form.photo_before" :src="form.photo_before" alt="Before" class="mf-photo-img" />
                   <div v-else class="mf-photo-empty">
@@ -582,7 +582,7 @@ async function completeJob() {
 
               <!-- Pengerjaan (Progress) -->
               <div class="mf-photo-card">
-                <div class="mf-photo-badge" style="background: #3b82f6; color: #fff;">Pengerjaan</div>
+                <div class="mf-photo-badge" style="background: #3b82f6; color: #fff;">2. Foto Instal / Service</div>
                 <div class="mf-photo-frame" @click="form.photo_progress ? photoZoom = form.photo_progress : triggerPhoto('progress', 'file')">
                   <img v-if="form.photo_progress" :src="form.photo_progress" alt="Pengerjaan" class="mf-photo-img" />
                   <div v-else class="mf-photo-empty">
@@ -607,7 +607,7 @@ async function completeJob() {
 
               <!-- After -->
               <div class="mf-photo-card">
-                <div class="mf-photo-badge mf-photo-badge--after">After</div>
+                <div class="mf-photo-badge mf-photo-badge--after">3. Foto Selesai</div>
                 <div class="mf-photo-frame" @click="form.photo_after ? photoZoom = form.photo_after : triggerPhoto('after', 'file')">
                   <img v-if="form.photo_after" :src="form.photo_after" alt="After" class="mf-photo-img" />
                   <div v-else class="mf-photo-empty">

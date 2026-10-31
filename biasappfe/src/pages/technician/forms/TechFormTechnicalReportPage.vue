@@ -308,7 +308,7 @@ async function saveForm() {
 
       <!-- 2. Photo Before -->
       <div class="form-group">
-        <label class="form-label">Photo Before Service</label>
+        <label class="form-label">1. Foto Pengantaran / Problem</label>
         <div v-if="form.photo_before" class="photo-preview mb-sm">
           <img :src="form.photo_before" alt="Photo Before" />
           <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('before')">Remove Photo</button>
@@ -349,7 +349,7 @@ async function saveForm() {
 
       <!-- Foto Pengerjaan -->
       <div class="form-group mt-lg">
-        <label class="form-label">Foto Pengerjaan / Progress Service</label>
+        <label class="form-label">2. Foto Instal / Service</label>
         <div v-if="form.photo_progress" class="photo-preview mb-sm">
           <img :src="form.photo_progress" alt="Foto Pengerjaan" />
           <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('progress')">Remove Photo</button>
@@ -370,7 +370,7 @@ async function saveForm() {
 
       <!-- 6. Photo After -->
       <div class="form-group mt-lg">
-        <label class="form-label">Photo After Service</label>
+        <label class="form-label">3. Foto Selesai</label>
         <div v-if="form.photo_after" class="photo-preview mb-sm">
           <img :src="form.photo_after" alt="Photo After" />
           <button type="button" class="btn btn-outline btn-sm w-full mt-sm text-danger" @click="clearPhoto('after')">Remove Photo</button>

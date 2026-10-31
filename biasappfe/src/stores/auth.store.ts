@@ -28,19 +28,42 @@ function readUser(): AuthUser | null {
 }
 
 function decodeUser(jwt: string): AuthUser {
-  const payload = JSON.parse(atob(jwt.split(".")[1] || "")) as {
-    user_id?: number;
-    username?: string;
-    role?: string;
-  };
-  const role = payload.role === "superadmin" ? "admin" : payload.role || "";
-  return {
-    id: payload.user_id,
-    name: payload.username || "User",
-    username: payload.username || "",
-    role,
-    permissions: [], // Permissions will be set after login
-  };
+  try {
+    const payload = JSON.parse(atob(jwt.split(".")[1] || "")) as {
+      user_id?: any;
+      username?: string;
+      role?: string;
+    };
+    const role = payload.role === "superadmin" ? "admin" : payload.role || "";
+    return {
+      id: payload.user_id,
+      name: payload.username || "User",
+      username: payload.username || "",
+      role,
+      permissions: [], // Permissions will be set after login
+    };
+  } catch {
+    return {
+      id: undefined,
+      name: "User",
+      username: "",
+      role: "",
+      permissions: [],
+    };
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("bias:auth-expired", () => {
+    token.value = null;
+    currentUser.value = null;
+    sessionStorage.removeItem("bias_token");
+    sessionStorage.removeItem("bias_user");
+    sessionStorage.removeItem("bias_permissions");
+    if (window.location.pathname !== "/login" && !window.location.pathname.startsWith("/verify-payment")) {
+      window.location.href = "/login";
+    }
+  });
 }
 
 export function useAuthStore() {

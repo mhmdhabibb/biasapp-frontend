@@ -37,7 +37,7 @@ export class ApiError extends Error {
 /** Instance axios bersama: base URL + token dari sessionStorage. */
 export const http = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 45000,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -51,11 +51,21 @@ function toApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
   const axErr = error as AxiosError<{ message?: string; error?: string }>;
   const status = axErr.response?.status ?? 0;
-  if (status === 401) sessionStorage.removeItem("bias_token");
+  const requestUrl = String(axErr.config?.url || "");
+  const isAuthEndpoint = requestUrl.includes("/auth/login");
+
+  if (status === 401 && !isAuthEndpoint) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("bias:auth-expired"));
+    }
+  }
+
   let message = axErr.response?.data?.message || axErr.response?.data?.error;
   if (!message) {
     if (status === 413) {
       message = "Payload too large! Please check photo sizes.";
+    } else if (status === 401) {
+      message = isAuthEndpoint ? "Invalid username or password." : "Session expired or unauthorized.";
     } else if (status) {
       message = `Server error ${status}: ${axErr.response?.statusText || "Unknown"}`;
     } else {

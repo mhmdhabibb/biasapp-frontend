@@ -13,17 +13,22 @@ import { useMasterStore } from "./useMasterStore";
  * sehingga flag loading & error store tidak tersentuh dan angka di
  * dashboard berubah dengan smooth.
  */
-export function useAutoRefresh(intervalMs = 15000, resourceKeys?: string[]) {
+export function useAutoRefresh(intervalMs = 10000, resourceKeys?: string[]) {
   const { refreshInBackground, refreshOnly } = useMasterStore();
 
   let timer: ReturnType<typeof setInterval> | undefined;
+  let debounceTimeout: ReturnType<typeof setTimeout> | undefined;
 
   const doRefresh = () => {
-    if (resourceKeys && resourceKeys.length > 0) {
-      void refreshOnly(resourceKeys);
-    } else {
-      void refreshInBackground();
-    }
+    if (debounceTimeout) clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(() => {
+      if (document.visibilityState !== "visible") return;
+      if (resourceKeys && resourceKeys.length > 0) {
+        void refreshOnly(resourceKeys, true);
+      } else {
+        void refreshInBackground();
+      }
+    }, 250);
   };
 
   const poll = () => {
@@ -37,14 +42,23 @@ export function useAutoRefresh(intervalMs = 15000, resourceKeys?: string[]) {
     }
   };
 
+  const onMutation = () => {
+    doRefresh();
+  };
+
   onMounted(() => {
     doRefresh();
     timer = setInterval(poll, intervalMs);
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("bias:data-mutated", onMutation);
   });
 
   onUnmounted(() => {
     if (timer) clearInterval(timer);
+    if (debounceTimeout) clearTimeout(debounceTimeout);
     document.removeEventListener("visibilitychange", onVisible);
+    window.removeEventListener("focus", onVisible);
+    window.removeEventListener("bias:data-mutated", onMutation);
   });
 }

@@ -508,18 +508,18 @@ function exportToExcel() {
 
         <div v-if="selectedHistory.photo_before || selectedHistory.photo_progress || selectedHistory.photo_after" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px;">
           <div>
-            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Before Photo:</label>
-            <img v-if="selectedHistory.photo_before" :src="selectedHistory.photo_before" alt="Before Photo" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">1. Foto Pengantaran / Problem:</label>
+            <img v-if="selectedHistory.photo_before" :src="selectedHistory.photo_before" alt="Foto Pengantaran / Problem" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
             <span v-else class="text-muted text-xs">No photo</span>
           </div>
           <div>
-            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Progress Photo:</label>
-            <img v-if="selectedHistory.photo_progress" :src="selectedHistory.photo_progress" alt="Progress Photo" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">2. Foto Instal / Service:</label>
+            <img v-if="selectedHistory.photo_progress" :src="selectedHistory.photo_progress" alt="Foto Instal / Service" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
             <span v-else class="text-muted text-xs">No photo</span>
           </div>
           <div>
-            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">After Photo:</label>
-            <img v-if="selectedHistory.photo_after" :src="selectedHistory.photo_after" alt="After Photo" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
+            <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">3. Foto Selesai:</label>
+            <img v-if="selectedHistory.photo_after" :src="selectedHistory.photo_after" alt="Foto Selesai" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border-light);" />
             <span v-else class="text-muted text-xs">No photo</span>
           </div>
         </div>

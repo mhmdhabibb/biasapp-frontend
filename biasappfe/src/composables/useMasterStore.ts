@@ -109,7 +109,9 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
 
   // Technician Operational Pages
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests"],
-  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
+  "/technician/call-services/:id/copier-report": ["serviceReports", "contractItems", "monthlyMeterReadings", "units", "customers", "technicians", "paperSizes", "paperTypes", "jobOrders"],
+  "/technician/call-services/:id/technical-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests"],
+  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers", "contractItems", "monthlyMeterReadings"],
   "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers", "brands", "unitTypes"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "technicians", "serviceReports"],
@@ -428,7 +430,7 @@ export function useMasterStore() {
       }
     }
     if (needed && needed.length > 0) {
-      return refreshOnly(needed.slice(0, 3));
+      return refreshOnly(needed, true);
     }
     return Promise.resolve();
   }

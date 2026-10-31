@@ -175,14 +175,17 @@ function applySurveyPrefill() {
   lastPrefillKey = currentKey
   openAdd()
   form.customer_id = qCust
+  const qPrice = route.query.price ? Number(route.query.price) : 0
   if (qUnit) {
+    const foundU = (units.value as any[]).find((u: any) => String(u.id) === String(qUnit))
+    const initialPrice = qPrice > 0 ? qPrice : (foundU && foundU.price ? Number(foundU.price) : 0)
     saleItems.value = [
       {
         product_id: null as any,
         unit_id: qUnit,
         _combined_id: `U_${qUnit}`,
         qty: 1,
-        unit_price: 0,
+        unit_price: initialPrice,
         is_computer: false,
         specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
         description: '',

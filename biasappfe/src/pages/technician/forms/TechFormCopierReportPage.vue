@@ -129,11 +129,72 @@ const form = ref({
   meter_after: 0,
   meter_color_after: 0,
   copy_quality: 'Good',
+  photo_before: '',
+  photo_progress: '',
+  photo_after: '',
   customer_signature: '',
   technician_signature: '',
   customer_name: '',
   technician_name: '',
 })
+const fileInputBefore = ref<HTMLInputElement | null>(null)
+const fileInputProgress = ref<HTMLInputElement | null>(null)
+const fileInputAfter = ref<HTMLInputElement | null>(null)
+const photoZoom = ref<string | null>(null)
+
+function handlePhoto(e: Event, type: 'before' | 'progress' | 'after') {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = (uploadEvent) => {
+    const img = new Image()
+    img.onload = () => {
+      const max = 1024
+      let width = img.width
+      let height = img.height
+      if (width > height && width > max) {
+        height = Math.round(height * (max / width))
+        width = max
+      } else if (height > max) {
+        width = Math.round(width * (max / height))
+        height = max
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      ctx?.drawImage(img, 0, 0, width, height)
+      const compressedUrl = canvas.toDataURL('image/jpeg', 0.6)
+
+      if (type === 'before') {
+        form.value.photo_before = compressedUrl
+      } else if (type === 'progress') {
+        form.value.photo_progress = compressedUrl
+      } else {
+        form.value.photo_after = compressedUrl
+      }
+    }
+    img.src = uploadEvent.target?.result as string
+  }
+  reader.readAsDataURL(file)
+  target.value = ''
+}
+
+function clearPhoto(type: 'before' | 'progress' | 'after') {
+  if (type === 'before') {
+    form.value.photo_before = ''
+    if (fileInputBefore.value) fileInputBefore.value.value = ''
+  } else if (type === 'progress') {
+    form.value.photo_progress = ''
+    if (fileInputProgress.value) fileInputProgress.value.value = ''
+  } else {
+    form.value.photo_after = ''
+    if (fileInputAfter.value) fileInputAfter.value.value = ''
+  }
+}
+
 const isLoading = ref(true)
 const isSaving = ref(false)
 
@@ -173,10 +234,39 @@ const normMeterMode = (m: any): 'bw' | 'color' =>
 
 function contractItemForUnit(): any {
   const unitId = String(job.value?.unit_id || unit.value?.id || '')
-  if (!unitId) return null
-  return (contractItems.value || []).find((c: any) =>
-    String(c.unit_id || c.unit?.id || '') === unitId,
-  ) || null
+  const jcId = String(job.value?.contract_item_id || '')
+  const items = contractItems.value || []
+
+  // 1. By direct contract_item_id in job
+  if (jcId) {
+    const direct = items.find((c: any) => String(c.id) === jcId)
+    if (direct) return direct
+  }
+  // 2. By unit_id
+  if (unitId) {
+    const byUnit = items.find((c: any) =>
+      String(c.unit_id || c.unit?.id || '') === unitId
+    )
+    if (byUnit) return byUnit
+  }
+  // 3. By monthly meter readings linked to this report or unit
+  const readings: any[] =
+    job.value?.monthly_meter_readings || job.value?.monthlyMeterReadings || []
+  for (const r of readings) {
+    if (r.contract_item_id) {
+      const byReading = items.find((c: any) => String(c.id) === String(r.contract_item_id))
+      if (byReading) return byReading
+    }
+  }
+  // 4. By unit serial number
+  const unitSn = String(unit.value?.serial_no || job.value?.unit?.serial_no || '').trim().toLowerCase()
+  if (unitSn) {
+    const bySn = items.find((c: any) =>
+      String(c.unit?.serial_no || '').trim().toLowerCase() === unitSn
+    )
+    if (bySn) return bySn
+  }
+  return null
 }
 
 // Meter awal untuk kombinasi (ukuran, mode): reading terbaru di store,
@@ -371,12 +461,28 @@ onMounted(async () => {
     form.value.meter_after = after > 0 ? after : beforeMeter.value
     const colorAfter = Number(job.value.meter_reading_color_after ?? 0)
     form.value.meter_color_after = colorAfter > 0 ? colorAfter : beforeMeterColor.value
+    form.value.photo_before = job.value.photo_before || ''
+    form.value.photo_progress = job.value.photo_progress || ''
+    form.value.photo_after = job.value.photo_after || ''
     form.value.customer_signature = job.value.customer_signature_copier || ''
     form.value.technician_signature = job.value.technician_signature_copier || ''
     form.value.customer_name = job.value.customer_name_copier || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || ''
     form.value.technician_name = job.value.technician_name_copier || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || ''
     initSectionAfters()
     isLoading.value = false
+  }
+
+  // Preload contractItems and monthlyMeterReadings if not yet loaded in store
+  if (!contractItems.value || contractItems.value.length === 0) {
+    try {
+      const res = await api.get<{ data: any[] }>('/contract-items', false, true)
+      const items = (res as any)?.data?.data || (res as any)?.data || res
+      if (Array.isArray(items)) {
+        contractItems.value = items
+      }
+    } catch (e) {
+      console.warn('Failed to preload contract items:', e)
+    }
   }
 
   try {
@@ -399,6 +505,9 @@ onMounted(async () => {
       form.value.meter_after = after > 0 ? after : beforeMeter.value
       const colorAfter = Number(data.meter_reading_color_after ?? 0)
       form.value.meter_color_after = colorAfter > 0 ? colorAfter : beforeMeterColor.value
+      form.value.photo_before = data.photo_before || form.value.photo_before || ''
+      form.value.photo_progress = data.photo_progress || form.value.photo_progress || ''
+      form.value.photo_after = data.photo_after || form.value.photo_after || ''
       form.value.customer_signature = data.customer_signature_copier || ''
       form.value.technician_signature = data.technician_signature_copier || ''
       form.value.customer_name = data.customer_name_copier || findCustomer(data.customer_id)?.pic_name || data.customer?.pic_name || ''
@@ -443,10 +552,6 @@ async function saveForm() {
     toast.warning('Fill in After Meter for at least one paper size.')
     return
   }
-  if (sections.length > 0 && !ci) {
-    toast.warning('Unit is not linked to a contract item — cannot save per-size readings.')
-    return
-  }
   if (sections.length === 0 && Number(form.value.meter_after) < beforeMeter.value) {
     toast.warning(`Meter After (${form.value.meter_after}) must not be smaller than Before (${beforeMeter.value}).`)
     return
@@ -462,8 +567,7 @@ async function saveForm() {
 
   isSaving.value = true
   try {
-    // Simpan rincian per ukuran ke monthly readings (update yang terhubung,
-    // buat baru bila belum ada — ikut menghitung tagihan seperti Meter Readings).
+    // Simpan rincian per ukuran ke monthly readings bila ci ada atau update reading lama
     for (const f of filled) {
       if (f.row.reading_id) {
         await api.patch(`/monthly-meter-readings/${f.row.reading_id}`, {
@@ -494,6 +598,9 @@ async function saveForm() {
       technician_signature_copier: form.value.technician_signature,
       customer_name_copier: form.value.customer_name,
       technician_name_copier: form.value.technician_name,
+      photo_before: form.value.photo_before,
+      photo_progress: form.value.photo_progress,
+      photo_after: form.value.photo_after,
     })
     if (unitId) {
       const unitPatch: any = {}
@@ -507,7 +614,7 @@ async function saveForm() {
         }
       }
     }
-    toast.success('Copier Report saved successfully')
+    toast.success(ci ? 'Copier Report saved successfully' : 'Copier Report saved (Standard meter & photos saved)')
     await refreshInBackground()
     router.back()
   } catch (err: any) {
@@ -604,6 +711,79 @@ async function saveForm() {
         <p class="form-hint">Managed in Technical Report form.</p>
       </div>
 
+      <!-- Dokumentasi Foto Service -->
+      <div class="photo-section">
+        <label class="form-label font-bold" style="font-size: 15px; margin-bottom: 6px; display: block;">Dokumentasi Foto Service</label>
+        <p class="form-hint" style="margin-top: -2px; margin-bottom: 12px;">Lampirkan foto kondisi unit sebelum, saat pengerjaan, dan sesudah selesai service.</p>
+        <div class="photo-cards-grid">
+          <!-- Foto Sebelum -->
+          <div class="photo-card">
+            <div class="photo-card-header">
+              <span class="photo-card-title">1. Foto Pengantaran / Problem</span>
+              <button v-if="form.photo_before" type="button" class="btn-remove-photo" @click="clearPhoto('before')" title="Hapus foto">✕</button>
+            </div>
+            <div v-if="form.photo_before" class="photo-preview-box" @click="photoZoom = form.photo_before">
+              <img :src="form.photo_before" alt="Foto Sebelum" class="photo-img-preview" />
+              <div class="photo-zoom-hint">🔍 Klik perbesar</div>
+            </div>
+            <div v-else class="photo-upload-actions">
+              <label class="photo-action-btn">
+                📷 Kamera
+                <input ref="fileInputBefore" type="file" accept="image/*" capture="environment" style="display: none;" @change="(e) => handlePhoto(e, 'before')" />
+              </label>
+              <label class="photo-action-btn">
+                📁 File
+                <input type="file" accept="image/*" style="display: none;" @change="(e) => handlePhoto(e, 'before')" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Foto Pengerjaan -->
+          <div class="photo-card">
+            <div class="photo-card-header">
+              <span class="photo-card-title">2. Foto Instal / Service</span>
+              <button v-if="form.photo_progress" type="button" class="btn-remove-photo" @click="clearPhoto('progress')" title="Hapus foto">✕</button>
+            </div>
+            <div v-if="form.photo_progress" class="photo-preview-box" @click="photoZoom = form.photo_progress">
+              <img :src="form.photo_progress" alt="Foto Pengerjaan" class="photo-img-preview" />
+              <div class="photo-zoom-hint">🔍 Klik perbesar</div>
+            </div>
+            <div v-else class="photo-upload-actions">
+              <label class="photo-action-btn">
+                📷 Kamera
+                <input ref="fileInputProgress" type="file" accept="image/*" capture="environment" style="display: none;" @change="(e) => handlePhoto(e, 'progress')" />
+              </label>
+              <label class="photo-action-btn">
+                📁 File
+                <input type="file" accept="image/*" style="display: none;" @change="(e) => handlePhoto(e, 'progress')" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Foto Sesudah -->
+          <div class="photo-card">
+            <div class="photo-card-header">
+              <span class="photo-card-title">3. Foto Selesai</span>
+              <button v-if="form.photo_after" type="button" class="btn-remove-photo" @click="clearPhoto('after')" title="Hapus foto">✕</button>
+            </div>
+            <div v-if="form.photo_after" class="photo-preview-box" @click="photoZoom = form.photo_after">
+              <img :src="form.photo_after" alt="Foto Sesudah" class="photo-img-preview" />
+              <div class="photo-zoom-hint">🔍 Klik perbesar</div>
+            </div>
+            <div v-else class="photo-upload-actions">
+              <label class="photo-action-btn">
+                📷 Kamera
+                <input ref="fileInputAfter" type="file" accept="image/*" capture="environment" style="display: none;" @change="(e) => handlePhoto(e, 'after')" />
+              </label>
+              <label class="photo-action-btn">
+                📁 File
+                <input type="file" accept="image/*" style="display: none;" @change="(e) => handlePhoto(e, 'after')" />
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="signature-grid">
         <div class="form-group">
           <label class="form-label">Customer Type</label>
@@ -628,6 +808,16 @@ async function saveForm() {
       </div>
       </template>
     </div>
+
+    <!-- Photo Zoom Modal -->
+    <Teleport to="body">
+      <div v-if="photoZoom" class="photo-zoom-overlay" @click="photoZoom = null">
+        <div class="photo-zoom-modal" @click.stop>
+          <img :src="photoZoom" alt="Zoom Foto" class="photo-zoomed-img" />
+          <button type="button" class="btn-close-zoom" @click="photoZoom = null">✕ Tutup</button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -642,6 +832,162 @@ async function saveForm() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-base);
+}
+
+.photo-section {
+  margin-top: 16px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+}
+
+.photo-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.photo-card {
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.photo-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.photo-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-emphasis);
+}
+
+.btn-remove-photo {
+  background: var(--color-danger, #ef4444);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.photo-preview-box {
+  position: relative;
+  cursor: pointer;
+  border-radius: 6px;
+  overflow: hidden;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.photo-img-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-zoom-hint {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 10px;
+  text-align: center;
+  padding: 2px 4px;
+}
+
+.photo-upload-actions {
+  display: flex;
+  gap: 6px;
+  height: 120px;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-action-btn {
+  flex: 1;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  padding: 10px 4px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  text-align: center;
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+  transition: all 0.2s ease;
+}
+
+.photo-action-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.photo-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+.photo-zoom-modal {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--color-surface);
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.photo-zoomed-img {
+  max-width: 85vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.btn-close-zoom {
+  margin-top: 10px;
+  padding: 6px 16px;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .form-hint {
@@ -709,5 +1055,6 @@ async function saveForm() {
 @media (max-width: 640px) {
   .meter-grid { grid-template-columns: 1fr; }
   .signature-grid { grid-template-columns: 1fr; }
+  .photo-cards-grid { grid-template-columns: 1fr; }
 }
 </style>

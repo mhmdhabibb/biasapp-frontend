@@ -9,6 +9,8 @@ import { useContractsStore } from '@/stores/contracts.store'
 import { useToast } from '@/composables/useToast'
 import { useHardDelete } from '@/composables/useHardDelete'
 import { usePermission } from '@/composables/usePermission'
+import { invalidateCache } from '@/utils/requestCache'
+import { useMasterStore } from '@/composables/useMasterStore'
 
 const toast = useToast()
 const { can, isAdmin } = usePermission()
@@ -76,9 +78,6 @@ async function handleRenew() {
   showRenewModal.value = false
   toast.success('Contract renewed successfully!')
 }
-
-import { invalidateCache } from '@/utils/requestCache'
-import { useMasterStore } from '@/composables/useMasterStore'
 
 const masterStore = useMasterStore()
 

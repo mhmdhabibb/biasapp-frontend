@@ -133,7 +133,7 @@ const rentals = ref<any[]>([]);
 
 const customerOptions = computed(() => [
   { value: null, label: 'All Customers' },
-  ...(customers.value as any[]).map((c: any) => ({
+  ...((customers.value as any[]) || []).map((c: any) => ({
     value: c.id,
     label: `${c.company_name || c.name}${c.pic_name ? ' - ' + c.pic_name : ''}`,
   }))
@@ -299,10 +299,10 @@ function closeMeterDetail() {
   selectedMeterDetail.value = null;
 }
 function meterPaperSizeName(detail: any): string {
-  return detail?.paper_size?.name || (paperSizes.value as any[]).find((p: any) => String(p.id) === String(detail?.paper_size_id))?.name || detail?.paper_size_id || '-';
+  return detail?.paper_size?.name || ((paperSizes.value as any[]) || []).find((p: any) => String(p.id) === String(detail?.paper_size_id))?.name || detail?.paper_size_id || '-';
 }
 function meterPaperTypeName(detail: any): string {
-  return detail?.paper_type?.name || (paperTypes.value as any[]).find((p: any) => String(p.id) === String(detail?.paper_type_id))?.name || '-';
+  return detail?.paper_type?.name || ((paperTypes.value as any[]) || []).find((p: any) => String(p.id) === String(detail?.paper_type_id))?.name || '-';
 }
 function isColorDetail(detail: any): boolean {
   return /colou?r/i.test(String(detail?.color_mode || ''));
@@ -443,14 +443,14 @@ function unitStatusOf(u: any): string {
 }
 
 const availableUnits = computed(() =>
-  (units.value as any[]).filter((u: any) => {
+  ((units.value as any[]) || []).filter((u: any) => {
     const s = unitStatusOf(u);
     return s === "available" || s === "";
   }),
 );
 
 const unavailableUnits = computed(() =>
-  (units.value as any[]).filter((u: any) => {
+  ((units.value as any[]) || []).filter((u: any) => {
     const s = unitStatusOf(u);
     return s !== "available" && s !== "";
   }),
@@ -461,7 +461,7 @@ const rentPaymentMethodOptions = [
   { value: "cash", label: "Cash" },
 ];
 const rentCustomerOptions = computed(() =>
-  (customers.value as any[]).map((c: any) => ({
+  ((customers.value as any[]) || []).map((c: any) => ({
     value: c.id,
     label:
       `${(c as any).company_name || (c as any).name}` +
@@ -479,7 +479,7 @@ const rentUnitOptions = computed(() => {
 
   return [
     // 1. Machines / Units (Available or attached to current rental being edited)
-    ...(units.value as any[])
+    ...((units.value as any[]) || [])
       .filter((u: any) => {
         const s = unitStatusOf(u);
         return s === "available" || s === "" || currentEditingUnitIds.has(String(u.id));
@@ -492,7 +492,7 @@ const rentUnitOptions = computed(() => {
         };
       }),
     // 2. Unavailable units (attached to other rentals, broken, etc.)
-    ...(unavailableUnits.value as any[])
+    ...((unavailableUnits.value as any[]) || [])
       .filter((u: any) => !currentEditingUnitIds.has(String(u.id)))
       .map((u: any) => ({
         value: "unit_" + u.id,
@@ -500,7 +500,7 @@ const rentUnitOptions = computed(() => {
         disabled: true,
       })),
     // 3. Consumables / Spareparts (Products)
-    ...(products.value as any[]).map((p: any) => ({
+    ...((products.value as any[]) || []).map((p: any) => ({
       value: "prod_" + p.id,
       label: `[Consumable/Sparepart] ${formatProductDisplayName(p)}${p.sku ? " (" + p.sku + ")" : ""}${p.price ? " — " + fmtRp(p.price) : ""}`,
     })),
@@ -508,13 +508,13 @@ const rentUnitOptions = computed(() => {
 });
 const rentPaperSizeOptions = computed(() => [
   { value: "", label: "— Semua ukuran —" },
-  ...(paperSizes.value as any[]).map((p: any) => ({
+  ...((paperSizes.value as any[]) || []).map((p: any) => ({
     value: p.id,
     label: p.name,
   })),
 ]);
 const rentPaperTypeOptions = computed(() =>
-  (paperTypes.value as any[]).map((p: any) => ({
+  ((paperTypes.value as any[]) || []).map((p: any) => ({
     value: p.id,
     label: p.name,
   })),
@@ -635,7 +635,7 @@ function removeItemRate(item: any, index: number) {
 
 function paperSizeName(id: any): string {
   if (!id) return "";
-  const found = (paperSizes.value as any[]).find(
+  const found = ((paperSizes.value as any[]) || []).find(
     (x: any) => String(x.id) === String(id),
   );
   return found ? found.name : String(id).slice(0, 8);
@@ -643,7 +643,7 @@ function paperSizeName(id: any): string {
 
 function paperTypeName(id: any): string {
   if (!id) return "";
-  const found = (paperTypes.value as any[]).find(
+  const found = ((paperTypes.value as any[]) || []).find(
     (x: any) => String(x.id) === String(id),
   );
   return found ? found.name : String(id).slice(0, 8);
@@ -1462,15 +1462,19 @@ function printRentalPaymentReceiptA5(invoice: any, payment: any) {
 
 async function loadPaperLookups() {
   try {
-    const res = await resources.paperSizes.list();
-    paperSizes.value = res.data as any;
+    const res: any = await resources.paperSizes.list();
+    const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+    paperSizes.value = list;
     try {
-      const pt = await (resources as any).paperTypes.list();
-      paperTypes.value = pt.data as any;
+      const pt: any = await (resources as any).paperTypes.list();
+      const ptList = Array.isArray(pt?.data) ? pt.data : Array.isArray(pt) ? pt : [];
+      paperTypes.value = ptList;
     } catch {
       paperTypes.value = [];
     }
   } catch (e) {
+    paperSizes.value = [];
+    paperTypes.value = [];
     console.error("Failed to fetch paper sizes:", e);
   }
 }
@@ -1491,21 +1495,23 @@ function silentSyncRentals() {
   }
 }
 
+function onDataMutated() {
+  fetchRentals(true);
+  hydrateRentalLookups();
+}
+
 onMounted(() => {
   fetchRentals();
   hydrateRentalLookups();
   rentalPollTimer = setInterval(silentSyncRentals, 30000);
   window.addEventListener("focus", silentSyncRentals);
-  window.addEventListener("bias:data-mutated", () => {
-    fetchRentals(true);
-    hydrateRentalLookups();
-  });
+  window.addEventListener("bias:data-mutated", onDataMutated);
 });
 
 onUnmounted(() => {
   if (rentalPollTimer) clearInterval(rentalPollTimer);
   window.removeEventListener("focus", silentSyncRentals);
-  window.removeEventListener("bias:data-mutated", silentSyncRentals);
+  window.removeEventListener("bias:data-mutated", onDataMutated);
 });
 
 onActivated(() => {
@@ -1697,7 +1703,7 @@ function isExpired(row: any): boolean {
       :show-hard-delete="hardDelete.isSuperadmin"
       :search-placeholder="t('rentals.search')"
       @edit="openEdit"
-      @delete="handleConfirmDeleteRental"
+      @delete="openDeleteRentalModal"
       @hard-delete="hardDelete.open"
     >
       <template #cell-rental_no="{ row, value }">

@@ -75,9 +75,10 @@ async function fetchFullServiceReport() {
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
 const isPreparingForm = ref(false)
+const servicePhotoZoom = ref<string | null>(null)
 
 watchEffect(() => {
-  if (job.value && myTechId.value && String(job.value.technician_id) !== String(myTechId.value)) {
+  if (userRole.value === 'technician' && job.value && myTechId.value && String(job.value.technician_id) !== String(myTechId.value)) {
     toast.error('Unauthorized or Service Not Found')
     router.replace('/technician/dashboard')
   }
@@ -195,8 +196,12 @@ const doForm = ref({
   customer_name: '',
   technician_name: '',
   customer_category: '',
+  photo_before: '',
+  photo_progress: '',
   photo_after: '',
 })
+const fileInputBefore = ref<HTMLInputElement | null>(null)
+const fileInputProgress = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
 const isDoFormInit = ref(false)
 const isSavingDoForm = ref(false)
@@ -225,6 +230,8 @@ function initDoForm(force = false) {
     customer_name: d.customer_name || d.recipient_name || theCustomer?.pic_name || theCustomer?.company_name || theCustomer?.name || '',
     technician_name: d.technician_name || currentUser.value?.name || '',
     customer_category: d.customer_category || theCustomer?.category || 'Corporate',
+    photo_before: d.photo_before || doForm.value.photo_before || '',
+    photo_progress: d.photo_progress || doForm.value.photo_progress || '',
     photo_after: d.photo_after || doForm.value.photo_after || '',
   }
   isDoFormInit.value = true
@@ -245,7 +252,7 @@ const isDeliveryFormCompleted = computed(() => {
   return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature && !!(f.customer_name || '').trim()
 })
 
-function handlePhotoFile(e: Event) {
+function handlePhotoFile(e: Event, type: 'before' | 'progress' | 'after' = 'after') {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
@@ -267,7 +274,14 @@ function handlePhotoFile(e: Event) {
       canvas.width = width
       canvas.height = height
       canvas.getContext('2d')?.drawImage(img, 0, 0, width, height)
-      doForm.value.photo_after = canvas.toDataURL('image/jpeg', 0.6)
+      const compressed = canvas.toDataURL('image/jpeg', 0.6)
+      if (type === 'before') {
+        doForm.value.photo_before = compressed
+      } else if (type === 'progress') {
+        doForm.value.photo_progress = compressed
+      } else {
+        doForm.value.photo_after = compressed
+      }
     }
     img.src = ev.target?.result as string
   }
@@ -275,9 +289,17 @@ function handlePhotoFile(e: Event) {
   input.value = ''
 }
 
-function clearPhoto() {
-  doForm.value.photo_after = ''
-  if (fileInputAfter.value) fileInputAfter.value.value = ''
+function clearPhoto(type: 'before' | 'progress' | 'after' = 'after') {
+  if (type === 'before') {
+    doForm.value.photo_before = ''
+    if (fileInputBefore.value) fileInputBefore.value.value = ''
+  } else if (type === 'progress') {
+    doForm.value.photo_progress = ''
+    if (fileInputProgress.value) fileInputProgress.value.value = ''
+  } else {
+    doForm.value.photo_after = ''
+    if (fileInputAfter.value) fileInputAfter.value.value = ''
+  }
 }
 
 function nowHM(): string {
@@ -862,27 +884,84 @@ async function handleDeleteStandalone() {
               <input type="checkbox" v-model="doForm.is_completed" :disabled="!isEditable"> Is Completed?
             </label>
           </div>
+          <!-- 3 Foto Teknisi: 1. Foto Pengantaran/Problem, 2. Foto Instal/Service, 3. Foto Selesai -->
           <div class="form-group mt-md">
-            <label class="form-label">Foto Sesudah Pengantaran</label>
-            <div class="photo-upload-wrapper" style="border: 2px dashed var(--color-border); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
-              <div v-if="!doForm.photo_after && isEditable">
-                <p class="text-sm text-muted mb-sm">Gunakan kamera atau pilih file gambar</p>
-                <div class="flex gap-sm justify-center" style="display: flex; gap: 8px; justify-content: center; max-width: 320px; margin: 0 auto;">
-                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 6px;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                    Ambil Foto
-                    <input type="file" accept="image/*" capture="environment" style="display: none;" @change="handlePhotoFile" />
+            <label class="form-label font-bold" style="font-size: 14px; margin-bottom: 6px; display: block;">Dokumentasi Foto Pekerjaan</label>
+            <p class="text-xs text-muted mb-sm">Lampirkan foto pengantaran/problem, instalasi/service, dan foto selesai.</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+              <!-- 1. Foto Pengantaran / Problem -->
+              <div class="photo-upload-card" style="border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px; background: var(--color-surface-sunken);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span class="text-xs font-bold">1. Foto Pengantaran / Problem</span>
+                  <button v-if="doForm.photo_before && isEditable" type="button" class="btn btn-danger btn-xs" style="border-radius: 50%; width: 22px; height: 22px; padding: 0; line-height: 1;" @click="clearPhoto('before')" title="Hapus foto">✕</button>
+                </div>
+                <div v-if="doForm.photo_before" style="position: relative; cursor: pointer; text-align: center; border-radius: 6px; overflow: hidden; background: #000; height: 130px; display: flex; align-items: center; justify-content: center;" @click="servicePhotoZoom = doForm.photo_before">
+                  <img :src="doForm.photo_before" alt="1. Foto Pengantaran / Problem" style="width: 100%; height: 100%; object-fit: contain;">
+                  <span style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 2px;">🔍 Klik perbesar</span>
+                </div>
+                <div v-else-if="isEditable" style="display: flex; gap: 6px; height: 130px; align-items: center; justify-content: center;">
+                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px 6px; font-size: 11px; height: 100%; text-align: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    <span>Ambil Foto</span>
+                    <input ref="fileInputBefore" type="file" accept="image/*" capture="environment" style="display: none;" @change="e => handlePhotoFile(e, 'before')" />
                   </label>
-                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; align-items: center; justify-content: center; gap: 6px;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
-                    Pilih File
-                    <input type="file" accept="image/*" style="display: none;" @change="handlePhotoFile" />
+                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px 6px; font-size: 11px; height: 100%; text-align: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                    <span>Pilih File</span>
+                    <input type="file" accept="image/*" style="display: none;" @change="e => handlePhotoFile(e, 'before')" />
                   </label>
                 </div>
+                <div v-else class="text-xs text-muted text-center" style="height: 130px; display: flex; align-items: center; justify-content: center;">-</div>
               </div>
-              <div v-else-if="doForm.photo_after" style="position: relative; display: inline-block;">
-                <img :src="doForm.photo_after" alt="Foto Sesudah" style="max-height: 200px; border-radius: 8px; object-fit: contain;">
-                <button v-if="isEditable" class="btn btn-danger btn-sm" style="position: absolute; top: -10px; right: -10px; border-radius: 50%; width: 30px; height: 30px; padding: 0;" @click="clearPhoto" title="Hapus foto">×</button>
+
+              <!-- 2. Foto Instal / Service -->
+              <div class="photo-upload-card" style="border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px; background: var(--color-surface-sunken);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span class="text-xs font-bold">2. Foto Instal / Service</span>
+                  <button v-if="doForm.photo_progress && isEditable" type="button" class="btn btn-danger btn-xs" style="border-radius: 50%; width: 22px; height: 22px; padding: 0; line-height: 1;" @click="clearPhoto('progress')" title="Hapus foto">✕</button>
+                </div>
+                <div v-if="doForm.photo_progress" style="position: relative; cursor: pointer; text-align: center; border-radius: 6px; overflow: hidden; background: #000; height: 130px; display: flex; align-items: center; justify-content: center;" @click="servicePhotoZoom = doForm.photo_progress">
+                  <img :src="doForm.photo_progress" alt="2. Foto Instal / Service" style="width: 100%; height: 100%; object-fit: contain;">
+                  <span style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 2px;">🔍 Klik perbesar</span>
+                </div>
+                <div v-else-if="isEditable" style="display: flex; gap: 6px; height: 130px; align-items: center; justify-content: center;">
+                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px 6px; font-size: 11px; height: 100%; text-align: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    <span>Ambil Foto</span>
+                    <input ref="fileInputProgress" type="file" accept="image/*" capture="environment" style="display: none;" @change="e => handlePhotoFile(e, 'progress')" />
+                  </label>
+                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px 6px; font-size: 11px; height: 100%; text-align: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                    <span>Pilih File</span>
+                    <input type="file" accept="image/*" style="display: none;" @change="e => handlePhotoFile(e, 'progress')" />
+                  </label>
+                </div>
+                <div v-else class="text-xs text-muted text-center" style="height: 130px; display: flex; align-items: center; justify-content: center;">-</div>
+              </div>
+
+              <!-- 3. Foto Selesai -->
+              <div class="photo-upload-card" style="border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px; background: var(--color-surface-sunken);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span class="text-xs font-bold">3. Foto Selesai</span>
+                  <button v-if="doForm.photo_after && isEditable" type="button" class="btn btn-danger btn-xs" style="border-radius: 50%; width: 22px; height: 22px; padding: 0; line-height: 1;" @click="clearPhoto('after')" title="Hapus foto">✕</button>
+                </div>
+                <div v-if="doForm.photo_after" style="position: relative; cursor: pointer; text-align: center; border-radius: 6px; overflow: hidden; background: #000; height: 130px; display: flex; align-items: center; justify-content: center;" @click="servicePhotoZoom = doForm.photo_after">
+                  <img :src="doForm.photo_after" alt="3. Foto Selesai" style="width: 100%; height: 100%; object-fit: contain;">
+                  <span style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; padding: 2px;">🔍 Klik perbesar</span>
+                </div>
+                <div v-else-if="isEditable" style="display: flex; gap: 6px; height: 130px; align-items: center; justify-content: center;">
+                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px 6px; font-size: 11px; height: 100%; text-align: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    <span>Ambil Foto</span>
+                    <input ref="fileInputAfter" type="file" accept="image/*" capture="environment" style="display: none;" @change="e => handlePhotoFile(e, 'after')" />
+                  </label>
+                  <label class="btn btn-outline flex-1 cursor-pointer" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 12px 6px; font-size: 11px; height: 100%; text-align: center;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"/><path d="M16 16l-4-4-4 4"/></svg>
+                    <span>Pilih File</span>
+                    <input type="file" accept="image/*" style="display: none;" @change="e => handlePhotoFile(e, 'after')" />
+                  </label>
+                </div>
+                <div v-else class="text-xs text-muted text-center" style="height: 130px; display: flex; align-items: center; justify-content: center;">-</div>
               </div>
             </div>
           </div>
@@ -915,9 +994,22 @@ async function handleDeleteStandalone() {
         </div>
 
         <div v-else-if="job.status === 'completed'">
-          <div class="form-group mt-md mb-md" v-if="deliveryOrder?.photo_after" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
-            <div class="text-sm font-bold mb-sm">Foto Sesudah Pengantaran</div>
-            <img :src="deliveryOrder.photo_after" alt="Foto Sesudah" style="max-height: 200px; border-radius: 8px; object-fit: contain;">
+          <div class="form-group mt-md mb-md" v-if="deliveryOrder?.photo_before || deliveryOrder?.photo_progress || deliveryOrder?.photo_after" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md);">
+            <div class="text-sm font-bold mb-sm">Dokumentasi Foto Pengantaran / Service</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
+              <div v-if="deliveryOrder.photo_before" style="text-align: center;">
+                <div class="text-xs text-muted mb-xs">1. Foto Pengantaran / Problem</div>
+                <img :src="deliveryOrder.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = deliveryOrder.photo_before">
+              </div>
+              <div v-if="deliveryOrder.photo_progress" style="text-align: center;">
+                <div class="text-xs text-muted mb-xs">2. Foto Instal / Service</div>
+                <img :src="deliveryOrder.photo_progress" alt="2. Foto Instal / Service" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = deliveryOrder.photo_progress">
+              </div>
+              <div v-if="deliveryOrder.photo_after" style="text-align: center;">
+                <div class="text-xs text-muted mb-xs">3. Foto Selesai</div>
+                <img :src="deliveryOrder.photo_after" alt="3. Foto Selesai" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = deliveryOrder.photo_after">
+              </div>
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Problem</label>
@@ -1048,7 +1140,24 @@ async function handleDeleteStandalone() {
             </div>
           </div>
 
-       
+          <!-- Dokumentasi Foto Service (bila sudah ada foto tersimpan) -->
+          <div v-if="serviceReport?.photo_before || serviceReport?.photo_progress || serviceReport?.photo_after" class="mt-md p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md); border: 1px dashed var(--color-border);">
+            <p class="font-bold mb-xs text-sm">Dokumentasi Foto Service Terlampir</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;">
+              <div v-if="serviceReport.photo_before" style="text-align: center;">
+                <span class="text-xs text-muted mb-xs" style="display: block;">1. Foto Pengantaran / Problem</span>
+                <img :src="serviceReport.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_before" />
+              </div>
+              <div v-if="serviceReport.photo_progress" style="text-align: center;">
+                <span class="text-xs text-muted mb-xs" style="display: block;">2. Foto Instal / Service</span>
+                <img :src="serviceReport.photo_progress" alt="2. Foto Instal / Service" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_progress" />
+              </div>
+              <div v-if="serviceReport.photo_after" style="text-align: center;">
+                <span class="text-xs text-muted mb-xs" style="display: block;">3. Foto Selesai</span>
+                <img :src="serviceReport.photo_after" alt="3. Foto Selesai" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_after" />
+              </div>
+            </div>
+          </div>
 
           <div class="mt-xl pt-md" style="border-top: 1px solid var(--color-border-light)">
             <div v-if="standaloneList.length" class="mb-md">
@@ -1119,6 +1228,25 @@ async function handleDeleteStandalone() {
               </div>
             </div>
             <div v-else class="text-sm text-muted">No component replacement.</div>
+          </div>
+
+          <!-- Dokumentasi Foto Service -->
+          <div class="form-group mt-md" v-if="serviceReport?.photo_before || serviceReport?.photo_progress || serviceReport?.photo_after" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-sunken);">
+            <div class="text-sm font-bold mb-sm">Dokumentasi Foto Service</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
+              <div v-if="serviceReport.photo_before" style="text-align: center;">
+                <div class="text-xs text-muted mb-xs font-semibold">1. Foto Pengantaran / Problem</div>
+                <img :src="serviceReport.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_before" title="Klik untuk perbesar">
+              </div>
+              <div v-if="serviceReport.photo_progress" style="text-align: center;">
+                <div class="text-xs text-muted mb-xs font-semibold">2. Foto Instal / Service</div>
+                <img :src="serviceReport.photo_progress" alt="2. Foto Instal / Service" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_progress" title="Klik untuk perbesar">
+              </div>
+              <div v-if="serviceReport.photo_after" style="text-align: center;">
+                <div class="text-xs text-muted mb-xs font-semibold">3. Foto Selesai</div>
+                <img :src="serviceReport.photo_after" alt="3. Foto Selesai" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_after" title="Klik untuk perbesar">
+              </div>
+            </div>
           </div>
 
           <div class="mt-md text-success font-bold flex items-center gap-sm">
@@ -1336,6 +1464,16 @@ async function handleDeleteStandalone() {
       @close="showDeleteStandaloneConfirm = false"
       @confirm="handleDeleteStandalone"
     />
+
+    <!-- Service Photo Zoom Modal -->
+    <Teleport to="body">
+      <div v-if="servicePhotoZoom" class="confirm-overlay" @click="servicePhotoZoom = null" style="background: rgba(0, 0, 0, 0.75);">
+        <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; background: var(--color-surface); padding: 12px; border-radius: 8px;" @click.stop>
+          <img :src="servicePhotoZoom" alt="Zoom Foto" style="max-width: 85vw; max-height: 80vh; object-fit: contain; border-radius: 6px;" />
+          <button type="button" class="btn btn-outline btn-sm mt-sm" @click="servicePhotoZoom = null">✕ Tutup</button>
+        </div>
+      </div>
+    </Teleport>
 
   </div>
 </template>

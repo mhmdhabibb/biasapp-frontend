@@ -94,6 +94,7 @@ async function fetchData() {
         : [];
     data.value = (list as any[]).map((r: any) => ({
       ...r,
+      price: r.price != null ? r.price : (r.unit?.price != null ? r.unit.price : null),
       _customer: r.customer?.company_name || r.customer?.name || "-",
       _unit: r.unit ? `${r.unit.model || r.unit.name} (SN: ${r.unit.serial_no})` : "-",
     }));
@@ -137,11 +138,11 @@ async function handleSubmit() {
   }
   const payload: any = {
     customer_id: form.customer_id,
-    unit_id: form.unit_id,
-    price: form.price ? Number(form.price) : null,
+    unit_id: form.unit_id || null,
+    price: form.price != null && form.price !== '' && Number(form.price) > 0 ? Number(form.price) : null,
     result: form.result || "pending",
     status: form.status || "pending",
-    remarks: form.remarks,
+    remarks: form.remarks || "",
   };
   try {
     if (form.price && form.unit_id) {
@@ -222,6 +223,7 @@ function createSaleFromSurvey(item: any) {
   const q = new URLSearchParams();
   if (item.customer_id) q.set("customer_id", String(item.customer_id));
   if (item.unit_id) q.set("unit_id", String(item.unit_id));
+  if (item.price != null && Number(item.price) > 0) q.set("price", String(item.price));
   router.push(`/customer-service/sales?${q.toString()}`);
 }
 
@@ -286,18 +288,23 @@ onMounted(async () => {
         <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" />
       </div>
       <div class="form-group mt-3">
-        <label class="form-label">Harga (Rp)</label>
+        <label class="form-label">
+          Harga (Rp) <span class="text-muted" style="font-size: 11px; font-weight: normal;">(Opsional)</span>
+        </label>
         <input
           v-model.number="form.price"
           type="number"
           class="form-input"
-          placeholder="Masukkan harga jika unit belum ada harga"
+          placeholder="Opsional — Masukkan nominal harga jika ingin ditentukan"
         />
         <div v-if="selectedUnitHasPrice" style="font-size: 11px; color: #15803d; margin-top: 4px;">
-          ✓ Harga terisi otomatis dari master data unit. Anda dapat mengubahnya jika perlu.
+          ✓ Terisi otomatis dari harga unit (Rp {{ Number(form.price || 0).toLocaleString('id-ID') }}). Anda dapat mengubah atau mengosongkannya.
         </div>
-        <div v-else-if="form.unit_id" style="font-size: 11px; color: #b45309; margin-top: 4px;">
-          * Unit ini belum memiliki harga di master data. Harga yang diisi akan otomatis disimpan ke unit ini.
+        <div v-else-if="form.unit_id" style="font-size: 11px; color: var(--color-text-muted); margin-top: 4px;">
+          (Opsional) Unit ini belum memiliki harga di master data. Jika diisi, harga akan otomatis disimpan ke unit ini.
+        </div>
+        <div v-else style="font-size: 11px; color: var(--color-text-muted); margin-top: 4px;">
+          (Opsional) Harga perkiraan atau kesepakatan saat survey.
         </div>
       </div>
       <div class="form-group mt-3">

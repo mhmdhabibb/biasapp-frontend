@@ -220,6 +220,7 @@ export interface Survey {
   survey_no: string;
   customer_id: string | null;
   unit_id: string | null;
+  price?: number | null;
   result: string;
   status: string;
   remarks?: string;

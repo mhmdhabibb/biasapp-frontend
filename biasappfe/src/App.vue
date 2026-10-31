@@ -12,6 +12,7 @@ const isPublicPage = computed(() => route.name === 'login' || route.name === 've
 let permissionRefreshInterval: ReturnType<typeof setInterval> | undefined
 
 function refreshActiveSession() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return
   if (isAuthenticated.value && document.visibilityState === 'visible') {
     void refreshPermissions()
   }
