@@ -187,19 +187,22 @@ interface HistoryTarget {
 
 function getItemTarget(item: any): HistoryTarget {
   if (item._type === 'service') {
-    const u = item.unit || masterStore.findUnit(item.unit_id)
+    const unitId = item.unit_id || item.unit?.id
+    const masterUnit = unitId ? masterStore.findUnit(unitId) : null
+    const u = item.unit ? { ...(masterUnit || {}), ...item.unit, id: item.unit.id || masterUnit?.id || item.unit_id } : masterUnit
     if (u) {
+      const uId = u.id || item.unit_id || (u.serial_no ? `sn_${u.serial_no}` : (u.model ? `model_${u.model}` : 'unknown'))
       const label = `${u.model || u.name || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}`
       return {
-        id: `unit_${u.id}`,
+        id: `unit_${uId}`,
         name: label,
         kind: 'unit',
         badge: 'Unit / Mesin'
       }
     }
     return {
-      id: item.unit_id ? `unit_${item.unit_id}` : 'other',
-      name: item.unit_id ? `Unit (${item.unit_id})` : 'Tanpa Unit',
+      id: unitId ? `unit_${unitId}` : 'other',
+      name: unitId ? `Unit (${unitId})` : 'Tanpa Unit',
       kind: 'unit',
       badge: 'Unit / Mesin'
     }
@@ -208,19 +211,12 @@ function getItemTarget(item: any): HistoryTarget {
     if (doi.length > 0) {
       const first = doi[0]
       if (first.unit_id) {
-        const u = first.unit || masterStore.findUnit(first.unit_id)
-        if (u) {
-          const label = `${u.model || u.name || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}`
-          return {
-            id: `unit_${u.id || first.unit_id}`,
-            name: label,
-            kind: 'unit',
-            badge: 'Unit / Mesin'
-          }
-        }
-        const label = `${first.model || 'Unit'}${first.serial_no ? ` (${first.serial_no})` : ''}`
+        const masterUnit = masterStore.findUnit(first.unit_id)
+        const u = first.unit ? { ...(masterUnit || {}), ...first.unit, id: first.unit.id || masterUnit?.id || first.unit_id } : masterUnit
+        const uId = u?.id || first.unit_id || (u?.serial_no ? `sn_${u.serial_no}` : (u?.model ? `model_${u.model}` : 'unknown'))
+        const label = u ? `${u.model || u.name || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}` : `${first.model || 'Unit'}${first.serial_no ? ` (${first.serial_no})` : ''}`
         return {
-          id: `unit_${first.unit_id}`,
+          id: `unit_${uId}`,
           name: label,
           kind: 'unit',
           badge: 'Unit / Mesin'
@@ -228,8 +224,9 @@ function getItemTarget(item: any): HistoryTarget {
       }
       if (first.product_id) {
         const p = first.product || masterStore.findProduct(first.product_id)
+        const pId = p?.id || first.product_id || (p?.code ? `code_${p.code}` : (p?.name ? `name_${p.name}` : 'unknown'))
         return {
-          id: `prod_${p?.id || first.product_id}`,
+          id: `prod_${pId}`,
           name: p?.name || 'Produk / Sparepart',
           kind: 'product',
           badge: 'Produk / Sparepart'
@@ -238,8 +235,9 @@ function getItemTarget(item: any): HistoryTarget {
       if (first.model) {
         const label = `${first.model}${first.serial_no ? ` (${first.serial_no})` : ''}`
         const isExternalUnit = !!(first.brand_id || first.unit_type_id || first.serial_no)
+        const extKey = first.serial_no ? `sn_${first.serial_no}` : `model_${first.model}`
         return {
-          id: isExternalUnit ? `unit_ext_${first.model}_${first.serial_no || ''}` : `prod_ext_${first.model}`,
+          id: isExternalUnit ? `unit_ext_${extKey}` : `prod_ext_${first.model}`,
           name: label,
           kind: isExternalUnit ? 'unit' : 'product',
           badge: isExternalUnit ? 'Unit (External)' : 'Produk'

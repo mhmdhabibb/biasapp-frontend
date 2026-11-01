@@ -421,10 +421,16 @@ function goToDetail(id: number) {
                 <polyline points="9 22 9 12 15 12 15 22"></polyline>
               </svg>
               <span>{{
+                job.survey?.customer?.company_name ||
+                job.service_report?.customer?.company_name ||
+                job.service_request?.customer?.company_name ||
+                job.delivery_order?.customer?.company_name ||
                 getCustomerName(
                   job.service_request?.customer_id ||
                     job.delivery_order?.customer_id ||
                     job.delivery_order?.customer?.id ||
+                    job.service_report?.customer_id ||
+                    job.survey?.customer_id ||
                     null,
                 )
               }}</span>
@@ -451,14 +457,19 @@ function goToDetail(id: number) {
                 <line x1="1" y1="9" x2="4" y2="9"></line>
                 <line x1="1" y1="14" x2="4" y2="14"></line>
               </svg>
-              <span v-if="job.delivery_order || job.job_type === 'delivery'">{{
+              <span v-if="job.job_type === 'survey' || job.survey">{{
+                job.survey?.recommended_model || job.survey?.unit?.model || "Survey Lokasi & Unit"
+              }}</span>
+              <span v-else-if="job.delivery_order || job.job_type === 'delivery'">{{
                 (job.delivery_order?.do_number || job.job_order_no || "Delivery") +
                 ((job.delivery_order?.delivery_order_items || []).length > 0
                   ? ` • ${(job.delivery_order?.delivery_order_items || []).length} item${(job.delivery_order?.delivery_order_items || []).length > 1 ? "s" : ""}`
                   : "")
               }}</span>
               <span v-else>{{
-                findUnit(job.service_request?.unit_id || null)?.model || "-"
+                job.service_report?.unit?.model ||
+                job.service_request?.unit?.model ||
+                findUnit(job.service_request?.unit_id || job.service_report?.unit_id || null)?.model || "-"
               }}</span>
             </div>
             <div class="detail-row problem-desc">

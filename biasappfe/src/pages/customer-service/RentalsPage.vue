@@ -1480,7 +1480,7 @@ async function loadPaperLookups() {
 }
 
 function hydrateRentalLookups() {
-  void refreshOnly(["customers", "units", "products", "payments", "technicians"]);
+  void refreshOnly(["customers", "units", "products", "payments", "technicians", "deliveryOrders"]);
   void loadPaperLookups();
 }
 

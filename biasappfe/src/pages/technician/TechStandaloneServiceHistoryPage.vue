@@ -325,6 +325,7 @@ async function saveAssign() {
               <th>Date</th>
               <th>Items</th>
               <th>Status</th>
+              <th>Keterangan / Alasan</th>
               <th>Technician</th>
               <th>Job Order</th>
               <th class="th-actions">Actions</th>
@@ -347,6 +348,18 @@ async function saveAssign() {
                 <span class="badge" :class="statusClass(row)">
                   {{ statusLabel(row) }}
                 </span>
+              </td>
+              <td>
+                <div class="text-xs" :title="row.problem || row.notes || '-'" style="max-width: 200px; line-height: 1.4;">
+                  <div v-if="row.problem" class="font-bold">{{ row.problem }}</div>
+                  <div v-if="row.notes && row.notes !== row.problem" class="text-muted" :class="{ 'mt-1': !!row.problem }">{{ row.notes }}</div>
+                  <div v-if="!row.problem && !row.notes">
+                    <span v-if="statusLabel(row) === 'PENDING'" class="text-warning italic" style="font-size: 11px;">
+                      {{ row.technician_id ? 'Menunggu pengerjaan teknisi' : 'Belum ditunjuk teknisi' }}
+                    </span>
+                    <span v-else class="text-muted italic">—</span>
+                  </div>
+                </div>
               </td>
               <td class="td-nowrap">{{ techName(row.technician_id) }}</td>
               <td>
@@ -444,6 +457,10 @@ async function saveAssign() {
             <div class="m-row">
               <span class="m-label">Items:</span>
               <span class="m-val">{{ itemsSummary(row) }}</span>
+            </div>
+            <div class="m-row" v-if="row.problem || row.notes">
+              <span class="m-label">Keterangan:</span>
+              <span class="m-val">{{ row.problem || row.notes }}</span>
             </div>
             <div class="m-row" v-if="findJobOrderForDO(row.id)">
               <span class="m-label">Job Order:</span>

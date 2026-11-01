@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import FormModal from "@/components/ui/FormModal.vue";
@@ -15,21 +15,26 @@ import type { TableColumn } from "@/types";
 const toast = useToast();
 const { can } = usePermission();
 const router = useRouter();
-const { customers, units, ensureResourcesLoaded } = useMasterStore();
+const { customers, units, technicians, ensureResourcesLoaded } = useMasterStore();
 
 const columns: TableColumn[] = [
   { key: "survey_no", label: "Survey No" },
   { key: "_customer", label: "Customer" },
-  { key: "_unit", label: "Unit" },
-  { key: "price", label: "Harga" },
+  { key: "_technician", label: "Teknisi Ditugaskan" },
+  { key: "_scheduled_date", label: "Jadwal Survey" },
+  { key: "_unit", label: "Unit / Minat" },
+  { key: "price", label: "Perkiraan Harga" },
   { key: "status", label: "Status" },
-  { key: "remarks", label: "Remarks" },
+  { key: "_field_findings", label: "Hasil Lapangan" },
 ];
 
 const data = ref<any[]>([]);
 const isLoading = ref(false);
 const showModal = ref(false);
 const showConfirm = ref(false);
+const showDetailModal = ref(false);
+const selectedDetailItem = ref<any>(null);
+const zoomPhoto = ref<string | null>(null);
 const editingItem = ref<any>(null);
 const deletingItem = ref<any>(null);
 
@@ -47,28 +52,50 @@ const unitOptions = computed(() =>
   })),
 );
 
-const resultOptions = [
-  { value: "pending", label: "Pending" },
-  { value: "matched", label: "Cocok (Matched)" },
-  { value: "not_matched", label: "Tidak Cocok" },
-];
+const technicianOptions = computed(() => [
+  { value: "", label: "-- Belum Ditugaskan / Pilih Nanti --" },
+  ...(technicians.value as any[]).map((t: any) => ({
+    value: t.id,
+    label: t.user?.name || t.name || `Teknisi ${t.employee_code || t.id}`,
+  })),
+]);
 
 const statusOptions = [
   { value: "pending", label: "Pending" },
-  { value: "matched", label: "Matched" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: "matched", label: "Cocok (Matched)" },
+  { value: "cancelled", label: "Dibatalkan (Cancelled)" },
 ];
 
 const form = reactive({
   customer_id: "",
   unit_id: null as string | null,
   price: null as number | null,
+  technician_id: "",
+  scheduled_date: "",
+  survey_address: "",
+  contact_person: "",
+  contact_phone: "",
   result: "pending",
   status: "pending",
   remarks: "",
 });
 
-import { watch } from "vue";
+watch(() => form.customer_id, (cId) => {
+  if (!cId) return;
+  const cust = (customers.value as any[]).find((c: any) => String(c.id) === String(cId));
+  if (cust) {
+    if (!form.survey_address || form.survey_address === "") {
+      form.survey_address = cust.address || "";
+    }
+    if (!form.contact_person || form.contact_person === "") {
+      form.contact_person = cust.pic_name || "";
+    }
+    if (!form.contact_phone || form.contact_phone === "") {
+      form.contact_phone = cust.phone || "";
+    }
+  }
+});
+
 watch(() => form.unit_id, (uId) => {
   if (!uId) return;
   const found = (units.value as any[]).find((u: any) => u.id === uId);
@@ -92,12 +119,20 @@ async function fetchData() {
       : Array.isArray(res)
         ? res
         : [];
-    data.value = (list as any[]).map((r: any) => ({
-      ...r,
-      price: r.price != null ? r.price : (r.unit?.price != null ? r.unit.price : null),
-      _customer: r.customer?.company_name || r.customer?.name || "-",
-      _unit: r.unit ? `${r.unit.model || r.unit.name} (SN: ${r.unit.serial_no})` : "-",
-    }));
+    data.value = (list as any[]).map((r: any) => {
+      const techName = r.technician?.user?.name || r.technician?.name;
+      const hasFindings = !!(r.electrical_condition || r.access_condition || r.recommended_model || r.photo_location || r.technician_notes);
+      return {
+        ...r,
+        price: r.price != null ? r.price : (r.unit?.price != null ? r.unit.price : null),
+        _customer: r.customer?.company_name || r.customer?.name || "-",
+        _technician: techName || (r.technician_id ? `Teknisi Terpilih` : "-"),
+        _scheduled_date: r.scheduled_date ? new Date(r.scheduled_date).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "-",
+        _unit: r.unit ? `${r.unit.model || r.unit.name} (SN: ${r.unit.serial_no})` : (r.recommended_model ? `Rekomendasi: ${r.recommended_model}` : "-"),
+        _field_findings: hasFindings ? "Sudah Survey" : "Belum Survey",
+        _hasFindings: hasFindings,
+      };
+    });
   } catch (e: any) {
     toast.error("Gagal memuat survey: " + (e?.message || "Error"));
   } finally {
@@ -111,6 +146,11 @@ function openAdd() {
     customer_id: "",
     unit_id: null,
     price: null,
+    technician_id: "",
+    scheduled_date: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+    survey_address: "",
+    contact_person: "",
+    contact_phone: "",
     result: "pending",
     status: "pending",
     remarks: "",
@@ -124,11 +164,21 @@ function openEdit(item: any) {
     customer_id: item.customer_id || "",
     unit_id: item.unit_id || null,
     price: item.price != null ? Number(item.price) : (item.unit?.price != null ? Number(item.unit.price) : null),
+    technician_id: item.technician_id || "",
+    scheduled_date: item.scheduled_date ? new Date(item.scheduled_date).toISOString().slice(0, 16) : "",
+    survey_address: item.survey_address || item.customer?.address || "",
+    contact_person: item.contact_person || item.customer?.pic_name || "",
+    contact_phone: item.contact_phone || item.customer?.phone || "",
     result: item.result || "pending",
     status: item.status || "pending",
     remarks: item.remarks || "",
   });
   showModal.value = true;
+}
+
+function openDetail(item: any) {
+  selectedDetailItem.value = item;
+  showDetailModal.value = true;
 }
 
 async function handleSubmit() {
@@ -140,6 +190,11 @@ async function handleSubmit() {
     customer_id: form.customer_id,
     unit_id: form.unit_id || null,
     price: form.price != null && form.price !== '' && Number(form.price) > 0 ? Number(form.price) : null,
+    technician_id: form.technician_id || undefined,
+    scheduled_date: form.scheduled_date ? new Date(form.scheduled_date).toISOString() : undefined,
+    survey_address: form.survey_address,
+    contact_person: form.contact_person,
+    contact_phone: form.contact_phone,
     result: form.result || "pending",
     status: form.status || "pending",
     remarks: form.remarks || "",
@@ -158,10 +213,10 @@ async function handleSubmit() {
     }
     if (editingItem.value) {
       await resources.surveys.update(String(editingItem.value.id), payload);
-      toast.success("Survey updated.");
+      toast.success("Survey berhasil diupdate" + (form.technician_id ? " dan Job Order teknisi diperbarui!" : "."));
     } else {
       await resources.surveys.create(payload);
-      toast.success("Survey created.");
+      toast.success("Survey berhasil dibuat" + (form.technician_id ? " dan Job Order teknisi otomatis dibuat!" : "."));
     }
     showModal.value = false;
     await fetchData();
@@ -237,6 +292,14 @@ onMounted(async () => {
   <div>
     <PageHeader title="Survey" button-label="Add Survey" permission="survey:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search surveys..." permission="survey">
+      <template #cell-_technician="{ row, value }">
+        <span v-if="row.technician_id" class="badge badge-info" style="font-size: 0.8rem;">
+          👷 {{ value }}
+        </span>
+        <span v-else class="text-muted" style="font-size: 0.8rem; font-style: italic;">
+          Belum Ditugaskan
+        </span>
+      </template>
       <template #cell-price="{ value }">
         <span class="font-medium" style="font-weight: 600; color: #1e3a8a;">
           {{ value ? 'Rp ' + Number(value).toLocaleString('id-ID') : '-' }}
@@ -244,10 +307,19 @@ onMounted(async () => {
       </template>
       <template #cell-status="{ value }">
         <span class="badge" :class="value === 'matched' ? 'badge-success' : value === 'cancelled' ? 'badge-danger' : 'badge-warning'">
-          {{ value || 'pending' }}
+          {{ value === 'matched' ? 'Cocok (Matched)' : value === 'cancelled' ? 'Batal' : 'Pending' }}
         </span>
       </template>
+      <template #cell-_field_findings="{ row }">
+        <button v-if="row._hasFindings" class="btn btn-xs btn-outline" style="gap: 4px; display: inline-flex; align-items: center;" @click="openDetail(row)">
+          📋 Lihat Hasil
+        </button>
+        <span v-else class="text-muted" style="font-size: 0.75rem;">-</span>
+      </template>
       <template #actions="{ row }">
+        <button class="btn btn-sm btn-outline" title="Lihat Detail Survey" @click="openDetail(row)">
+          Detail
+        </button>
         <!-- Status pending: tampilkan tombol Next dan Cancel -->
         <template v-if="row.status === 'pending' || (!row.status && row.result === 'pending')">
           <button class="btn btn-sm btn-primary" title="Lanjut ke Sale" @click="handleNextSurvey(row)">
@@ -278,18 +350,50 @@ onMounted(async () => {
       </template>
     </DataTable>
 
+    <!-- Create / Edit Survey Modal -->
     <FormModal :open="showModal" :title="editingItem ? 'Edit Survey' : 'Add Survey'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
-        <label class="form-label">Customer</label>
+        <label class="form-label">Customer <span class="text-danger">*</span></label>
         <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" />
       </div>
+
       <div class="form-group mt-3">
-        <label class="form-label">Unit</label>
-        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" />
+        <label class="form-label">Alamat Survey</label>
+        <textarea v-model="form.survey_address" class="form-input" rows="2" placeholder="Alamat lokasi customer yang akan disurvey..."></textarea>
       </div>
+
+      <div class="responsive-flex mt-3">
+        <div class="form-group" style="flex: 1;">
+          <label class="form-label">PIC / Kontak Lapangan</label>
+          <input v-model="form.contact_person" type="text" class="form-input" placeholder="Nama PIC..." />
+        </div>
+        <div class="form-group" style="flex: 1;">
+          <label class="form-label">No. Telepon / HP</label>
+          <input v-model="form.contact_phone" type="text" class="form-input" placeholder="08..." />
+        </div>
+      </div>
+
+      <div class="card p-md mt-3" style="background: var(--color-surface-sunken); border: 1px dashed var(--color-primary);">
+        <h4 class="text-sm font-bold mb-2" style="color: var(--color-primary);">👷 Penugasan Teknisi / Surveyor</h4>
+        <div class="form-group">
+          <label class="form-label">Tugaskan Teknisi (Job Order)</label>
+          <CustomSelect v-model="form.technician_id" :options="technicianOptions" placeholder="-- Pilih Teknisi --" />
+          <p class="text-xs text-muted mt-1">Saat teknisi dipilih, Job Order survey akan otomatis muncul di aplikasi teknisi.</p>
+        </div>
+        <div class="form-group mt-2">
+          <label class="form-label">Tanggal & Waktu Jadwal Survey</label>
+          <input v-model="form.scheduled_date" type="datetime-local" class="form-input" />
+        </div>
+      </div>
+
+      <div class="form-group mt-3">
+        <label class="form-label">Unit Minat (Opsional)</label>
+        <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Pilih Unit (Jika sudah ada perkiraan) --" />
+      </div>
+
       <div class="form-group mt-3">
         <label class="form-label">
-          Harga (Rp) <span class="text-muted" style="font-size: 11px; font-weight: normal;">(Opsional)</span>
+          Perkiraan Harga (Rp) <span class="text-muted" style="font-size: 11px; font-weight: normal;">(Opsional)</span>
         </label>
         <input
           v-model.number="form.price"
@@ -297,25 +401,85 @@ onMounted(async () => {
           class="form-input"
           placeholder="Opsional — Masukkan nominal harga jika ingin ditentukan"
         />
-        <div v-if="selectedUnitHasPrice" style="font-size: 11px; color: #15803d; margin-top: 4px;">
-          ✓ Terisi otomatis dari harga unit (Rp {{ Number(form.price || 0).toLocaleString('id-ID') }}). Anda dapat mengubah atau mengosongkannya.
-        </div>
-        <div v-else-if="form.unit_id" style="font-size: 11px; color: var(--color-text-muted); margin-top: 4px;">
-          (Opsional) Unit ini belum memiliki harga di master data. Jika diisi, harga akan otomatis disimpan ke unit ini.
-        </div>
-        <div v-else style="font-size: 11px; color: var(--color-text-muted); margin-top: 4px;">
-          (Opsional) Harga perkiraan atau kesepakatan saat survey.
-        </div>
       </div>
+
       <div class="form-group mt-3">
         <label class="form-label">Status</label>
         <CustomSelect v-model="form.status" :options="statusOptions" placeholder="-- Select Status --" />
       </div>
+
       <div class="form-group mt-3">
-        <label class="form-label">Remarks</label>
-        <textarea v-model="form.remarks" class="form-input" rows="3"></textarea>
+        <label class="form-label">Remarks / Instruksi Survey</label>
+        <textarea v-model="form.remarks" class="form-input" rows="2" placeholder="Catatan instruksi khusus untuk teknisi survey..."></textarea>
       </div>
     </FormModal>
+
+    <!-- Survey Detail Modal (Hasil Survey Lapangan) -->
+    <FormModal :open="showDetailModal" title="Detail Hasil Survey Lapangan" @close="showDetailModal = false">
+      <div v-if="selectedDetailItem" class="survey-detail-content">
+        <div class="p-md mb-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span class="font-bold text-md">{{ selectedDetailItem.survey_no }}</span>
+            <span class="badge" :class="selectedDetailItem.status === 'matched' ? 'badge-success' : selectedDetailItem.status === 'cancelled' ? 'badge-danger' : 'badge-warning'">
+              {{ selectedDetailItem.status.toUpperCase() }}
+            </span>
+          </div>
+          <div class="text-sm"><strong>Customer:</strong> {{ selectedDetailItem._customer }}</div>
+          <div class="text-sm"><strong>Alamat:</strong> {{ selectedDetailItem.survey_address || selectedDetailItem.customer?.address || '-' }}</div>
+          <div class="text-sm"><strong>Kontak:</strong> {{ selectedDetailItem.contact_person || '-' }} ({{ selectedDetailItem.contact_phone || '-' }})</div>
+          <div class="text-sm"><strong>Teknisi:</strong> {{ selectedDetailItem._technician }}</div>
+          <div class="text-sm"><strong>Jadwal:</strong> {{ selectedDetailItem._scheduled_date }}</div>
+          <div v-if="selectedDetailItem.remarks" class="text-sm mt-1"><strong>Catatan CS:</strong> {{ selectedDetailItem.remarks }}</div>
+        </div>
+
+        <h4 class="font-bold mb-sm text-sm" style="color: var(--color-primary);">📋 Laporan Hasil Temuan Teknisi</h4>
+        <div class="info-grid p-md" style="border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface);">
+          <div class="mb-sm">
+            <span class="text-xs text-muted block">Kondisi Kelistrikan / Grounding:</span>
+            <span class="text-sm font-semibold">{{ selectedDetailItem.electrical_condition || 'Belum dilaporkan' }}</span>
+          </div>
+          <div class="mb-sm">
+            <span class="text-xs text-muted block">Akses Lokasi / Tangga / Lift:</span>
+            <span class="text-sm font-semibold">{{ selectedDetailItem.access_condition || 'Belum dilaporkan' }}</span>
+          </div>
+          <div class="mb-sm">
+            <span class="text-xs text-muted block">Rekomendasi Tipe Unit / Mesin:</span>
+            <span class="text-sm font-semibold">{{ selectedDetailItem.recommended_model || selectedDetailItem.unit?.model || 'Belum dilaporkan' }}</span>
+          </div>
+          <div class="mb-sm">
+            <span class="text-xs text-muted block">Estimasi Volume Cetak Bulanan:</span>
+            <span class="text-sm font-semibold">{{ selectedDetailItem.est_monthly_volume ? selectedDetailItem.est_monthly_volume.toLocaleString('id-ID') + ' lembar/bulan' : 'Belum dilaporkan' }}</span>
+          </div>
+          <div class="mb-sm">
+            <span class="text-xs text-muted block">Catatan Tambahan Teknisi:</span>
+            <p class="text-sm mt-1" style="white-space: pre-line;">{{ selectedDetailItem.technician_notes || '-' }}</p>
+          </div>
+          <div v-if="selectedDetailItem.photo_location">
+            <span class="text-xs text-muted block mb-1">Dokumentasi Foto Lokasi Survey:</span>
+            <div style="cursor: pointer; max-width: 260px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border);" @click="zoomPhoto = selectedDetailItem.photo_location">
+              <img :src="selectedDetailItem.photo_location" alt="Foto Lokasi" style="width: 100%; height: 160px; object-fit: cover;" />
+              <div style="background: rgba(0,0,0,0.6); color: #fff; font-size: 11px; text-align: center; padding: 2px;">🔍 Klik untuk perbesar</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn btn-outline" @click="showDetailModal = false">Tutup</button>
+        <button v-if="selectedDetailItem && selectedDetailItem.status === 'matched'" class="btn btn-primary" @click="createSaleFromSurvey(selectedDetailItem)">
+          Buat Sale dari Survey Ini
+        </button>
+      </template>
+    </FormModal>
+
+    <!-- Zoom Photo Modal -->
+    <Teleport to="body">
+      <div v-if="zoomPhoto" class="confirm-overlay" @click="zoomPhoto = null" style="background: rgba(0, 0, 0, 0.8); z-index: 9999;">
+        <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; background: var(--color-surface); padding: 12px; border-radius: 8px;" @click.stop>
+          <img :src="zoomPhoto" alt="Zoom Foto Survey" style="max-width: 85vw; max-height: 80vh; object-fit: contain; border-radius: 6px;" />
+          <button type="button" class="btn btn-outline btn-sm mt-sm" @click="zoomPhoto = null">✕ Tutup</button>
+        </div>
+      </div>
+    </Teleport>
 
     <ConfirmDialog :open="showConfirm" title="Delete Survey" :message="`Are you sure you want to delete this survey?`" @close="showConfirm = false" @confirm="handleDelete" />
   </div>
@@ -323,4 +487,13 @@ onMounted(async () => {
 
 <style scoped>
 .mt-3 { margin-top: 1rem; }
+.responsive-flex {
+  display: flex;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .responsive-flex {
+    flex-direction: column;
+  }
+}
 </style>

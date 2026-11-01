@@ -83,7 +83,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units"],
 
   // Customer Service Operational Pages
-  "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments", "technicians"],
+  "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments", "technicians", "deliveryOrders"],
   "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units", "rents", "products", "brands", "unitTypes"],
   "/customer-service/sales": ["sales", "salesInvoices", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes"],
@@ -102,6 +102,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/monitoring-service": ["serviceRequests", "jobOrders", "serviceReports", "deliveryOrders", "technicians", "customers", "units", "products"],
   "/customer-service/copier-reports": ["serviceReports", "contractItems", "units", "customers", "monthlyMeterReadings"],
   "/customer-service/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units", "customers"],
+  "/customer-service/surveys": ["customers", "units", "technicians"],
 
   // Accounting Operational Pages
   "/accounting/purchase-orders": ["purchaseOrders", "suppliers", "products"],

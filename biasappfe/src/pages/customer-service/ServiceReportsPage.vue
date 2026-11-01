@@ -62,6 +62,9 @@ const unitOptions = computed(() =>
 )
 
 const serviceTypeOptions = [
+  { value: 'repair', label: 'Repair' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'copier', label: 'Copier' },
   { value: 'corrective', label: 'Corrective' },
   { value: 'preventive', label: 'Preventive' },
   { value: 'installation', label: 'Installation' },
@@ -142,6 +145,19 @@ const statusFilterOptions = computed(() => [
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
   { value: 'open', label: 'Open (legacy)' },
+])
+
+const serviceTypeFilter = ref('')
+const serviceTypeFilterOptions = computed(() => [
+  { value: '', label: 'All Service Types' },
+  { value: 'copier', label: 'Copier' },
+  { value: 'repair', label: 'Repair' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'corrective', label: 'Corrective' },
+  { value: 'preventive', label: 'Preventive' },
+  { value: 'installation', label: 'Installation' },
+  { value: 'relocation', label: 'Relocation' },
+  { value: 'delivery', label: 'Delivery' },
 ])
 
 let srRefreshTimer: any = null
@@ -559,13 +575,12 @@ function isRunningTransaction(item: any): boolean {
   )
 }
 
-// Copier report punya list tersendiri (CopierReportsPage) — disembunyikan
-// dari list Service Reports, KECUALI report dari transaksi yang sudah berjalan.
+// Service reports tampil seluruhnya dan dapat difilter berdasarkan customer, tipe layanan, serta status.
 const serviceOnlyReports = computed(() =>
   data.value.filter(
     (item: any) =>
-      (!isCopierReport(item) || isRunningTransaction(item)) &&
       matchesCustomer(item.customer_id) &&
+      (!serviceTypeFilter.value || String(item.service_type || '').toLowerCase() === serviceTypeFilter.value) &&
       (!statusFilter.value || String(item.status || '').toLowerCase() === statusFilter.value),
   ),
 )
@@ -887,11 +902,15 @@ function printTable() {
         <label class="filter-label">Customer</label>
         <CustomSelect v-model="customerFilter" :options="customerFilterOptions" class="form-select filter-input" />
       </div>
+      <div v-if="activeTab === 'service'" class="filter-item">
+        <label class="filter-label">Service Type</label>
+        <CustomSelect v-model="serviceTypeFilter" :options="serviceTypeFilterOptions" class="form-select filter-input" />
+      </div>
       <div class="filter-item">
         <label class="filter-label">Status</label>
         <CustomSelect v-model="statusFilter" :options="statusFilterOptions" class="form-select filter-input" />
       </div>
-      <button v-if="customerFilter || statusFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="customerFilter = ''; statusFilter = ''">
+      <button v-if="customerFilter || statusFilter || serviceTypeFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="customerFilter = ''; statusFilter = ''; serviceTypeFilter = ''">
         Reset Filter
       </button>
     </div>
@@ -917,11 +936,14 @@ function printTable() {
       </template>
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
+      <template #cell-service_type="{ value }">
+        <span style="text-transform: capitalize; font-weight: 500;">{{ value || '-' }}</span>
+      </template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
       <template #cell-service_date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
       <template #cell-status="{ value }">
-        <span :class="value === 'open' ? 'badge badge-warning' : value === 'in_progress' ? 'badge badge-info' : value === 'completed' ? 'badge badge-success' : 'badge badge-neutral'">
-          {{ value === 'open' ? 'Open' : value === 'in_progress' ? 'In Progress' : value === 'completed' ? 'Completed' : value || '-' }}
+        <span :class="value === 'open' || value === 'pending' ? 'badge badge-warning' : value === 'in_progress' ? 'badge badge-info' : value === 'completed' ? 'badge badge-success' : 'badge badge-neutral'">
+          {{ value === 'open' ? 'Open' : value === 'in_progress' ? 'In Progress' : value === 'completed' ? 'Completed' : value === 'pending' ? 'Pending' : value === 'draft' ? 'Draft' : value || '-' }}
         </span>
       </template>
       <template #actions="{ row }">

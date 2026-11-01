@@ -289,6 +289,22 @@ function openEdit(item: any) {
   showModal.value = true
 }
 
+function generateRandomSN(): string {
+  const rand = Math.random().toString(36).substring(2, 7).toUpperCase()
+  const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
+  return `NONSN-${dateStr}-${rand}`
+}
+
+function addAutoSN() {
+  const sn = generateRandomSN()
+  form.serial_numbers.push(sn)
+}
+
+function isNoSN(val: string): boolean {
+  const v = (val || '').trim().toUpperCase()
+  return v === '-' || v === 'NONE' || v === 'N/A' || v === 'TANPA SN' || v === 'NO SN'
+}
+
 async function handleSubmit() {
   if (form.temp_serial && form.temp_serial.trim()) {
     addSerialNumber()
@@ -305,10 +321,12 @@ async function handleSubmit() {
       return
     }
     if (form.serial_numbers.length === 0 && form.serial_no.trim()) {
-      form.serial_numbers.push(form.serial_no.trim().toUpperCase())
+      let sn = form.serial_no.trim().toUpperCase()
+      if (isNoSN(sn)) sn = generateRandomSN()
+      form.serial_numbers.push(sn)
     }
     if (form.serial_numbers.length === 0) {
-      toast.warning('Silakan masukkan minimal satu Serial Number (SN).')
+      toast.warning('Silakan masukkan minimal satu Serial Number (SN) atau klik "+ Tanpa SN".')
       return
     }
   }
@@ -331,10 +349,16 @@ async function handleSubmit() {
     delete (payload as any).temp_serial
 
     if (editingItem.value) {
+      if (isNoSN(payload.serial_no)) {
+        payload.serial_no = generateRandomSN()
+      }
       await resources.units.update(String(editingItem.value.id), payload)
       toast.success("Unit updated successfully!")
     } else {
-      const serials = Array.from(new Set(form.serial_numbers.map(s => s.trim().toUpperCase()).filter(Boolean)))
+      const serials = Array.from(new Set(form.serial_numbers.map(s => {
+        const trimmed = s.trim().toUpperCase()
+        return isNoSN(trimmed) ? generateRandomSN() : trimmed
+      }).filter(Boolean)))
       if (serials.length === 0) {
         toast.warning('Silakan masukkan Serial Number yang valid.')
         return
@@ -356,7 +380,11 @@ async function handleSubmit() {
 }
 
 function addSerialNumber() {
-  const sn = (form.temp_serial || '').trim().toUpperCase()
+  let sn = (form.temp_serial || '').trim().toUpperCase()
+  if (!sn) return
+  if (isNoSN(sn)) {
+    sn = generateRandomSN()
+  }
   if (sn && !form.serial_numbers.includes(sn)) {
     form.serial_numbers.push(sn)
   }
@@ -807,10 +835,22 @@ function exportStockPdf() {
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'"
       @close="closeModal" @submit="handleSubmit">
       <div class="form-group">
-        <label for="unit-serial" class="form-label">
-          SN (Serial Number)
-          <span v-if="!editingItem" style="font-weight:normal; font-size: 0.85em; color: var(--color-text-light);">(Tekan enter atau koma untuk menambah)</span>
-        </label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label for="unit-serial" class="form-label" style="margin-bottom: 0;">
+            SN (Serial Number)
+            <span v-if="!editingItem" style="font-weight:normal; font-size: 0.85em; color: var(--color-text-light);">(Tekan enter atau koma untuk menambah)</span>
+          </label>
+          <button
+            v-if="!editingItem"
+            type="button"
+            class="btn btn-xs btn-outline"
+            style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; cursor: pointer; border-color: var(--color-primary); color: var(--color-primary);"
+            @click="addAutoSN"
+            title="Generate SN otomatis untuk unit yang tidak memiliki serial number pabrik (Lampu, Kabel, Modul, dll)"
+          >
+            + Tanpa SN (Auto Generate)
+          </button>
+        </div>
         
         <div v-if="!editingItem" class="tags-input-container" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; border: 1px solid var(--color-border); border-radius: 6px; min-height: 42px; align-items: center; background: var(--color-surface); transition: border-color 0.2s;">
           <span v-for="(sn, index) in form.serial_numbers" :key="index" class="badge" style="background-color: var(--color-primary); color: white; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">
@@ -825,12 +865,17 @@ function exportStockPdf() {
             @keydown.comma.prevent="addSerialNumber"
             @blur="addSerialNumber"
             style="flex: 1; min-width: 140px; border: none; outline: none; background: transparent; text-transform: uppercase; padding: 2px 0; font-size: 0.875rem; color: var(--color-text);"
-            placeholder="Ketik SN lalu tekan Enter"
+            placeholder="Ketik SN lalu Enter, atau klik '+ Tanpa SN'"
           />
         </div>
         
-        <input v-else id="unit-serial" v-model="form.serial_no" @input="form.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input" style="text-transform: uppercase;"
-          placeholder="Product serial number (SN)">
+        <div v-else style="display: flex; gap: 8px;">
+          <input id="unit-serial" v-model="form.serial_no" @input="form.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input flex-1" style="text-transform: uppercase;"
+            placeholder="Product serial number (SN)">
+          <button type="button" class="btn btn-xs btn-outline" @click="form.serial_no = generateRandomSN()" title="Generate SN unik otomatis">
+            Auto SN
+          </button>
+        </div>
       </div>
       <div class="form-group">
         <label for="unit-name" class="form-label">Product Name</label>

@@ -46,16 +46,21 @@ function isDeliveryJob(job: any): boolean {
   return !!d && (!!d.id || !!d.do_number)
 }
 
+function isSurveyJob(job: any): boolean {
+  if (!job) return false
+  return job.job_type === 'survey' || !!job.survey_id || !!job.survey
+}
+
 function jobCustomerId(job: any) {
-  return job.customer_id || job.service_request?.customer_id || job.delivery_order?.customer_id || job.delivery_order?.customer?.id || null
+  return job.customer_id || job.survey?.customer_id || job.service_request?.customer_id || job.delivery_order?.customer_id || job.delivery_order?.customer?.id || job.service_report?.customer_id || null
 }
 
 function jobUnitId(job: any) {
-  return job.unit_id || job.service_request?.unit_id || null
+  return job.unit_id || job.survey?.unit_id || job.service_request?.unit_id || job.service_report?.unit_id || null
 }
 
 function jobRefNo(job: any): string {
-  return job.service_request?.request_no || job.delivery_order?.do_number || job.job_order_no || '-'
+  return job.survey?.survey_no || job.service_request?.request_no || job.delivery_order?.do_number || job.service_report?.report_no || job.job_order_no || '-'
 }
 
 function jobDate(job: any): string {
@@ -156,12 +161,12 @@ watch([filterStatus, filterDate, filterCustomer, filterServiceNo], () => {
             <tr v-for="job in paginatedJobs" :key="job.id">
               <td>{{ jobRefNo(job) }}</td>
               <td>
-                <span class="badge" :class="isDeliveryJob(job) ? 'badge-info' : 'badge-primary'">
-                  {{ isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE' }}
+                <span class="badge" :class="isSurveyJob(job) ? 'badge-warning' : isDeliveryJob(job) ? 'badge-info' : 'badge-primary'">
+                  {{ isSurveyJob(job) ? 'SURVEY' : isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE' }}
                 </span>
               </td>
-              <td>{{ getCustomerName(jobCustomerId(job)) }}</td>
-              <td>{{ isDeliveryJob(job) ? '-' : getUnitName(jobUnitId(job)) }}</td>
+              <td>{{ job.survey?.customer?.company_name || job.service_report?.customer?.company_name || job.service_request?.customer?.company_name || job.delivery_order?.customer?.company_name || getCustomerName(jobCustomerId(job)) }}</td>
+              <td>{{ isSurveyJob(job) ? (job.survey?.recommended_model || job.survey?.unit?.model || 'Survey Lokasi') : isDeliveryJob(job) ? '-' : (job.service_report?.unit?.model || job.service_request?.unit?.model || getUnitName(jobUnitId(job))) }}</td>
               <td>{{ jobDate(job) ? new Date(jobDate(job)).toLocaleString('en-GB') : '-' }}</td>
               <td>
                 <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'pending' || job.status === 'assigned' ? 'warning' : job.status === 'completed' ? 'success' : 'secondary')">

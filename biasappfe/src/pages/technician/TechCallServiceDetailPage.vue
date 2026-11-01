@@ -114,6 +114,12 @@ function hasDeliveryOrder(j: any): boolean {
   return !!d && (!!d.id || !!d.do_number)
 }
 const isDeliveryJob = computed(() => hasDeliveryOrder(job.value))
+const isSurveyJob = computed(() => {
+  const j: any = job.value
+  return String(j?.job_type || '').toLowerCase() === 'survey' || !!j?.survey_id || !!j?.survey
+})
+const surveyData = computed(() => (directJobData.value as any)?.survey || (job.value as any)?.survey || null)
+const surveyCustomer = computed(() => surveyData.value?.customer || findCustomer(surveyData.value?.customer_id || null) || null)
 // Visit copier: hanya form Copier Service Report yang ditampilkan,
 // Technical Report disembunyikan.
 const isVisitJob = computed(() => {
@@ -673,8 +679,15 @@ async function confirmCompleteJob() {
       })
     }
 
-    toast.success('Job completed! Sparepart replacement data queued for Procurement.')
-    await refresh(true)
+    if (deliveryOrder.value) {
+      toast.success('Pengantaran unit berhasil diselesaikan!')
+    } else {
+      toast.success('Job completed! Sparepart replacement data queued for Procurement.')
+    }
+    await Promise.all([
+      fetchDirectJob(),
+      fetchFullServiceReport(),
+    ])
     showNewStandaloneConfirm.value = true
   } catch (err: any) {
     toast.error(err.message || 'Failed to complete job')
@@ -763,13 +776,255 @@ async function handleDeleteStandalone() {
     isDeletingStandalone.value = false
   }
 }
+
+// --- Survey Job Handler State & Logic ---
+const surveyForm = ref({
+  result: 'matched',
+  electrical_condition: '',
+  access_condition: '',
+  recommended_model: '',
+  est_monthly_volume: null as number | null,
+  photo_location: '',
+  technician_notes: '',
+})
+const isSavingSurvey = ref(false)
+
+watchEffect(() => {
+  if (isSurveyJob.value && surveyData.value) {
+    const s = surveyData.value
+    surveyForm.value = {
+      result: s.result || 'matched',
+      electrical_condition: s.electrical_condition || '',
+      access_condition: s.access_condition || '',
+      recommended_model: s.recommended_model || s.unit?.model || '',
+      est_monthly_volume: s.est_monthly_volume || null,
+      photo_location: s.photo_location || '',
+      technician_notes: s.technician_notes || '',
+    }
+  }
+})
+
+async function acceptSurveyJob() {
+  try {
+    await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
+    toast.success('Job survey diterima! Status: In Progress.')
+    await fetchDirectJob()
+  } catch (e: any) {
+    toast.error(e.message || 'Gagal menerima job survey')
+  }
+}
+
+async function completeSurveyJob() {
+  if (!surveyForm.value.result) {
+    toast.warning('Pilih hasil kelayakan survey (Cocok / Tidak Cocok)')
+    return
+  }
+  isSavingSurvey.value = true
+  try {
+    const sid = surveyData.value?.id || job.value?.survey_id
+    if (sid) {
+      await api.put(`/surveys/${sid}`, {
+        result: surveyForm.value.result,
+        status: surveyForm.value.result === 'matched' ? 'matched' : 'cancelled',
+        electrical_condition: surveyForm.value.electrical_condition,
+        access_condition: surveyForm.value.access_condition,
+        recommended_model: surveyForm.value.recommended_model,
+        est_monthly_volume: surveyForm.value.est_monthly_volume ? Number(surveyForm.value.est_monthly_volume) : 0,
+        photo_location: surveyForm.value.photo_location,
+        technician_notes: surveyForm.value.technician_notes,
+      })
+    }
+    await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
+    toast.success('Survey lapangan berhasil diselesaikan!')
+    await fetchDirectJob()
+    router.push('/technician/call-services')
+  } catch (err: any) {
+    toast.error(err.message || 'Gagal menyelesaikan survey')
+  } finally {
+    isSavingSurvey.value = false
+  }
+}
+
+function handleSurveyPhoto(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = (ev) => {
+    const img = new Image()
+    img.onload = () => {
+      let width = img.width
+      let height = img.height
+      const max = 1024
+      if (width > height && width > max) {
+        height = Math.round(height * (max / width))
+        width = max
+      } else if (height > max) {
+        width = Math.round(width * (max / height))
+        height = max
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height)
+        surveyForm.value.photo_location = canvas.toDataURL('image/jpeg', 0.8)
+      }
+    }
+    img.src = ev.target?.result as string
+  }
+  reader.readAsDataURL(file)
+}
 </script>
 
 <template>
   <div class="tech-job-detail" v-if="job">
-    <PageHeader :title="isDeliveryJob ? 'Delivery Job Detail' : 'Call Service Detail'" :back-button="true" @back="router.back()" />
+    <PageHeader :title="isSurveyJob ? 'Survey Job Detail' : isDeliveryJob ? 'Delivery Job Detail' : 'Call Service Detail'" :back-button="true" @back="router.back()" />
 
-    <div v-if="isDeliveryJob" class="grid-2">
+    <!-- Survey Job View -->
+    <div v-if="isSurveyJob" class="grid-2">
+      <!-- Info Section (Survey Data) -->
+      <div class="card p-lg">
+        <h2 class="card-title mb-md">Informasi Survey Lapangan</h2>
+        <div class="info-list">
+          <div class="info-item">
+            <span class="info-label">Job Order No</span>
+            <span class="info-value font-bold">{{ job.job_order_no }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Survey No</span>
+            <span class="info-value font-bold">{{ surveyData?.survey_no || '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Customer</span>
+            <span class="info-value font-bold">{{ surveyCustomer?.company_name || '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Alamat Survey</span>
+            <span class="info-value">{{ surveyData?.survey_address || surveyCustomer?.address || '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">PIC & Kontak</span>
+            <span class="info-value">{{ surveyData?.contact_person || surveyCustomer?.pic_name || '-' }} ({{ surveyData?.contact_phone || surveyCustomer?.phone || '-' }})</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Jadwal Survey</span>
+            <span class="info-value">{{ surveyData?.scheduled_date ? new Date(surveyData.scheduled_date).toLocaleString('id-ID') : '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Unit Minat Awal</span>
+            <span class="info-value">{{ surveyData?.unit?.model ? `${surveyData.unit.model} (SN: ${surveyData.unit.serial_no || '-'})` : '-' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Status Job</span>
+            <span class="badge" :class="job.status === 'completed' ? 'badge-success' : job.status === 'in_progress' ? 'badge-info' : 'badge-warning'">
+              {{ job.status.toUpperCase().replace('_', ' ') }}
+            </span>
+          </div>
+        </div>
+
+        <div class="mt-lg pt-md" style="border-top: 1px solid var(--color-border-light)">
+          <h3 class="text-md font-bold mb-sm">Instruksi dari CS</h3>
+          <p class="text-sm p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
+            {{ job.instructions || surveyData?.remarks || 'Tidak ada instruksi khusus.' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Action Section (Form Hasil Survey Lapangan) -->
+      <div class="card p-lg">
+        <h2 class="card-title mb-md">Form Laporan Survey Lapangan</h2>
+
+        <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
+          <p class="mb-lg text-muted">Anda belum menerima job survey ini.</p>
+          <button class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptSurveyJob">
+            Terima Job Survey
+          </button>
+        </div>
+
+        <div v-else>
+          <div class="form-group mb-md">
+            <label class="form-label font-bold">Hasil Kelayakan Lokasi / Mesin <span class="text-danger">*</span></label>
+            <div style="display: flex; gap: 16px; margin-top: 6px;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="radio" v-model="surveyForm.result" value="matched" :disabled="job.status === 'completed'">
+                <span class="badge badge-success">Cocok / Layak (Matched)</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="radio" v-model="surveyForm.result" value="not_matched" :disabled="job.status === 'completed'">
+                <span class="badge badge-danger">Tidak Cocok / Batal</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group mb-md">
+            <label class="form-label font-bold">Kondisi Kelistrikan & Grounding</label>
+            <input v-model="surveyForm.electrical_condition" type="text" class="form-input" placeholder="cth: Stabil 220V, Perlu Stabilizer 3000VA, Grounding bagus" :disabled="job.status === 'completed'" />
+            <div style="display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.electrical_condition = 'Stabil 220V & Grounding Baik'" :disabled="job.status === 'completed'">+ Stabil 220V</button>
+              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.electrical_condition = 'Tegangan Fluktuatif (Perlu Stabilizer)'" :disabled="job.status === 'completed'">+ Butuh Stabilizer</button>
+              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.electrical_condition = 'Perlu Jalur Stop Kontak Khusus'" :disabled="job.status === 'completed'">+ Jalur Baru</button>
+            </div>
+          </div>
+
+          <div class="form-group mb-md">
+            <label class="form-label font-bold">Akses Lokasi & Angkut Mesin</label>
+            <input v-model="surveyForm.access_condition" type="text" class="form-input" placeholder="cth: Lantai 1 akses luas, Lantai 2 ada lift barang muat mesin" :disabled="job.status === 'completed'" />
+            <div style="display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
+              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.access_condition = 'Lantai 1 - Akses Mudah & Luas'" :disabled="job.status === 'completed'">+ Lantai 1</button>
+              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.access_condition = 'Lantai 2+ (Tersedia Lift Barang Muat Mesin)'" :disabled="job.status === 'completed'">+ Ada Lift Barang</button>
+              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.access_condition = 'Tangga Sempit / Perlu Tim Angkut Tambahan'" :disabled="job.status === 'completed'">+ Tangga Sempit</button>
+            </div>
+          </div>
+
+          <div class="form-group mb-md">
+            <label class="form-label font-bold">Rekomendasi Tipe Unit / Mesin Yang Pas</label>
+            <input v-model="surveyForm.recommended_model" type="text" class="form-input" placeholder="cth: Canon iR-ADV DX 4725i / Kyocera TaskAlfa 3212i" :disabled="job.status === 'completed'" />
+          </div>
+
+          <div class="form-group mb-md">
+            <label class="form-label font-bold">Estimasi Volume Cetak Customer (Per Bulan)</label>
+            <input v-model.number="surveyForm.est_monthly_volume" type="number" class="form-input" placeholder="cth: 5000 (lembar)" :disabled="job.status === 'completed'" />
+          </div>
+
+          <div class="form-group mb-md">
+            <label class="form-label font-bold">Catatan Hasil Survey</label>
+            <textarea v-model="surveyForm.technician_notes" class="form-textarea" rows="3" placeholder="Catatan teknis lainnya dari hasil kunjungan lapangan..." :disabled="job.status === 'completed'"></textarea>
+          </div>
+
+          <div class="form-group mb-lg">
+            <label class="form-label font-bold">Dokumentasi Foto Lokasi Survey</label>
+            <div v-if="surveyForm.photo_location" style="position: relative; max-width: 280px; margin-bottom: 8px;">
+              <img :src="surveyForm.photo_location" alt="Foto Lokasi" style="width: 100%; height: 160px; object-fit: cover; border-radius: 6px; cursor: pointer;" @click="servicePhotoZoom = surveyForm.photo_location" />
+              <button v-if="job.status !== 'completed'" type="button" class="btn btn-danger btn-xs" style="position: absolute; top: 4px; right: 4px;" @click="surveyForm.photo_location = ''">✕ Hapus</button>
+            </div>
+            <div v-if="job.status !== 'completed' && !surveyForm.photo_location" style="display: flex; gap: 8px;">
+              <label class="btn btn-outline" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                📷 Ambil Foto
+                <input type="file" accept="image/*" capture="environment" style="display: none;" @change="handleSurveyPhoto" />
+              </label>
+              <label class="btn btn-outline" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                📁 Pilih File
+                <input type="file" accept="image/*" style="display: none;" @change="handleSurveyPhoto" />
+              </label>
+            </div>
+          </div>
+
+          <div v-if="job.status !== 'completed'" class="pt-md" style="border-top: 1px solid var(--color-border-light);">
+            <button class="btn btn-primary w-full" style="padding: 12px; font-size: 16px; font-weight: bold;" :disabled="isSavingSurvey" @click="completeSurveyJob">
+              {{ isSavingSurvey ? 'Menyimpan...' : '✔ Complete Survey' }}
+            </button>
+          </div>
+          <div v-else class="alert alert-success mt-md" style="padding: 10px; border-radius: 6px; font-size: 13px;">
+            ✓ Job survey ini telah diselesaikan. Hasil survey sudah tersinkronisasi ke CS.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delivery Job View -->
+    <div v-else-if="isDeliveryJob" class="grid-2">
       <!-- Info Section (Delivery Order data) -->
       <div class="card p-lg">
         <h2 class="card-title mb-md">Delivery Information</h2>

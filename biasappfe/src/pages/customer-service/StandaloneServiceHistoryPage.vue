@@ -120,6 +120,7 @@ const columns: TableColumn[] = [
   { key: 'delivery_date', label: 'Tanggal', width: '110px' },
   { key: 'items', label: 'Unit / Product', width: '200px' },
   { key: 'status', label: 'Status', width: '120px' },
+  { key: 'notes', label: 'Keterangan / Alasan', width: '220px' },
   { key: 'technician_id', label: 'Teknisi', width: '150px' },
   { key: 'job_order', label: 'Job Order', width: '140px' },
 ]
@@ -253,7 +254,7 @@ function openEdit(row: any) {
     recipient_phone: row.recipient_phone || '',
     delivery_date: row.delivery_date ? String(row.delivery_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
     technician_id: row.technician_id || null,
-    notes: row.notes || '',
+    notes: row.notes || row.problem || '',
   })
   showModal.value = true
 }
@@ -671,6 +672,22 @@ async function exportPdf() {
             {{ statusLabel(row) }}
           </span>
         </template>
+        <template #cell-notes="{ row }">
+          <div class="text-xs" :title="row.problem || row.notes || '-'" style="max-width: 220px; line-height: 1.4;">
+            <div v-if="row.problem" class="font-medium" style="color: var(--color-text);">
+              {{ row.problem }}
+            </div>
+            <div v-if="row.notes && row.notes !== row.problem" class="text-muted" :class="{ 'mt-1': !!row.problem }">
+              {{ row.notes }}
+            </div>
+            <div v-if="!row.problem && !row.notes">
+              <span v-if="statusLabel(row) === 'PENDING'" class="text-warning italic" style="font-size: 11px;">
+                {{ row.technician_id ? 'Menunggu pengerjaan teknisi' : 'Belum ditunjuk teknisi' }}
+              </span>
+              <span v-else class="text-muted italic">—</span>
+            </div>
+          </div>
+        </template>
         <template #cell-technician_id="{ value }">
           <span class="text-nowrap">{{ technicianName(value) }}</span>
         </template>
@@ -779,8 +796,8 @@ async function exportPdf() {
         <span class="form-hint">Dapat di-assign langsung nanti melalui tombol "Assign" di tabel.</span>
       </div>
       <div class="form-group">
-        <label class="form-label">Catatan / Keluhan Awal</label>
-        <textarea v-model="form.notes" class="form-textarea" rows="2" placeholder="Keluhan dari customer..."></textarea>
+        <label class="form-label">Keterangan / Keluhan Awal / Alasan Pending</label>
+        <textarea v-model="form.notes" class="form-textarea" rows="2" placeholder="Keluhan dari customer, alasan pending, atau catatan pekerjaan..."></textarea>
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="showModal = false">Batal</button>
