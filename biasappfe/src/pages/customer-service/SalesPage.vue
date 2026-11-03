@@ -850,6 +850,7 @@ function onCombinedItemChange(idx: number) {
 }
 
 const currentStep = ref(1)
+const isSubmitting = ref(false)
 
 function openAdd() {
   editingItem.value = null
@@ -920,6 +921,7 @@ function openEdit(item: any) {
 }
 
 async function handleSubmit() {
+  if (isSubmitting.value) return
   if (!form.customer_id) {
     toast.warning('Customer is required.')
     return
@@ -965,6 +967,8 @@ async function handleSubmit() {
     warrantyPayload.warranty_type = types?.[0] || 'machine'
     warrantyPayload.warranty_types = types
   }
+
+  isSubmitting.value = true
 
   const saleData = {
     ...form,
@@ -1022,8 +1026,10 @@ async function handleSubmit() {
     }
   } catch (error: any) {
     if (pw) pw.close();
-    const errMsg = (error.response?.data?.message || error.message || "Unknown error") + " - Detail: " + JSON.stringify(error.response?.data || error.response || error);
+    const errMsg = error.message || error.response?.data?.message || "Unknown error";
     toast.error("Failed to save data! " + errMsg)
+  } finally {
+    isSubmitting.value = false;
   }
 }
 
@@ -1588,7 +1594,7 @@ const combinedItemOptions = computed(() => {
         <div style="flex: 1;"></div>
         <button v-if="currentStep > 1" class="btn btn-outline" @click="currentStep--">Previous</button>
         <button v-if="currentStep < 3" class="btn btn-accent" @click="currentStep++">Next</button>
-        <button v-if="currentStep === 3" class="btn btn-accent" @click="handleSubmit">Save Sale</button>
+        <button v-if="currentStep === 3" class="btn btn-accent" :disabled="isSubmitting" @click="handleSubmit">{{ isSubmitting ? 'Saving...' : 'Save Sale' }}</button>
       </template>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Sale"

@@ -3,7 +3,7 @@
 // Standalone Service History — sisi Teknisi (list).
 // Difilter sesuai teknisi yang login (admin/superadmin melihat semua).
 // Fitur: Edit, Assign (buat Job Order), Delete.
-import { computed, ref, reactive, onMounted, watch } from 'vue'
+import { computed, ref, reactive, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
@@ -303,6 +303,86 @@ async function saveAssign() {
     assignSaving.value = false
   }
 }
+
+// Dual / Top Synchronized Scrollbar
+const tableScrollRef = ref<HTMLElement | null>(null)
+const topScrollRef = ref<HTMLElement | null>(null)
+const hasHorizontalOverflow = ref(false)
+const tableScrollWidth = ref(0)
+
+let isSyncingTop = false
+let isSyncingTable = false
+
+function onTopScroll() {
+  if (isSyncingTop) {
+    isSyncingTop = false
+    return
+  }
+  if (!topScrollRef.value || !tableScrollRef.value) return
+  isSyncingTable = true
+  tableScrollRef.value.scrollLeft = topScrollRef.value.scrollLeft
+}
+
+function onTableScroll() {
+  if (isSyncingTable) {
+    isSyncingTable = false
+    return
+  }
+  if (!topScrollRef.value || !tableScrollRef.value) return
+  isSyncingTop = true
+  topScrollRef.value.scrollLeft = tableScrollRef.value.scrollLeft
+}
+
+function checkScrollOverflow() {
+  if (!tableScrollRef.value) {
+    hasHorizontalOverflow.value = false
+    return
+  }
+  const el = tableScrollRef.value
+  const overflow = el.scrollWidth > el.clientWidth + 2
+  hasHorizontalOverflow.value = overflow
+  tableScrollWidth.value = el.scrollWidth
+  if (topScrollRef.value) {
+    topScrollRef.value.scrollLeft = el.scrollLeft
+  }
+}
+
+let resizeObserver: ResizeObserver | null = null
+
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      checkScrollOverflow()
+    })
+  }
+  nextTick(() => {
+    if (tableScrollRef.value && resizeObserver) {
+      try {
+        resizeObserver.observe(tableScrollRef.value)
+        const tbl = tableScrollRef.value.querySelector('table')
+        if (tbl) resizeObserver.observe(tbl)
+      } catch {}
+    }
+    checkScrollOverflow()
+  })
+  window.addEventListener('resize', checkScrollOverflow)
+})
+
+watch(
+  [paginatedList, () => standaloneList.value],
+  () => {
+    nextTick(checkScrollOverflow)
+  },
+  { deep: true },
+)
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+  window.removeEventListener('resize', checkScrollOverflow)
+})
 </script>
 
 <template>
@@ -315,8 +395,19 @@ async function saveAssign() {
     </div>
 
     <div class="card sa-card-wide">
+      <!-- Top Sync Scrollbar -->
+      <div
+        v-show="hasHorizontalOverflow"
+        ref="topScrollRef"
+        class="table-scroll-top"
+        title="Scroll horizontal tabel"
+        @scroll="onTopScroll"
+      >
+        <div :style="{ width: tableScrollWidth + 'px', height: '1px' }"></div>
+      </div>
+
       <!-- Desktop Table -->
-      <div class="table-responsive">
+      <div ref="tableScrollRef" class="table-responsive" @scroll="onTableScroll">
         <table class="table sa-table">
           <thead>
             <tr>
@@ -636,11 +727,40 @@ async function saveAssign() {
   overflow: hidden;
 }
 
+.table-scroll-top {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 12px;
+  min-height: 12px;
+  background: var(--color-surface-sunken, #f8fafc);
+  border-bottom: 1px solid var(--color-border-light, #e2e8f0);
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+
+.table-scroll-top::-webkit-scrollbar {
+  height: 10px;
+}
+
+.table-scroll-top::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.table-scroll-top::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
+}
+
+.table-scroll-top::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
 /* ── Desktop Table Styles ── */
 .table-responsive {
   overflow-x: auto;
   overflow-y: auto;
-  max-height: calc(100vh - 280px);
+  max-height: calc(100vh - 360px);
   min-height: 250px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;

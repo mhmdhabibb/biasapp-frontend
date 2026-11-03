@@ -784,26 +784,102 @@ async function saveForm() {
         </div>
       </div>
 
-      <div class="signature-grid">
-        <div class="form-group">
-          <label class="form-label">Customer Type</label>
-          <input :value="customerType" type="text" class="form-input" readonly disabled>
-          <label class="form-label mt-sm">Customer / PIC Name <span class="text-danger">*</span></label>
-          <input v-model="form.customer_name" type="text" class="form-input" placeholder="Customer PIC name">
-          <label class="form-label mt-sm">Customer Signature <span class="text-danger">*</span></label>
-          <SignaturePad v-model="form.customer_signature" height="160px" />
+      <!-- Section: Tanda Tangan & Verifikasi -->
+      <div class="signature-section mt-xl">
+        <div class="section-title-row mb-md">
+          <h3 class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            Tanda Tangan &amp; Verifikasi
+          </h3>
+          <span class="section-subtitle">Pastikan PIC customer dan teknisi menandatangani laporan berikut</span>
         </div>
-        <div class="form-group">
-          <label class="form-label">Technician Name</label>
-          <input v-model="form.technician_name" type="text" class="form-input" readonly disabled>
-          <label class="form-label mt-sm">Technician Signature <span class="text-danger">*</span></label>
-          <SignaturePad v-model="form.technician_signature" height="160px" />
+
+        <div class="signature-cards-grid">
+          <!-- Card Customer -->
+          <div class="sig-card">
+            <div class="sig-card-header">
+              <div class="sig-header-left">
+                <div class="sig-icon-wrap sig-icon-customer">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <div>
+                  <div class="sig-card-title">Customer / PIC</div>
+                  <div class="sig-card-sub">Pihak penerima laporan</div>
+                </div>
+              </div>
+              <span class="sig-type-badge">{{ customerType || 'Corporate' }}</span>
+            </div>
+
+            <div class="sig-card-body">
+              <div class="form-group mb-md">
+                <label class="form-label font-medium">Customer / PIC Name <span class="text-danger">*</span></label>
+                <div class="input-with-icon">
+                  <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <input v-model="form.customer_name" type="text" class="form-input form-input-clean" placeholder="Nama PIC Customer...">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <div class="flex justify-between items-center mb-xs">
+                  <label class="form-label font-medium m-0">Customer Signature <span class="text-danger">*</span></label>
+                  <span class="text-xs text-muted">Tanda tangan digital</span>
+                </div>
+                <div class="sig-pad-box">
+                  <SignaturePad v-model="form.customer_signature" height="150px" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card Teknisi -->
+          <div class="sig-card">
+            <div class="sig-card-header">
+              <div class="sig-header-left">
+                <div class="sig-icon-wrap sig-icon-tech">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                </div>
+                <div>
+                  <div class="sig-card-title">Teknisi BIAS</div>
+                  <div class="sig-card-sub">Penyelesai pekerjaan</div>
+                </div>
+              </div>
+              <span class="sig-type-badge badge-tech">Teknisi</span>
+            </div>
+
+            <div class="sig-card-body">
+              <div class="form-group mb-md">
+                <label class="form-label font-medium">Technician Name</label>
+                <div class="input-with-icon readonly-field">
+                  <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/></svg>
+                  <input :value="form.technician_name || 'Teknisi'" type="text" class="form-input form-input-clean" readonly disabled>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <div class="flex justify-between items-center mb-xs">
+                  <label class="form-label font-medium m-0">Technician Signature <span class="text-danger">*</span></label>
+                  <span class="text-xs text-muted">Tanda tangan digital</span>
+                </div>
+                <div class="sig-pad-box">
+                  <SignaturePad v-model="form.technician_signature" height="150px" />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="mt-xl">
-        <button class="btn btn-primary w-full" style="padding: 12px; font-size: 16px;" :disabled="isLoading || isSaving" @click="saveForm">
-          {{ isSaving ? 'Saving...' : 'Update Copier Report' }}
+      <!-- Action Button Submit -->
+      <div class="action-footer mt-xl mb-xl">
+        <button
+          type="button"
+          class="btn btn-primary btn-submit-report"
+          :disabled="isLoading || isSaving"
+          @click="saveForm"
+        >
+          <svg v-if="!isSaving" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          <svg v-else class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
+          <span>{{ isSaving ? 'Menyimpan Laporan...' : 'Update Copier Report' }}</span>
         </button>
       </div>
       </template>
@@ -1052,9 +1128,211 @@ async function saveForm() {
   text-align: center;
 }
 
+/* ── Section Title ── */
+.signature-section {
+  margin-top: 24px;
+}
+
+.section-title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-emphasis, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.section-subtitle {
+  font-size: 12px;
+  color: var(--color-text-muted, #64748b);
+}
+
+/* ── Signature Cards Grid ── */
+.signature-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.sig-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.sig-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.07);
+}
+
+.sig-card-header {
+  padding: 12px 16px;
+  background: var(--color-surface-sunken, #f8fafc);
+  border-bottom: 1px solid var(--color-border-light, #e2e8f0);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.sig-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sig-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sig-icon-customer {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+.sig-icon-tech {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+
+.sig-card-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--color-text-emphasis, #0f172a);
+  line-height: 1.2;
+}
+
+.sig-card-sub {
+  font-size: 11px;
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.sig-type-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  text-transform: capitalize;
+}
+
+.sig-type-badge.badge-tech {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.sig-card-body {
+  padding: 16px;
+}
+
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon {
+  position: absolute;
+  left: 12px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.form-input-clean {
+  padding-left: 36px !important;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background: var(--color-surface, #ffffff);
+  font-size: 13.5px;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.form-input-clean:focus {
+  border-color: var(--color-primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  outline: none;
+}
+
+.readonly-field input {
+  background: var(--color-surface-sunken, #f8fafc) !important;
+  color: var(--color-text-muted, #64748b) !important;
+  cursor: not-allowed;
+}
+
+.sig-pad-box {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1.5px dashed #cbd5e1;
+  background: #ffffff;
+  transition: border-color 0.2s;
+}
+
+.sig-pad-box:focus-within,
+.sig-pad-box:hover {
+  border-color: var(--color-primary, #3b82f6);
+}
+
+/* ── Submit Action Button ── */
+.action-footer {
+  margin-top: 28px;
+  margin-bottom: 36px;
+}
+
+.btn-submit-report {
+  width: 100%;
+  padding: 13px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  transition: all 0.2s;
+}
+
+.btn-submit-report:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+}
+
+.btn-submit-report:active:not(:disabled) {
+  transform: translateY(0);
+}
+
 @media (max-width: 640px) {
   .meter-grid { grid-template-columns: 1fr; }
   .signature-grid { grid-template-columns: 1fr; }
   .photo-cards-grid { grid-template-columns: 1fr; }
+  .signature-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .action-footer {
+    margin-bottom: 60px;
+  }
 }
 </style>

@@ -255,7 +255,7 @@ watchEffect(() => {
 
 const isDeliveryFormCompleted = computed(() => {
   const f = doForm.value
-  return !!(f.action || '').trim() && f.is_tested && f.is_completed && !!f.customer_signature && !!f.technician_signature && !!(f.customer_name || '').trim()
+  return !!(f.action || '').trim() && f.is_completed && !!f.customer_signature && !!f.technician_signature && !!(f.customer_name || '').trim()
 })
 
 function handlePhotoFile(e: Event, type: 'before' | 'progress' | 'after' = 'after') {
@@ -450,7 +450,7 @@ const isAllFormsCompleted = computed(() => {
     return copierOk && copierSigOk
   }
 
-  const techOk = !!(sr.remarks || job.value?.remarks) && (sr.is_tested ?? job.value?.is_tested)
+  const techOk = !!(sr.remarks || job.value?.remarks)
   const techSigOk = !!sr?.customer_signature_technical && !!sr?.technician_signature_technical
   return techOk && techSigOk
 })
@@ -1133,7 +1133,7 @@ function handleSurveyPhoto(e: Event) {
           </div>
           <div class="responsive-flex mb-md align-center">
             <label style="display: flex; align-items: center; gap: 0.5rem;" :style="{ opacity: isEditable ? 1 : 0.7, pointerEvents: isEditable ? 'auto' : 'none' }">
-              <input type="checkbox" v-model="doForm.is_tested" :disabled="!isEditable"> Is Tested?
+              <input type="checkbox" v-model="doForm.is_tested" :disabled="!isEditable"> Is Tested? (opsional)
             </label>
             <label style="display: flex; align-items: center; gap: 0.5rem;" :style="{ opacity: isEditable ? 1 : 0.7, pointerEvents: isEditable ? 'auto' : 'none' }">
               <input type="checkbox" v-model="doForm.is_completed" :disabled="!isEditable"> Is Completed?
@@ -1375,7 +1375,7 @@ function handleSurveyPhoto(e: Event) {
 
           <div class="form-list" v-if="serviceReport">
             <button v-if="!isVisitJob" class="btn btn-outline w-full mb-sm text-left flex justify-between items-center p-md" @click="router.push(`/technician/call-services/${serviceReport?.id}/technical-report`)">
-              <span class="font-bold"><span v-if="serviceReport?.remarks && serviceReport?.is_tested">✅</span><span v-else>📝</span> 1. Technical Report</span>
+              <span class="font-bold"><span v-if="serviceReport?.remarks && (serviceReport?.customer_signature_technical || serviceReport?.technician_signature_technical || serviceReport?.status === 'completed')">✅</span><span v-else>📝</span> 1. Technical Report</span>
               <span>></span>
             </button>
             <button

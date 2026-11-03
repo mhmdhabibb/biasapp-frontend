@@ -691,7 +691,7 @@ function navigateToDetail(item: MonitoredService) {
     </div>
 
     <!-- Main Data Table -->
-    <DataTable :columns="columns" :data="displayedServices" :loading="isLoading" permission="service_report" search-placeholder="Search all services, customer, unit, problem...">
+    <DataTable :columns="columns" :data="displayedServices" :loading="isLoading" permission="service_report" search-placeholder="Search all services, customer, unit, problem..." maxHeight="calc(100vh - 470px)">
       <template #cell-service_no="{ row, value }">
         <div style="display: flex; align-items: center; gap: 8px;">
           <button

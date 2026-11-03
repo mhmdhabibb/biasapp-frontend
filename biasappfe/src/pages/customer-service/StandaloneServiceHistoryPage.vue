@@ -651,7 +651,7 @@ async function exportPdf() {
 
     <!-- Wide table container with horizontal scroll support -->
     <div class="standalone-table-card">
-      <DataTable :columns="columns" :data="standaloneList" :loading="isLoading" search-placeholder="Cari customer, DO, atau tanggal..." maxHeight="calc(100vh - 400px)">
+      <DataTable :columns="columns" :data="standaloneList" :loading="isLoading" search-placeholder="Cari customer, DO, atau tanggal..." maxHeight="calc(100vh - 430px)">
         <template #cell-do_number="{ value }">
           <span class="badge badge-secondary font-mono">{{ value || '-' }}</span>
         </template>

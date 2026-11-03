@@ -28,6 +28,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    public readonly data?: any,
   ) {
     super(message);
     this.name = "ApiError";
@@ -60,7 +61,12 @@ function toApiError(error: unknown): ApiError {
     }
   }
 
-  let message = axErr.response?.data?.message || axErr.response?.data?.error;
+  const data = axErr.response?.data as any;
+  let message = data?.message || data?.error;
+  if (data?.message && data?.error && data.message !== data.error) {
+    const errText = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+    message = `${data.message}: ${errText}`;
+  }
   if (!message) {
     if (status === 413) {
       message = "Payload too large! Please check photo sizes.";
@@ -72,7 +78,7 @@ function toApiError(error: unknown): ApiError {
       message = axErr.message || "A network error occurred.";
     }
   }
-  return new ApiError(message, status);
+  return new ApiError(message, status, data);
 }
 
 async function request<T>(
