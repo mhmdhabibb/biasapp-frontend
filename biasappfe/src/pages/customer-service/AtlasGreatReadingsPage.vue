@@ -314,7 +314,6 @@ const columns: TableColumn[] = [
   { key: 'base_usage', label: 'Pemakaian Dasar' },
   { key: 'allocation', label: 'Alokasi Lembar' },
   { key: 'total_pages', label: 'Total Lembar Akhir' },
-  { key: 'actions', label: 'Aksi' },
 ]
 
 // --- Load Data ---

@@ -77,11 +77,8 @@ function trimSignature(dataUrl?: string): Promise<string> {
   });
 }
 
-export async function printDeliveryOrder(item: any): Promise<boolean> {
-  if (!item) return false;
-  // Open window synchronously to avoid popup blocker
-  const win = window.open("", "_blank");
-  if (!win) return false;
+export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false): Promise<{ html: string; fullItem: any }> {
+  if (!item) return { html: "", fullItem: null };
 
   let fullItem = item;
   if (item.id && (!item.assigner_signature && !item.technician_signature && !item.customer_signature)) {
@@ -216,6 +213,10 @@ export async function printDeliveryOrder(item: any): Promise<boolean> {
   const recipientName = fullItem.customer_name || fullItem.recipient_name || "";
   const logoSrc = BIAS_LOGO_DATA_URL || biasLogoUrl;
 
+  const printScript = autoPrint
+    ? `<script>window.onload = function() { setTimeout(function() { window.print(); }, 500); }<\/script>`
+    : "";
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -348,17 +349,55 @@ export async function printDeliveryOrder(item: any): Promise<boolean> {
             </div>
           </div>
         </div>
-        <script>
-          window.onload = function() {
-            setTimeout(function() { window.print(); }, 500);
-          }
-        <\/script>
+        ${printScript}
       </body>
     </html>
   `;
+
+  return { html, fullItem };
+}
+
+export async function printDeliveryOrder(item: any): Promise<boolean> {
+  if (!item) return false;
+  // Open window synchronously to avoid popup blocker
+  const win = window.open("", "_blank");
+  if (!win) return false;
+
+  const { html } = await getDeliveryOrderHtml(item, true);
+  if (!html) {
+    win.close();
+    return false;
+  }
 
   win.document.open();
   win.document.write(html);
   win.document.close();
   return true;
+}
+
+export async function downloadDeliveryOrderPdf(item: any): Promise<boolean> {
+  if (!item) return false;
+  try {
+    const { default: html2pdf } = await import("html2pdf.js");
+    const { html, fullItem } = await getDeliveryOrderHtml(item, false);
+    if (!html) return false;
+
+    const container = document.createElement("div");
+    container.innerHTML = html;
+
+    const doNo = (fullItem?.do_number || `DO-${fullItem?.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
+    const opt = {
+      margin: [6, 6, 6, 6],
+      filename: `Surat_Jalan_${doNo}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    };
+
+    await html2pdf().set(opt).from(container).save();
+    return true;
+  } catch (e) {
+    console.error("Failed to download delivery order pdf:", e);
+    return false;
+  }
 }

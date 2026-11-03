@@ -148,17 +148,31 @@ function resolvePOTechnician(po: any, store: any) {
   const req = resolvePORequest(po, store);
   const sr = resolvePOServiceReport(po, store);
 
-  if (req?.technician) return req.technician;
-  if (req?.technician_id && store?.findTechnician) {
-    const t = store.findTechnician(req.technician_id);
-    if (t) return t;
-  }
-  if (sr?.technician) return sr.technician;
-  if (sr?.technician_id && store?.findTechnician) {
-    const t = store.findTechnician(sr.technician_id);
-    if (t) return t;
-  }
-  return null;
+  const getTech = (tOrId: any) => {
+    if (!tOrId) return null;
+    if (typeof tOrId === "object" && (tOrId.employee_code || tOrId.name || tOrId.user)) return tOrId;
+    const strId = String(typeof tOrId === "object" ? tOrId.id : tOrId).trim().toLowerCase();
+    if (store?.findTechnician) {
+      const found = store.findTechnician(strId);
+      if (found) return found;
+    }
+    const list = store?.technicians?.value || store?.technicians || [];
+    return list.find(
+      (t: any) =>
+        String(t.id).trim().toLowerCase() === strId ||
+        String(t.user_id || "").trim().toLowerCase() === strId,
+    );
+  };
+
+  return (
+    getTech(po.technician) ||
+    getTech(po.technician_id) ||
+    getTech(req?.technician) ||
+    getTech(req?.technician_id) ||
+    getTech(sr?.technician) ||
+    getTech(sr?.technician_id) ||
+    null
+  );
 }
 
 function resolvePOUnit(po: any, store: any) {
@@ -191,6 +205,8 @@ function resolvePOLineItems(po: any, store: any) {
       price: item.unit_price || 0,
       total: item.total_price || (item.qty || 1) * (item.unit_price || 0),
       purpose: item.purpose || "",
+      store_name: item.store_name || po.store_name || "",
+      virtual_account: item.virtual_account || po.virtual_account || "",
     }));
   }
 
@@ -208,6 +224,8 @@ function resolvePOLineItems(po: any, store: any) {
         price,
         total: price * qty,
         purpose: req.purpose || "",
+        store_name: po.store_name || "",
+        virtual_account: po.virtual_account || "",
       },
     ];
   }
@@ -263,32 +281,33 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
       })
     : "-";
 
-  // 3. Pemohon Info
+  // 3. Pemohon Info (Technician)
   const users = store?.users?.value || store?.users || [];
-  const poUser =
-    po.user ||
-    (po.user_id
-      ? (users as any[]).find((u: any) => String(u?.id) === String(po.user_id))
-      : null) ||
-    (currentUser?.value || currentUser || null);
-  const roleName =
-    poUser?.role?.name ||
-    poUser?.role ||
-    currentUser?.value?.role ||
-    currentUser?.role ||
-    "Technical / Service";
-  const namaPemohon = escapeHtml(
-    poUser?.name ||
-    poUser?.username ||
-    po.requester_name ||
-    currentUser?.value?.name ||
-    currentUser?.name ||
-    "tech",
-  );
-  const divisiDepartemen = escapeHtml(roleName);
-  const posisi = escapeHtml(po.requester_position || roleName);
-  const idCard = escapeHtml(tech?.code || tech?.id_card || tech?.id ? String(tech.code || tech.id_card || tech.id) : "-");
-  const prioritas = escapeHtml(po.priority || "Normal / Mendesak");
+  const matchedUser = tech?.user_id
+    ? (users as any[]).find((u: any) => String(u?.id) === String(tech.user_id))
+    : null;
+
+  const rawTechName =
+    tech?.user?.name ||
+    tech?.name ||
+    tech?.user?.username ||
+    matchedUser?.name ||
+    (po.requester_name && !["admin", "adminss", "tech", "admin sales"].includes(String(po.requester_name).toLowerCase()) ? po.requester_name : "") ||
+    "";
+
+  const namaPemohon = escapeHtml(rawTechName || "Teknisi");
+  const divisiDepartemen = "Technical / Service";
+  const posisi = "Technician";
+
+  // ID Card: Technician employee_code (e.g. TECH-bfb2aa56), never raw UUID
+  const rawIdCard =
+    tech?.employee_code ||
+    tech?.code ||
+    tech?.id_card ||
+    (!isUuid(tech?.id) ? tech?.id : null) ||
+    "-";
+  const idCard = escapeHtml(rawIdCard);
+  const prioritas = escapeHtml(po.priority || "Normal");
 
   // 4. Default Purpose
   const defaultPurposeParts = [];
@@ -307,16 +326,25 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
   const lineItems = resolvePOLineItems(po, store);
   let totalEstimasi = 0;
 
+  // Resolve Store Name & Virtual Account (aggregated from line items if multi-store)
+  const storeNames = Array.from(new Set(lineItems.map((it: any) => it.store_name).filter(Boolean)));
+  const vaNumbers = Array.from(new Set(lineItems.map((it: any) => it.virtual_account).filter(Boolean)));
+  const tokoName = storeNames.length > 0 ? storeNames.join(", ") : (po.store_name || po.supplier?.name || po.supplier_name || "-");
+  const vaNumber = vaNumbers.length > 0 ? vaNumbers.join(", ") : (po.virtual_account || po.va_number || po.bank_account || "-");
+
   const itemRows = lineItems.map((item: any, idx: number) => {
     totalEstimasi += item.total || 0;
     const priceStr = item.price ? item.price.toLocaleString("id-ID") : "-";
     const totalStr = item.total ? item.total.toLocaleString("id-ID") : "-";
     const purposeStr = escapeHtml(item.purpose || defaultPurpose);
+    const storeBadge = item.store_name
+      ? `<br><span style="font-size: 8.5px; color: #1e4e79; font-weight: bold;">[Toko: ${escapeHtml(item.store_name)}${item.virtual_account ? ` | VA: ${escapeHtml(item.virtual_account)}` : ""}]</span>`
+      : "";
 
     return `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td style="text-align: left;">${escapeHtml(item.name)}</td>
+        <td style="text-align: left;">${escapeHtml(item.name)}${storeBadge}</td>
         <td style="text-align: center;">${escapeHtml(item.qty)}</td>
         <td style="text-align: center;">${escapeHtml(item.uom || "Pcs")}</td>
         <td style="text-align: right;">${priceStr}</td>
@@ -585,6 +613,12 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
           <td class="value-cell">${idCard}</td>
           <td class="label-cell">Tingkat Prioritas</td>
           <td class="value-cell">${prioritas}</td>
+        </tr>
+        <tr>
+          <td class="label-cell">Toko / Supplier</td>
+          <td class="value-cell" style="font-weight: bold; color: #1e4e79;">${escapeHtml(tokoName)}</td>
+          <td class="label-cell">Virtual Account</td>
+          <td class="value-cell" style="font-family: monospace; font-weight: bold;">${escapeHtml(vaNumber)}</td>
         </tr>
       </table>
 

@@ -87,14 +87,14 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units", "rents", "products", "brands", "unitTypes"],
   "/customer-service/sales": ["sales", "salesInvoices", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes"],
-  "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "technicians", "units", "customers", "products"],
+  "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "purchaseOrders", "technicians", "units", "customers", "products"],
   "/customer-service/contract-items": ["contractItems", "customers", "units", "brands", "unitTypes"],
   "/customer-service/job-orders": ["jobOrders", "deliveryOrders", "serviceReports", "serviceRequests", "technicians", "units", "customers"],
   "/customer-service/service-requests": ["serviceRequests", "customers", "units", "sales", "deliveryOrders", "jobOrders", "serviceReports", "contractItems", "rents", "products"],
   "/customer-service/monthly-meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "serviceReports", "brands", "unitTypes"],
   "/customer-service/payments": ["payments", "rentalInvoices", "salesInvoices", "customers"],
   "/customer-service/warranty-claims": ["warrantyClaims", "units", "customers", "warranties"],
-  "/customer-service/sparepart-request": ["sparepartRequests", "serviceReports", "units", "customers", "products"],
+  "/customer-service/sparepart-request": ["sparepartRequests", "serviceReports", "purchaseOrders", "units", "customers", "products"],
   "/customer-service/maintenance": ["serviceReports", "units", "technicians", "customers"],
   "/customer-service/indent": ["indents", "products", "suppliers"],
   "/customer-service/delivery": ["deliveryOrders", "purchaseOrders", "customers"],
@@ -107,6 +107,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   // Accounting Operational Pages
   "/accounting/purchase-orders": ["purchaseOrders", "suppliers", "products"],
   "/accounting/delivery-orders": ["deliveryOrders", "purchaseOrders", "customers"],
+  "/accounting/sparepart-requests": ["sparepartRequests", "purchaseOrders", "serviceReports", "technicians", "units", "customers", "products"],
 
   // Technician Operational Pages
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests"],

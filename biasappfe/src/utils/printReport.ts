@@ -744,3 +744,32 @@ export function printMultipleServiceReports(items: any[], type?: ReportType) {
 export function getServiceReportFormHtml(item: any, type?: ReportType): string {
   return wrapDocument(getReportPages(item, type), false);
 }
+
+export async function downloadServiceReportPdf(item: any, type?: ReportType): Promise<boolean> {
+  const pages = getReportPages(item, type);
+  if (pages.length === 0) {
+    alert("This item does not have this type of report (e.g. not a copier).");
+    return false;
+  }
+  try {
+    const { default: html2pdf } = await import("html2pdf.js");
+    const html = wrapDocument(pages, false);
+    const container = document.createElement("div");
+    container.innerHTML = html;
+
+    const reportNo = (item.report_no || `SR-${item.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
+    const opt = {
+      margin: [6, 6, 6, 6],
+      filename: `Laporan_Servis_${reportNo}.pdf`,
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    };
+
+    await html2pdf().set(opt).from(container).save();
+    return true;
+  } catch (e) {
+    console.error("Failed to download service report pdf:", e);
+    return false;
+  }
+}

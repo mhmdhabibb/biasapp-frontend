@@ -491,6 +491,7 @@ const columns: TableColumn[] = [
   { key: 'order_date', label: 'Date' },
   { key: 'sparepart_request_id', label: 'Request Ref' },
   { key: 'customer', label: 'Customer' },
+  { key: 'store_name', label: 'Toko / Vendor' },
   { key: 'reason', label: 'Reason' },
   { key: 'status', label: 'Status' }
 ]
@@ -644,6 +645,13 @@ const printInvoice = printPO
       <template #cell-customer="{ row }">
         <span>{{ getCustomerName(row) }}</span>
       </template>
+      <template #cell-store_name="{ row }">
+        <div v-if="row.store_name" style="display: flex; flex-direction: column;">
+          <span style="font-weight: 600; color: #1e3a8a;">{{ row.store_name }}</span>
+          <span v-if="row.virtual_account" class="text-xs text-muted font-mono">VA: {{ row.virtual_account }}</span>
+        </div>
+        <span v-else class="text-muted">-</span>
+      </template>
       <template #cell-reason="{ row }">
         <span class="reason-cell" :title="getPOReason(row)">
           {{ getPOReason(row) }}
@@ -793,6 +801,14 @@ const printInvoice = printPO
                     }">
                 {{ (detailPO.status || '').toUpperCase() }}
               </span>
+            </div>
+            <div class="detail-field" v-if="detailPO.store_name">
+              <span class="detail-label">Toko / Supplier</span>
+              <span class="detail-value font-semibold" style="color: #1e3a8a;">{{ detailPO.store_name }}</span>
+            </div>
+            <div class="detail-field" v-if="detailPO.virtual_account">
+              <span class="detail-label">Virtual Account / Rek.</span>
+              <span class="detail-value font-mono">{{ detailPO.virtual_account }}</span>
             </div>
             <div class="detail-field detail-field--full">
               <span class="detail-label">Reason</span>
