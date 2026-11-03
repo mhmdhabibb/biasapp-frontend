@@ -68,8 +68,8 @@ const filteredMovements = computed(() => {
     // Search filter
     if (searchQuery.value) {
       const q = searchQuery.value.toLowerCase();
-      const pName = (m.product?.name || "").toLowerCase();
-      const pSku = (m.product?.sku || "").toLowerCase();
+      const pName = (m.product?.name || m.unit?.name || "").toLowerCase();
+      const pSku = (m.product?.sku || m.unit?.serial_no || "").toLowerCase();
       const refNo = (m.reference_no || "").toLowerCase();
       const notes = (m.notes || "").toLowerCase();
       if (!pName.includes(q) && !pSku.includes(q) && !refNo.includes(q) && !notes.includes(q)) {
@@ -199,7 +199,9 @@ function formatDate(iso: string) {
 function formatRefLabel(refType: string) {
   switch (refType) {
     case "sale":
-      return "Penjualan (Paid)";
+      return "Penjualan";
+    case "delivery_order":
+      return "Surat Jalan (DO)";
     case "sparepart_request":
       return "Request Form (ACC)";
     case "purchase_order":
@@ -349,10 +351,12 @@ onMounted(async () => {
 
           <select v-model="filterRefType" class="select-filter">
             <option value="">Semua Referensi</option>
-            <option value="sale">Penjualan Dibayar</option>
+            <option value="sale">Penjualan</option>
+            <option value="delivery_order">Surat Jalan (DO)</option>
+            <option value="purchase_order">Purchase Order</option>
             <option value="sparepart_request">Request Form ACC</option>
             <option value="stock_opname">Stock Opname</option>
-            <option value="purchase_order">Purchase Order</option>
+            <option value="initial">Stok Awal</option>
           </select>
         </template>
       </div>
@@ -385,8 +389,10 @@ onMounted(async () => {
               <td class="text-sm font-medium whitespace-nowrap">{{ formatDate(item.created_at) }}</td>
               <td>
                 <div class="product-info">
-                  <span class="product-name">{{ item.product?.name || 'Produk' }}</span>
-                  <span class="product-sku">{{ item.product?.sku || '-' }}</span>
+                  <span class="product-name">{{ item.product?.name || item.unit?.name || 'Item' }}</span>
+                  <span class="product-sku">
+                    {{ item.product?.sku ? `SKU: ${item.product.sku}` : (item.unit?.serial_no ? `SN: ${item.unit.serial_no}` : '-') }}
+                  </span>
                 </div>
               </td>
               <td>
