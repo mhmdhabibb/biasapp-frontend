@@ -10,19 +10,60 @@ import { useResourcesStore } from '@/stores/resources.store'
 import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import { useAuth } from '@/composables/useAuth'
+import { usePermission } from '@/composables/usePermission'
 import type { TableColumn } from '@/types'
+import { downloadStyledExcel, uniqueSheetName, NUMFMT_COUNT, type StyledCell } from '@/utils/exportHelpers'
 
 const toast = useToast()
 const master = useMasterStore()
 const resourceStore = useResourcesStore()
 const { currentUser } = useAuth()
+const { can, canAny, isAdmin } = usePermission()
 
-const { customers, units, formatUnitDisplayName } = master
+// Hak akses hapus pencatatan (Admin atau yang memiliki izin delete)
+const canDeleteReading = computed(() => {
+  return isAdmin.value || canAny(
+    'monthly_meter_reading:delete',
+    'rental:delete',
+    'rental_invoice:delete',
+    'atlas_great:delete'
+  )
+})
+
+const { customers, units, rentalInvoices, contractItems, formatUnitDisplayName } = master
+
+// Helper untuk Serial Number Unit
+function getUnitSN(item: any): string {
+  if (item?.unit?.serial_no && String(item.unit.serial_no).trim()) return String(item.unit.serial_no).trim()
+  if (item?.unit?.serial_number && String(item.unit.serial_number).trim()) return String(item.unit.serial_number).trim()
+  const targetId = item?.unit_id || item?.unit?.id
+  if (targetId) {
+    const found = (units.value || []).find((u: any) => String(u.id) === String(targetId))
+    if (found?.serial_no && String(found.serial_no).trim()) return String(found.serial_no).trim()
+    if (found?.serial_number && String(found.serial_number).trim()) return String(found.serial_number).trim()
+  }
+  return '-'
+}
+
+// Helper untuk Nama Model Unit
+function getUnitDisplayName(item: any): string {
+  if (item?.unit?.model && String(item.unit.model).trim()) return String(item.unit.model).trim()
+  if (item?.unit?.model_name && String(item.unit.model_name).trim()) return String(item.unit.model_name).trim()
+  if (item?.unit?.name && String(item.unit.name).trim()) return String(item.unit.name).trim()
+  const targetId = item?.unit_id || item?.unit?.id
+  if (targetId) {
+    const found = (units.value || []).find((u: any) => String(u.id) === String(targetId))
+    if (found?.model && String(found.model).trim()) return String(found.model).trim()
+    if (found?.model_name && String(found.model_name).trim()) return String(found.model_name).trim()
+    if (found?.name && String(found.name).trim()) return String(found.name).trim()
+  }
+  return 'Unit'
+}
 
 // --- State ---
 const readings = ref<any[]>([])
 const loading = ref(false)
-const activeTab = ref<'all' | 'atlas_great' | 'standard'>('all')
+const activeTab = ref<'atlas' | 'great'>('atlas')
 const filterCustomer = ref<string>('')
 const filterMonth = ref<number | ''>('')
 const filterYear = ref<number | ''>(new Date().getFullYear())
@@ -46,9 +87,16 @@ const currentDay = new Date().getDate()
 const allowOffSchedule = ref(true)
 
 // --- Form State ---
+interface PaperDeduction {
+  name: string
+  bw: number
+  color: number
+}
+
 const form = reactive({
-  scheme_type: 'standard' as 'atlas_great' | 'standard' | 'custom', // Standar, Atlas/Great (88/12), atau Custom
-  customer_type: 'standard',
+  rental_invoice_id: '',
+  scheme_type: 'atlas_great' as 'atlas_great' | 'standard' | 'custom',
+  customer_type: 'atlas' as 'atlas' | 'great',
   customer_id: '',
   unit_id: '',
   period_month: new Date().getMonth() + 1,
@@ -62,19 +110,176 @@ const form = reactive({
   gross_meter_color: 0,
   a3_meter_bw: 0,
   a3_meter_color: 0,
+  paper_deductions: [{ name: 'A3', bw: 0, color: 0 }] as PaperDeduction[],
   percentage_bw: 88,
   percentage_color: 12,
   remarks: '',
 })
 
+const totalDeductionBW = computed(() => {
+  if (!form.paper_deductions || form.paper_deductions.length === 0) {
+    return Number(form.a3_meter_bw || 0)
+  }
+  return form.paper_deductions.reduce((sum, d) => sum + Number(d.bw || 0), 0)
+})
 
-function onGrossOrA3Change() {
-  if (form.gross_meter_bw > 0 || form.a3_meter_bw > 0) {
-    form.end_meter_bw = Math.max(0, Number(form.gross_meter_bw || 0) - Number(form.a3_meter_bw || 0))
+const totalDeductionColor = computed(() => {
+  if (!form.paper_deductions || form.paper_deductions.length === 0) {
+    return Number(form.a3_meter_color || 0)
   }
-  if (form.gross_meter_color > 0 || form.a3_meter_color > 0) {
-    form.end_meter_color = Math.max(0, Number(form.gross_meter_color || 0) - Number(form.a3_meter_color || 0))
+  return form.paper_deductions.reduce((sum, d) => sum + Number(d.color || 0), 0)
+})
+
+function onGrossOrDeductionChange() {
+  const totBW = totalDeductionBW.value
+  const totCol = totalDeductionColor.value
+  if (form.gross_meter_bw > 0 || totBW > 0) {
+    form.end_meter_bw = Math.max(0, Number(form.gross_meter_bw || 0) - totBW)
   }
+  if (form.gross_meter_color > 0 || totCol > 0) {
+    form.end_meter_color = Math.max(0, Number(form.gross_meter_color || 0) - totCol)
+  }
+  // Sync ke field a3 untuk kompatibilitas
+  form.a3_meter_bw = totBW
+  form.a3_meter_color = totCol
+}
+
+// Master daftar ukuran kertas dari database
+const paperSizesList = ref<any[]>([])
+async function fetchPaperSizes() {
+  try {
+    const res: any = await resources.paperSizes.list()
+    paperSizesList.value = res.data || []
+  } catch (err) {
+    console.error('Failed to fetch paper sizes', err)
+  }
+}
+
+// Deteksi otomatis ukuran kertas yang digunakan di printer / kontrak / invoice rental
+function getPaperSizesForPrinter(unitId?: string, invoice?: any): string[] {
+  const paperNames = new Set<string>()
+
+  const resolveName = (idOrObj: any): string => {
+    if (!idOrObj) return ''
+    if (typeof idOrObj === 'object') return idOrObj.name || ''
+    const found = paperSizesList.value.find((p: any) => String(p.id) === String(idOrObj))
+    return found ? found.name : ''
+  }
+
+  // 1. Dari rental invoice jika ada
+  if (invoice) {
+    if (Array.isArray(invoice.meter_details)) {
+      for (const d of invoice.meter_details) {
+        const pName = d.paper_size?.name || d.paper_size_name || resolveName(d.paper_size_id)
+        if (pName && String(pName).trim()) paperNames.add(String(pName).trim().toUpperCase())
+      }
+    }
+    const ciRates = invoice.contract_item?.rates || invoice.rental?.rental_items?.[0]?.rates || []
+    if (Array.isArray(ciRates)) {
+      for (const r of ciRates) {
+        const pName = r.paper_size?.name || resolveName(r.paper_size_id)
+        if (pName && String(pName).trim()) paperNames.add(String(pName).trim().toUpperCase())
+      }
+    }
+  }
+
+  // 2. Dari unit mesin yang dipilih
+  const targetUnitId = unitId || form.unit_id
+  if (targetUnitId) {
+    const u = (units.value || []).find((x: any) => String(x.id) === String(targetUnitId))
+    if (u && Array.isArray(u.rates)) {
+      for (const r of u.rates) {
+        const pName = r.paper_size?.name || resolveName(r.paper_size_id)
+        if (pName && String(pName).trim()) paperNames.add(String(pName).trim().toUpperCase())
+      }
+    }
+    // Check contract items terkait unit ini
+    const matchedCIs = (contractItems.value || []).filter((ci: any) => String(ci.unit_id) === String(targetUnitId))
+    for (const ci of matchedCIs) {
+      if (Array.isArray(ci.rates)) {
+        for (const r of ci.rates) {
+          const pName = r.paper_size?.name || resolveName(r.paper_size_id)
+          if (pName && String(pName).trim()) paperNames.add(String(pName).trim().toUpperCase())
+        }
+      }
+    }
+  }
+
+  if (paperNames.size > 0) {
+    return Array.from(paperNames)
+  }
+
+  return ['A3']
+}
+
+function getDeductionSummary(item: any, type: 'bw' | 'color'): string {
+  if (item.paper_deductions) {
+    try {
+      const parsed = typeof item.paper_deductions === 'string' ? JSON.parse(item.paper_deductions) : item.paper_deductions
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        if (parsed.length === 1) {
+          return `${parsed[0].name}: -${Number(parsed[0][type] || 0).toLocaleString()}`
+        }
+        const parts = parsed.map((p: any) => `${p.name}: ${Number(p[type] || 0).toLocaleString()}`)
+        const tot = parsed.reduce((sum: number, p: any) => sum + Number(p[type] || 0), 0)
+        return `Deduksi: -${tot.toLocaleString()} (${parts.join(', ')})`
+      }
+    } catch (e) {}
+  }
+  return `A3: -${Number((type === 'bw' ? item.a3_counter_bw : item.a3_counter_color) || 0).toLocaleString()}`
+}
+
+function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
+  const detected = getPaperSizesForPrinter(unitId, inv)
+  const currentMap = new Map<string, { bw: number; color: number }>()
+  for (const d of (form.paper_deductions || [])) {
+    currentMap.set(d.name.toUpperCase(), { bw: Number(d.bw || 0), color: Number(d.color || 0) })
+  }
+
+  const newDeductions: PaperDeduction[] = []
+  for (const pName of detected) {
+    const existing = currentMap.get(pName)
+    newDeductions.push({
+      name: pName,
+      bw: existing ? existing.bw : (pName === 'A3' ? Number(form.a3_meter_bw || 0) : 0),
+      color: existing ? existing.color : (pName === 'A3' ? Number(form.a3_meter_color || 0) : 0),
+    })
+  }
+
+  if (newDeductions.length === 0) {
+    newDeductions.push({ name: 'A3', bw: Number(form.a3_meter_bw || 0), color: Number(form.a3_meter_color || 0) })
+  }
+
+  form.paper_deductions = newDeductions
+  onGrossOrDeductionChange()
+}
+
+function promptAddPaper() {
+  const custom = window.prompt('Masukkan nama ukuran kertas baru untuk printer ini (Contoh: A4, F4, Folio, Legal, dll):', 'A4')
+  if (custom && custom.trim()) {
+    const cleanName = custom.trim().toUpperCase()
+    if (!form.paper_deductions.some(d => d.name.toUpperCase() === cleanName)) {
+      form.paper_deductions.push({
+        name: cleanName,
+        bw: 0,
+        color: 0,
+      })
+      onGrossOrDeductionChange()
+      toast.success(`Ukuran kertas ${cleanName} ditambahkan ke daftar deduksi printer`)
+    } else {
+      toast.warning(`Ukuran kertas ${cleanName} sudah ada di daftar deduksi`)
+    }
+  }
+}
+
+function removePaperDeduction(index: number) {
+  if (form.paper_deductions.length <= 1) {
+    form.paper_deductions[0].bw = 0
+    form.paper_deductions[0].color = 0
+  } else {
+    form.paper_deductions.splice(index, 1)
+  }
+  onGrossOrDeductionChange()
 }
 
 // --- Live Calculations ---
@@ -161,6 +366,120 @@ const customerFilterOptions = computed(() => {
   ]
 })
 
+function resolveInvoiceUnit(inv: any) {
+  if (!inv) return null
+  if (inv.unit) return inv.unit
+  if (inv.unit_id) {
+    const u = (units.value || []).find((x: any) => String(x.id) === String(inv.unit_id))
+    if (u) return u
+  }
+  const ci = inv.contract_item || (contractItems.value || []).find((c: any) => String(c.id) === String(inv.contract_item_id))
+  if (ci?.unit) return ci.unit
+  if (ci?.unit_id) {
+    const u = (units.value || []).find((x: any) => String(x.id) === String(ci.unit_id))
+    if (u) return u
+  }
+  if (inv.rental?.rental_items?.[0]?.unit) return inv.rental.rental_items[0].unit
+  if (inv.meter_details?.[0]?.contract_item?.unit) return inv.meter_details[0].contract_item.unit
+  return null
+}
+
+const rentalInvoiceOptions = computed(() => {
+  const list = (rentalInvoices.value || []) as any[]
+  const targetType = form.customer_type === 'atlas' ? 'atlas' : 'great'
+
+  return list
+    .filter((inv: any) => {
+      const c = inv.customer || (customers.value || []).find((cust: any) => cust.id === inv.customer_id)
+      const cName = getCustomerName(c).toLowerCase()
+      if (targetType === 'atlas') {
+        if (!cName.includes('atlas') && inv.customer_type !== 'atlas') return false
+      } else if (targetType === 'great') {
+        if (!cName.includes('great') && inv.customer_type !== 'great') return false
+      }
+      if (form.customer_id && String(inv.customer_id) !== String(form.customer_id)) {
+        return false
+      }
+      return true
+    })
+    .map((inv: any) => {
+      const c = inv.customer || (customers.value || []).find((cust: any) => cust.id === inv.customer_id)
+      const cName = getCustomerName(c)
+      const u = resolveInvoiceUnit(inv)
+      const uDesc = u ? `${u.brand?.name ? `${u.brand.name} ` : ''}${u.model || u.name || 'Unit'}${u.serial_no ? ` (SN: ${u.serial_no})` : ''}` : 'Unit Copier'
+      const invNo = inv.invoice_no || `INV-${String(inv.id).slice(0, 8)}`
+      const pLabel = inv.period_start
+        ? `${inv.period_start.slice(0, 10)} s/d ${inv.period_end ? inv.period_end.slice(0, 10) : ''}`
+        : (inv.monthly_date ? inv.monthly_date.slice(0, 10) : '')
+      return {
+        value: inv.id,
+        label: `${invNo} — ${cName} • [Unit: ${uDesc}] ${pLabel ? `• (${pLabel})` : ''}`,
+        invoice: inv,
+        unit: u,
+      }
+    })
+})
+
+async function onRentalInvoiceChange(invId: string) {
+  if (!invId) return
+  const opt = rentalInvoiceOptions.value.find((o: any) => String(o.value) === String(invId))
+  if (!opt) return
+  const inv = opt.invoice
+  const u = opt.unit || resolveInvoiceUnit(inv)
+
+  // Otomatis set Customer
+  if (inv.customer_id) {
+    form.customer_id = inv.customer_id
+    await loadUnitsForCustomer(inv.customer_id)
+  }
+
+  // Otomatis set Unit yang terikat dengan invoice ini
+  if (u?.id) {
+    form.unit_id = u.id
+    await onUnitChange(u.id)
+  } else if (inv.unit_id) {
+    form.unit_id = inv.unit_id
+    await onUnitChange(inv.unit_id)
+  }
+
+  // Otomatis set Periode
+  const dateVal = inv.period_start || inv.monthly_date || inv.invoice_date
+  if (dateVal) {
+    const d = new Date(dateVal)
+    if (!isNaN(d.getTime())) {
+      form.period_month = d.getMonth() + 1
+      form.period_year = d.getFullYear()
+    }
+  }
+
+  // Otomatis ambil Counter Awal & Akhir bila ada di invoice
+  const bwStart = Number(inv.meter_start || inv.meter_start_bw || 0)
+  const bwEnd = Number(inv.meter_end || inv.meter_end_bw || 0)
+  const colStart = Number(inv.meter_start_color || inv.meter_start_colour || 0)
+  const colEnd = Number(inv.meter_end_color || inv.meter_end_colour || 0)
+
+  if (bwStart > 0) form.start_meter_bw = bwStart
+  if (bwEnd > 0) {
+    if (form.customer_type === 'atlas') {
+      form.gross_meter_bw = bwEnd
+      form.end_meter_bw = Math.max(0, bwEnd - Number(form.a3_meter_bw || 0))
+    } else {
+      form.end_meter_bw = bwEnd
+    }
+  }
+  if (colStart > 0) form.start_meter_color = colStart
+  if (colEnd > 0) {
+    if (form.customer_type === 'atlas') {
+      form.gross_meter_color = colEnd
+      form.end_meter_color = Math.max(0, colEnd - Number(form.a3_meter_color || 0))
+    } else {
+      form.end_meter_color = colEnd
+    }
+  }
+
+  toast.success(`Unit ${u ? (u.model || u.name || '') : ''} & Customer otomatis terpilih dari ${inv.invoice_no || 'Rental Invoice'}`)
+}
+
 const customerRentedUnits = ref<any[]>([])
 const isLoadingCustomerUnits = ref(false)
 const showAllUnitsFallback = ref(false)
@@ -218,7 +537,7 @@ const unitOptions = computed(() => {
   })
 })
 
-// Deteksi otomatis apakah customer adalah Atlas atau Great saat memilih customer
+// Deteksi otomatis saat memilih customer
 watch(() => form.customer_id, async (newCustId, oldCustId) => {
   if (!newCustId) {
     customerRentedUnits.value = []
@@ -232,89 +551,103 @@ watch(() => form.customer_id, async (newCustId, oldCustId) => {
   }
 
   await loadUnitsForCustomer(newCustId)
+})
 
-  if (isEditing.value) return
+function isAtlas(r: any): boolean {
+  if (!r) return false
+  if (r.customer_type === 'atlas') return true
+  if (r.customer_type === 'great') return false
+  const c = r.customer || (customers.value || []).find((cust: any) => cust.id === r.customer_id)
+  const name = c ? getCustomerName(c).toLowerCase() : ''
+  return name.includes('atlas')
+}
 
-  const cust = (customers.value || []).find((c: any) => c.id === newCustId)
-  if (cust) {
-    const name = getCustomerName(cust).toLowerCase()
-    if (name.includes('atlas')) {
-      form.scheme_type = 'atlas_great'
-      form.customer_type = 'atlas'
-      form.percentage_bw = 88
-      form.percentage_color = 12
-    } else if (name.includes('great')) {
-      form.scheme_type = 'atlas_great'
-      form.customer_type = 'great'
-      form.percentage_bw = 88
-      form.percentage_color = 12
-    } else if (form.scheme_type === 'atlas_great' && !name.includes('atlas') && !name.includes('great')) {
-      // Default untuk customer umum: Standar 100%
-      form.scheme_type = 'standard'
-      form.customer_type = 'standard'
-      form.percentage_bw = 0
-      form.percentage_color = 100
+function isGreat(r: any): boolean {
+  if (!r) return false
+  if (r.customer_type === 'great') return true
+  if (r.customer_type === 'atlas') return false
+  const c = r.customer || (customers.value || []).find((cust: any) => cust.id === r.customer_id)
+  const name = c ? getCustomerName(c).toLowerCase() : ''
+  return name.includes('great')
+}
+
+// Filter customer khusus per tab yang aktif
+const tabCustomerFilterOptions = computed(() => {
+  if (activeTab.value === 'atlas') {
+    const list = (customers.value || []).filter((c: any) => getCustomerName(c).toLowerCase().includes('atlas'))
+    if (list.length > 0) {
+      return [
+        { value: '', label: '-- Semua Customer Atlas --' },
+        ...list.map((c: any) => ({ value: c.id, label: getCustomerName(c) })),
+      ]
+    }
+  } else if (activeTab.value === 'great') {
+    const list = (customers.value || []).filter((c: any) => getCustomerName(c).toLowerCase().includes('great'))
+    if (list.length > 0) {
+      return [
+        { value: '', label: '-- Semua Customer Great --' },
+        ...list.map((c: any) => ({ value: c.id, label: getCustomerName(c) })),
+      ]
     }
   }
+  return customerFilterOptions.value
 })
 
-// Sinkronisasi scheme_type dengan customer_type & persentase
-watch(() => form.scheme_type, (newScheme) => {
-  if (newScheme === 'atlas_great') {
-    const cust = (customers.value || []).find((c: any) => c.id === form.customer_id)
-    const name = cust ? getCustomerName(cust).toLowerCase() : ''
-    form.customer_type = name.includes('great') ? 'great' : 'atlas'
-    form.percentage_bw = 88
-    form.percentage_color = 12
-  } else if (newScheme === 'standard') {
-    form.customer_type = 'standard'
-    form.percentage_bw = 0
-    form.percentage_color = 100
-  } else if (newScheme === 'custom') {
-    form.customer_type = 'custom'
-    if (form.percentage_bw === 0 && form.percentage_color === 100) {
-      form.percentage_bw = 88
-      form.percentage_color = 12
+const modalCustomerOptions = computed(() => {
+  if (form.customer_type === 'atlas') {
+    const list = (customers.value || []).filter((c: any) => getCustomerName(c).toLowerCase().includes('atlas'))
+    if (list.length > 0) {
+      return list.map((c: any) => ({ value: c.id, label: getCustomerName(c) }))
+    }
+  } else if (form.customer_type === 'great') {
+    const list = (customers.value || []).filter((c: any) => getCustomerName(c).toLowerCase().includes('great'))
+    if (list.length > 0) {
+      return list.map((c: any) => ({ value: c.id, label: getCustomerName(c) }))
     }
   }
+  return customerOptions.value
 })
 
-// Cek apakah data ini tergolong Atlas atau Great
-const isAtlasOrGreat = computed(() => {
-  if (form.scheme_type === 'atlas_great' || form.customer_type === 'atlas' || form.customer_type === 'great') {
-    return true
-  }
-  const cust = (customers.value || []).find((c: any) => c.id === form.customer_id)
-  if (cust) {
-    const name = getCustomerName(cust).toLowerCase()
-    return name.includes('atlas') || name.includes('great')
-  }
-  return false
+watch(activeTab, () => {
+  filterCustomer.value = ''
 })
 
-// Kunci reading_date ke tanggal 7 secara otomatis jika customer Atlas atau Great
+// Kunci reading_date ke tanggal 7 secara otomatis
 watch(
-  [() => form.period_month, () => form.period_year, () => form.scheme_type, () => form.customer_id],
+  [() => form.period_month, () => form.period_year],
   () => {
-    if (isAtlasOrGreat.value) {
-      const mStr = String(form.period_month).padStart(2, '0')
-      form.reading_date = `${form.period_year}-${mStr}-07`
-    }
+    const mStr = String(form.period_month).padStart(2, '0')
+    form.reading_date = `${form.period_year}-${mStr}-07`
   },
   { immediate: true }
 )
 
-// --- Columns ---
-const columns: TableColumn[] = [
+// --- Columns Terpisah Antara Atlas & Great (Kolom ACTION disediakan otomatis oleh DataTable) ---
+const atlasColumns: TableColumn[] = [
   { key: 'period', label: 'Periode' },
-  { key: 'customer', label: 'Customer & Skema' },
-  { key: 'unit', label: 'Unit & SN' },
+  { key: 'customer', label: 'Customer' },
+  { key: 'unit', label: 'Unit Mesin & SN' },
+  { key: 'meter_bw', label: 'Counter BW (Gross / Deduksi / Akhir)' },
+  { key: 'meter_color', label: 'Counter Color (Gross / Deduksi / Akhir)' },
+  { key: 'base_usage', label: 'Pemakaian Dasar' },
+  { key: 'allocation', label: 'Alokasi (88% : 12%)' },
+  { key: 'total_pages', label: 'Total Lembar Akhir' },
+]
+
+const greatColumns: TableColumn[] = [
+  { key: 'period', label: 'Periode' },
+  { key: 'customer', label: 'Customer' },
+  { key: 'unit', label: 'Unit Mesin & SN' },
   { key: 'meter_bw', label: 'Counter BW (Awal / Akhir)' },
   { key: 'meter_color', label: 'Counter Color (Awal / Akhir)' },
   { key: 'base_usage', label: 'Pemakaian Dasar' },
-  { key: 'allocation', label: 'Alokasi Lembar' },
+  { key: 'allocation', label: 'Alokasi (88% : 12%)' },
   { key: 'total_pages', label: 'Total Lembar Akhir' },
 ]
+
+const columns = computed(() => {
+  return activeTab.value === 'atlas' ? atlasColumns : greatColumns
+})
 
 // --- Load Data ---
 async function fetchReadings() {
@@ -337,6 +670,13 @@ onMounted(async () => {
   if (!units.value || units.value.length === 0) {
     fetchPromises.push(resourceStore.fetchAll('units', { per_page: 500 }, false))
   }
+  if (!rentalInvoices.value || rentalInvoices.value.length === 0) {
+    fetchPromises.push(resourceStore.fetchAll('rentalInvoices', { per_page: 500 }, false))
+  }
+  if (!contractItems.value || contractItems.value.length === 0) {
+    fetchPromises.push(resourceStore.fetchAll('contractItems', { per_page: 500 }, false))
+  }
+  fetchPromises.push(fetchPaperSizes())
   await Promise.all(fetchPromises)
 })
 
@@ -344,10 +684,10 @@ onMounted(async () => {
 const filteredReadings = computed(() => {
   let list = readings.value
 
-  if (activeTab.value === 'atlas_great') {
-    list = list.filter((r) => r.customer_type === 'atlas' || r.customer_type === 'great' || r.percentage_bw > 0)
-  } else if (activeTab.value === 'standard') {
-    list = list.filter((r) => r.customer_type === 'standard' || Number(r.percentage_bw) === 0)
+  if (activeTab.value === 'atlas') {
+    list = list.filter(isAtlas)
+  } else {
+    list = list.filter(isGreat)
   }
 
   if (filterCustomer.value) {
@@ -374,8 +714,8 @@ const filteredReadings = computed(() => {
     const q = searchQuery.value.toLowerCase().trim()
     list = list.filter((r) => {
       const custName = getCustomerName(r.customer).toLowerCase()
-      const sn = (r.unit?.serial_number || '').toLowerCase()
-      const model = (r.unit?.model_name || r.unit?.model || '').toLowerCase()
+      const sn = getUnitSN(r).toLowerCase()
+      const model = getUnitDisplayName(r).toLowerCase()
       const notes = (r.notes || '').toLowerCase()
       return custName.includes(q) || sn.includes(q) || model.includes(q) || notes.includes(q)
     })
@@ -436,28 +776,70 @@ watch([() => form.period_month, () => form.period_year], async () => {
   }
 })
 
-// Saat unit dipilih di form tambah, tawarkan/auto-tarik meter teknisi
+// Saat unit dipilih di form tambah, tawarkan/auto-tarik meter teknisi & deteksi kertas printer
 async function onUnitChange(unitId: string) {
   form.unit_id = unitId
+  if (unitId && form.customer_type === 'atlas' && !isEditing.value) {
+    autoSyncPrinterPaperSizes(unitId)
+  }
   if (!isEditing.value && unitId) {
     await handleAutoFetchMeter()
   }
 }
 
 // --- Add / Edit Handlers ---
-function openAddModal() {
+function switchModalType(type: 'atlas' | 'great') {
+  if (isEditing.value) return
+  form.customer_type = type
+  form.scheme_type = 'atlas_great'
+  form.percentage_bw = 88
+  form.percentage_color = 12
+
+  if (type === 'atlas') {
+    const atlasCust = (customers.value || []).find((c: any) => getCustomerName(c).toLowerCase().includes('atlas'))
+    form.customer_id = atlasCust ? atlasCust.id : ''
+  } else {
+    const greatCust = (customers.value || []).find((c: any) => getCustomerName(c).toLowerCase().includes('great'))
+    form.customer_id = greatCust ? greatCust.id : ''
+    form.gross_meter_bw = 0
+    form.gross_meter_color = 0
+    form.a3_meter_bw = 0
+    form.a3_meter_color = 0
+  }
+
+  form.unit_id = ''
+  if (form.customer_id) {
+    void loadUnitsForCustomer(form.customer_id)
+  }
+}
+
+function openAddModal(type?: 'atlas' | 'great') {
+  const targetType = type || activeTab.value
   isEditing.value = false
   editingId.value = null
   allowOffSchedule.value = true
   showAllUnitsFallback.value = false
   customerRentedUnits.value = []
-  form.scheme_type = 'standard'
-  form.customer_type = 'standard'
-  form.customer_id = ''
+
+  form.customer_type = targetType
+  form.scheme_type = 'atlas_great'
+  form.percentage_bw = 88
+  form.percentage_color = 12
+
+  if (targetType === 'atlas') {
+    const atlasCust = (customers.value || []).find((c: any) => getCustomerName(c).toLowerCase().includes('atlas'))
+    form.customer_id = atlasCust ? atlasCust.id : ''
+  } else {
+    const greatCust = (customers.value || []).find((c: any) => getCustomerName(c).toLowerCase().includes('great'))
+    form.customer_id = greatCust ? greatCust.id : ''
+  }
+
   form.unit_id = ''
+  form.rental_invoice_id = ''
   form.period_month = new Date().getMonth() + 1
   form.period_year = new Date().getFullYear()
-  form.reading_date = new Date().toISOString().slice(0, 10)
+  const mStr = String(form.period_month).padStart(2, '0')
+  form.reading_date = `${form.period_year}-${mStr}-07`
   form.start_meter_bw = 0
   form.end_meter_bw = 0
   form.start_meter_color = 0
@@ -466,9 +848,12 @@ function openAddModal() {
   form.gross_meter_color = 0
   form.a3_meter_bw = 0
   form.a3_meter_color = 0
-  form.percentage_bw = 0
-  form.percentage_color = 100
+  form.paper_deductions = [{ name: 'A3', bw: 0, color: 0 }]
   form.remarks = ''
+
+  if (form.customer_id) {
+    void loadUnitsForCustomer(form.customer_id)
+  }
 
   showModal.value = true
 }
@@ -479,16 +864,10 @@ function openEditModal(item: any) {
   allowOffSchedule.value = true
   showAllUnitsFallback.value = false
 
-  const cType = item.customer_type || 'standard'
-  if (cType === 'atlas' || cType === 'great') {
-    form.scheme_type = 'atlas_great'
-  } else if (cType === 'custom') {
-    form.scheme_type = 'custom'
-  } else {
-    form.scheme_type = 'standard'
-  }
-
+  const cType: 'atlas' | 'great' = (item.customer_type === 'great' || isGreat(item)) ? 'great' : 'atlas'
+  form.scheme_type = 'atlas_great'
   form.customer_type = cType
+  form.rental_invoice_id = item.rental_invoice_id || ''
   form.customer_id = item.customer_id || ''
   form.unit_id = item.unit_id || ''
 
@@ -510,8 +889,23 @@ function openEditModal(item: any) {
   form.a3_meter_bw = Number(item.a3_counter_bw || 0)
   form.a3_meter_color = Number(item.a3_counter_color || 0)
 
-  form.percentage_bw = Number(item.percentage_bw || (form.scheme_type === 'standard' ? 0 : 88))
-  form.percentage_color = Number(item.percentage_color || (form.scheme_type === 'standard' ? 100 : 12))
+  if (item.paper_deductions) {
+    try {
+      const parsed = typeof item.paper_deductions === 'string' ? JSON.parse(item.paper_deductions) : item.paper_deductions
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        form.paper_deductions = parsed
+      } else {
+        form.paper_deductions = [{ name: 'A3', bw: Number(item.a3_counter_bw || 0), color: Number(item.a3_counter_color || 0) }]
+      }
+    } catch {
+      form.paper_deductions = [{ name: 'A3', bw: Number(item.a3_counter_bw || 0), color: Number(item.a3_counter_color || 0) }]
+    }
+  } else {
+    form.paper_deductions = [{ name: 'A3', bw: Number(item.a3_counter_bw || 0), color: Number(item.a3_counter_color || 0) }]
+  }
+
+  form.percentage_bw = Number(item.percentage_bw || 88)
+  form.percentage_color = Number(item.percentage_color || 12)
   form.remarks = item.notes || item.remarks || ''
 
   showModal.value = true
@@ -528,7 +922,7 @@ async function handleSubmit() {
   }
 
   // Validasi aturan: Atlas & Great hanya dapat dibuat pada tanggal 7 setiap bulannya
-  if (!isEditing.value && isAtlasOrGreat.value && currentDay !== 7 && !allowOffSchedule.value) {
+  if (!isEditing.value && currentDay !== 7 && !allowOffSchedule.value) {
     toast.error(
       `Pencatatan Atlas Copco & PT Great Eastern hanya dapat dibuat pada tanggal 7 setiap bulannya! (Hari ini: tanggal ${currentDay}). Centang 'Izinkan pembuatan di luar tanggal 7' jika merupakan input susulan oleh Admin.`
     )
@@ -537,12 +931,16 @@ async function handleSubmit() {
 
   isSaving.value = true
   try {
-    const periodDay = isAtlasOrGreat.value ? 7 : 1
+    const periodDay = 7
     const periodDate = new Date(form.period_year, form.period_month - 1, periodDay)
     const periodLabel = `${MONTH_NAMES[form.period_month - 1]} ${form.period_year}`
+    const isAtlasType = form.customer_type === 'atlas'
+    const totBW = totalDeductionBW.value
+    const totCol = totalDeductionColor.value
 
     const payload = {
       customer_type: form.customer_type,
+      rental_invoice_id: form.rental_invoice_id || undefined,
       customer_id: form.customer_id,
       unit_id: form.unit_id,
       period_date: periodDate.toISOString(),
@@ -551,12 +949,13 @@ async function handleSubmit() {
       counter_akhir_bw: Number(form.end_meter_bw || 0),
       counter_awal_color: Number(form.start_meter_color || 0),
       counter_akhir_color: Number(form.end_meter_color || 0),
-      gross_counter_bw: Number(form.gross_meter_bw || 0),
-      gross_counter_color: Number(form.gross_meter_color || 0),
-      a3_counter_bw: Number(form.a3_meter_bw || 0),
-      a3_counter_color: Number(form.a3_meter_color || 0),
-      percentage_bw: form.scheme_type === 'standard' ? 0 : Number(form.percentage_bw || 88),
-      percentage_color: form.scheme_type === 'standard' ? 100 : Number(form.percentage_color || 12),
+      gross_counter_bw: isAtlasType ? Number(form.gross_meter_bw || 0) : 0,
+      gross_counter_color: isAtlasType ? Number(form.gross_meter_color || 0) : 0,
+      a3_counter_bw: isAtlasType ? totBW : 0,
+      a3_counter_color: isAtlasType ? totCol : 0,
+      paper_deductions: isAtlasType ? JSON.stringify(form.paper_deductions) : undefined,
+      percentage_bw: Number(form.percentage_bw || 88),
+      percentage_color: Number(form.percentage_color || 12),
       notes: form.remarks,
     }
 
@@ -577,13 +976,21 @@ async function handleSubmit() {
   }
 }
 
-// --- Delete Handlers ---
+// --- Delete Handlers (Dibatasi Hak Akses Role) ---
 function confirmDelete(item: any) {
+  if (!canDeleteReading.value) {
+    toast.error('Akses ditolak: Anda tidak memiliki hak akses untuk menghapus data pencatatan ini.')
+    return
+  }
   itemToDelete.value = item
   showDeleteConfirm.value = true
 }
 
 async function handleDelete() {
+  if (!canDeleteReading.value) {
+    toast.error('Akses ditolak: Anda tidak memiliki hak akses untuk menghapus data pencatatan ini.')
+    return
+  }
   if (!itemToDelete.value) return
   try {
     await resources.atlasGreatReadings.delete(itemToDelete.value.id)
@@ -603,7 +1010,7 @@ function openDetail(item: any) {
   showDetailModal.value = true
 }
 
-function printSlip(item: any) {
+function printAtlasSlip(item: any) {
   const printWindow = window.open('', '_blank', 'width=980,height=800')
   if (!printWindow) {
     toast.error('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak.')
@@ -611,8 +1018,8 @@ function printSlip(item: any) {
   }
 
   const custName = getCustomerName(item.customer)
-  const unitModel = item.unit?.model_name || item.unit?.model || 'WF-C878R'
-  const unitSN = item.unit?.serial_number || item.unit?.serial_no || '-'
+  const unitModel = getUnitDisplayName(item)
+  const unitSN = getUnitSN(item)
   const branchLoc = item.customer?.address || '20242 (Cab.Batam)'
   const periodStr = item.period_label || (item.period_date ? new Date(item.period_date).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '-')
 
@@ -1103,6 +1510,20 @@ function printSlip(item: any) {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.btn-excel-top {
+  background: #16a34a !important;
+  border-color: #16a34a !important;
+  color: #ffffff !important;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+}
+
+.btn-excel-top:hover {
+  background: #15803d !important;
+  border-color: #15803d !important;
+}
+
 </style>
 </head>
 <body>
@@ -1280,6 +1701,205 @@ function printSlip(item: any) {
   printWindow.document.close()
 }
 
+function printGreatSlip(item: any) {
+  const printWindow = window.open('', '_blank', 'width=980,height=800')
+  if (!printWindow) {
+    toast.error('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak.')
+    return
+  }
+
+  const custName = getCustomerName(item.customer)
+  const unitModel = getUnitDisplayName(item)
+  const unitSN = getUnitSN(item)
+  const periodStr = item.period_label || (item.period_date ? new Date(item.period_date).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '-')
+
+  const bwAwal = Number(item.counter_awal_bw || 0)
+  const bwAkhir = Number(item.counter_akhir_bw || 0)
+  const bwPemakaian = Number(item.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+
+  const colAwal = Number(item.counter_awal_color || 0)
+  const colAkhir = Number(item.counter_akhir_color || 0)
+  const colPemakaian = Number(item.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+
+  const pctBW = Number(item.percentage_bw || 88)
+  const pctCol = Number(item.percentage_color || 12)
+  const allocBW = Number(item.allocation_bw || (colPemakaian * (pctBW / 100)))
+  const allocCol = Number(item.allocation_color || (colPemakaian * (pctCol / 100)))
+
+  const totalBW = Number(item.total_bw || (bwPemakaian + allocBW))
+  const totalCol = Number(item.total_color || allocCol)
+
+  const printDateStr = item.period_date
+    ? new Date(item.period_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    : new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+
+  const signerName = currentUser.value?.name || currentUser.value?.username || 'Accounting / Admin'
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Perhitungan Lembar Pemakaian - ${custName}</title>
+  <style>
+    @page { size: A4 portrait; margin: 15mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+    }
+    .header {
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .title { font-size: 19px; font-weight: 800; color: #0f172a; }
+    .subtitle { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .meta-box {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 24px;
+      font-size: 12px;
+    }
+    .meta-item { display: flex; gap: 8px; }
+    .meta-lbl { color: #64748b; width: 120px; font-weight: 500; }
+    .meta-val { color: #0f172a; font-weight: 600; }
+    .table-title { font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px; }
+    th { background: #f1f5f9; padding: 8px 12px; border: 1px solid #cbd5e1; text-align: right; color: #334155; }
+    th:first-child { text-align: left; }
+    td { padding: 8px 12px; border: 1px solid #e2e8f0; text-align: right; color: #1e293b; }
+    td:first-child { text-align: left; }
+    .calc-box {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 12px;
+    }
+    .calc-title { font-weight: 700; color: #166534; margin-bottom: 8px; }
+    .calc-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 40px; page-break-inside: avoid; }
+    .sig-col { width: 40%; text-align: center; font-size: 12px; }
+    .sig-line { height: 60px; border-bottom: 1px solid #334155; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="title">LEMBAR PERHITUNGAN PEMAKAIAN (RENTAL)</div>
+      <div class="subtitle">Skema Alokasi Khusus PT Great Eastern (88% Color ke BW &bull; Cut-Off Billing Tanggal 7)</div>
+    </div>
+    <div style="text-align: right; font-size: 11px; color: #64748b;">
+      Dicetak: ${new Date().toLocaleDateString('id-ID')}
+    </div>
+  </div>
+
+  <div class="meta-box">
+    <div class="meta-item"><span class="meta-lbl">Customer:</span><span class="meta-val">${custName}</span></div>
+    <div class="meta-item"><span class="meta-lbl">Periode:</span><span class="meta-val">${periodStr}</span></div>
+    <div class="meta-item"><span class="meta-lbl">Unit Mesin:</span><span class="meta-val">${unitModel}</span></div>
+    <div class="meta-item"><span class="meta-lbl">Serial Number:</span><span class="meta-val">${unitSN}</span></div>
+    <div class="meta-item"><span class="meta-lbl">Billing Date:</span><span class="meta-val">${printDateStr}</span></div>
+    <div class="meta-item"><span class="meta-lbl">Metode:</span><span class="meta-val">Direct Meter (Alokasi 88% : 12%)</span></div>
+  </div>
+
+  <div class="table-title">1. Pembacaan Meter Counter Dasar</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Jenis Counter</th>
+        <th>Counter Awal</th>
+        <th>Counter Akhir</th>
+        <th>Pemakaian Dasar</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Black &amp; White (BW)</strong></td>
+        <td>${bwAwal.toLocaleString('id-ID')}</td>
+        <td>${bwAkhir.toLocaleString('id-ID')}</td>
+        <td style="font-weight: 700;">${bwPemakaian.toLocaleString('id-ID')}</td>
+      </tr>
+      <tr>
+        <td><strong>Color (CL)</strong></td>
+        <td>${colAwal.toLocaleString('id-ID')}</td>
+        <td>${colAkhir.toLocaleString('id-ID')}</td>
+        <td style="font-weight: 700;">${colPemakaian.toLocaleString('id-ID')}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="table-title">2. Hasil Alokasi &amp; Total Lembar Akhir</div>
+  <div class="calc-box">
+    <div class="calc-title">Rumus Alokasi Color (${pctBW}% ke BW &bull; ${pctCol}% Tetap Color):</div>
+    <div class="calc-row">
+      <span>Color dialihkan ke BW (${pctBW}% &times; ${colPemakaian.toLocaleString('id-ID')}):</span>
+      <strong>+${allocBW.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Lembar</strong>
+    </div>
+    <div class="calc-row">
+      <span>Color Murni Tetap (${pctCol}% &times; ${colPemakaian.toLocaleString('id-ID')}):</span>
+      <strong>${allocCol.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Lembar</strong>
+    </div>
+    <hr style="border: none; border-top: 1px dashed #bbf7d0; margin: 8px 0;" />
+    <div class="calc-row" style="font-size: 13px; font-weight: 800; color: #0f172a;">
+      <span>TOTAL LEMBAR AKHIR BW (Pemakaian Dasar + Alokasi):</span>
+      <span style="color: #1e40af;">${totalBW.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Lembar</span>
+    </div>
+    <div class="calc-row" style="font-size: 13px; font-weight: 800; color: #0f172a;">
+      <span>TOTAL LEMBAR AKHIR COLOR (Color Murni):</span>
+      <span style="color: #7c3aed;">${totalCol.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Lembar</span>
+    </div>
+  </div>
+
+  <div class="signatures">
+    <div class="sig-col">
+      <div>Dibuat Oleh,</div>
+      <div class="sig-line"></div>
+      <div><strong>${signerName}</strong></div>
+      <div style="font-size: 10px; color: #64748b;">Accounting / Sales Admin</div>
+    </div>
+    <div class="sig-col">
+      <div>Dikonfirmasi / Diterima Oleh,</div>
+      <div class="sig-line"></div>
+      <div><strong>${custName}</strong></div>
+      <div style="font-size: 10px; color: #64748b;">Perwakilan Perusahaan</div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 300);
+    };
+  <\/script>
+</body>
+</html>`
+
+  printWindow.document.write(html)
+  printWindow.document.close()
+}
+
+function printSlip(item: any) {
+  if (isGreat(item)) {
+    printGreatSlip(item)
+  } else {
+    printAtlasSlip(item)
+  }
+}
+
 // --- Export to CSV ---
 function exportCSV() {
   if (filteredReadings.value.length === 0) {
@@ -1312,8 +1932,8 @@ function exportCSV() {
     i + 1,
     `"${getCustomerName(r.customer)}"`,
     r.customer_type === 'standard' ? 'Standar' : `Alokasi (${r.percentage_bw}:${r.percentage_color})`,
-    `"${r.unit?.model_name || r.unit?.model || ''}"`,
-    `"${r.unit?.serial_number || ''}"`,
+    `"${getUnitDisplayName(r)}"`,
+    `"${getUnitSN(r)}"`,
     `"${r.period_label || ''}"`,
     r.counter_awal_bw,
     r.counter_akhir_bw,
@@ -1342,20 +1962,329 @@ function exportCSV() {
   document.body.removeChild(link)
   toast.success('File CSV berhasil diunduh')
 }
+
+// --- Export to Formatted Excel (Sheets per Customer) ---
+async function exportExcel() {
+  if (filteredReadings.value.length === 0) {
+    toast.info('Tidak ada data untuk diekspor')
+    return
+  }
+
+  try {
+    const isAtlasTab = activeTab.value === 'atlas'
+    const usedSheetNames = new Set<string>()
+    // Group by customer
+    const grouped = new Map<string, { customer: any; custName: string; readings: any[] }>()
+    for (const r of filteredReadings.value) {
+      const c = r.customer || (customers.value || []).find((cust: any) => cust.id === r.customer_id)
+      const cName = getCustomerName(c)
+      const cId = r.customer_id || c?.id || cName
+      if (!grouped.has(cId)) {
+        grouped.set(cId, { customer: c, custName: cName, readings: [] })
+      }
+      grouped.get(cId)!.readings.push(r)
+    }
+
+    const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
+
+    for (const [, grp] of grouped) {
+      const sheetName = uniqueSheetName(grp.custName || (isAtlasTab ? 'Atlas Copco' : 'PT Great Eastern'), usedSheetNames)
+      const columnWidths = isAtlasTab
+        ? [5.5, 24, 15, 16, 16, 16, 16, 26, 16, 18]
+        : [5.5, 24, 16, 16, 16, 26, 16, 18]
+      const mergeWidth = columnWidths.length - 1
+      const padEmpty = (cnt: number) => Array.from({ length: cnt }, () => ({}))
+
+      const rows: StyledCell[][] = []
+      const addRow = (r: StyledCell[] = []) => rows.push(r)
+
+      addRow([{ v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: mergeWidth, style: 'plainBoldCenter' }, ...padEmpty(mergeWidth)])
+      addRow([{ v: 'Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Telp: +62 811 7045 657 | Email: admin@biasbst.com', mergeAcross: mergeWidth, style: 'plainCenter' }, ...padEmpty(mergeWidth)])
+      addRow([])
+      addRow([{ v: 'LEMBAR PERHITUNGAN PEMAKAIAN METER RENTAL', mergeAcross: mergeWidth, style: 'titleCell' }, ...padEmpty(mergeWidth)])
+      addRow([{
+        v: isAtlasTab
+          ? 'SKEMA: ATLAS COPCO (Deduksi Ukuran A3 & Rumus Alokasi 88% : 12%)'
+          : 'SKEMA: PT GREAT EASTERN (Direct Counter & Rumus Alokasi 88% : 12%)',
+        mergeAcross: mergeWidth,
+        style: 'subTitleCell'
+      }, ...padEmpty(mergeWidth)])
+      addRow([])
+
+      const latest = grp.readings[0] || {}
+      const periodDisplay = latest.period_label || '-'
+      const unitDisplay = getUnitDisplayName(latest)
+      const snDisplay = getUnitSN(latest)
+
+      const halfMerge = Math.floor(mergeWidth / 2) - 1
+      const remMerge = mergeWidth - (halfMerge + 1) - 2
+
+      addRow([
+        { v: 'Customer :', style: 'borderBold' },
+        { v: grp.custName, mergeAcross: halfMerge, style: 'borderBold' },
+        ...padEmpty(halfMerge),
+        { v: 'Billing Cycle :', style: 'borderBold' },
+        { v: 'Setiap Tanggal 7 (Cut-Off Otomatis)', mergeAcross: remMerge, style: 'borderCenter' },
+        ...padEmpty(remMerge),
+      ])
+      addRow([
+        { v: 'Alamat :', style: 'border' },
+        { v: grp.customer?.address || '-', mergeAcross: halfMerge, style: 'border' },
+        ...padEmpty(halfMerge),
+        { v: 'Periode :', style: 'borderBold' },
+        { v: periodDisplay, mergeAcross: remMerge, style: 'borderCenter' },
+        ...padEmpty(remMerge),
+      ])
+      addRow([
+        { v: 'Unit Mesin :', style: 'border' },
+        { v: unitDisplay, mergeAcross: halfMerge, style: 'border' },
+        ...padEmpty(halfMerge),
+        { v: 'No. Seri (S/N) :', style: 'borderBold' },
+        { v: snDisplay, mergeAcross: remMerge, style: 'borderCenter' },
+        ...padEmpty(remMerge),
+      ])
+      addRow([])
+
+      for (let rIdx = 0; rIdx < grp.readings.length; rIdx++) {
+        const r = grp.readings[rIdx]
+        const curUnit = getUnitDisplayName(r)
+        const curSN = getUnitSN(r)
+        const curPeriod = r.period_label || periodDisplay
+
+        if (grp.readings.length > 1) {
+          addRow([{ v: `Pencatatan #${rIdx + 1} - Unit: ${curUnit} (SN: ${curSN}) | Periode: ${curPeriod}`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        }
+
+        if (isAtlasTab) {
+          let pDeducts: Array<{ name: string; bw: number; color: number }> = []
+          if (r.paper_deductions) {
+            try {
+              pDeducts = typeof r.paper_deductions === 'string' ? JSON.parse(r.paper_deductions) : r.paper_deductions
+            } catch (e) {}
+          }
+          const bwDeduksi = pDeducts.length > 0 ? pDeducts.reduce((s, p) => s + Number(p.bw || 0), 0) : Number(r.a3_counter_bw || 0)
+          const colDeduksi = pDeducts.length > 0 ? pDeducts.reduce((s, p) => s + Number(p.color || 0), 0) : Number(r.a3_counter_color || 0)
+          const deductHeaderLabel = pDeducts.length > 1
+            ? `Deduksi Kertas (${pDeducts.map(p => p.name).join('+')}) (-)`
+            : (pDeducts.length === 1 ? `Deduksi Ukuran ${pDeducts[0].name} (-)` : 'Deduksi A3 (-)')
+
+          addRow([
+            { v: 'No', style: 'headerCell' },
+            { v: 'Kategori / Item', style: 'headerCell' },
+            { v: 'Counter Awal', style: 'headerCell' },
+            { v: 'Gross Mesin', style: 'headerCell' },
+            { v: deductHeaderLabel, style: 'headerCell' },
+            { v: 'Counter Akhir', style: 'headerCell' },
+            { v: 'Pemakaian Dasar', style: 'headerCell' },
+            { v: 'Rumus Alokasi (88%:12%)', style: 'headerCell' },
+            { v: 'Lembar Alokasi', style: 'headerCell' },
+            { v: 'Total Lembar Akhir', style: 'headerCell' },
+          ])
+
+          const bwAwal = Number(r.counter_awal_bw || 0)
+          const bwGross = Number(r.gross_counter_bw || (Number(r.counter_akhir_bw || 0) + bwDeduksi))
+          const bwAkhir = Number(r.counter_akhir_bw || (bwGross - bwDeduksi))
+          const bwPemakaian = Number(r.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+
+          const colAwal = Number(r.counter_awal_color || 0)
+          const colGross = Number(r.gross_counter_color || (Number(r.counter_akhir_color || 0) + colDeduksi))
+          const colAkhir = Number(r.counter_akhir_color || (colGross - colDeduksi))
+          const colPemakaian = Number(r.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+
+          const pctBW = Number(r.percentage_bw || 88)
+          const pctCol = Number(r.percentage_color || 12)
+          const allocBW = Number(r.allocation_bw || Math.round(colPemakaian * (pctBW / 100) * 100) / 100)
+          const allocCol = Number(r.allocation_color || Math.round(colPemakaian * (pctCol / 100) * 100) / 100)
+
+          const totalBW = Number(r.total_bw || Math.round((bwPemakaian + allocBW) * 100) / 100)
+          const totalCol = Number(r.total_color || allocCol)
+          const grandTotalLembar = Math.round((totalBW + totalCol) * 100) / 100
+
+          addRow([
+            { v: 1, style: 'borderCenter' },
+            { v: 'Black & White (BW)', style: 'borderBold' },
+            { v: bwAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: bwGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: bwDeduksi, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: bwAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: bwPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+            { v: `88% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
+            { v: allocBW, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: totalBW, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+          ])
+
+          addRow([
+            { v: 2, style: 'borderCenter' },
+            { v: 'Colour (CL)', style: 'borderBold' },
+            { v: colAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: colGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: colDeduksi, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: colAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: colPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+            { v: `12% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
+            { v: allocCol, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+          ])
+
+          addRow([
+            { v: 'SUBTOTAL LEMBAR', mergeAcross: 5, style: 'totalCell' },
+            ...padEmpty(5),
+            { v: bwPemakaian + colPemakaian, style: 'totalCell', numFmt: NUMFMT_COUNT },
+            { v: 'Total Alokasi 100%', style: 'totalCell' },
+            { v: allocBW + allocCol, style: 'totalCell', numFmt: NUMFMT_COUNT },
+            { v: grandTotalLembar, style: 'grandTotalCell', numFmt: NUMFMT_COUNT },
+          ])
+
+          if (pDeducts.length > 1) {
+            const detailStr = pDeducts.map(p => `${p.name} (BW: ${Number(p.bw || 0).toLocaleString()}, CL: ${Number(p.color || 0).toLocaleString()})`).join(' | ')
+            addRow([{ v: `* Rincian Deduksi per Ukuran Kertas: ${detailStr}`, mergeAcross: mergeWidth, style: 'plain' }, ...padEmpty(mergeWidth)])
+          }
+
+          addRow([])
+          addRow([{ v: 'Rincian Rumus Alokasi & Rekapitulasi Lembar:', mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• Pemakaian Dasar BW = Counter Akhir (${bwAkhir.toLocaleString()}) - Counter Awal (${bwAwal.toLocaleString()}) = ${bwPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• Pemakaian Dasar Color = Counter Akhir (${colAkhir.toLocaleString()}) - Counter Awal (${colAwal.toLocaleString()}) = ${colPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• Alokasi Color ke BW (88%) = 88% × ${colPemakaian.toLocaleString()} = ${allocBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• Alokasi Color Murni (12%) = 12% × ${colPemakaian.toLocaleString()} = ${allocCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• TOTAL AKHIR BW = Pemakaian Dasar BW (${bwPemakaian.toLocaleString()}) + Alokasi Color 88% (${allocBW.toLocaleString()}) = ${totalBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• TOTAL AKHIR COLOR = Alokasi Color Murni 12% = ${totalCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• GRAND TOTAL PEMAKAIAN = ${grandTotalLembar.toLocaleString()} LEMBAR`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+          addRow([])
+        } else {
+          addRow([
+            { v: 'No', style: 'headerCell' },
+            { v: 'Kategori / Item', style: 'headerCell' },
+            { v: 'Counter Awal', style: 'headerCell' },
+            { v: 'Counter Akhir', style: 'headerCell' },
+            { v: 'Pemakaian Dasar', style: 'headerCell' },
+            { v: 'Rumus Alokasi (88%:12%)', style: 'headerCell' },
+            { v: 'Lembar Alokasi', style: 'headerCell' },
+            { v: 'Total Lembar Akhir', style: 'headerCell' },
+          ])
+
+          const bwAwal = Number(r.counter_awal_bw || 0)
+          const bwAkhir = Number(r.counter_akhir_bw || 0)
+          const bwPemakaian = Number(r.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+
+          const colAwal = Number(r.counter_awal_color || 0)
+          const colAkhir = Number(r.counter_akhir_color || 0)
+          const colPemakaian = Number(r.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+
+          const pctBW = Number(r.percentage_bw || 88)
+          const pctCol = Number(r.percentage_color || 12)
+          const allocBW = Number(r.allocation_bw || Math.round(colPemakaian * (pctBW / 100) * 100) / 100)
+          const allocCol = Number(r.allocation_color || Math.round(colPemakaian * (pctCol / 100) * 100) / 100)
+
+          const totalBW = Number(r.total_bw || Math.round((bwPemakaian + allocBW) * 100) / 100)
+          const totalCol = Number(r.total_color || allocCol)
+          const grandTotalLembar = Math.round((totalBW + totalCol) * 100) / 100
+
+          addRow([
+            { v: 1, style: 'borderCenter' },
+            { v: 'Black & White (BW)', style: 'borderBold' },
+            { v: bwAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: bwAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: bwPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+            { v: `88% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
+            { v: allocBW, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: totalBW, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+          ])
+
+          addRow([
+            { v: 2, style: 'borderCenter' },
+            { v: 'Colour (CL)', style: 'borderBold' },
+            { v: colAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: colAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: colPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+            { v: `12% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
+            { v: allocCol, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+          ])
+
+          addRow([
+            { v: 'SUBTOTAL LEMBAR', mergeAcross: 3, style: 'totalCell' },
+            ...padEmpty(3),
+            { v: bwPemakaian + colPemakaian, style: 'totalCell', numFmt: NUMFMT_COUNT },
+            { v: 'Total Alokasi 100%', style: 'totalCell' },
+            { v: allocBW + allocCol, style: 'totalCell', numFmt: NUMFMT_COUNT },
+            { v: grandTotalLembar, style: 'grandTotalCell', numFmt: NUMFMT_COUNT },
+          ])
+
+          addRow([])
+          addRow([{ v: 'Rincian Rumus Alokasi & Rekapitulasi Lembar:', mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• Pemakaian Dasar BW = Counter Akhir (${bwAkhir.toLocaleString()}) - Counter Awal (${bwAwal.toLocaleString()}) = ${bwPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• Pemakaian Dasar Color = Counter Akhir (${colAkhir.toLocaleString()}) - Counter Awal (${colAwal.toLocaleString()}) = ${colPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• Alokasi Color ke BW (88%) = 88% × ${colPemakaian.toLocaleString()} = ${allocBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• Alokasi Color Murni (12%) = 12% × ${colPemakaian.toLocaleString()} = ${allocCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• TOTAL AKHIR BW = Pemakaian Dasar BW (${bwPemakaian.toLocaleString()}) + Alokasi Color 88% (${allocBW.toLocaleString()}) = ${totalBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• TOTAL AKHIR COLOR = Alokasi Color Murni 12% = ${totalCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+          addRow([{ v: `• GRAND TOTAL PEMAKAIAN = ${grandTotalLembar.toLocaleString()} LEMBAR`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+          addRow([])
+        }
+      }
+
+      // Blok Otorisasi / Tanda Tangan
+      addRow([])
+      const sigHalf = Math.floor(mergeWidth / 2)
+      const sigRem = mergeWidth - sigHalf - 1
+      addRow([
+        { v: 'Received By,', mergeAcross: sigHalf, style: 'plainBoldCenter' },
+        ...padEmpty(sigHalf),
+        { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: sigRem, style: 'plainBoldCenter' },
+        ...padEmpty(sigRem),
+      ])
+      addRow([])
+      addRow([])
+      addRow([
+        { v: '_______________________', mergeAcross: sigHalf, style: 'plainCenter' },
+        ...padEmpty(sigHalf),
+        { v: '_______________________', mergeAcross: sigRem, style: 'plainCenter' },
+        ...padEmpty(sigRem),
+      ])
+      addRow([
+        { v: `( ${grp.custName} )`, mergeAcross: sigHalf, style: 'plainBoldCenter' },
+        ...padEmpty(sigHalf),
+        { v: '( Admin Finance / Technical )', mergeAcross: sigRem, style: 'plainBoldCenter' },
+        ...padEmpty(sigRem),
+      ])
+
+      sheets.push({ name: sheetName, columnWidths, rows })
+    }
+
+    const titlePrefix = isAtlasTab ? 'Atlas_Copco' : 'Great_Eastern'
+    await downloadStyledExcel(sheets, `Perhitungan_Meter_${titlePrefix}_${new Date().toISOString().slice(0, 10)}`)
+    toast.success('File Excel perhitungan meter berhasil diunduh')
+  } catch (err: any) {
+    toast.error('Gagal mengekspor file Excel: ' + (err?.message || 'Error'))
+  }
+}
 </script>
 
 <template>
   <div class="atlas-great-page">
     <PageHeader
-      title="Pencatatan Lembar Pemakaian (Rental Meter)"
-      buttonLabel="+ Hitung / Tambah Pencatatan"
-      @add="openAddModal"
+      :title="activeTab === 'atlas' ? 'Pencatatan Lembar Pemakaian - Atlas Copco' : 'Pencatatan Lembar Pemakaian - PT Great Eastern'"
+      :buttonLabel="activeTab === 'atlas' ? '+ Hitung Pencatatan Atlas' : '+ Hitung Pencatatan Great'"
+      @add="openAddModal(activeTab)"
     >
       <template #actions>
         <button
           type="button"
+          class="btn btn-primary btn-sm btn-excel-top"
+          title="Export data ke Excel (Sheet per Customer)"
+          @click="exportExcel"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="3" y1="9" x2="21" y2="9"></line>
+            <line x1="9" y1="21" x2="9" y2="9"></line>
+          </svg>
+          Export Excel
+        </button>
+        <button
+          type="button"
           class="btn btn-secondary btn-sm"
-          title="Export data ke CSV / Excel"
+          title="Export data ke CSV"
           @click="exportCSV"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
@@ -1366,8 +2295,8 @@ function exportCSV() {
       </template>
     </PageHeader>
 
-    <!-- Info banner penjelasan modul & fleksibilitas semua customer -->
-    <div class="info-card">
+    <!-- Info banner penjelasan modul terpisah Atlas vs Great -->
+    <div class="info-card" :class="activeTab === 'atlas' ? 'info-card-atlas' : 'info-card-great'">
       <div class="info-icon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10" />
@@ -1376,41 +2305,42 @@ function exportCSV() {
         </svg>
       </div>
       <div class="info-content">
-        <div class="info-title">Modul Perhitungan Lembar Pemakaian Meter Rental (Semua Customer)</div>
-        <div class="info-desc">
-          Teknisi mencatat meter reading di lapangan pada rentang <strong>tanggal 25–30 setiap akhir bulan</strong>.
-          Admin / Accounting menarik data tersebut secara otomatis untuk menerbitkan perhitungan lembar pemakaian.
-          Bagi customer dengan skema khusus (alokasi 88% Color ke BW & 12% Color murni), perhitungan diterbitkan setiap <strong>tanggal 7</strong>.
+        <div class="info-title">
+          {{ activeTab === 'atlas' ? 'Perhitungan Lembar Pemakaian Khusus Atlas Copco (Deduksi A3 & Alokasi 88:12)' : 'Perhitungan Lembar Pemakaian Khusus PT Great Eastern (Direct Meter & Alokasi 88:12)' }}
+        </div>
+        <div class="info-desc" v-if="activeTab === 'atlas'">
+          Teknisi mencatat meter reading fisik di lapangan tanggal 25–30. Untuk <strong>Atlas Copco</strong>, perhitungan menggunakan deduksi lembar A3:
+          <strong>Last Meter (Counter Akhir) = Gross Mesin Total &minus; Deduksi A3</strong>, kemudian pemakaian color dialokasikan <strong>88% ke BW</strong> dan <strong>12% Color Murni</strong>.
+          Siklus billing otomatis diterbitkan setiap <strong>tanggal 7</strong>.
+        </div>
+        <div class="info-desc" v-else>
+          Teknisi mencatat meter reading fisik di lapangan tanggal 25–30. Untuk <strong>PT Great Eastern</strong>, perhitungan menggunakan pemakaian langsung (Direct Counter):
+          <strong>Pemakaian Dasar = Counter Akhir &minus; Counter Awal</strong> (tanpa deduksi A3), kemudian pemakaian color dialokasikan <strong>88% ke BW</strong> dan <strong>12% Color Murni</strong>.
+          Siklus billing otomatis diterbitkan setiap <strong>tanggal 7</strong>.
         </div>
       </div>
     </div>
 
-    <!-- Filter Bar & Tabs -->
+    <!-- Filter Bar & Tabs (Tepat 2 Tab Terpisah) -->
     <div class="filter-container">
       <div class="tabs-group">
         <button
           class="tab-btn"
-          :class="{ active: activeTab === 'all' }"
-          @click="activeTab = 'all'"
+          :class="{ active: activeTab === 'atlas' }"
+          @click="activeTab = 'atlas'"
         >
-          Semua Data
-          <span class="badge-count">{{ readings.length }}</span>
+          <span class="tab-indicator indicator-atlas"></span>
+          Perhitungan Atlas
+          <span class="badge-count">{{ readings.filter(isAtlas).length }}</span>
         </button>
         <button
           class="tab-btn"
-          :class="{ active: activeTab === 'atlas_great' }"
-          @click="activeTab = 'atlas_great'"
+          :class="{ active: activeTab === 'great' }"
+          @click="activeTab = 'great'"
         >
-          Alokasi 88% : 12% (Khusus)
-          <span class="badge-count">{{ readings.filter(r => r.customer_type === 'atlas' || r.customer_type === 'great' || r.percentage_bw > 0).length }}</span>
-        </button>
-        <button
-          class="tab-btn"
-          :class="{ active: activeTab === 'standard' }"
-          @click="activeTab = 'standard'"
-        >
-          Standar (100% Murni)
-          <span class="badge-count">{{ readings.filter(r => r.customer_type === 'standard' || Number(r.percentage_bw) === 0).length }}</span>
+          <span class="tab-indicator indicator-great"></span>
+          Perhitungan Great
+          <span class="badge-count">{{ readings.filter(isGreat).length }}</span>
         </button>
       </div>
 
@@ -1418,7 +2348,7 @@ function exportCSV() {
         <div class="filter-item">
           <label class="filter-label">Customer:</label>
           <select v-model="filterCustomer" class="filter-select max-w-xs">
-            <option v-for="opt in customerFilterOptions" :key="opt.value" :value="opt.value">
+            <option v-for="opt in tabCustomerFilterOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
             </option>
           </select>
@@ -1446,7 +2376,7 @@ function exportCSV() {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Cari Customer, Unit, atau SN..."
+            placeholder="Cari Unit, atau SN..."
             class="filter-input"
           />
         </div>
@@ -1477,26 +2407,26 @@ function exportCSV() {
           </div>
           <div class="mt-1 flex items-center gap-1">
             <span
-              v-if="item.customer_type === 'atlas' || item.customer_type === 'great' || item.percentage_bw > 0"
+              v-if="isAtlas(item)"
               class="badge-type badge-atlas"
             >
-              Alokasi {{ Number(item.percentage_bw || 88) }}% : {{ Number(item.percentage_color || 12) }}%
+              Atlas Copco (88% : 12%)
             </span>
             <span
               v-else
-              class="badge-type badge-standard"
+              class="badge-type badge-great"
             >
-              Standar 100%
+              Great Eastern (88% : 12%)
             </span>
           </div>
         </template>
 
         <template #cell(unit)="{ item }">
           <div class="font-semibold text-slate-800">
-            {{ item.unit?.model_name || item.unit?.model || 'Unit' }}
+            {{ getUnitDisplayName(item) }}
           </div>
           <div class="text-xs text-slate-500 font-mono">
-            SN: {{ item.unit?.serial_number || '-' }}
+            SN: {{ getUnitSN(item) }}
           </div>
         </template>
 
@@ -1507,6 +2437,9 @@ function exportCSV() {
           <div class="text-xs">
             <span class="text-slate-500">Akhir:</span> <strong>{{ Number(item.counter_akhir_bw || 0).toLocaleString() }}</strong>
           </div>
+          <div v-if="activeTab === 'atlas' && (Number(item.gross_counter_bw) > 0 || Number(item.a3_counter_bw) > 0)" class="text-[10px] text-slate-500 mt-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 font-mono">
+            Gross: {{ Number(item.gross_counter_bw || 0).toLocaleString() }} | {{ getDeductionSummary(item, 'bw') }}
+          </div>
         </template>
 
         <template #cell(meter_color)="{ item }">
@@ -1515,6 +2448,9 @@ function exportCSV() {
           </div>
           <div class="text-xs">
             <span class="text-slate-500">Akhir:</span> <strong>{{ Number(item.counter_akhir_color || 0).toLocaleString() }}</strong>
+          </div>
+          <div v-if="activeTab === 'atlas' && (Number(item.gross_counter_color) > 0 || Number(item.a3_counter_color) > 0)" class="text-[10px] text-slate-500 mt-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 font-mono">
+            Gross: {{ Number(item.gross_counter_color || 0).toLocaleString() }} | {{ getDeductionSummary(item, 'color') }}
           </div>
         </template>
 
@@ -1530,21 +2466,14 @@ function exportCSV() {
         </template>
 
         <template #cell(allocation)="{ item }">
-          <template v-if="Number(item.percentage_bw) > 0">
-            <div class="text-xs">
-              <span class="text-slate-500">{{ Number(item.percentage_bw) }}% ke BW:</span>
-              <strong>+{{ Number(item.allocation_bw || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong>
-            </div>
-            <div class="text-xs">
-              <span class="text-slate-500">{{ Number(item.percentage_color) }}% CL:</span>
-              <strong>{{ Number(item.allocation_color || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong>
-            </div>
-          </template>
-          <template v-else>
-            <div class="text-xs text-slate-400 italic">
-              Standar Murni (Tanpa Alokasi)
-            </div>
-          </template>
+          <div class="text-xs">
+            <span class="text-slate-500">{{ Number(item.percentage_bw || 88) }}% ke BW:</span>
+            <strong>+{{ Number(item.allocation_bw || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong>
+          </div>
+          <div class="text-xs">
+            <span class="text-slate-500">{{ Number(item.percentage_color || 12) }}% CL:</span>
+            <strong>{{ Number(item.allocation_color || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong>
+          </div>
         </template>
 
         <template #cell(total_pages)="{ item }">
@@ -1558,13 +2487,13 @@ function exportCSV() {
           </div>
         </template>
 
-        <template #cell(actions)="{ item }">
+        <template #actions="{ item, row }">
           <div class="action-btns">
             <button
               type="button"
               class="btn-icon"
-              title="Detail & Cetak Slip Laporan"
-              @click="openDetail(item)"
+              :title="isAtlas(item || row) ? 'Detail Kalkulasi & Laporan Epson' : 'Detail Kalkulasi Lembar'"
+              @click.stop="openDetail(item || row)"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -1577,8 +2506,8 @@ function exportCSV() {
             <button
               type="button"
               class="btn-icon btn-icon-print"
-              title="Cetak Cepat"
-              @click="printSlip(item)"
+              :title="isAtlas(item || row) ? 'Cetak Slip Epson' : 'Cetak Slip Great'"
+              @click.stop="printSlip(item || row)"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="6 9 6 2 18 2 18 9"></polyline>
@@ -1590,7 +2519,7 @@ function exportCSV() {
               type="button"
               class="btn-icon btn-icon-edit"
               title="Edit Pencatatan"
-              @click="openEditModal(item)"
+              @click.stop="openEditModal(item || row)"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 20h9"></path>
@@ -1598,10 +2527,11 @@ function exportCSV() {
               </svg>
             </button>
             <button
+              v-if="canDeleteReading"
               type="button"
               class="btn-icon btn-icon-delete"
-              title="Hapus"
-              @click="confirmDelete(item)"
+              title="Hapus Pencatatan"
+              @click.stop="confirmDelete(item || row)"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 6 5 6 21 6"></polyline>
@@ -1616,19 +2546,64 @@ function exportCSV() {
     <!-- MODAL FORM HITUNG / TAMBAH / EDIT -->
     <FormModal
       :open="showModal"
-      :title="isEditing ? 'Edit Pencatatan Lembar' : 'Hitung / Tambah Pencatatan Lembar'"
+      :title="isEditing ? `Edit Pencatatan Lembar (${form.customer_type === 'atlas' ? 'Atlas' : 'Great'})` : `Hitung / Tambah Pencatatan Lembar - ${form.customer_type === 'atlas' ? 'Atlas Copco' : 'PT Great Eastern'}`"
       :submitLabel="isEditing ? 'Perbarui' : 'Simpan Pencatatan'"
       maxWidth="780px"
       @close="showModal = false"
       @submit="handleSubmit"
     >
       <div class="form-grid">
+        <!-- Switcher Type (Khusus Mode Tambah Data) -->
+        <div v-if="!isEditing" class="modal-type-switcher full-width">
+          <button
+            type="button"
+            class="type-switch-btn"
+            :class="{ active: form.customer_type === 'atlas' }"
+            @click="switchModalType('atlas')"
+          >
+            <span class="dot dot-atlas"></span>
+            Perhitungan Atlas (Deduksi A3 + 88:12)
+          </button>
+          <button
+            type="button"
+            class="type-switch-btn"
+            :class="{ active: form.customer_type === 'great' }"
+            @click="switchModalType('great')"
+          >
+            <span class="dot dot-great"></span>
+            Perhitungan Great (Direct + 88:12)
+          </button>
+        </div>
+
+        <!-- Pilihan Berdasarkan Rental Invoice -->
+        <div class="form-group full-width" style="background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 8px; padding: 12px 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <label class="form-label" style="margin-bottom: 0; font-weight: 700; color: #1e40af; display: flex; align-items: center; gap: 6px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              Pilih Berdasarkan Rental Invoice (Otomatis Customer &amp; Unit Terpilih)
+            </label>
+            <span v-if="form.rental_invoice_id" class="badge-mini badge-great" style="cursor: pointer; padding: 2px 8px; font-size: 11px;" @click="form.rental_invoice_id = ''">
+              &times; Reset Pilihan Invoice
+            </span>
+          </div>
+          <CustomSelect
+            v-model="form.rental_invoice_id"
+            :options="rentalInvoiceOptions"
+            placeholder="-- Pilih Rental Invoice (Unit &amp; Customer akan otomatis terpilih) --"
+            @update:modelValue="onRentalInvoiceChange"
+          />
+          <div v-if="form.rental_invoice_id" style="margin-top: 6px; font-size: 12px; color: #16a34a; display: flex; align-items: center; gap: 4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            Unit mesin, customer, dan periode otomatis terhubung dengan Rental Invoice terpilih.
+          </div>
+        </div>
+
         <!-- Customer & Unit Selection -->
         <div class="form-group">
           <label class="form-label required">Customer / Perusahaan</label>
           <CustomSelect
             v-model="form.customer_id"
-            :options="customerOptions"
+            :options="modalCustomerOptions"
             placeholder="Pilih Customer..."
           />
         </div>
@@ -1660,80 +2635,6 @@ function exportCSV() {
           </div>
         </div>
 
-        <!-- Skema Perhitungan Selector -->
-        <div class="form-group full-width">
-          <label class="form-label required">Skema Metode Perhitungan Lembar</label>
-          <div class="scheme-radio-group">
-            <label class="scheme-radio-card" :class="{ selected: form.scheme_type === 'standard' }">
-              <input
-                v-model="form.scheme_type"
-                type="radio"
-                value="standard"
-              />
-              <div class="scheme-card-body">
-                <div class="scheme-title">Standar (100% Murni)</div>
-                <div class="scheme-desc">Untuk customer umum/biasa: Total lembar = Pemakaian BW murni & Color murni.</div>
-              </div>
-            </label>
-
-            <label class="scheme-radio-card" :class="{ selected: form.scheme_type === 'atlas_great' }">
-              <input
-                v-model="form.scheme_type"
-                type="radio"
-                value="atlas_great"
-              />
-              <div class="scheme-card-body">
-                <div class="scheme-title">Alokasi Khusus (88% : 12% - Tgl 7)</div>
-                <div class="scheme-desc">Untuk customer yang meminta alokasi (cth: Atlas, Great, dll): 88% Color ke BW & cut-off tgl 7.</div>
-              </div>
-            </label>
-
-            <label class="scheme-radio-card" :class="{ selected: form.scheme_type === 'custom' }">
-              <input
-                v-model="form.scheme_type"
-                type="radio"
-                value="custom"
-              />
-              <div class="scheme-card-body">
-                <div class="scheme-title">Kustom Alokasi %</div>
-                <div class="scheme-desc">Tentukan persentase alokasi secara dinamis sesuai perjanjian sewa.</div>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <!-- Custom Percentages Inputs (Jika Kustom dipilih) -->
-        <div v-if="form.scheme_type === 'custom'" class="custom-pct-box full-width">
-          <div class="pct-input-wrap">
-            <label class="form-label">% Color Dialihkan ke BW:</label>
-            <div class="pct-input-group">
-              <input
-                v-model.number="form.percentage_bw"
-                type="number"
-                min="0"
-                max="100"
-                class="form-input"
-                @input="form.percentage_color = Math.max(0, 100 - (form.percentage_bw || 0))"
-              />
-              <span class="pct-symbol">%</span>
-            </div>
-          </div>
-          <div class="pct-input-wrap">
-            <label class="form-label">% Color Tetap Color:</label>
-            <div class="pct-input-group">
-              <input
-                v-model.number="form.percentage_color"
-                type="number"
-                min="0"
-                max="100"
-                class="form-input"
-                @input="form.percentage_bw = Math.max(0, 100 - (form.percentage_color || 0))"
-              />
-              <span class="pct-symbol">%</span>
-            </div>
-          </div>
-        </div>
-
         <!-- Periode & Reading Date -->
         <div class="form-group">
           <label class="form-label required">Periode Bulan</label>
@@ -1755,8 +2656,8 @@ function exportCSV() {
           />
         </div>
 
-        <!-- ALERT ATURAN TANGGAL 7 KHUSUS SKEMA ALOKASI -->
-        <div v-if="isAtlasOrGreat && !isEditing" class="cutoff-notice-card full-width" :class="{ 'warning-mode': currentDay !== 7 }">
+        <!-- ALERT ATURAN TANGGAL 7 KHUSUS ATLAS & GREAT -->
+        <div v-if="!isEditing" class="cutoff-notice-card full-width" :class="{ 'warning-mode': currentDay !== 7 }">
           <div class="notice-header">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"></circle>
@@ -1766,7 +2667,7 @@ function exportCSV() {
             <span class="font-bold">Siklus Billing: Tanggal 7 Setiap Bulan</span>
           </div>
           <div class="notice-body">
-            Meter reading dicatat oleh teknisi pada rentang tanggal 25–30 setiap akhir bulan. Perhitungan alokasi lembar untuk customer dengan skema ini diterbitkan setiap <strong>tanggal 7</strong>, dan tanggal pembacaan otomatis dikunci pada <strong>tanggal 7</strong>.
+            Meter reading dicatat oleh teknisi pada rentang tanggal 25–30 setiap akhir bulan. Perhitungan alokasi lembar untuk customer <strong>{{ form.customer_type === 'atlas' ? 'Atlas Copco' : 'PT Great Eastern' }}</strong> diterbitkan setiap <strong>tanggal 7</strong>, dan tanggal pembacaan otomatis dikunci pada <strong>tanggal 7</strong>.
           </div>
           <div v-if="currentDay !== 7" class="notice-override">
             <div class="today-tag">Hari ini: Tanggal {{ currentDay }} (Jadwal normal: Tanggal 7)</div>
@@ -1780,7 +2681,7 @@ function exportCSV() {
         <div class="form-group full-width">
           <label class="form-label">
             Tanggal Pembacaan Meter
-            <span v-if="isAtlasOrGreat" class="text-xs text-blue-600 font-normal ml-2">
+            <span class="text-xs text-blue-600 font-normal ml-2">
               (Terkunci otomatis ke tanggal 7)
             </span>
           </label>
@@ -1788,7 +2689,7 @@ function exportCSV() {
             v-model="form.reading_date"
             type="date"
             class="form-input"
-            :disabled="isAtlasOrGreat"
+            disabled
           />
         </div>
 
@@ -1809,10 +2710,34 @@ function exportCSV() {
           </button>
         </div>
 
-        <!-- COUNTER INPUTS -->
+        <!-- COUNTER INPUTS (Kondisional: Atlas ada Gross & Deduksi Kertas Dinamis, Great hanya Awal & Akhir) -->
         <div class="counter-box full-width">
-          <div class="counter-box-header">
-            <span>Rincian Pembacaan Counter (Meter Reading)</span>
+          <div class="counter-box-header" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span>Rincian Pembacaan Counter (Meter Reading)</span>
+              <span class="badge-mini" :class="form.customer_type === 'atlas' ? 'badge-atlas' : 'badge-great'">
+                {{ form.customer_type === 'atlas' ? 'Metode Atlas (Gross & Deduksi Kertas)' : 'Metode Great (Direct Meter)' }}
+              </span>
+            </div>
+
+            <!-- Toolbar Kertas Printer Khusus Atlas -->
+            <div v-if="form.customer_type === 'atlas'" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <span style="font-size: 11px; color: #475569; font-weight: 500;">Kertas Terdeteksi:</span>
+              <span
+                v-for="pd in form.paper_deductions"
+                :key="'badge-' + pd.name"
+                class="px-2 py-0.5 text-xs font-semibold rounded bg-blue-50 text-blue-700 border border-blue-200"
+              >
+                {{ pd.name }}
+              </span>
+              <button
+                type="button"
+                style="padding: 2px 8px; font-size: 11px; border: 1px dashed #3b82f6; color: #2563eb; background: #eff6ff; border-radius: 4px; cursor: pointer; font-weight: 500;"
+                @click="promptAddPaper"
+              >
+                + Tambah Kertas Lain
+              </button>
+            </div>
           </div>
 
           <div class="counter-inputs-grid">
@@ -1828,30 +2753,61 @@ function exportCSV() {
                   class="form-input"
                 />
               </div>
+
+              <!-- KHUSUS ATLAS: Gross & Deduksi Kertas Multi-Ukuran -->
+              <template v-if="form.customer_type === 'atlas'">
+                <div class="form-group">
+                  <label class="form-label">Counter Mesin Total (Gross BW)</label>
+                  <input
+                    v-model.number="form.gross_meter_bw"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    placeholder="Contoh: 16311"
+                    @input="onGrossOrDeductionChange"
+                  />
+                </div>
+
+                <!-- Input Deduksi per Ukuran Kertas Dinamis -->
+                <div
+                  v-for="(pd, pIdx) in form.paper_deductions"
+                  :key="'deduct-bw-' + pd.name + '-' + pIdx"
+                  class="form-group"
+                  style="margin-bottom: 8px;"
+                >
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <label class="form-label" style="margin-bottom: 0;">
+                      Deduksi Ukuran {{ pd.name }} B&amp;W (-)
+                    </label>
+                    <button
+                      v-if="form.paper_deductions.length > 1"
+                      type="button"
+                      style="font-size: 11px; color: #ef4444; background: none; border: none; cursor: pointer; padding: 0 4px;"
+                      title="Hapus ukuran kertas ini"
+                      @click="removePaperDeduction(pIdx)"
+                    >
+                      &times; Hapus
+                    </button>
+                  </div>
+                  <input
+                    v-model.number="pd.bw"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    :placeholder="'Deduksi ' + pd.name + ' BW'"
+                    @input="onGrossOrDeductionChange"
+                  />
+                </div>
+
+                <div v-if="form.paper_deductions && form.paper_deductions.length > 1" class="text-xs text-slate-500 mb-2 font-medium">
+                  Total Deduksi BW: <strong class="text-slate-800">{{ totalDeductionBW }}</strong>
+                </div>
+              </template>
+
               <div class="form-group">
-                <label class="form-label">Counter Mesin Total (Gross BW)</label>
-                <input
-                  v-model.number="form.gross_meter_bw"
-                  type="number"
-                  min="0"
-                  class="form-input"
-                  placeholder="Contoh: 16311"
-                  @input="onGrossOrA3Change"
-                />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Deduksi Ukuran A3 B&amp;W (-)</label>
-                <input
-                  v-model.number="form.a3_meter_bw"
-                  type="number"
-                  min="0"
-                  class="form-input"
-                  placeholder="Contoh: 7"
-                  @input="onGrossOrA3Change"
-                />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Counter Akhir / Last Meter BW</label>
+                <label class="form-label">
+                  {{ form.customer_type === 'atlas' ? 'Counter Akhir / Last Meter BW' : 'Counter Akhir BW' }}
+                </label>
                 <input
                   v-model.number="form.end_meter_bw"
                   type="number"
@@ -1859,8 +2815,8 @@ function exportCSV() {
                   class="form-input"
                   style="font-weight: 700; color: #1e3a8a;"
                 />
-                <small v-if="form.gross_meter_bw > 0" class="text-muted" style="font-size: 11px;">
-                  = Total {{ form.gross_meter_bw }} - A3 {{ form.a3_meter_bw }}
+                <small v-if="form.customer_type === 'atlas' && (form.gross_meter_bw > 0 || totalDeductionBW > 0)" class="text-muted" style="font-size: 11px;">
+                  = Total {{ form.gross_meter_bw }} - Deduksi ({{ totalDeductionBW }})
                 </small>
               </div>
               <div class="counter-calc-badge">
@@ -1881,30 +2837,61 @@ function exportCSV() {
                   class="form-input"
                 />
               </div>
+
+              <!-- KHUSUS ATLAS: Gross & Deduksi Kertas Multi-Ukuran -->
+              <template v-if="form.customer_type === 'atlas'">
+                <div class="form-group">
+                  <label class="form-label">Counter Mesin Total (Gross Color)</label>
+                  <input
+                    v-model.number="form.gross_meter_color"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    placeholder="Contoh: 16458"
+                    @input="onGrossOrDeductionChange"
+                  />
+                </div>
+
+                <!-- Input Deduksi per Ukuran Kertas Dinamis -->
+                <div
+                  v-for="(pd, pIdx) in form.paper_deductions"
+                  :key="'deduct-cl-' + pd.name + '-' + pIdx"
+                  class="form-group"
+                  style="margin-bottom: 8px;"
+                >
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                    <label class="form-label" style="margin-bottom: 0;">
+                      Deduksi Ukuran {{ pd.name }} Color (-)
+                    </label>
+                    <button
+                      v-if="form.paper_deductions.length > 1"
+                      type="button"
+                      style="font-size: 11px; color: #ef4444; background: none; border: none; cursor: pointer; padding: 0 4px;"
+                      title="Hapus ukuran kertas ini"
+                      @click="removePaperDeduction(pIdx)"
+                    >
+                      &times; Hapus
+                    </button>
+                  </div>
+                  <input
+                    v-model.number="pd.color"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    :placeholder="'Deduksi ' + pd.name + ' Color'"
+                    @input="onGrossOrDeductionChange"
+                  />
+                </div>
+
+                <div v-if="form.paper_deductions && form.paper_deductions.length > 1" class="text-xs text-slate-500 mb-2 font-medium">
+                  Total Deduksi Color: <strong class="text-slate-800">{{ totalDeductionColor }}</strong>
+                </div>
+              </template>
+
               <div class="form-group">
-                <label class="form-label">Counter Mesin Total (Gross Color)</label>
-                <input
-                  v-model.number="form.gross_meter_color"
-                  type="number"
-                  min="0"
-                  class="form-input"
-                  placeholder="Contoh: 16458"
-                  @input="onGrossOrA3Change"
-                />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Deduksi Ukuran A3 Color (-)</label>
-                <input
-                  v-model.number="form.a3_meter_color"
-                  type="number"
-                  min="0"
-                  class="form-input"
-                  placeholder="Contoh: 15"
-                  @input="onGrossOrA3Change"
-                />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Counter Akhir / Last Meter Color</label>
+                <label class="form-label">
+                  {{ form.customer_type === 'atlas' ? 'Counter Akhir / Last Meter Color' : 'Counter Akhir Color' }}
+                </label>
                 <input
                   v-model.number="form.end_meter_color"
                   type="number"
@@ -1912,8 +2899,8 @@ function exportCSV() {
                   class="form-input"
                   style="font-weight: 700; color: #1e3a8a;"
                 />
-                <small v-if="form.gross_meter_color > 0" class="text-muted" style="font-size: 11px;">
-                  = Total {{ form.gross_meter_color }} - A3 {{ form.a3_meter_color }}
+                <small v-if="form.customer_type === 'atlas' && (form.gross_meter_color > 0 || totalDeductionColor > 0)" class="text-muted" style="font-size: 11px;">
+                  = Total {{ form.gross_meter_color }} - Deduksi ({{ totalDeductionColor }})
                 </small>
               </div>
               <div class="counter-calc-badge color-calc-badge">
@@ -1932,7 +2919,7 @@ function exportCSV() {
               <line x1="3" y1="9" x2="21" y2="9"></line>
               <line x1="9" y1="21" x2="9" y2="9"></line>
             </svg>
-            <span>Preview Kalkulasi Lembar Pemakaian ({{ form.scheme_type === 'standard' ? 'Standar 100%' : `Rumus Alokasi ${form.percentage_bw}% : ${form.percentage_color}%` }})</span>
+            <span>Preview Kalkulasi Lembar Pemakaian ({{ form.customer_type === 'atlas' ? 'Atlas Copco' : 'PT Great Eastern' }} &bull; Rumus Alokasi 88% : 12%)</span>
           </div>
 
           <table class="excel-table">
@@ -1940,6 +2927,13 @@ function exportCSV() {
               <tr>
                 <th>Item</th>
                 <th>Counter Awal</th>
+                <th v-if="form.customer_type === 'atlas'">Gross Mesin</th>
+                <template v-if="form.customer_type === 'atlas'">
+                  <th v-for="pd in form.paper_deductions" :key="'th-pd-' + pd.name">
+                    Deduksi {{ pd.name }}
+                  </th>
+                  <th v-if="form.paper_deductions && form.paper_deductions.length > 1">Total Deduksi</th>
+                </template>
                 <th>Counter Akhir</th>
                 <th class="cell-highlight">Pemakaian</th>
               </tr>
@@ -1948,12 +2942,30 @@ function exportCSV() {
               <tr>
                 <td><strong>BW</strong></td>
                 <td>{{ Number(form.start_meter_bw || 0).toLocaleString() }}</td>
+                <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_bw || 0).toLocaleString() }}</td>
+                <template v-if="form.customer_type === 'atlas'">
+                  <td v-for="pd in form.paper_deductions" :key="'td-bw-' + pd.name">
+                    {{ Number(pd.bw || 0).toLocaleString() }}
+                  </td>
+                  <td v-if="form.paper_deductions && form.paper_deductions.length > 1" style="font-weight: 600;">
+                    {{ totalDeductionBW.toLocaleString() }}
+                  </td>
+                </template>
                 <td>{{ Number(form.end_meter_bw || 0).toLocaleString() }}</td>
                 <td class="cell-highlight">{{ calcBaseUsageBW.toLocaleString() }}</td>
               </tr>
               <tr>
-                <td><strong>COLOUR</strong></td>
+                <td><strong>COLOR</strong></td>
                 <td>{{ Number(form.start_meter_color || 0).toLocaleString() }}</td>
+                <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_color || 0).toLocaleString() }}</td>
+                <template v-if="form.customer_type === 'atlas'">
+                  <td v-for="pd in form.paper_deductions" :key="'td-col-' + pd.name">
+                    {{ Number(pd.color || 0).toLocaleString() }}
+                  </td>
+                  <td v-if="form.paper_deductions && form.paper_deductions.length > 1" style="font-weight: 600;">
+                    {{ totalDeductionColor.toLocaleString() }}
+                  </td>
+                </template>
                 <td>{{ Number(form.end_meter_color || 0).toLocaleString() }}</td>
                 <td class="cell-highlight">{{ calcBaseUsageColor.toLocaleString() }}</td>
               </tr>
@@ -1973,47 +2985,25 @@ function exportCSV() {
           </div>
 
           <div class="formula-breakdown">
-            <template v-if="form.scheme_type !== 'standard'">
-              <div class="formula-row">
-                <span class="formula-label">BW :</span>
-                <span class="formula-calc">
-                  {{ calcBaseUsageColor.toLocaleString() }} &times; {{ form.percentage_bw }}% = <strong>{{ calcAllocatedColorToBW.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong> + {{ calcBaseUsageBW.toLocaleString() }} =
-                </span>
-                <span class="formula-result bw-res">
-                  {{ calcFinalBW.toLocaleString(undefined, { minimumFractionDigits: 2 }) }} Lembar
-                </span>
-              </div>
+            <div class="formula-row">
+              <span class="formula-label">BW :</span>
+              <span class="formula-calc">
+                {{ calcBaseUsageColor.toLocaleString() }} &times; {{ form.percentage_bw }}% = <strong>{{ calcAllocatedColorToBW.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong> + {{ calcBaseUsageBW.toLocaleString() }} =
+              </span>
+              <span class="formula-result bw-res">
+                {{ calcFinalBW.toLocaleString(undefined, { minimumFractionDigits: 2 }) }} Lembar
+              </span>
+            </div>
 
-              <div class="formula-row">
-                <span class="formula-label">CL :</span>
-                <span class="formula-calc">
-                  {{ calcBaseUsageColor.toLocaleString() }} &times; {{ form.percentage_color }}% =
-                </span>
-                <span class="formula-result cl-res">
-                  {{ calcFinalColor.toLocaleString(undefined, { minimumFractionDigits: 2 }) }} Lembar
-                </span>
-              </div>
-            </template>
-            <template v-else>
-              <div class="formula-row">
-                <span class="formula-label">BW :</span>
-                <span class="formula-calc">
-                  Pemakaian Murni =
-                </span>
-                <span class="formula-result bw-res">
-                  {{ calcFinalBW.toLocaleString() }} Lembar
-                </span>
-              </div>
-              <div class="formula-row">
-                <span class="formula-label">CL :</span>
-                <span class="formula-calc">
-                  Pemakaian Murni =
-                </span>
-                <span class="formula-result cl-res">
-                  {{ calcFinalColor.toLocaleString() }} Lembar
-                </span>
-              </div>
-            </template>
+            <div class="formula-row">
+              <span class="formula-label">CL :</span>
+              <span class="formula-calc">
+                {{ calcBaseUsageColor.toLocaleString() }} &times; {{ form.percentage_color }}% =
+              </span>
+              <span class="formula-result cl-res">
+                {{ calcFinalColor.toLocaleString(undefined, { minimumFractionDigits: 2 }) }} Lembar
+              </span>
+            </div>
           </div>
         </div>
 
@@ -2040,8 +3030,8 @@ function exportCSV() {
       @submit="printSlip(detailItem)"
     >
       <div v-if="detailItem">
-        <!-- Tab Selector: Rumus Pencatatan vs Output Mesin Epson -->
-        <div class="detail-nav-pills">
+        <!-- Tab Selector: Rumus Pencatatan vs Output Mesin Epson (Hanya untuk Atlas) -->
+        <div v-if="isAtlas(detailItem)" class="detail-nav-pills">
           <button
             type="button"
             class="nav-pill-btn"
@@ -2061,7 +3051,7 @@ function exportCSV() {
         </div>
 
         <!-- VIEW 1: PENCATATAN ATLAS & GREAT BESERTA RUMUSNYA -->
-        <div v-if="detailTab === 'formula'" class="detail-container">
+        <div v-if="detailTab === 'formula' || !isAtlas(detailItem)" class="detail-container">
           <!-- Letterhead Info -->
           <div class="detail-letterhead">
             <div class="detail-brand">PT. BIAS SURYA TEKNOLOGI</div>
@@ -2084,13 +3074,13 @@ function exportCSV() {
             <div>
               <span class="meta-label">Unit Mesin:</span>
               <div class="meta-value">
-                {{ detailItem.unit?.model_name || detailItem.unit?.model || 'Unit' }} (SN: {{ detailItem.unit?.serial_number || detailItem.unit?.serial_no || '-' }})
+                {{ getUnitDisplayName(detailItem) }} (SN: {{ getUnitSN(detailItem) }})
               </div>
             </div>
             <div>
               <span class="meta-label">Skema Perhitungan:</span>
               <div class="meta-value font-medium">
-                {{ detailItem.customer_type === 'standard' || Number(detailItem.percentage_bw) === 0 ? 'Standar (100% Murni)' : `Alokasi (${Number(detailItem.percentage_bw || 88)}% BW : ${Number(detailItem.percentage_color || 12)}% CL)` }}
+                {{ isAtlas(detailItem) ? 'Skema Atlas Copco (Deduksi A3 & Alokasi 88% : 12%)' : 'Skema PT Great Eastern (Direct Counter & Alokasi 88% : 12%)' }}
               </div>
             </div>
           </div>
@@ -2102,6 +3092,8 @@ function exportCSV() {
                 <tr>
                   <th>Tipe</th>
                   <th class="text-right">Counter Awal</th>
+                  <th v-if="isAtlas(detailItem)" class="text-right">Gross Mesin</th>
+                  <th v-if="isAtlas(detailItem)" class="text-right">Deduksi A3</th>
                   <th class="text-right">Counter Akhir</th>
                   <th class="text-right">Pemakaian Dasar</th>
                 </tr>
@@ -2110,12 +3102,16 @@ function exportCSV() {
                 <tr>
                   <td><strong>Black &amp; White (BW)</strong></td>
                   <td class="text-right">{{ Number(detailItem.counter_awal_bw || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.gross_counter_bw || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.a3_counter_bw || 0).toLocaleString('id-ID') }}</td>
                   <td class="text-right">{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}</td>
                   <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_bw_dasar || 0).toLocaleString('id-ID') }}</td>
                 </tr>
                 <tr>
                   <td><strong>Color (CL)</strong></td>
                   <td class="text-right">{{ Number(detailItem.counter_awal_color || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.gross_counter_color || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.a3_counter_color || 0).toLocaleString('id-ID') }}</td>
                   <td class="text-right">{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</td>
                   <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }}</td>
                 </tr>
@@ -2167,9 +3163,9 @@ function exportCSV() {
           <div class="epson-dark-header">
             <div class="epson-header-top">
               <div class="epson-info-left">
-                <div class="epson-machine-model">{{ detailItem.unit?.model_name || detailItem.unit?.model || 'WF-C878R' }}</div>
+                <div class="epson-machine-model">{{ getUnitDisplayName(detailItem) }}</div>
                 <div class="epson-meta-line">
-                  <span class="meta-tag">SN: <strong>{{ detailItem.unit?.serial_number || detailItem.unit?.serial_no || '-' }}</strong></span>
+                  <span class="meta-tag">SN: <strong>{{ getUnitSN(detailItem) }}</strong></span>
                   <span class="meta-sep">&bull;</span>
                   <span class="meta-tag">Customer: <strong>{{ getCustomerName(detailItem.customer) }}</strong></span>
                   <span class="meta-sep">&bull;</span>
@@ -2400,6 +3396,95 @@ function exportCSV() {
   border-radius: 0.75rem;
   padding: 1rem 1.25rem;
   margin-bottom: 1.5rem;
+  transition: all 0.2s ease;
+}
+
+.info-card-atlas {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.info-card-great {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.info-card-great .info-icon {
+  color: #16a34a;
+}
+
+.info-card-great .info-title {
+  color: #166534;
+}
+
+.info-card-great .info-desc {
+  color: #14532d;
+}
+
+.tab-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 2px;
+}
+
+.indicator-atlas {
+  background: #2563eb;
+}
+
+.indicator-great {
+  background: #16a34a;
+}
+
+.modal-type-switcher {
+  display: flex;
+  gap: 8px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.type-switch-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #64748b;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.type-switch-btn:hover {
+  color: #0f172a;
+}
+
+.type-switch-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot-atlas {
+  background: #2563eb;
+}
+
+.dot-great {
+  background: #16a34a;
 }
 
 .info-icon {
@@ -2544,6 +3629,12 @@ function exportCSV() {
 .badge-atlas {
   background: #e0e7ff;
   color: #3730a3;
+}
+
+.badge-great {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
 }
 
 .badge-standard {
@@ -3369,6 +4460,20 @@ function exportCSV() {
   background: #ffffff;
   color: #1e40af;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.btn-excel-top {
+  background: #16a34a !important;
+  border-color: #16a34a !important;
+  color: #ffffff !important;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+}
+
+.btn-excel-top:hover {
+  background: #15803d !important;
+  border-color: #15803d !important;
 }
 
 </style>

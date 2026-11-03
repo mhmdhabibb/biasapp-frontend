@@ -42,7 +42,14 @@ export async function printDeliveryServiceHistory(item: any): Promise<boolean> {
   if (!printWindow) return false;
 
   let fullItem = item;
-  if (item.id && (!item.customer_signature || !item.technician_signature)) {
+  if (
+    item.id &&
+    (!item.customer_signature ||
+      !item.technician_signature ||
+      item.customer_signature === "signed" ||
+      item.technician_signature === "signed" ||
+      item.photo_before === "has_photo")
+  ) {
     try {
       const res: any = await api.get(`/delivery-orders/${item.id}`);
       fullItem = res.data?.data ?? res.data ?? item;

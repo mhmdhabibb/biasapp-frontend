@@ -148,20 +148,44 @@ function resolvePOTechnician(po: any, store: any) {
   const req = resolvePORequest(po, store);
   const sr = resolvePOServiceReport(po, store);
 
+  const genericNames = ["admin", "adminss", "tech", "teknisi", "admin sales", "super admin", "user"];
+  const isGoodName = (val: any) =>
+    val && typeof val === "string" && !genericNames.includes(val.trim().toLowerCase());
+
   const getTech = (tOrId: any) => {
     if (!tOrId) return null;
-    if (typeof tOrId === "object" && (tOrId.employee_code || tOrId.name || tOrId.user)) return tOrId;
-    const strId = String(typeof tOrId === "object" ? tOrId.id : tOrId).trim().toLowerCase();
-    if (store?.findTechnician) {
-      const found = store.findTechnician(strId);
-      if (found) return found;
+    const strId = String(
+      typeof tOrId === "object" ? (tOrId.id || tOrId.technician_id || tOrId.user_id || "") : tOrId
+    ).trim().toLowerCase();
+
+    let masterTech: any = null;
+    if (strId && store?.findTechnician) {
+      masterTech = store.findTechnician(strId);
     }
-    const list = store?.technicians?.value || store?.technicians || [];
-    return list.find(
-      (t: any) =>
-        String(t.id).trim().toLowerCase() === strId ||
-        String(t.user_id || "").trim().toLowerCase() === strId,
-    );
+    if (!masterTech && strId) {
+      const list = store?.technicians?.value || store?.technicians || [];
+      masterTech = list.find(
+        (t: any) =>
+          String(t.id).trim().toLowerCase() === strId ||
+          String(t.user_id || "").trim().toLowerCase() === strId
+      );
+    }
+
+    const base = typeof tOrId === "object" ? tOrId : {};
+    const res: any = { ...(masterTech || {}), ...base };
+
+    // Prefer actual human name over generic role names like "Teknisi"
+    if (!isGoodName(res.name)) {
+      if (isGoodName(masterTech?.name)) res.name = masterTech.name;
+      else if (isGoodName(masterTech?.user?.name)) res.name = masterTech.user.name;
+      else if (isGoodName(base?.user?.name)) res.name = base.user.name;
+      else if (isGoodName(base?.name)) res.name = base.name;
+    }
+
+    if (!res.employee_code) {
+      res.employee_code = masterTech?.employee_code || base.employee_code || "";
+    }
+    return res.name || res.employee_code || res.id ? res : null;
   };
 
   return (
@@ -287,25 +311,42 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
     ? (users as any[]).find((u: any) => String(u?.id) === String(tech.user_id))
     : null;
 
-  const rawTechName =
-    tech?.user?.name ||
-    tech?.name ||
-    tech?.user?.username ||
-    matchedUser?.name ||
-    (po.requester_name && !["admin", "adminss", "tech", "admin sales"].includes(String(po.requester_name).toLowerCase()) ? po.requester_name : "") ||
-    "";
+  const genericNames = ["admin", "adminss", "tech", "teknisi", "admin sales", "super admin", "user"];
+  const isGoodName = (val: any) =>
+    val && typeof val === "string" && !genericNames.includes(val.trim().toLowerCase());
+
+  let rawTechName = "";
+  if (isGoodName(tech?.name)) rawTechName = tech.name;
+  else if (isGoodName(tech?.user?.name)) rawTechName = tech.user.name;
+  else if (isGoodName(po.requester_name)) rawTechName = po.requester_name;
+  else if (isGoodName(req?.requester_name)) rawTechName = req.requester_name;
+  else if (isGoodName(req?.technician_name)) rawTechName = req.technician_name;
+  else if (isGoodName(matchedUser?.name)) rawTechName = matchedUser.name;
+  else if (isGoodName(tech?.user?.username)) rawTechName = tech.user.username;
+  else if (isGoodName(tech?.username)) rawTechName = tech.username;
+  else rawTechName = tech?.name || po.requester_name || "Teknisi";
 
   const namaPemohon = escapeHtml(rawTechName || "Teknisi");
   const divisiDepartemen = "Technical / Service";
   const posisi = "Technician";
 
   // ID Card: Technician employee_code (e.g. TECH-bfb2aa56), never raw UUID
-  const rawIdCard =
-    tech?.employee_code ||
-    tech?.code ||
-    tech?.id_card ||
-    (!isUuid(tech?.id) ? tech?.id : null) ||
-    "-";
+  let rawIdCard = tech?.employee_code;
+  if (!rawIdCard && tech?.id) {
+    const techList = store?.technicians?.value || store?.technicians || [];
+    const foundTech = (techList as any[]).find(
+      (t: any) =>
+        String(t.id).trim().toLowerCase() === String(tech.id).trim().toLowerCase() ||
+        String(t.user_id || "").trim().toLowerCase() === String(tech.id).trim().toLowerCase()
+    );
+    if (foundTech?.employee_code) {
+      rawIdCard = foundTech.employee_code;
+    }
+  }
+  if (!rawIdCard || isUuid(rawIdCard)) {
+    rawIdCard = tech?.code || tech?.id_card || "-";
+    if (isUuid(rawIdCard)) rawIdCard = "-";
+  }
   const idCard = escapeHtml(rawIdCard);
   const prioritas = escapeHtml(po.priority || "Normal");
 
@@ -337,14 +378,15 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
     const priceStr = item.price ? item.price.toLocaleString("id-ID") : "-";
     const totalStr = item.total ? item.total.toLocaleString("id-ID") : "-";
     const purposeStr = escapeHtml(item.purpose || defaultPurpose);
-    const storeBadge = item.store_name
-      ? `<br><span style="font-size: 8.5px; color: #1e4e79; font-weight: bold;">[Toko: ${escapeHtml(item.store_name)}${item.virtual_account ? ` | VA: ${escapeHtml(item.virtual_account)}` : ""}]</span>`
-      : "";
+    const itemStore = item.store_name || (lineItems.length === 1 ? (po.store_name || tokoName) : "") || "-";
+    const itemVA = item.virtual_account || (lineItems.length === 1 ? (po.virtual_account || vaNumber) : "") || "-";
 
     return `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td style="text-align: left;">${escapeHtml(item.name)}${storeBadge}</td>
+        <td style="text-align: left; font-weight: 500;">${escapeHtml(item.name)}</td>
+        <td style="text-align: left; font-weight: 600; color: #1e4e79;">${escapeHtml(itemStore)}</td>
+        <td style="text-align: center; font-family: monospace; font-size: 9.5px; font-weight: 600;">${escapeHtml(itemVA)}</td>
         <td style="text-align: center;">${escapeHtml(item.qty)}</td>
         <td style="text-align: center;">${escapeHtml(item.uom || "Pcs")}</td>
         <td style="text-align: right;">${priceStr}</td>
@@ -362,6 +404,8 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
     emptyRows.push(`
       <tr>
         <td style="text-align: center;">${i}</td>
+        <td></td>
+        <td></td>
         <td></td>
         <td></td>
         <td></td>
@@ -627,20 +671,22 @@ export function generatePurchaseOrderHtml(po: any, currentUser?: any): string {
       <table class="items-table">
         <thead>
           <tr>
-            <th style="width: 4%;">No</th>
-            <th style="width: 34%; text-align: left; padding-left: 6px;">Nama Barang &amp; Spesifikasi Teknis</th>
-            <th style="width: 7%;">Volume</th>
-            <th style="width: 7%;">Satuan</th>
-            <th style="width: 14%;">Estimasi Harga Satuan<br><span style="font-weight: normal; font-size: 8.5px;">(Rp)</span></th>
-            <th style="width: 14%;">Total Estimasi<br><span style="font-weight: normal; font-size: 8.5px;">(Rp)</span></th>
-            <th style="width: 20%;">Keperluan / Peruntukan</th>
+            <th style="width: 3.5%;">No</th>
+            <th style="width: 23%; text-align: left; padding-left: 6px;">Nama Barang &amp; Spesifikasi Teknis</th>
+            <th style="width: 14%; text-align: left; padding-left: 6px;">Toko / Supplier</th>
+            <th style="width: 12%;">Virtual Account</th>
+            <th style="width: 6%;">Volume</th>
+            <th style="width: 6%;">Satuan</th>
+            <th style="width: 11%;">Estimasi Harga Satuan<br><span style="font-weight: normal; font-size: 8.5px;">(Rp)</span></th>
+            <th style="width: 11%;">Total Estimasi<br><span style="font-weight: normal; font-size: 8.5px;">(Rp)</span></th>
+            <th style="width: 13.5%;">Keperluan / Peruntukan</th>
           </tr>
         </thead>
         <tbody>
           ${itemRows.join("")}
           ${emptyRows.join("")}
           <tr class="total-row">
-            <td colspan="4" style="text-align: right; padding-right: 8px;">TOTAL ESTIMASI KESELURUHAN</td>
+            <td colspan="6" style="text-align: right; padding-right: 8px;">TOTAL ESTIMASI KESELURUHAN</td>
             <td colspan="2" style="text-align: right; padding-right: 8px;">${totalEstimasiStr}</td>
             <td style="text-align: center;">-</td>
           </tr>
@@ -764,11 +810,18 @@ export async function printPurchaseOrder(po: any, currentUser?: any): Promise<bo
     }
   }
 
+  let tech = resolvePOTechnician(po, store);
+  if (!tech && (req?.technician_id || sr?.technician_id)) {
+    const tId = req?.technician_id || sr?.technician_id;
+    if (store?.findTechnician) tech = store.findTechnician(tId);
+  }
+
   const enrichedPO = {
     ...po,
     customer: customer || po.customer,
     sparepart_request: req || po.sparepart_request,
     service_report: sr || po.service_report,
+    technician: tech || po.technician,
   };
 
   const html = generatePurchaseOrderHtml(enrichedPO, currentUser);

@@ -169,99 +169,6 @@ const visiblePages = computed(() => {
   }
   return pages;
 });
-
-// Dual / Top Synchronized Scrollbar
-const tableScrollRef = ref<HTMLElement | null>(null);
-const topScrollRef = ref<HTMLElement | null>(null);
-const hasHorizontalOverflow = ref(false);
-const tableScrollWidth = ref(0);
-
-let isSyncingTop = false;
-let isSyncingTable = false;
-
-function onTopScroll() {
-  if (isSyncingTop) {
-    isSyncingTop = false;
-    return;
-  }
-  if (!topScrollRef.value || !tableScrollRef.value) return;
-  isSyncingTable = true;
-  tableScrollRef.value.scrollLeft = topScrollRef.value.scrollLeft;
-}
-
-function onTableScroll() {
-  if (isSyncingTable) {
-    isSyncingTable = false;
-    return;
-  }
-  if (!topScrollRef.value || !tableScrollRef.value) return;
-  isSyncingTop = true;
-  topScrollRef.value.scrollLeft = tableScrollRef.value.scrollLeft;
-}
-
-function checkScrollOverflow() {
-  if (!tableScrollRef.value) {
-    hasHorizontalOverflow.value = false;
-    return;
-  }
-  const el = tableScrollRef.value;
-  const overflow = el.scrollWidth > el.clientWidth + 2;
-  hasHorizontalOverflow.value = overflow;
-  tableScrollWidth.value = el.scrollWidth;
-  if (topScrollRef.value) {
-    topScrollRef.value.scrollLeft = el.scrollLeft;
-  }
-}
-
-let resizeObserver: ResizeObserver | null = null;
-
-const setTableScrollRef = (el: any) => {
-  tableScrollRef.value = el;
-  if (el && resizeObserver) {
-    try {
-      resizeObserver.disconnect();
-      resizeObserver.observe(el);
-      const tbl = el.querySelector("table");
-      if (tbl) resizeObserver.observe(tbl);
-    } catch {}
-  }
-  nextTick(checkScrollOverflow);
-};
-
-onMounted(() => {
-  if (typeof ResizeObserver !== "undefined") {
-    resizeObserver = new ResizeObserver(() => {
-      checkScrollOverflow();
-    });
-  }
-  nextTick(() => {
-    if (tableScrollRef.value && resizeObserver) {
-      try {
-        resizeObserver.observe(tableScrollRef.value);
-        const tbl = tableScrollRef.value.querySelector("table");
-        if (tbl) resizeObserver.observe(tbl);
-      } catch {}
-    }
-    checkScrollOverflow();
-  });
-  window.addEventListener("resize", checkScrollOverflow);
-});
-
-watch(
-  [() => props.data, () => props.columns, displayData, () => props.loading],
-  () => {
-    nextTick(checkScrollOverflow);
-  },
-  { deep: true },
-);
-
-onBeforeUnmount(() => {
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
-  }
-  window.removeEventListener("resize", checkScrollOverflow);
-});
 </script>
 
 <template>
@@ -312,19 +219,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Top Sync Horizontal Scrollbar (always visible when horizontal overflow occurs) -->
-    <div
-      v-show="hasHorizontalOverflow && !loading && displayData.length > 0"
-      ref="topScrollRef"
-      class="table-scroll-top"
-      title="Scroll horizontal tabel"
-      @scroll="onTopScroll"
-    >
-      <div :style="{ width: tableScrollWidth + 'px', height: '1px' }"></div>
-    </div>
-
     <!-- Skeleton Loading State -->
-    <div v-if="loading" :ref="setTableScrollRef" class="table-scroll" :style="maxHeight && maxHeight !== 'none' ? { maxHeight } : {}" @scroll="onTableScroll">
+    <div v-if="loading" class="table-scroll" :style="maxHeight && maxHeight !== 'none' ? { maxHeight } : {}">
       <table class="data-table skeleton-table">
         <thead>
           <tr>
@@ -392,7 +288,7 @@ onBeforeUnmount(() => {
       <p class="empty-desc">No data matches "{{ searchQuery }}"</p>
     </div>
 
-    <div v-else :ref="setTableScrollRef" class="table-scroll" :style="maxHeight && maxHeight !== 'none' ? { maxHeight } : {}" @scroll="onTableScroll">
+    <div v-else class="table-scroll" :style="maxHeight && maxHeight !== 'none' ? { maxHeight } : {}">
       <table class="data-table">
         <thead>
           <tr>
@@ -639,36 +535,6 @@ onBeforeUnmount(() => {
 .empty-desc {
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
-}
-
-.table-scroll-top {
-  overflow-x: auto;
-  overflow-y: hidden;
-  height: 12px;
-  min-height: 12px;
-  background: var(--color-surface-sunken, #f8fafc);
-  border-top: 1px solid var(--color-border-light, #e2e8f0);
-  border-bottom: 1px solid var(--color-border-light, #e2e8f0);
-  scrollbar-width: thin;
-  scrollbar-color: #94a3b8 #f1f5f9;
-}
-
-.table-scroll-top::-webkit-scrollbar {
-  height: 10px;
-}
-
-.table-scroll-top::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-
-.table-scroll-top::-webkit-scrollbar-thumb {
-  background: #94a3b8;
-  border-radius: 6px;
-  border: 2px solid #f1f5f9;
-}
-
-.table-scroll-top::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
 }
 
 .table-scroll {

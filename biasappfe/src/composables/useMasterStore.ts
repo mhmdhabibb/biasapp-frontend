@@ -101,7 +101,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/call-service": ["serviceRequests", "jobOrders", "technicians", "customers", "units"],
   "/customer-service/monitoring-service": ["serviceRequests", "jobOrders", "serviceReports", "deliveryOrders", "technicians", "customers", "units", "products"],
   "/customer-service/copier-reports": ["serviceReports", "contractItems", "units", "customers", "monthlyMeterReadings"],
-  "/customer-service/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units", "customers"],
+  "/customer-service/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers", "units"],
   "/customer-service/surveys": ["customers", "units", "technicians"],
 
   // Accounting Operational Pages
@@ -118,7 +118,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "technicians", "serviceReports"],
   "/technician/service-history": ["serviceReports", "technicians", "units", "customers"],
-  "/technician/standalone-service-history": ["serviceReports", "deliveryOrders", "technicians", "units", "customers"],
+  "/technician/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers"],
 
   // Master Data Pages
   "/master/users": ["users"],

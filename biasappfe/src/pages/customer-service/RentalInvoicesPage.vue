@@ -1154,7 +1154,477 @@ async function exportInvoicesToExcel(
     sheets.push({ name: sheetName, columnWidths, rows })
   }
 
-  await downloadStyledExcel([...leadingSheets, ...sheets], filename)
+  // Tambahkan Sheet Kalkulasi Pemakaian Meter untuk Atlas Copco & PT Great Eastern berdasarkan nama Customer
+  const customerCalcSheets = await buildAtlasGreatSheetsForInvoices(sortedItems, usedSheetNames)
+
+  await downloadStyledExcel([...leadingSheets, ...sheets, ...customerCalcSheets], filename)
+}
+
+async function buildAtlasGreatSheetsForInvoices(
+  sortedItems: any[],
+  usedSheetNames: Set<string>
+): Promise<Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }>> {
+  let agReadings: any[] = []
+  try {
+    const res: any = await resources.atlasGreatReadings.list({ per_page: 500 })
+    agReadings = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+  } catch (e) {
+    console.warn('Could not load atlasGreatReadings for export:', e)
+  }
+
+  // Group customer dari invoice yang diekspor
+  const customerMap = new Map<string, {
+    customer: any
+    custName: string
+    custAddress: string
+    isAtlas: boolean
+    isGreat: boolean
+    readings: any[]
+    assetInfo: any
+  }>()
+
+  for (const item of sortedItems) {
+    const assetInfo = resolveInvoiceAsset(item)
+    const custId = String(item.customer_id || assetInfo.customer?.id || '')
+    const custName = assetInfo.custName || 'Customer'
+    const lowerName = custName.toLowerCase()
+
+    const targetUnitId = String(assetInfo.unit?.id || item.unit_id || '')
+    const targetSerialNo = (assetInfo.serialNo || '').toLowerCase().trim()
+    const itemInvDate = item.period_start || item.monthly_date || item.invoice_date
+    const itemMonth = itemInvDate ? new Date(itemInvDate).getMonth() + 1 : null
+    const itemYear = itemInvDate ? new Date(itemInvDate).getFullYear() : null
+
+    // Cocokkan pencatatan yang KHUSUS untuk rental invoice yang dipilih & unitnya
+    const matched = agReadings.find((r: any) => {
+      // 1. Direct match by rental_invoice_id
+      if (r.rental_invoice_id && String(r.rental_invoice_id) === String(item.id)) return true
+
+      // 2. Match by customer_id AND unit_id
+      const rCustId = String(r.customer_id || r.customer?.id || '')
+      const rUnitId = String(r.unit_id || r.unit?.id || '')
+      const rSerial = (r.unit?.serial_number || r.unit?.serial_no || '').toLowerCase().trim()
+      const sameCust = rCustId === custId
+      const sameUnit = (targetUnitId && rUnitId === targetUnitId) || (targetSerialNo && rSerial && targetSerialNo === rSerial)
+
+      if (!sameCust) return false
+      if (!sameUnit) return false
+
+      if (itemMonth && itemYear && r.period_date) {
+        const rd = new Date(r.period_date)
+        return (rd.getMonth() + 1 === itemMonth) && (rd.getFullYear() === itemYear)
+      }
+      return true
+    })
+
+    const isAtlas = lowerName.includes('atlas') || (matched && matched.customer_type === 'atlas')
+    const isGreat = !isAtlas && (lowerName.includes('great') || (matched && matched.customer_type === 'great'))
+
+    if (!isAtlas && !isGreat && !matched) {
+      continue
+    }
+
+    const periodLabel = item.period_start && item.period_end
+      ? `${formatDate(item.period_start)} - ${formatDate(item.period_end)}`
+      : assetInfo.periodStr || 'Bulan Berjalan'
+
+    let readingForThisInvoice: any
+    if (matched) {
+      readingForThisInvoice = { ...matched }
+      if (!readingForThisInvoice.unit && assetInfo.unit) {
+        readingForThisInvoice.unit = assetInfo.unit
+      }
+    } else {
+      const startBW = Number(item.meter_start || item.meter_start_bw || 0)
+      const endBW = Number(item.meter_end || item.meter_end_bw || startBW)
+      const grossBW = endBW
+      const a3BW = 0
+      const pemakaianBW = Math.max(0, endBW - startBW)
+
+      const startColor = Number(item.meter_start_color || item.meter_start_colour || 0)
+      const endColor = Number(item.meter_end_color || item.meter_end_colour || startColor)
+      const grossColor = endColor
+      const a3Color = 0
+      const pemakaianColor = Math.max(0, endColor - startColor)
+
+      const pctBW = 88
+      const pctCol = 12
+      const allocBW = Math.round(pemakaianColor * (pctBW / 100) * 100) / 100
+      const allocColor = Math.round(pemakaianColor * (pctCol / 100) * 100) / 100
+      const totalBW = Math.round((pemakaianBW + allocBW) * 100) / 100
+      const totalColor = allocColor
+
+      readingForThisInvoice = {
+        id: `synth_${item.id || Math.random()}`,
+        rental_invoice_id: item.id,
+        customer_type: isAtlas ? 'atlas' : 'great',
+        customer_id: custId,
+        customer: assetInfo.customer,
+        unit: assetInfo.unit,
+        unit_id: assetInfo.unit?.id,
+        period_label: periodLabel,
+        period_date: item.period_start || item.monthly_date || item.invoice_date,
+        counter_awal_bw: startBW,
+        gross_counter_bw: grossBW,
+        a3_counter_bw: a3BW,
+        counter_akhir_bw: endBW,
+        pemakaian_bw_dasar: pemakaianBW,
+        counter_awal_color: startColor,
+        gross_counter_color: grossColor,
+        a3_counter_color: a3Color,
+        counter_akhir_color: endColor,
+        pemakaian_color_dasar: pemakaianColor,
+        percentage_bw: pctBW,
+        percentage_color: pctCol,
+        allocation_bw: allocBW,
+        allocation_color: allocColor,
+        total_bw: totalBW,
+        total_color: totalColor,
+      }
+    }
+
+    if (!customerMap.has(custId)) {
+      customerMap.set(custId, {
+        customer: assetInfo.customer,
+        custName,
+        custAddress: assetInfo.custAddress,
+        isAtlas,
+        isGreat,
+        readings: [readingForThisInvoice],
+        assetInfo,
+      })
+    } else {
+      customerMap.get(custId)!.readings.push(readingForThisInvoice)
+    }
+  }
+
+  const generatedSheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
+
+  for (const [, custData] of customerMap) {
+    const isAtlas = custData.isAtlas
+    const sheetName = uniqueSheetName(custData.custName || (isAtlas ? 'Atlas Copco' : 'PT Great Eastern'), usedSheetNames)
+    const columnWidths = isAtlas
+      ? [5.5, 24, 15, 16, 16, 16, 16, 26, 16, 18]
+      : [5.5, 24, 16, 16, 16, 26, 16, 18]
+    const mergeWidth = columnWidths.length - 1
+
+    const rows: StyledCell[][] = []
+    const addRow = (r: StyledCell[] = []) => rows.push(r)
+    const padEmpty = (count: number) => Array.from({ length: count }, () => ({}))
+
+    // Header Perusahaan
+    addRow([{ v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: mergeWidth, style: 'plainBoldCenter' }, ...padEmpty(mergeWidth)])
+    addRow([{ v: 'Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Telp: +62 811 7045 657 | Email: admin@biasbst.com', mergeAcross: mergeWidth, style: 'plainCenter' }, ...padEmpty(mergeWidth)])
+    addRow([])
+    addRow([{ v: 'LEMBAR PERHITUNGAN PEMAKAIAN METER RENTAL', mergeAcross: mergeWidth, style: 'titleCell' }, ...padEmpty(mergeWidth)])
+    addRow([{
+      v: isAtlas
+        ? 'SKEMA: ATLAS COPCO (Deduksi Ukuran A3 & Rumus Alokasi 88% : 12%)'
+        : 'SKEMA: PT GREAT EASTERN (Direct Counter & Rumus Alokasi 88% : 12%)',
+      mergeAcross: mergeWidth,
+      style: 'subTitleCell'
+    }, ...padEmpty(mergeWidth)])
+    addRow([])
+
+    // Meta Informasi Customer & Mesin
+    const latestReading = custData.readings[0] || {}
+    const periodDisplay = latestReading.period_label || custData.assetInfo?.periodStr || '-'
+    const unitDisplay = custData.assetInfo?.brandModel || latestReading.unit?.model || 'Mesin Copier'
+    const snDisplay = custData.assetInfo?.serialNo || latestReading.unit?.serial_number || '-'
+
+    const halfMerge = Math.floor(mergeWidth / 2) - 1
+    const remMerge = mergeWidth - (halfMerge + 1) - 2
+
+    addRow([
+      { v: 'Customer :', style: 'borderBold' },
+      { v: custData.custName, mergeAcross: halfMerge, style: 'borderBold' },
+      ...padEmpty(halfMerge),
+      { v: 'Billing Cycle :', style: 'borderBold' },
+      { v: 'Setiap Tanggal 7 (Cut-Off Otomatis)', mergeAcross: remMerge, style: 'borderCenter' },
+      ...padEmpty(remMerge),
+    ])
+    addRow([
+      { v: 'Alamat :', style: 'border' },
+      { v: custData.custAddress || '-', mergeAcross: halfMerge, style: 'border' },
+      ...padEmpty(halfMerge),
+      { v: 'Periode :', style: 'borderBold' },
+      { v: periodDisplay, mergeAcross: remMerge, style: 'borderCenter' },
+      ...padEmpty(remMerge),
+    ])
+    addRow([
+      { v: 'Unit Mesin :', style: 'border' },
+      { v: unitDisplay, mergeAcross: halfMerge, style: 'border' },
+      ...padEmpty(halfMerge),
+      { v: 'No. Seri (S/N) :', style: 'borderBold' },
+      { v: snDisplay, mergeAcross: remMerge, style: 'borderCenter' },
+      ...padEmpty(remMerge),
+    ])
+    addRow([])
+
+    let overallGrandTotalBW = 0
+    let overallGrandTotalCL = 0
+
+    // Render masing-masing pencatatan mesin
+    for (let rIdx = 0; rIdx < custData.readings.length; rIdx++) {
+      const r = custData.readings[rIdx]
+      const curUnit = r.unit ? (r.unit.model || r.unit.name || '') : unitDisplay
+      const curSN = r.unit ? (r.unit.serial_number || r.unit.serial_no || '-') : snDisplay
+      const curPeriod = r.period_label || periodDisplay
+
+      if (custData.readings.length > 1) {
+        addRow([{ v: `Pencatatan #${rIdx + 1} - Unit: ${curUnit} (SN: ${curSN}) | Periode: ${curPeriod}`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+      }
+
+      if (isAtlas) {
+        // ATLAS TABLE HEADER (Dinamis Kertas)
+        let pDeducts: Array<{ name: string; bw: number; color: number }> = []
+        if (r.paper_deductions) {
+          try {
+            pDeducts = typeof r.paper_deductions === 'string' ? JSON.parse(r.paper_deductions) : r.paper_deductions
+          } catch (e) {}
+        }
+        const bwDeduksi = pDeducts.length > 0 ? pDeducts.reduce((s, p) => s + Number(p.bw || 0), 0) : Number(r.a3_counter_bw || 0)
+        const colDeduksi = pDeducts.length > 0 ? pDeducts.reduce((s, p) => s + Number(p.color || 0), 0) : Number(r.a3_counter_color || 0)
+        const deductHeaderLabel = pDeducts.length > 1
+          ? `Deduksi Kertas (${pDeducts.map(p => p.name).join('+')}) (-)`
+          : (pDeducts.length === 1 ? `Deduksi Ukuran ${pDeducts[0].name} (-)` : 'Deduksi A3 (-)')
+
+        addRow([
+          { v: 'No', style: 'headerCell' },
+          { v: 'Kategori / Item', style: 'headerCell' },
+          { v: 'Counter Awal', style: 'headerCell' },
+          { v: 'Gross Mesin', style: 'headerCell' },
+          { v: deductHeaderLabel, style: 'headerCell' },
+          { v: 'Counter Akhir', style: 'headerCell' },
+          { v: 'Pemakaian Dasar', style: 'headerCell' },
+          { v: 'Rumus Alokasi (88%:12%)', style: 'headerCell' },
+          { v: 'Lembar Alokasi', style: 'headerCell' },
+          { v: 'Total Lembar Akhir', style: 'headerCell' },
+        ])
+
+        const bwAwal = Number(r.counter_awal_bw || 0)
+        const bwGross = Number(r.gross_counter_bw || (Number(r.counter_akhir_bw || 0) + bwDeduksi))
+        const bwAkhir = Number(r.counter_akhir_bw || (bwGross - bwDeduksi))
+        const bwPemakaian = Number(r.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+
+        const colAwal = Number(r.counter_awal_color || 0)
+        const colGross = Number(r.gross_counter_color || (Number(r.counter_akhir_color || 0) + colDeduksi))
+        const colAkhir = Number(r.counter_akhir_color || (colGross - colDeduksi))
+        const colPemakaian = Number(r.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+
+        const pctBW = Number(r.percentage_bw || 88)
+        const pctCol = Number(r.percentage_color || 12)
+        const allocBW = Number(r.allocation_bw || Math.round(colPemakaian * (pctBW / 100) * 100) / 100)
+        const allocCol = Number(r.allocation_color || Math.round(colPemakaian * (pctCol / 100) * 100) / 100)
+
+        const totalBW = Number(r.total_bw || Math.round((bwPemakaian + allocBW) * 100) / 100)
+        const totalCol = Number(r.total_color || allocCol)
+        const grandTotalLembar = Math.round((totalBW + totalCol) * 100) / 100
+
+        overallGrandTotalBW += totalBW
+        overallGrandTotalCL += totalCol
+
+        addRow([
+          { v: 1, style: 'borderCenter' },
+          { v: 'Black & White (BW)', style: 'borderBold' },
+          { v: bwAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: bwGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: bwDeduksi, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: bwAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: bwPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+          { v: `88% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
+          { v: allocBW, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: totalBW, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+        ])
+
+        addRow([
+          { v: 2, style: 'borderCenter' },
+          { v: 'Colour (CL)', style: 'borderBold' },
+          { v: colAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: colGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: colDeduksi, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: colAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: colPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+          { v: `12% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
+          { v: allocCol, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+        ])
+
+        addRow([
+          { v: 'SUBTOTAL LEMBAR', mergeAcross: 5, style: 'totalCell' },
+          ...padEmpty(5),
+          { v: bwPemakaian + colPemakaian, style: 'totalCell', numFmt: NUMFMT_COUNT },
+          { v: 'Total Alokasi 100%', style: 'totalCell' },
+          { v: allocBW + allocCol, style: 'totalCell', numFmt: NUMFMT_COUNT },
+          { v: grandTotalLembar, style: 'grandTotalCell', numFmt: NUMFMT_COUNT },
+        ])
+
+        if (pDeducts.length > 1) {
+          const detailStr = pDeducts.map(p => `${p.name} (BW: ${Number(p.bw || 0).toLocaleString()}, CL: ${Number(p.color || 0).toLocaleString()})`).join(' | ')
+          addRow([{ v: `* Rincian Deduksi per Ukuran Kertas: ${detailStr}`, mergeAcross: mergeWidth, style: 'plain' }, ...padEmpty(mergeWidth)])
+        }
+
+        addRow([])
+        addRow([{ v: 'Rincian Rumus Alokasi & Rekapitulasi Lembar:', mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• Pemakaian Dasar BW = Counter Akhir (${bwAkhir.toLocaleString()}) - Counter Awal (${bwAwal.toLocaleString()}) = ${bwPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• Pemakaian Dasar Color = Counter Akhir (${colAkhir.toLocaleString()}) - Counter Awal (${colAwal.toLocaleString()}) = ${colPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• Alokasi Color ke BW (88%) = 88% × ${colPemakaian.toLocaleString()} = ${allocBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• Alokasi Color Murni (12%) = 12% × ${colPemakaian.toLocaleString()} = ${allocCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• TOTAL AKHIR BW = Pemakaian Dasar BW (${bwPemakaian.toLocaleString()}) + Alokasi Color 88% (${allocBW.toLocaleString()}) = ${totalBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• TOTAL AKHIR COLOR = Alokasi Color Murni 12% = ${totalCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• GRAND TOTAL PEMAKAIAN = ${grandTotalLembar.toLocaleString()} LEMBAR`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([])
+      } else {
+        // GREAT TABLE HEADER (Direct counter tanpa Gross/Deduksi A3)
+        addRow([
+          { v: 'No', style: 'headerCell' },
+          { v: 'Kategori / Item', style: 'headerCell' },
+          { v: 'Counter Awal', style: 'headerCell' },
+          { v: 'Counter Akhir', style: 'headerCell' },
+          { v: 'Pemakaian Dasar', style: 'headerCell' },
+          { v: 'Rumus Alokasi (88%:12%)', style: 'headerCell' },
+          { v: 'Lembar Alokasi', style: 'headerCell' },
+          { v: 'Total Lembar Akhir', style: 'headerCell' },
+        ])
+
+        const bwAwal = Number(r.counter_awal_bw || 0)
+        const bwAkhir = Number(r.counter_akhir_bw || 0)
+        const bwPemakaian = Number(r.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+
+        const colAwal = Number(r.counter_awal_color || 0)
+        const colAkhir = Number(r.counter_akhir_color || 0)
+        const colPemakaian = Number(r.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+
+        const pctBW = Number(r.percentage_bw || 88)
+        const pctCol = Number(r.percentage_color || 12)
+        const allocBW = Number(r.allocation_bw || Math.round(colPemakaian * (pctBW / 100) * 100) / 100)
+        const allocCol = Number(r.allocation_color || Math.round(colPemakaian * (pctCol / 100) * 100) / 100)
+
+        const totalBW = Number(r.total_bw || Math.round((bwPemakaian + allocBW) * 100) / 100)
+        const totalCol = Number(r.total_color || allocCol)
+        const grandTotalLembar = Math.round((totalBW + totalCol) * 100) / 100
+
+        overallGrandTotalBW += totalBW
+        overallGrandTotalCL += totalCol
+
+        addRow([
+          { v: 1, style: 'borderCenter' },
+          { v: 'Black & White (BW)', style: 'borderBold' },
+          { v: bwAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: bwAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: bwPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+          { v: `88% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
+          { v: allocBW, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: totalBW, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+        ])
+
+        addRow([
+          { v: 2, style: 'borderCenter' },
+          { v: 'Colour (CL)', style: 'borderBold' },
+          { v: colAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: colAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: colPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+          { v: `12% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
+          { v: allocCol, style: 'borderRight', numFmt: NUMFMT_COUNT },
+          { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
+        ])
+
+        addRow([
+          { v: 'SUBTOTAL LEMBAR', mergeAcross: 3, style: 'totalCell' },
+          ...padEmpty(3),
+          { v: bwPemakaian + colPemakaian, style: 'totalCell', numFmt: NUMFMT_COUNT },
+          { v: 'Total Alokasi 100%', style: 'totalCell' },
+          { v: allocBW + allocCol, style: 'totalCell', numFmt: NUMFMT_COUNT },
+          { v: grandTotalLembar, style: 'grandTotalCell', numFmt: NUMFMT_COUNT },
+        ])
+
+        addRow([])
+        addRow([{ v: 'Rincian Rumus Alokasi & Rekapitulasi Lembar:', mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• Pemakaian Dasar BW = Counter Akhir (${bwAkhir.toLocaleString()}) - Counter Awal (${bwAwal.toLocaleString()}) = ${bwPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• Pemakaian Dasar Color = Counter Akhir (${colAkhir.toLocaleString()}) - Counter Awal (${colAwal.toLocaleString()}) = ${colPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• Alokasi Color ke BW (88%) = 88% × ${colPemakaian.toLocaleString()} = ${allocBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• Alokasi Color Murni (12%) = 12% × ${colPemakaian.toLocaleString()} = ${allocCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• TOTAL AKHIR BW = Pemakaian Dasar BW (${bwPemakaian.toLocaleString()}) + Alokasi Color 88% (${allocBW.toLocaleString()}) = ${totalBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• TOTAL AKHIR COLOR = Alokasi Color Murni 12% = ${totalCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([{ v: `• GRAND TOTAL PEMAKAIAN = ${grandTotalLembar.toLocaleString()} LEMBAR`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([])
+      }
+    }
+
+    if (custData.readings.length > 1) {
+      addRow([{ v: 'REKAPITULASI KESELURUHAN UNIT:', mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+      addRow([
+        { v: `TOTAL SEMUA UNIT: BW = ${overallGrandTotalBW.toLocaleString()} Lembar | Colour = ${overallGrandTotalCL.toLocaleString()} Lembar | GRAND TOTAL = ${(overallGrandTotalBW + overallGrandTotalCL).toLocaleString()} LEMBAR`, mergeAcross: mergeWidth, style: 'grandTotalCell' },
+        ...padEmpty(mergeWidth)
+      ])
+      addRow([])
+    }
+
+    // Blok Otorisasi / Tanda Tangan
+    addRow([])
+    const sigHalf = Math.floor(mergeWidth / 2)
+    const sigRem = mergeWidth - sigHalf - 1
+    addRow([
+      { v: 'Received By,', mergeAcross: sigHalf, style: 'plainBoldCenter' },
+      ...padEmpty(sigHalf),
+      { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: sigRem, style: 'plainBoldCenter' },
+      ...padEmpty(sigRem),
+    ])
+    addRow([])
+    addRow([])
+    addRow([
+      { v: '_______________________', mergeAcross: sigHalf, style: 'plainCenter' },
+      ...padEmpty(sigHalf),
+      { v: '_______________________', mergeAcross: sigRem, style: 'plainCenter' },
+      ...padEmpty(sigRem),
+    ])
+    addRow([
+      { v: `( ${custData.custName} )`, mergeAcross: sigHalf, style: 'plainBoldCenter' },
+      ...padEmpty(sigHalf),
+      { v: '( Admin Finance / Technical )', mergeAcross: sigRem, style: 'plainBoldCenter' },
+      ...padEmpty(sigRem),
+    ])
+
+    generatedSheets.push({ name: sheetName, columnWidths, rows })
+  }
+
+  return generatedSheets
+}
+
+async function exportAtlasGreatInvoicesExcel() {
+  if (isExporting.value) return
+  isExporting.value = true
+  try {
+    const res: any = await resources.atlasGreatReadings.list({ per_page: 500 })
+    const agReadings = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+    if (agReadings.length === 0) {
+      toast.warning('Belum ada data pencatatan meter Atlas / Great.')
+      return
+    }
+
+    const usedSheetNames = new Set<string>()
+    const pseudoItems = agReadings.map((r: any) => ({
+      customer_id: r.customer_id,
+      customer: r.customer,
+      period_start: r.period_date,
+      monthly_date: r.period_date,
+      unit: r.unit,
+      unit_id: r.unit_id,
+    }))
+
+    const sheets = await buildAtlasGreatSheetsForInvoices(pseudoItems, usedSheetNames)
+    if (sheets.length === 0) {
+      toast.warning('Tidak ada sheet kalkulasi yang terbentuk.')
+      return
+    }
+
+    await downloadStyledExcel(sheets, `Perhitungan_Meter_Atlas_Great_${new Date().toISOString().slice(0, 10)}`)
+    toast.success('Excel Perhitungan Meter Atlas & Great berhasil didownload.')
+  } catch (err: any) {
+    toast.error('Gagal export kalkulasi Atlas & Great: ' + (err?.message || 'Error'))
+  } finally {
+    isExporting.value = false
+  }
 }
 
 function exportMonthToPdf() {
@@ -1589,6 +2059,16 @@ function printInvoice(item: any) {
             <line x1="8" y1="17" x2="16" y2="17"></line>
           </svg>
           Annual Excel
+        </button>
+        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-excel btn-atlas-great-excel" @click="exportAtlasGreatInvoicesExcel"
+          :disabled="isExporting" title="Export Lembar Perhitungan Meter Atlas & Great (Sheet per Customer)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="3" y1="9" x2="21" y2="9"></line>
+            <line x1="9" y1="21" x2="9" y2="9"></line>
+          </svg>
+          Perhitungan Atlas &amp; Great
         </button>
       </div>
     </div>
@@ -2027,6 +2507,14 @@ function printInvoice(item: any) {
 .btn-export-excel:hover {
   background: #15803d;
   transform: translateY(-1px);
+}
+
+.btn-atlas-great-excel {
+  background: #0284c7 !important;
+}
+
+.btn-atlas-great-excel:hover {
+  background: #0369a1 !important;
 }
 
 .btn-export-excel:disabled,

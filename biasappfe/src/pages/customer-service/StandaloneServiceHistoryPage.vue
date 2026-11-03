@@ -32,10 +32,10 @@ const resources = useResourcesStore()
 const rawDeliveryOrders = ref<any[]>([])
 const isLoading = ref(false)
 
-async function loadStandaloneData() {
+async function loadStandaloneData(force = false) {
   isLoading.value = true
   try {
-    const res: any = await api.get('/delivery-orders/?limit=200', true, false)
+    const res: any = await api.get('/delivery-orders/?limit=200', true, !force)
     const raw = Array.isArray(res?.data)
       ? res.data
       : Array.isArray(res?.data?.items)
@@ -51,10 +51,9 @@ async function loadStandaloneData() {
   }
 }
 
-onMounted(async () => {
+onMounted(() => {
   ensureResourcesLoaded(route.path)
-  void store.refreshOnly(['deliveryOrders', 'jobOrders', 'technicians', 'customers'])
-  await loadStandaloneData()
+  void loadStandaloneData()
 })
 
 const filterCustomer = ref<string>('all')
@@ -497,7 +496,7 @@ function handlePrint(row: any) {
 async function handleConfirmPrint() {
   if (printTarget.value) {
     let printItem = printTarget.value
-    if (!printItem.customer_signature || !printItem.technician_signature) {
+    if (!printItem.customer_signature || !printItem.technician_signature || printItem.customer_signature === 'signed' || printItem.photo_before === 'has_photo') {
       try {
         const res: any = await api.get(`/delivery-orders/${printItem.id}`)
         printItem = res.data?.data ?? res.data ?? printTarget.value
@@ -605,10 +604,7 @@ async function exportPdf() {
       @add="openAdd"
     >
       <template #actions>
-        <button class="btn btn-outline btn-header-action" :disabled="isLoading" @click="loadStandaloneData" title="Segarkan Data">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ 'animate-spin': isLoading }"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-          {{ isLoading ? 'Memuat...' : 'Refresh' }}
-        </button>
+       
         <button class="btn btn-outline btn-header-action" @click="exportPdf">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           Export PDF
@@ -620,19 +616,7 @@ async function exportPdf() {
       </template>
     </PageHeader>
 
-    <div class="info-alert mb-4">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" y1="16" x2="12" y2="12" />
-        <line x1="12" y1="8" x2="12.01" y2="8" />
-      </svg>
-      <div>
-        <strong>Service History Mandiri:</strong> CS mengisi <strong>Customer Detail</strong>, teknisi mengisi <strong>Product Detail</strong> di menu teknisi.
-        <div class="text-xs" style="margin-top: 2px;">
-          Gunakan tombol <strong>Assign</strong> untuk menugaskan teknisi dan membuat <strong>Job Order</strong> secara otomatis di Job Orders.
-        </div>
-      </div>
-    </div>
+   
 
     <div class="filter-bar mb-4">
       <div class="filter-item">
