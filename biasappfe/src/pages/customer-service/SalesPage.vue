@@ -1191,7 +1191,7 @@ function generateSingleReceiptHtml(item: any) {
 function exportToExcel() {
   const exportData = filteredSales.value.map((j: any) => ({
     'Transaction Date': j.date ? new Date(j.date).toLocaleDateString('en-GB') : '-',
-    'Code': j.sale_no || '-',
+    'PO No': (j.po_no || j.po_number || '').trim() || '-',
     'Customer': findCustomer(j.customer_id)?.company_name || findCustomer(j.customer_id)?.name || '-',
     'PIC Name': findCustomer(j.customer_id)?.pic_name || '-',
     'Total': j.total || 0,
@@ -1210,7 +1210,7 @@ function exportToExcel() {
 function exportToPdf() {
   const exportData = filteredSales.value.map((j: any) => ({
     'Transaction Date': j.date ? new Date(j.date).toLocaleDateString('en-GB') : '-',
-    'Code': j.sale_no || '-',
+    'PO No': (j.po_no || j.po_number || '').trim() || '-',
     'Customer': findCustomer(j.customer_id)?.company_name || findCustomer(j.customer_id)?.name || '-',
     'PIC Name': findCustomer(j.customer_id)?.pic_name || '-',
     'Total': (j.total || 0).toLocaleString('id-ID'),
