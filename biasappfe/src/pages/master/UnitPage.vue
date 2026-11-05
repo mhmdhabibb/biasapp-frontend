@@ -2,6 +2,7 @@
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
@@ -715,6 +716,11 @@ function exportStockPdf() {
 
 <template>
   <div>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :cards="5" :columns="10" :rows="8" :show-header-actions="true" />
+
+    <!-- Real Content -->
+    <div v-show="!isLoading">
     <PageHeader title="Products" :button-label="isTechnician ? undefined : 'Add Product'" permission="unit:create"
       @add="openAdd">
       <template #actions>
@@ -836,6 +842,7 @@ function exportStockPdf() {
         </span>
       </template>
     </DataTable>
+    </div>
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'"
       @close="closeModal" @submit="handleSubmit">
       <div class="form-group">

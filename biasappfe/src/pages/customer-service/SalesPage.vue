@@ -3,6 +3,7 @@
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -1314,6 +1315,11 @@ const combinedItemOptions = computed(() => {
 </script>
 <template>
   <div>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :columns="8" :rows="8" :show-header-actions="true" />
+
+    <!-- Real Content -->
+    <div v-show="!isLoading">
     <PageHeader title="Sales" button-label="Add Sale" permission="sale:create" @add="openAdd">
       <template #actions>
         <div style="display: flex; gap: 10px; align-items: center;">
@@ -1446,6 +1452,7 @@ const combinedItemOptions = computed(() => {
         </div>
       </template>
     </DataTable>
+    </div>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Sale' : 'Add Sale'" @close="showModal = false" :max-width="'700px'">
       <!-- Stepper Header -->
       <div class="stepper-container">

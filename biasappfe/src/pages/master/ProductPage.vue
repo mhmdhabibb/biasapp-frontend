@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onUnmounted, watch, computed } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from "@/components/ui/ExcelImportButtons.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
@@ -512,6 +513,11 @@ function exportStockPdf() {
 
 <template>
   <div>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :cards="3" :columns="8" :rows="8" :show-header-actions="true" />
+
+    <!-- Real Content -->
+    <div v-show="!isLoading">
     <PageHeader
       title="Consumable / Sparepart"
       button-label="Add Consumable / Sparepart"
@@ -572,6 +578,7 @@ function exportStockPdf() {
         </span>
       </template>
     </DataTable>
+    </div>
     <FormModal
       :open="showModal"
       :title="editingItem ? 'Edit Consumable / Sparepart' : 'Add Consumable / Sparepart'"

@@ -2,6 +2,7 @@
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -61,13 +62,19 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Brands" button-label="Add Brand" permission="brand:create" @add="openAdd" />
-    <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search brands..." permission="brand" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
-      <template #toolbar>
-        <ExcelImportButtons master-key="brand" @imported="fetchAll" />
-      </template>
-    </DataTable>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :columns="2" :rows="6" />
+
+    <!-- Real Content -->
+    <template v-else>
+      <PageHeader title="Brands" button-label="Add Brand" permission="brand:create" @add="openAdd" />
+      <div v-if="error" class="page-error" role="alert">{{ error }}</div>
+      <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search brands..." permission="brand" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+        <template #toolbar>
+          <ExcelImportButtons master-key="brand" @imported="fetchAll" />
+        </template>
+      </DataTable>
+    </template>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Brand' : 'Add Brand'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="brand-name" class="form-label">Brand Name</label>

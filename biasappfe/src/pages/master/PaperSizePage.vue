@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -92,12 +93,18 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Paper Size" button-label="Add Paper Size" permission="paper_size:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search paper sizes..." permission="paper_size" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
-      <template #toolbar>
-        <ExcelImportButtons master-key="paper_size" @imported="fetchData" />
-      </template>
-    </DataTable>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :columns="2" :rows="6" />
+
+    <!-- Real Content -->
+    <template v-else>
+      <PageHeader title="Paper Size" button-label="Add Paper Size" permission="paper_size:create" @add="openAdd" />
+      <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search paper sizes..." permission="paper_size" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+        <template #toolbar>
+          <ExcelImportButtons master-key="paper_size" @imported="fetchData" />
+        </template>
+      </DataTable>
+    </template>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Paper Size' : 'Add Paper Size'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="ps-name" class="form-label">Size Name</label>
