@@ -23,7 +23,15 @@ import {
 } from "@/utils/paymentReceipt";
 import type { TableColumn } from "@/types";
 import type { PaymentReceiptData } from "@/utils/paymentReceipt";
-import { computed, onActivated, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  onActivated,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 import { normalizeRole } from "@/router/role-access";
@@ -92,11 +100,22 @@ function openDeleteRentalModal(row: any) {
 }
 
 async function handleConfirmDeleteRental() {
-  if (!deletingRental.value || !rentalDeleteReason.value.trim() || !rentalConfirmAgree.value) return;
+  if (
+    !deletingRental.value ||
+    !rentalDeleteReason.value.trim() ||
+    !rentalConfirmAgree.value
+  )
+    return;
   isDeletingRental.value = true;
   try {
-    await resources.rentals.remove(deletingRental.value.id, false, rentalDeleteReason.value.trim());
-    toast.success("Rental berhasil dihapus. Kontrak, Job Order, dan Invoice terkait telah dibersihkan, dan unit kembali available.");
+    await resources.rentals.remove(
+      deletingRental.value.id,
+      false,
+      rentalDeleteReason.value.trim(),
+    );
+    toast.success(
+      "Rental berhasil dihapus. Kontrak, Job Order, dan Invoice terkait telah dibersihkan, dan unit kembali available.",
+    );
     showDeleteRentalModal.value = false;
     invalidateCache("units");
     invalidateCache("rents");
@@ -116,7 +135,6 @@ async function handleConfirmDeleteRental() {
   }
 }
 
-
 const columns = computed<TableColumn[]>(() => [
   { key: "rental_no", label: t("rentals.no") },
   { key: "company", label: t("rentals.company") },
@@ -132,18 +150,99 @@ const columns = computed<TableColumn[]>(() => [
 const rentals = ref<any[]>([]);
 
 const customerOptions = computed(() => [
-  { value: null, label: 'All Customers' },
+  { value: null, label: "All Customers" },
   ...((customers.value as any[]) || []).map((c: any) => ({
     value: c.id,
-    label: `${c.company_name || c.name}${c.pic_name ? ' - ' + c.pic_name : ''}`,
-  }))
+    label: `${c.company_name || c.name}${c.pic_name ? " - " + c.pic_name : ""}`,
+  })),
 ]);
 
 const filterCustomer = ref<string | null>(null);
-const filteredRentals = computed(() => {
-  if (!filterCustomer.value) return rentals.value;
-  return rentals.value.filter((r: any) => String(r.customer_id) === String(filterCustomer.value));
+const startDateFilter = ref<string>("");
+const endDateFilter = ref<string>("");
+const monthFilter = ref<string>("");
+const yearFilter = ref<string>("");
+
+const monthOptions = [
+  { value: "", label: "All Months" },
+  ...Array.from({ length: 12 }, (_, index) => ({
+    value: String(index + 1),
+    label: new Date(2000, index, 1).toLocaleDateString("en-US", {
+      month: "long",
+    }),
+  })),
+];
+
+const yearOptions = computed(() => {
+  const years = new Set<number>([new Date().getFullYear()]);
+  rentals.value.forEach((rental: any) => {
+    const date = new Date(
+      rental.start_date || rental.end_date || rental.created_at || "",
+    );
+    if (!Number.isNaN(date.getTime())) years.add(date.getFullYear());
+  });
+  return [
+    { value: "", label: "All Years" },
+    ...Array.from(years)
+      .sort((a, b) => b - a)
+      .map((year) => ({ value: String(year), label: String(year) })),
+  ];
 });
+
+function matchesDateRange(value: any): boolean {
+  if (!value) return !startDateFilter.value && !endDateFilter.value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const isoDate = date.toISOString().slice(0, 10);
+  if (startDateFilter.value && isoDate < startDateFilter.value) return false;
+  if (endDateFilter.value && isoDate > endDateFilter.value) return false;
+  return true;
+}
+
+function matchesMonthFilter(value: any): boolean {
+  if ((!monthFilter.value && !yearFilter.value) || !value) return true;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  return (
+    (!monthFilter.value || date.getMonth() + 1 === Number(monthFilter.value)) &&
+    (!yearFilter.value || date.getFullYear() === Number(yearFilter.value))
+  );
+}
+
+const filteredRentals = computed(() => {
+  let list = rentals.value;
+
+  if (filterCustomer.value) {
+    list = list.filter(
+      (r: any) => String(r.customer_id) === String(filterCustomer.value),
+    );
+  }
+
+  if (monthFilter.value || yearFilter.value) {
+    list = list.filter((r: any) => {
+      const dateValue = r.start_date || r.end_date || r.created_at || "";
+      return matchesMonthFilter(dateValue);
+    });
+  }
+
+  if (startDateFilter.value || endDateFilter.value) {
+    list = list.filter((r: any) => {
+      const dateValue = r.start_date || r.end_date || r.created_at || "";
+      return matchesDateRange(dateValue);
+    });
+  }
+
+  return list;
+});
+
+function resetDateFilters() {
+  monthFilter.value = "";
+  yearFilter.value = "";
+  startDateFilter.value = "";
+  endDateFilter.value = "";
+}
 
 const showModal = ref(false);
 const isLoading = ref(false);
@@ -163,79 +262,106 @@ const showCreateDOModal = ref(false);
 const targetRentalForDO = ref<any>(null);
 const isSubmittingDO = ref(false);
 const doForm = reactive({
-  do_number: '',
-  project_name: '',
-  delivery_date: '',
-  delivery_address: '',
-  recipient_name: '',
-  recipient_phone: '',
-  technician_id: '',
-  notes: '',
+  do_number: "",
+  project_name: "",
+  delivery_date: "",
+  delivery_address: "",
+  recipient_name: "",
+  recipient_phone: "",
+  technician_id: "",
+  notes: "",
 });
 
 const technicianOptions = computed(() => [
-  { value: '', label: '-- Pilih Teknisi (Opsional) --' },
+  { value: "", label: "-- Pilih Teknisi (Opsional) --" },
   ...((technicians.value as any[]) || []).map((t: any) => ({
     value: t.id,
     label: t.name || t.user?.name || `Teknisi ${t.id}`,
-  }))
+  })),
 ]);
 
 function hasActiveRentalDO(rental: any): boolean {
   if (!rental) return false;
-  if (rental.delivery_order && rental.delivery_order.status !== 'cancelled' && !rental.delivery_order.deleted_at) {
+  if (
+    rental.delivery_order &&
+    rental.delivery_order.status !== "cancelled" &&
+    !rental.delivery_order.deleted_at
+  ) {
     return true;
   }
-  if (Array.isArray(rental.delivery_orders) && rental.delivery_orders.length > 0) {
-    return rental.delivery_orders.some((d: any) => d && d.status !== 'cancelled' && !d.deleted_at);
+  if (
+    Array.isArray(rental.delivery_orders) &&
+    rental.delivery_orders.length > 0
+  ) {
+    return rental.delivery_orders.some(
+      (d: any) => d && d.status !== "cancelled" && !d.deleted_at,
+    );
   }
   const found = ((deliveryOrders.value as any[]) || []).find(
-    (d: any) => String(d.rental_id) === String(rental.id) && d.status !== 'cancelled' && !d.deleted_at
+    (d: any) =>
+      String(d.rental_id) === String(rental.id) &&
+      d.status !== "cancelled" &&
+      !d.deleted_at,
   );
   return !!found;
 }
 
 function getRentalDONumber(rental: any): string {
-  if (!rental) return '-';
-  if (rental.delivery_order && rental.delivery_order.status !== 'cancelled') {
-    return rental.delivery_order.do_number || '-';
+  if (!rental) return "-";
+  if (rental.delivery_order && rental.delivery_order.status !== "cancelled") {
+    return rental.delivery_order.do_number || "-";
   }
-  if (Array.isArray(rental.delivery_orders) && rental.delivery_orders.length > 0) {
-    const activeDO = rental.delivery_orders.find((d: any) => d && d.status !== 'cancelled' && !d.deleted_at);
+  if (
+    Array.isArray(rental.delivery_orders) &&
+    rental.delivery_orders.length > 0
+  ) {
+    const activeDO = rental.delivery_orders.find(
+      (d: any) => d && d.status !== "cancelled" && !d.deleted_at,
+    );
     if (activeDO?.do_number) return activeDO.do_number;
   }
   const found = ((deliveryOrders.value as any[]) || []).find(
-    (d: any) => String(d.rental_id) === String(rental.id) && d.status !== 'cancelled' && !d.deleted_at
+    (d: any) =>
+      String(d.rental_id) === String(rental.id) &&
+      d.status !== "cancelled" &&
+      !d.deleted_at,
   );
-  return found?.do_number || '-';
+  return found?.do_number || "-";
 }
 
 function openCreateRentalDOModal(rental: any) {
   if (hasActiveRentalDO(rental)) {
-    toast.error('Surat Jalan (DO) sudah ada dan aktif untuk transaksi rental ini.');
+    toast.error(
+      "Surat Jalan (DO) sudah ada dan aktif untuk transaksi rental ini.",
+    );
     return;
   }
   targetRentalForDO.value = rental;
   const cust = rental?.customer || findCustomer(rental?.customer_id);
 
-  const itemNames = (rental?.rental_items || []).map((ri: any) => {
-    const u = ri.unit || findUnit(ri.unit_id);
-    if (u) return formatUnitDisplayName(u);
-    const p = ri.product || findProduct(ri.product_id);
-    if (p) return formatProductDisplayName(p);
-    return '';
-  }).filter(Boolean);
-  const productOrUnitName = itemNames.length > 0 ? itemNames.join(', ') : 'Unit';
-  const recipientAddress = rental?.installation_address || cust?.address || '';
+  const itemNames = (rental?.rental_items || [])
+    .map((ri: any) => {
+      const u = ri.unit || findUnit(ri.unit_id);
+      if (u) return formatUnitDisplayName(u);
+      const p = ri.product || findProduct(ri.product_id);
+      if (p) return formatProductDisplayName(p);
+      return "";
+    })
+    .filter(Boolean);
+  const productOrUnitName =
+    itemNames.length > 0 ? itemNames.join(", ") : "Unit";
+  const recipientAddress = rental?.installation_address || cust?.address || "";
 
-  doForm.do_number = '';
-  doForm.project_name = recipientAddress ? `Pengantaran ${productOrUnitName} ke ${recipientAddress}` : `Pengantaran ${productOrUnitName}`;
+  doForm.do_number = "";
+  doForm.project_name = recipientAddress
+    ? `Pengantaran ${productOrUnitName} ke ${recipientAddress}`
+    : `Pengantaran ${productOrUnitName}`;
   doForm.delivery_date = new Date().toISOString().slice(0, 10);
   doForm.delivery_address = recipientAddress;
-  doForm.recipient_name = cust?.pic_name || cust?.company_name || '';
-  doForm.recipient_phone = cust?.phone || '';
-  doForm.technician_id = '';
-  doForm.notes = `Pengantaran unit rental ${rental?.rental_no || ''}`.trim();
+  doForm.recipient_name = cust?.pic_name || cust?.company_name || "";
+  doForm.recipient_phone = cust?.phone || "";
+  doForm.technician_id = "";
+  doForm.notes = `Pengantaran unit rental ${rental?.rental_no || ""}`.trim();
 
   showCreateDOModal.value = true;
 }
@@ -246,21 +372,28 @@ async function submitCreateRentalDO() {
   try {
     const payload = {
       do_number: doForm.do_number ? doForm.do_number.trim() : undefined,
-      project_name: doForm.project_name ? doForm.project_name.trim() : undefined,
-      delivery_date: doForm.delivery_date ? new Date(doForm.delivery_date).toISOString() : new Date().toISOString(),
+      project_name: doForm.project_name
+        ? doForm.project_name.trim()
+        : undefined,
+      delivery_date: doForm.delivery_date
+        ? new Date(doForm.delivery_date).toISOString()
+        : new Date().toISOString(),
       delivery_address: doForm.delivery_address,
       recipient_name: doForm.recipient_name,
       recipient_phone: doForm.recipient_phone,
       technician_id: doForm.technician_id || undefined,
       notes: doForm.notes,
     };
-    await api.post(`/rents/${targetRentalForDO.value.id}/delivery-order`, payload);
-    toast.success('Surat Jalan (DO) berhasil dibuat!');
+    await api.post(
+      `/rents/${targetRentalForDO.value.id}/delivery-order`,
+      payload,
+    );
+    toast.success("Surat Jalan (DO) berhasil dibuat!");
     showCreateDOModal.value = false;
     await fetchRentals();
-    await refreshOnly(['deliveryOrders']);
+    await refreshOnly(["deliveryOrders"]);
   } catch (err: any) {
-    toast.error(toast.fromError(err, 'Gagal membuat Surat Jalan (DO)'));
+    toast.error(toast.fromError(err, "Gagal membuat Surat Jalan (DO)"));
   } finally {
     isSubmittingDO.value = false;
   }
@@ -299,31 +432,47 @@ function closeMeterDetail() {
   selectedMeterDetail.value = null;
 }
 function meterPaperSizeName(detail: any): string {
-  return detail?.paper_size?.name || ((paperSizes.value as any[]) || []).find((p: any) => String(p.id) === String(detail?.paper_size_id))?.name || detail?.paper_size_id || '-';
+  return (
+    detail?.paper_size?.name ||
+    ((paperSizes.value as any[]) || []).find(
+      (p: any) => String(p.id) === String(detail?.paper_size_id),
+    )?.name ||
+    detail?.paper_size_id ||
+    "-"
+  );
 }
 function meterPaperTypeName(detail: any): string {
-  return detail?.paper_type?.name || ((paperTypes.value as any[]) || []).find((p: any) => String(p.id) === String(detail?.paper_type_id))?.name || '-';
+  return (
+    detail?.paper_type?.name ||
+    ((paperTypes.value as any[]) || []).find(
+      (p: any) => String(p.id) === String(detail?.paper_type_id),
+    )?.name ||
+    "-"
+  );
 }
 function isColorDetail(detail: any): boolean {
-  return /colou?r/i.test(String(detail?.color_mode || ''));
+  return /colou?r/i.test(String(detail?.color_mode || ""));
 }
 function colorModeLabel(detail: any): string {
-  const raw = String(detail?.color_mode || '').toLowerCase();
-  if (/colou?r/.test(raw)) return 'COLOR';
-  if (/bw|b\/w|mono|black/.test(raw)) return 'BW';
-  return String(detail?.color_mode || '-').toUpperCase();
+  const raw = String(detail?.color_mode || "").toLowerCase();
+  if (/colou?r/.test(raw)) return "COLOR";
+  if (/bw|b\/w|mono|black/.test(raw)) return "BW";
+  return String(detail?.color_mode || "-").toUpperCase();
 }
 function invoiceItemsTotal(invoice: any): number {
-  return meterDetailsOf(invoice).reduce((sum: number, d: any) => sum + (Number(d.total_amount) || 0), 0);
+  return meterDetailsOf(invoice).reduce(
+    (sum: number, d: any) => sum + (Number(d.total_amount) || 0),
+    0,
+  );
 }
 function meterFormulaHint(detail: any): string {
   const start = detail?.start_meter_reading || 0;
   const last = detail?.last_meter_reading || 0;
-  const total = detail?.total_copies ?? (last - start);
+  const total = detail?.total_copies ?? last - start;
   const free = detail?.free_quota ?? 0;
   const mode = colorModeLabel(detail);
   const net = total - free;
-  const fmt = (n: number) => n.toLocaleString('id-ID');
+  const fmt = (n: number) => n.toLocaleString("id-ID");
   const netStr = net < 0 ? `(${fmt(Math.abs(net))})` : fmt(net);
   return `Pemakaian ${fmt(total)} (${fmt(start)}−${fmt(last)}) − Jatah ${mode} ${fmt(free)} = ${netStr}`;
 }
@@ -416,15 +565,20 @@ const form = reactive({
   is_new: true,
 });
 
-watch(() => form.is_new, (isNew) => {
-  const newMode = isNew ? "existing" : "unit";
-  for (const item of rentalItems.value) {
-    item.create_mode = newMode;
-    if (typeof onItemModeChange === "function") {
-      try { onItemModeChange(item); } catch (e) {}
+watch(
+  () => form.is_new,
+  (isNew) => {
+    const newMode = isNew ? "existing" : "unit";
+    for (const item of rentalItems.value) {
+      item.create_mode = newMode;
+      if (typeof onItemModeChange === "function") {
+        try {
+          onItemModeChange(item);
+        } catch (e) {}
+      }
     }
-  }
-});
+  },
+);
 
 const calcSubtotal = computed(() => {
   let sub = 0;
@@ -471,7 +625,8 @@ const rentCustomerOptions = computed(() =>
 const rentUnitOptions = computed(() => {
   const currentEditingUnitIds = new Set<string>();
   if (editingRental.value) {
-    const rawItems = editingRental.value.rental_items || editingRental.value.rentalItems || [];
+    const rawItems =
+      editingRental.value.rental_items || editingRental.value.rentalItems || [];
     rawItems.forEach((it: any) => {
       if (it.unit_id) currentEditingUnitIds.add(String(it.unit_id));
     });
@@ -482,7 +637,11 @@ const rentUnitOptions = computed(() => {
     ...((units.value as any[]) || [])
       .filter((u: any) => {
         const s = unitStatusOf(u);
-        return s === "available" || s === "" || currentEditingUnitIds.has(String(u.id));
+        return (
+          s === "available" ||
+          s === "" ||
+          currentEditingUnitIds.has(String(u.id))
+        );
       })
       .map((u: any) => {
         const isCurrent = currentEditingUnitIds.has(String(u.id));
@@ -525,43 +684,63 @@ const rentQuotaAppliesToOptions = [
 ];
 
 function getTypeName(id: string | null): string {
-  if (!id) return '';
-  const t = ((unitTypes.value as any[]) || []).find((t: any) => String(t.id) === String(id));
-  return t ? t.name : '';
+  if (!id) return "";
+  const t = ((unitTypes.value as any[]) || []).find(
+    (t: any) => String(t.id) === String(id),
+  );
+  return t ? t.name : "";
 }
 
 function getBrandName(id: string | null): string {
-  if (!id) return '';
-  const b = ((brands.value as any[]) || []).find((b: any) => String(b.id) === String(id));
-  return b ? b.name : '';
+  if (!id) return "";
+  const b = ((brands.value as any[]) || []).find(
+    (b: any) => String(b.id) === String(id),
+  );
+  return b ? b.name : "";
 }
 
-function isUnitPrinterOrCopier(typeId: string | null, isCopier = false): boolean {
+function isUnitPrinterOrCopier(
+  typeId: string | null,
+  isCopier = false,
+): boolean {
   const tName = getTypeName(typeId).toLowerCase().trim();
   return (
-    tName === 'printer' ||
-    tName.includes('printer') ||
-    tName === 'photocopy machine' ||
-    tName.includes('photocopy') ||
-    tName.includes('copier') ||
+    tName === "printer" ||
+    tName.includes("printer") ||
+    tName === "photocopy machine" ||
+    tName.includes("photocopy") ||
+    tName.includes("copier") ||
     Boolean(isCopier)
   );
 }
 
-function computeUnitName(typeId: string | null, printTech: string, brandId: string | null, model: string, isCopier = false): string {
+function computeUnitName(
+  typeId: string | null,
+  printTech: string,
+  brandId: string | null,
+  model: string,
+  isCopier = false,
+): string {
   const typeName = getTypeName(typeId).trim();
   const brandName = getBrandName(brandId);
-  const validBrand = (brandName && brandName !== '-') ? brandName.trim() : '';
-  const validModel = (model || '').trim();
+  const validBrand = brandName && brandName !== "-" ? brandName.trim() : "";
+  const validModel = (model || "").trim();
 
   const tLower = typeName.toLowerCase();
-  const isPrintOrCopy = tLower.includes('printer') || tLower.includes('copier') || tLower.includes('photocopy') || isCopier;
+  const isPrintOrCopy =
+    tLower.includes("printer") ||
+    tLower.includes("copier") ||
+    tLower.includes("photocopy") ||
+    isCopier;
 
   if (isPrintOrCopy) {
-    const tech = (printTech || '').trim();
-    return [typeName, tech, validBrand, validModel].filter(Boolean).join(' ').trim();
+    const tech = (printTech || "").trim();
+    return [typeName, tech, validBrand, validModel]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
   } else {
-    return [typeName, validBrand, validModel].filter(Boolean).join(' ').trim();
+    return [typeName, validBrand, validModel].filter(Boolean).join(" ").trim();
   }
 }
 
@@ -755,7 +934,14 @@ const editingRental = ref<any>(null);
 
 async function openAdd() {
   editingRental.value = null;
-  await refreshOnly(["customers", "units", "products", "brands", "unitTypes", "technicians"]);
+  await refreshOnly([
+    "customers",
+    "units",
+    "products",
+    "brands",
+    "unitTypes",
+    "technicians",
+  ]);
   try {
     const res = await resources.productCategories.list();
     const list = Array.isArray((res as any)?.data)
@@ -843,7 +1029,9 @@ async function openEdit(row: any) {
 
   Object.assign(form, {
     customer_id: rentalData.customer_id || "",
-    start_date: rentalData.start_date ? String(rentalData.start_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    start_date: rentalData.start_date
+      ? String(rentalData.start_date).slice(0, 10)
+      : new Date().toISOString().slice(0, 10),
     duration_months: rentalData.duration_months ?? 12,
     duration_days: rentalData.duration_days ?? 0,
     billing_day: rentalData.billing_day ?? null,
@@ -851,7 +1039,10 @@ async function openEdit(row: any) {
     notes: rentalData.notes || "",
     installation_address: rentalData.installation_address || "",
     technician_id: rentalData.technician_id || "",
-    is_new: rentalData.is_new !== null && rentalData.is_new !== undefined ? Boolean(rentalData.is_new) : true,
+    is_new:
+      rentalData.is_new !== null && rentalData.is_new !== undefined
+        ? Boolean(rentalData.is_new)
+        : true,
   });
 
   const rawItems = rentalData.rental_items || rentalData.rentalItems || [];
@@ -868,7 +1059,7 @@ async function openEdit(row: any) {
       const isCopier = unit ? !!unit.is_copier : false;
       const isComputer = unit ? !!(unit as any).is_computer : false;
 
-       return {
+      return {
         id: item.id,
         selected_item: selectedItem,
         create_mode: "existing",
@@ -955,7 +1146,15 @@ async function openEdit(row: any) {
         placement_location: "",
         is_copier: false,
         is_computer: false,
-        specs: { cpu: "", ram: "", storage: "", storage_type: "", os: "", vga: "", office: "" },
+        specs: {
+          cpu: "",
+          ram: "",
+          storage: "",
+          storage_type: "",
+          os: "",
+          vga: "",
+          office: "",
+        },
         description: "",
         rates: [],
       },
@@ -968,10 +1167,20 @@ async function openEdit(row: any) {
 async function fetchRentals(silent = false) {
   if (!silent) isLoadingRentals.value = true;
   try {
-    const res = await api.get<any>("/rents?limit=200&order_by=created_at&order_dir=desc", !silent, true);
-    const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+    const res = await api.get<any>(
+      "/rents?limit=200&order_by=created_at&order_dir=desc",
+      !silent,
+      true,
+    );
+    const list = Array.isArray(res?.data)
+      ? res.data
+      : Array.isArray(res)
+        ? res
+        : [];
     rentals.value = list.map((r: any) => {
-      const c = (customers.value || []).find((cust: any) => cust.id === r.customer_id);
+      const c = (customers.value || []).find(
+        (cust: any) => cust.id === r.customer_id,
+      );
       const companyName = c
         ? c.company_name || c.name || "-"
         : r.customer?.company_name || r.customer?.name || "-";
@@ -1006,7 +1215,11 @@ async function handleSubmit() {
   // Validation: copier requires an initial meter (paper size/kind rates are optional)
   for (let idx = 0; idx < rentalItems.value.length; idx++) {
     const item = rentalItems.value[idx]!;
-    if (item.create_mode !== "unit" && item.create_mode !== "product" && !item?.selected_item) {
+    if (
+      item.create_mode !== "unit" &&
+      item.create_mode !== "product" &&
+      !item?.selected_item
+    ) {
       toast.error(`Item #${idx + 1}: pilih Unit / Produk terlebih dahulu.`);
       return;
     }
@@ -1042,7 +1255,11 @@ async function handleSubmit() {
     const rates = rentalItems.value[itemIndex]?.rates || [];
     for (let rateIndex = 0; rateIndex < rates.length; rateIndex++) {
       const paperSizeID = rates[rateIndex]?.paper_size_id;
-      if (paperSizeID && validPaperSizeIDs.size > 0 && !validPaperSizeIDs.has(String(paperSizeID))) {
+      if (
+        paperSizeID &&
+        validPaperSizeIDs.size > 0 &&
+        !validPaperSizeIDs.has(String(paperSizeID))
+      ) {
         toast.error(
           `Item #${itemIndex + 1}, harga #${rateIndex + 1}: ukuran kertas yang dipilih tidak ditemukan. Silakan pilih kembali.`,
         );
@@ -1058,17 +1275,34 @@ async function handleSubmit() {
   for (let idx = 0; idx < rentalItems.value.length; idx++) {
     const it = rentalItems.value[idx]!;
     if (it.create_mode === "unit") {
-      if (!it.new_unit.brand_id || !it.new_unit.type_id || !String(it.new_unit.model || "").trim() || !String(it.new_unit.serial_no || "").trim()) {
-        toast.error(`Item #${idx + 1}: lengkapi Brand, Tipe, Model, dan Serial No untuk unit baru.`);
+      if (
+        !it.new_unit.brand_id ||
+        !it.new_unit.type_id ||
+        !String(it.new_unit.model || "").trim() ||
+        !String(it.new_unit.serial_no || "").trim()
+      ) {
+        toast.error(
+          `Item #${idx + 1}: lengkapi Brand, Tipe, Model, dan Serial No untuk unit baru.`,
+        );
         return;
       }
-      if (isUnitPrinterOrCopier(it.new_unit.type_id, it.new_unit.is_copier) && !it.new_unit.print_tech) {
-        toast.error(`Item #${idx + 1}: pilih Kategori Cetak (Laser atau Inject) untuk unit printer/copier.`);
+      if (
+        isUnitPrinterOrCopier(it.new_unit.type_id, it.new_unit.is_copier) &&
+        !it.new_unit.print_tech
+      ) {
+        toast.error(
+          `Item #${idx + 1}: pilih Kategori Cetak (Laser atau Inject) untuk unit printer/copier.`,
+        );
         return;
       }
     } else if (it.create_mode === "product") {
-      if (!String(it.new_product.name || "").trim() || !it.new_product.category_id) {
-        toast.error(`Item #${idx + 1}: lengkapi Nama dan Kategori untuk produk baru.`);
+      if (
+        !String(it.new_product.name || "").trim() ||
+        !it.new_product.category_id
+      ) {
+        toast.error(
+          `Item #${idx + 1}: lengkapi Nama dan Kategori untuk produk baru.`,
+        );
         return;
       }
     } else if (!it.selected_item) {
@@ -1083,15 +1317,23 @@ async function handleSubmit() {
   try {
     for (const item of rentalItems.value) {
       if (item.create_mode === "unit") {
-        const serialUpper = String(item.new_unit.serial_no || "").trim().toUpperCase();
+        const serialUpper = String(item.new_unit.serial_no || "")
+          .trim()
+          .toUpperCase();
         let existingUnit = (units.value || []).find(
-          (u: any) => String(u.serial_no || "").trim().toUpperCase() === serialUpper,
+          (u: any) =>
+            String(u.serial_no || "")
+              .trim()
+              .toUpperCase() === serialUpper,
         );
         let newId = existingUnit ? String(existingUnit.id || "") : "";
         if (!newId) {
           try {
-            const isPrintOrCopy = isUnitPrinterOrCopier(item.new_unit.type_id, item.new_unit.is_copier);
-            const techVal = isPrintOrCopy ? (item.new_unit.print_tech || "") : "";
+            const isPrintOrCopy = isUnitPrinterOrCopier(
+              item.new_unit.type_id,
+              item.new_unit.is_copier,
+            );
+            const techVal = isPrintOrCopy ? item.new_unit.print_tech || "" : "";
             const computedName = computeUnitName(
               item.new_unit.type_id,
               techVal,
@@ -1110,7 +1352,8 @@ async function handleSubmit() {
               is_external: true,
               status: "available",
               current_meter_bw: Number(item.new_unit.current_meter_bw) || 0,
-              current_meter_color: Number(item.new_unit.current_meter_color) || 0,
+              current_meter_color:
+                Number(item.new_unit.current_meter_color) || 0,
             });
             newId = String(res?.data?.id || res?.id || "");
             if (!newId) throw new Error("Gagal membuat unit baru");
@@ -1118,7 +1361,10 @@ async function handleSubmit() {
           } catch (createErr: any) {
             await refreshOnly(["units"], true);
             const found = (units.value || []).find(
-              (u: any) => String(u.serial_no || "").trim().toUpperCase() === serialUpper,
+              (u: any) =>
+                String(u.serial_no || "")
+                  .trim()
+                  .toUpperCase() === serialUpper,
             );
             if (found) {
               newId = String(found.id || "");
@@ -1176,19 +1422,27 @@ async function handleSubmit() {
     start_date: startDateIso,
     duration_months: Math.max(0, Math.round(Number(form.duration_months) || 0)),
     duration_days: Math.max(0, Math.round(Number(form.duration_days) || 0)),
-    billing_day: form.billing_day ? Math.min(31, Math.max(1, Number(form.billing_day))) : undefined,
+    billing_day: form.billing_day
+      ? Math.min(31, Math.max(1, Number(form.billing_day)))
+      : undefined,
     tax: 0,
     deposit: 0,
     po_no: form.po_no ? String(form.po_no).trim() : "",
     notes: form.notes ? String(form.notes).trim() : "",
-    installation_address: form.installation_address ? String(form.installation_address).trim() : "",
+    installation_address: form.installation_address
+      ? String(form.installation_address).trim()
+      : "",
     technician_id: form.technician_id || undefined,
     is_new: Boolean(form.is_new),
     items: rentalItems.value.map((item) => {
       const isUnit = item.selected_item.startsWith("unit_");
       const isProduct = item.selected_item.startsWith("prod_");
-      const unitId = isUnit ? item.selected_item.replace("unit_", "").trim() : null;
-      const productId = isProduct ? item.selected_item.replace("prod_", "").trim() : null;
+      const unitId = isUnit
+        ? item.selected_item.replace("unit_", "").trim()
+        : null;
+      const productId = isProduct
+        ? item.selected_item.replace("prod_", "").trim()
+        : null;
 
       return {
         id: item.id || undefined,
@@ -1196,9 +1450,18 @@ async function handleSubmit() {
         product_id: productId || null,
         qty: Math.max(1, Math.round(Number(item.qty) || 1)),
         monthly_rent: Math.max(0, Math.round(Number(item.monthly_rent) || 0)),
-        start_meter_bw: Math.max(0, Math.round(Number(item.start_meter_bw) || 0)),
-        start_meter_color: Math.max(0, Math.round(Number(item.start_meter_color) || 0)),
-        free_quota_color: Math.max(0, Math.round(Number(item.free_quota_color) || 0)),
+        start_meter_bw: Math.max(
+          0,
+          Math.round(Number(item.start_meter_bw) || 0),
+        ),
+        start_meter_color: Math.max(
+          0,
+          Math.round(Number(item.start_meter_color) || 0),
+        ),
+        free_quota_color: Math.max(
+          0,
+          Math.round(Number(item.free_quota_color) || 0),
+        ),
         free_quota_bw: Math.max(0, Math.round(Number(item.free_quota_bw) || 0)),
         placement_location: (item.placement_location || "").trim() || "",
         specs: item.specs || {},
@@ -1215,10 +1478,22 @@ async function handleSubmit() {
           .map((r: any) => ({
             paper_size_id: r.paper_size_id ? String(r.paper_size_id) : null,
             paper_type_id: r.paper_type_id ? String(r.paper_type_id) : null,
-            rate_per_page_bw: Math.max(0, Math.round(Number(r.rate_per_page_bw) || 0)),
-            rate_per_page_color: Math.max(0, Math.round(Number(r.rate_per_page_color) || 0)),
-            free_quota_bw: Math.max(0, Math.round(Number(r.free_quota_bw) || 0)),
-            free_quota_color: Math.max(0, Math.round(Number(r.free_quota_color) || 0)),
+            rate_per_page_bw: Math.max(
+              0,
+              Math.round(Number(r.rate_per_page_bw) || 0),
+            ),
+            rate_per_page_color: Math.max(
+              0,
+              Math.round(Number(r.rate_per_page_color) || 0),
+            ),
+            free_quota_bw: Math.max(
+              0,
+              Math.round(Number(r.free_quota_bw) || 0),
+            ),
+            free_quota_color: Math.max(
+              0,
+              Math.round(Number(r.free_quota_color) || 0),
+            ),
             quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
           })),
       };
@@ -1229,7 +1504,9 @@ async function handleSubmit() {
     if (editingRental.value) {
       await api.put(`/rents/${editingRental.value.id}`, payload);
       invalidateCache("/rents");
-      window.dispatchEvent(new CustomEvent("bias:data-mutated", { detail: { path: "/rents" } }));
+      window.dispatchEvent(
+        new CustomEvent("bias:data-mutated", { detail: { path: "/rents" } }),
+      );
       toast.success("Rental berhasil diperbarui.");
       showModal.value = false;
       editingRental.value = null;
@@ -1237,8 +1514,12 @@ async function handleSubmit() {
       await api.post("/rents", payload);
       invalidateCache("/rents");
       invalidateCache("/delivery-orders");
-      window.dispatchEvent(new CustomEvent("bias:data-mutated", { detail: { path: "/rents" } }));
-      toast.success("Transaksi sewa rental dan Surat Jalan (DO) berhasil dibuat!");
+      window.dispatchEvent(
+        new CustomEvent("bias:data-mutated", { detail: { path: "/rents" } }),
+      );
+      toast.success(
+        "Transaksi sewa rental dan Surat Jalan (DO) berhasil dibuat!",
+      );
       showModal.value = false;
     }
   } catch (error: any) {
@@ -1260,7 +1541,10 @@ async function handleSubmit() {
     if (error.response?.data?.error) {
       errMessage = `${errMessage}: ${error.response.data.error}`;
     }
-    if (error.response?.data?.errors && typeof error.response.data.errors === "object") {
+    if (
+      error.response?.data?.errors &&
+      typeof error.response.data.errors === "object"
+    ) {
       const details = Object.entries(error.response.data.errors)
         .map(([k, v]) => `${k}: ${v}`)
         .join(", ");
@@ -1277,12 +1561,72 @@ async function handleSubmit() {
     await fetchRentals();
     await refreshOnly(["units", "products", "deliveryOrders"]);
   } catch (refreshErr) {
-    console.warn("Background refresh after rental save encountered an issue:", refreshErr);
+    console.warn(
+      "Background refresh after rental save encountered an issue:",
+      refreshErr,
+    );
   }
 }
 
 function formatRupiah(val: number): string {
   return "Rp " + (val || 0).toLocaleString("id-ID");
+}
+
+function formatExportAmount(value: unknown): string {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount.toLocaleString("id-ID") : "0";
+}
+
+function sanitizeExportNamePart(value: string): string {
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/[. ]+$/g, "")
+      .slice(0, 64) || "Unknown"
+  );
+}
+
+function buildExportFileName(items: any[], extension: "pdf" | "xlsx"): string {
+  const companyNames = new Set(
+    items
+      .map((item) => {
+        const customer = item.customer || findCustomer(item.customer_id);
+        return customer?.company_name || customer?.name || "";
+      })
+      .map((name) => String(name).trim())
+      .filter(Boolean),
+  );
+  const companyList = Array.from(companyNames);
+  const companyName =
+    companyList.length === 1
+      ? companyList[0]
+      : companyList.length > 1
+        ? "Multiple_Companies"
+        : filterCustomer.value
+          ? `Company_${filterCustomer.value}`
+          : "All_Companies";
+  const monthName = monthOptions.find(
+    (option) => option.value === monthFilter.value,
+  )?.label;
+  const periodParts = [
+    yearFilter.value || "All_Years",
+    monthFilter.value ? monthName || monthFilter.value : "All_Months",
+  ];
+  if (startDateFilter.value || endDateFilter.value) {
+    periodParts.push(
+      `${startDateFilter.value || "No_Start"}_to_${endDateFilter.value || "No_End"}`,
+    );
+  }
+
+  const now = new Date();
+  const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
+  const timestampPart = monthFilter.value ? "" : `_${timestamp}`;
+  return `Rentals_Report_${sanitizeExportNamePart(companyName)}_${sanitizeExportNamePart(periodParts.join("_"))}${timestampPart}.${extension}`;
 }
 
 async function openRentalInvoices(rental: any) {
@@ -1349,7 +1693,8 @@ async function submitInvoicePayment() {
     toast.success("Payment recorded and pending approval.");
     const customer =
       customers.value.find(
-        (item: any) => String(item.id) === String(selectedRental.value.customer_id),
+        (item: any) =>
+          String(item.id) === String(selectedRental.value.customer_id),
       ) || selectedRental.value?.customer;
     const opened = printPaymentSlip({
       payment_no: payNo,
@@ -1433,9 +1778,7 @@ function rentalReceiptPayload(invoice: any, payment: any): PaymentReceiptData {
     partial: ps === "partially_paid" || ps === "partial",
     method: paymentMethodOf(payment.bank_name),
     cs_name:
-      (payment as any).user?.name ||
-      (payment as any).user?.username ||
-      "-",
+      (payment as any).user?.name || (payment as any).user?.username || "-",
   };
 }
 
@@ -1463,11 +1806,19 @@ function printRentalPaymentReceiptA5(invoice: any, payment: any) {
 async function loadPaperLookups() {
   try {
     const res: any = await resources.paperSizes.list();
-    const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+    const list = Array.isArray(res?.data)
+      ? res.data
+      : Array.isArray(res)
+        ? res
+        : [];
     paperSizes.value = list;
     try {
       const pt: any = await (resources as any).paperTypes.list();
-      const ptList = Array.isArray(pt?.data) ? pt.data : Array.isArray(pt) ? pt : [];
+      const ptList = Array.isArray(pt?.data)
+        ? pt.data
+        : Array.isArray(pt)
+          ? pt
+          : [];
       paperTypes.value = ptList;
     } catch {
       paperTypes.value = [];
@@ -1480,7 +1831,14 @@ async function loadPaperLookups() {
 }
 
 function hydrateRentalLookups() {
-  void refreshOnly(["customers", "units", "products", "payments", "technicians", "deliveryOrders"]);
+  void refreshOnly([
+    "customers",
+    "units",
+    "products",
+    "payments",
+    "technicians",
+    "deliveryOrders",
+  ]);
   void loadPaperLookups();
 }
 
@@ -1489,7 +1847,10 @@ let rentalPollTimer: any = null;
 let lastSilentRentalSync = 0;
 
 function silentSyncRentals() {
-  if (document.visibilityState === "visible" && Date.now() - lastSilentRentalSync > 15000) {
+  if (
+    document.visibilityState === "visible" &&
+    Date.now() - lastSilentRentalSync > 15000
+  ) {
     lastSilentRentalSync = Date.now();
     fetchRentals(true);
   }
@@ -1524,65 +1885,91 @@ onActivated(() => {
 async function exportToExcel() {
   const XLSX = await import("xlsx");
   const exportData = filteredRentals.value.map((j: any, index: number) => ({
-    'No': index + 1,
-    'Rental No': j.rental_no || '-',
-    'Company': j.customer?.company_name || j.customer?.name || '-',
-    'PIC Name': j.customer?.pic_name || '-',
-    'Start Date': j.start_date ? new Date(j.start_date).toLocaleDateString('en-GB') : '-',
-    'End Date': j.end_date ? new Date(j.end_date).toLocaleDateString('en-GB') : '-',
-    'Total': j.total || 0,
-    'Status': j.status || '-'
-  }))
+    No: index + 1,
+    "Rental No": j.rental_no || "-",
+    "PO No": (j.po_no || j.po_number || "").trim() || "-",
+    Company: j.customer?.company_name || j.customer?.name || "-",
+    "PIC Name": j.customer?.pic_name || "-",
+    "Start Date": j.start_date
+      ? new Date(j.start_date).toLocaleDateString("en-GB")
+      : "-",
+    "End Date": j.end_date
+      ? new Date(j.end_date).toLocaleDateString("en-GB")
+      : "-",
+    Total: formatExportAmount(j.total),
+    Status: j.status || "-",
+  }));
   if (!exportData.length) {
-    toast.error('No data to export')
-    return
+    toast.error("No data to export");
+    return;
   }
-  const ws = XLSX.utils.json_to_sheet(exportData)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, "Rentals")
-  XLSX.writeFile(wb, `Rentals_${Date.now()}.xlsx`)
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Rentals");
+  XLSX.writeFile(wb, buildExportFileName(filteredRentals.value, "xlsx"));
 }
 
 async function exportToPdf() {
   const { default: html2pdf } = await import("html2pdf.js");
   const exportData = filteredRentals.value.map((j: any, index: number) => ({
-    'No': index + 1,
-    'Rental No': j.rental_no || '-',
-    'Company': j.customer?.company_name || j.customer?.name || '-',
-    'PIC Name': j.customer?.pic_name || '-',
-    'Start Date': j.start_date ? new Date(j.start_date).toLocaleDateString('en-GB') : '-',
-    'End Date': j.end_date ? new Date(j.end_date).toLocaleDateString('en-GB') : '-',
-    'Total': (j.total || 0).toLocaleString('id-ID'),
-    'Status': String(j.status || '-').toUpperCase()
-  }))
+    No: index + 1,
+    "Rental No": j.rental_no || "-",
+    "PO No": (j.po_no || j.po_number || "").trim() || "-",
+    Company: j.customer?.company_name || j.customer?.name || "-",
+    "PIC Name": j.customer?.pic_name || "-",
+    "Start Date": j.start_date
+      ? new Date(j.start_date).toLocaleDateString("en-GB")
+      : "-",
+    "End Date": j.end_date
+      ? new Date(j.end_date).toLocaleDateString("en-GB")
+      : "-",
+    Total: formatExportAmount(j.total),
+    Status: String(j.status || "-").toUpperCase(),
+  }));
   if (!exportData.length) {
-    toast.error('No data to export')
-    return
+    toast.error("No data to export");
+    return;
   }
-  
-  let html = '<h2 style="font-family: sans-serif; text-align: center;">Rentals Report</h2><table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px; text-align: center;">'
-  html += '<thead><tr style="background-color: #5b9bd5; color: white;">'
-  const keys = Object.keys(exportData[0]!)
-  keys.forEach(k => html += `<th>${k}</th>`)
-  html += '</tr></thead><tbody>'
-  exportData.forEach(row => {
-    html += '<tr>'
-    keys.forEach(k => html += `<td>${(row as any)[k]}</td>`)
-    html += '</tr>'
-  })
-  html += '</tbody></table>'
 
-  const wrapper = document.createElement('div')
-  wrapper.innerHTML = html
+  const tableHtml = [
+    "<style>",
+    "body{font-family:Arial,sans-serif;margin:0;padding:18px;color:#222}",
+    "table{width:100%;border-collapse:collapse;font-size:11px}",
+    "th,td{border:1px solid #bfc8d9;padding:8px 10px;text-align:left;vertical-align:top}",
+    "th{background:#5b9bd5;color:#fff;font-weight:700}",
+    "tbody tr:nth-child(even){background:#f7f9fc}",
+    "</style>",
+    '<h2 style="margin:0 0 14px;text-align:center;">Rentals Report</h2>',
+    "<table>",
+    "<thead><tr>",
+    Object.keys(exportData[0])
+      .map((k) => `<th>${k}</th>`)
+      .join(""),
+    "</tr></thead>",
+    "<tbody>",
+    exportData
+      .map(
+        (row) =>
+          `<tr>${Object.keys(row)
+            .map((k) => `<td>${(row as any)[k]}</td>`)
+            .join("")}</tr>`,
+      )
+      .join(""),
+    "</tbody>",
+    "</table>",
+  ].join("");
+
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = tableHtml;
 
   const opt = {
-    margin: 0.5,
-    filename: `Rentals_Report_${Date.now()}.pdf`,
-    image: { type: 'jpeg' as const, quality: 0.98 },
-    html2canvas: { scale: 2 },
-    jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' as const }
-  }
-  html2pdf().set(opt).from(wrapper).save()
+    margin: 0.4,
+    filename: buildExportFileName(filteredRentals.value, "pdf"),
+    image: { type: "jpeg" as const, quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: "in", format: "legal", orientation: "landscape" as const },
+  };
+  html2pdf().set(opt).from(wrapper).save();
 }
 
 // --- Perpanjang Kontrak (Extend Rental) ---
@@ -1621,7 +2008,9 @@ async function submitExtendRental() {
   const months = Number(extendForm.additional_months) || 0;
   const days = Number(extendForm.additional_days) || 0;
   if (months <= 0 && days <= 0) {
-    toast.error(t("rentals.extend_need_duration") || "Isi tambahan bulan atau hari.");
+    toast.error(
+      t("rentals.extend_need_duration") || "Isi tambahan bulan atau hari.",
+    );
     return;
   }
   isSubmittingExtend.value = true;
@@ -1631,10 +2020,12 @@ async function submitExtendRental() {
       {
         additional_months: months,
         additional_days: days,
-      }
+      },
     );
     toast.success(
-      res.data?.message || t("rentals.extend_success") || "Kontrak berhasil diperpanjang."
+      res.data?.message ||
+        t("rentals.extend_success") ||
+        "Kontrak berhasil diperpanjang.",
     );
     showExtendModal.value = false;
     extendingRental.value = null;
@@ -1646,7 +2037,7 @@ async function submitExtendRental() {
   } catch (err: any) {
     toast.error(
       t("rentals.extend_failed", { error: err.message || "Gagal" }) ||
-        `Gagal memperpanjang kontrak: ${err.message || "Error"}`
+        `Gagal memperpanjang kontrak: ${err.message || "Error"}`,
     );
   } finally {
     isSubmittingExtend.value = false;
@@ -1681,19 +2072,60 @@ function isExpired(row: any): boolean {
       :button-label="t('rentals.create_new')"
       permission="rental:create"
       @add="openAdd"
-    >
-      <template #actions>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <CustomSelect v-model="filterCustomer" :options="customerOptions" placeholder="Filter by Customer" style="min-width: 200px;" />
-          <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
-            Export PDF
-          </button>
-          <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
-            Export Excel
-          </button>
-        </div>
-      </template>
-    </PageHeader>
+    />
+
+    <section class="report-toolbar" aria-label="Rental filters and exports">
+      <div class="report-filters">
+        <label class="report-filter report-filter-customer">
+          <span class="report-filter-label">Customer</span>
+          <CustomSelect
+            v-model="filterCustomer"
+            :options="customerOptions"
+            placeholder="All Customers"
+          />
+        </label>
+        <label class="report-filter report-filter-month">
+          <span class="report-filter-label">Month</span>
+          <CustomSelect
+            v-model="monthFilter"
+            :options="monthOptions"
+            placeholder="All Months"
+          />
+        </label>
+        <label class="report-filter report-filter-year">
+          <span class="report-filter-label">Year</span>
+          <CustomSelect
+            v-model="yearFilter"
+            :options="yearOptions"
+            placeholder="All Years"
+          />
+        </label>
+        <label class="report-filter report-filter-date">
+          <span class="report-filter-label">Start date</span>
+          <input v-model="startDateFilter" type="date" class="form-input" />
+        </label>
+        <label class="report-filter report-filter-date">
+          <span class="report-filter-label">End date</span>
+          <input v-model="endDateFilter" type="date" class="form-input" />
+        </label>
+        <button
+          v-if="monthFilter || yearFilter || startDateFilter || endDateFilter"
+          type="button"
+          class="btn btn-outline report-reset"
+          @click="resetDateFilters"
+        >
+          Reset filters
+        </button>
+      </div>
+      <div class="report-actions">
+        <button type="button" class="btn btn-outline" @click="exportToPdf">
+          Export PDF
+        </button>
+        <button type="button" class="btn btn-outline" @click="exportToExcel">
+          Export Excel
+        </button>
+      </div>
+    </section>
 
     <DataTable
       :columns="columns"
@@ -1710,9 +2142,13 @@ function isExpired(row: any): boolean {
         <a
           href="#"
           @click.prevent="openRentalDetail(row)"
-          style="color: var(--color-primary); text-decoration: underline; font-weight: 500;"
+          style="
+            color: var(--color-primary);
+            text-decoration: underline;
+            font-weight: 500;
+          "
         >
-          {{ value || '-' }}
+          {{ value || "-" }}
         </a>
       </template>
       <template #cell-company="{ row }">
@@ -1732,14 +2168,21 @@ function isExpired(row: any): boolean {
         }}
       </template>
       <template #cell-start_date="{ value }">{{
-        value ? new Date(value).toLocaleDateString("en-GB") : '-'
+        value ? new Date(value).toLocaleDateString("en-GB") : "-"
       }}</template>
       <template #cell-end_date="{ row, value }">
-        <div>{{ value ? new Date(value).toLocaleDateString("en-GB") : '-' }}</div>
+        <div>
+          {{ value ? new Date(value).toLocaleDateString("en-GB") : "-" }}
+        </div>
         <span
           v-if="isExpiringSoon(row)"
           class="badge badge-warning"
-          style="font-size: 0.72rem; margin-top: 2px; display: inline-block; padding: 2px 6px;"
+          style="
+            font-size: 0.72rem;
+            margin-top: 2px;
+            display: inline-block;
+            padding: 2px 6px;
+          "
           :title="`Kontrak akan berakhir dalam ${daysUntilExpiry(row.end_date)} hari`"
         >
           ⏳ Sisa {{ daysUntilExpiry(row.end_date) }} hr
@@ -1747,17 +2190,30 @@ function isExpired(row: any): boolean {
         <span
           v-else-if="isExpired(row)"
           class="badge badge-danger"
-          style="font-size: 0.72rem; margin-top: 2px; display: inline-block; padding: 2px 6px;"
+          style="
+            font-size: 0.72rem;
+            margin-top: 2px;
+            display: inline-block;
+            padding: 2px 6px;
+          "
         >
           ⚠️ Lewat tempo
         </span>
       </template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
       <template #cell-do_number="{ row }">
-        <span v-if="hasActiveRentalDO(row)" class="badge badge-info" style="font-family: monospace; font-size: 0.78rem;">
+        <span
+          v-if="hasActiveRentalDO(row)"
+          class="badge badge-info"
+          style="font-family: monospace; font-size: 0.78rem"
+        >
           {{ getRentalDONumber(row) }}
         </span>
-        <span v-else class="text-muted" style="font-size: 0.78rem; font-style: italic;">
+        <span
+          v-else
+          class="text-muted"
+          style="font-size: 0.78rem; font-style: italic"
+        >
           No DO
         </span>
       </template>
@@ -1779,18 +2235,32 @@ function isExpired(row: any): boolean {
         </button>
       </template>
       <template #actions="{ row }">
-        <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 6px">
           <button
             v-if="row.status !== 'cancelled' && can('rental:update')"
             class="action-btn action-btn--edit"
             :title="t('rentals.extend_title') || 'Perpanjang Kontrak'"
             @click.stop="openExtendModal(row)"
-            style="color: #2563eb; width: 32px; height: 32px;"
+            style="color: #2563eb; width: 32px; height: 32px"
           >
-            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+            <svg
+              class="action-icon"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
+              ></path>
               <path d="M3 3v5h5"></path>
-              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+              <path
+                d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"
+              ></path>
               <path d="M16 21h5v-5"></path>
             </svg>
           </button>
@@ -1799,9 +2269,19 @@ function isExpired(row: any): boolean {
             class="action-btn action-btn--edit"
             title="Buat Surat Jalan (DO)"
             @click.stop="openCreateRentalDOModal(row)"
-            style="color: #e67e22; width: 32px; height: 32px;"
+            style="color: #e67e22; width: 32px; height: 32px"
           >
-            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              class="action-icon"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <rect x="1" y="3" width="15" height="13"></rect>
               <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
               <circle cx="5.5" cy="18.5" r="2.5"></circle>
@@ -1813,11 +2293,23 @@ function isExpired(row: any): boolean {
             class="action-btn action-btn--delete"
             title="Delete Rental"
             @click.stop="openDeleteRentalModal(row)"
-            style="width: 32px; height: 32px;"
+            style="width: 32px; height: 32px"
           >
-            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              class="action-icon"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <path
+                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+              ></path>
               <line x1="10" y1="11" x2="10" y2="17"></line>
               <line x1="14" y1="11" x2="14" y2="17"></line>
             </svg>
@@ -1827,10 +2319,22 @@ function isExpired(row: any): boolean {
             class="action-btn action-btn--hard"
             title="Hapus permanen dari database (superadmin)"
             @click.stop="hardDelete.open(row)"
-            style="width: 32px; height: 32px;"
+            style="width: 32px; height: 32px"
           >
-            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"></path>
+            <svg
+              class="action-icon"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"
+              ></path>
             </svg>
           </button>
         </div>
@@ -1859,33 +2363,86 @@ function isExpired(row: any): boolean {
       @close="showDeleteRentalModal = false"
     >
       <div v-if="deletingRental" class="delete-rental-modal">
-        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;">
-          <div style="font-weight: 600; color: #dc2626; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+        <div
+          style="
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+          "
+        >
+          <div
+            style="
+              font-weight: 600;
+              color: #dc2626;
+              margin-bottom: 4px;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+            "
+          >
             ⚠️ Perhatian Standar Keuangan
           </div>
-          <div style="font-size: 0.88em; color: var(--color-text-secondary); line-height: 1.5;">
-            Sistem tidak mengizinkan fitur edit data transaksi rental untuk menjaga kepatuhan dan integritas audit keuangan. Menghapus rental ini akan <strong>otomatis menghapus seluruh invoice terkait beserta riwayat pembayaran dan meter details</strong>, melepaskan unit yang disewa kembali ke status <strong>available</strong>, serta membersihkan kontrak otomatis terkait. Nomor kontrak setelahnya akan mengisi nomor kontrak yang dihapus agar selalu berurutan tanpa loncat.
+          <div
+            style="
+              font-size: 0.88em;
+              color: var(--color-text-secondary);
+              line-height: 1.5;
+            "
+          >
+            Sistem tidak mengizinkan fitur edit data transaksi rental untuk
+            menjaga kepatuhan dan integritas audit keuangan. Menghapus rental
+            ini akan
+            <strong
+              >otomatis menghapus seluruh invoice terkait beserta riwayat
+              pembayaran dan meter details</strong
+            >, melepaskan unit yang disewa kembali ke status
+            <strong>available</strong>, serta membersihkan kontrak otomatis
+            terkait. Nomor kontrak setelahnya akan mengisi nomor kontrak yang
+            dihapus agar selalu berurutan tanpa loncat.
           </div>
         </div>
 
-        <div style="background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 0.9em; display: grid; gap: 8px;">
+        <div
+          style="
+            background: var(--color-surface-sunken);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 16px;
+            font-size: 0.9em;
+            display: grid;
+            gap: 8px;
+          "
+        >
           <div>
-            <span style="color: var(--color-text-secondary);">No. Rental:</span>
-            <strong style="margin-left: 8px; color: var(--color-primary);">{{ deletingRental.rental_no }}</strong>
+            <span style="color: var(--color-text-secondary)">No. Rental:</span>
+            <strong style="margin-left: 8px; color: var(--color-primary)">{{
+              deletingRental.rental_no
+            }}</strong>
           </div>
           <div>
-            <span style="color: var(--color-text-secondary);">No. Kontrak:</span>
-            <span style="margin-left: 8px; font-weight: 500;">{{ deletingRental.contract?.contract_no || deletingRental.contract_no || '-' }}</span>
+            <span style="color: var(--color-text-secondary)">No. Kontrak:</span>
+            <span style="margin-left: 8px; font-weight: 500">{{
+              deletingRental.contract?.contract_no ||
+              deletingRental.contract_no ||
+              "-"
+            }}</span>
           </div>
           <div>
-            <span style="color: var(--color-text-secondary);">Customer:</span>
-            <span style="margin-left: 8px; font-weight: 500;">{{ deletingRental.company || deletingRental.customer?.company_name || '-' }}</span>
+            <span style="color: var(--color-text-secondary)">Customer:</span>
+            <span style="margin-left: 8px; font-weight: 500">{{
+              deletingRental.company ||
+              deletingRental.customer?.company_name ||
+              "-"
+            }}</span>
           </div>
         </div>
 
-        <div class="form-group" style="margin-bottom: 16px;">
-          <label class="form-label" style="font-weight: 600;">
-            Alasan Penghapusan <span style="color: #dc2626;">*</span>
+        <div class="form-group" style="margin-bottom: 16px">
+          <label class="form-label" style="font-weight: 600">
+            Alasan Penghapusan <span style="color: #dc2626">*</span>
           </label>
           <textarea
             v-model="rentalDeleteReason"
@@ -1893,24 +2450,41 @@ function isExpired(row: any): boolean {
             rows="3"
             placeholder="Wajib diisi, contoh: Salah pemilihan customer / transaksi sewa dibatalkan klien"
             required
-            style="resize: vertical;"
+            style="resize: vertical"
           ></textarea>
         </div>
 
-        <div class="form-group" style="margin-bottom: 20px;">
-          <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 0.9em; color: var(--color-text);">
+        <div class="form-group" style="margin-bottom: 20px">
+          <label
+            style="
+              display: flex;
+              align-items: flex-start;
+              gap: 10px;
+              cursor: pointer;
+              font-size: 0.9em;
+              color: var(--color-text);
+            "
+          >
             <input
               type="checkbox"
               v-model="rentalConfirmAgree"
-              style="margin-top: 3px;"
+              style="margin-top: 3px"
             />
             <span>
-              Saya menyetujui untuk menghapus data <strong>{{ deletingRental.rental_no }}</strong> dan contract <strong>{{ deletingRental.contract?.contract_no || deletingRental.contract_no || '-' }}</strong> beserta seluruh invoice terkait, dan memahami bahwa persetujuan ini akan otomatis dicatat dalam log audit keuangan.
+              Saya menyetujui untuk menghapus data
+              <strong>{{ deletingRental.rental_no }}</strong> dan contract
+              <strong>{{
+                deletingRental.contract?.contract_no ||
+                deletingRental.contract_no ||
+                "-"
+              }}</strong>
+              beserta seluruh invoice terkait, dan memahami bahwa persetujuan
+              ini akan otomatis dicatat dalam log audit keuangan.
             </span>
           </label>
         </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <div style="display: flex; justify-content: flex-end; gap: 10px">
           <button
             type="button"
             class="btn btn-secondary"
@@ -1923,8 +2497,12 @@ function isExpired(row: any): boolean {
             type="button"
             class="btn btn-danger"
             @click="handleConfirmDeleteRental"
-            :disabled="!rentalDeleteReason.trim() || !rentalConfirmAgree || isDeletingRental"
-            style="background: #dc2626; color: white;"
+            :disabled="
+              !rentalDeleteReason.trim() ||
+              !rentalConfirmAgree ||
+              isDeletingRental
+            "
+            style="background: #dc2626; color: white"
           >
             <span v-if="isDeletingRental">Menghapus...</span>
             <span v-else>Setujui & Hapus Rental</span>
@@ -1938,132 +2516,462 @@ function isExpired(row: any): boolean {
       :open="showDetailModal"
       :title="`Rental Detail - ${detailRental?.rental_no || ''}`"
       max-width="800px"
-      @close="showDetailModal = false; detailRental = null;"
+      @close="
+        showDetailModal = false;
+        detailRental = null;
+      "
     >
       <div v-if="detailRental">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 1rem; padding: 12px; background: var(--color-surface-hover); border-radius: 8px;">
+        <div
+          style="
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 1rem;
+            padding: 12px;
+            background: var(--color-surface-hover);
+            border-radius: 8px;
+          "
+        >
           <div>
-            <p style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Customer:</p>
-            <p style="margin: 0 0 10px 0; font-weight: 500;">
+            <p
+              style="
+                margin: 0;
+                font-size: 0.9em;
+                color: var(--color-text-secondary);
+              "
+            >
+              Customer:
+            </p>
+            <p style="margin: 0 0 10px 0; font-weight: 500">
               {{
-                customers.find((c: any) => c.id === detailRental.customer_id)?.company_name ||
-                customers.find((c: any) => c.id === detailRental.customer_id)?.name ||
+                customers.find((c: any) => c.id === detailRental.customer_id)
+                  ?.company_name ||
+                customers.find((c: any) => c.id === detailRental.customer_id)
+                  ?.name ||
                 detailRental.customer?.company_name ||
                 detailRental.customer?.name ||
                 "-"
               }}
             </p>
-            <p style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Period:</p>
-            <p style="margin: 0 0 10px 0; font-weight: 500;">
-              {{ detailRental.start_date ? new Date(detailRental.start_date).toLocaleDateString("en-GB") : '-' }} - 
-              {{ detailRental.end_date ? new Date(detailRental.end_date).toLocaleDateString("en-GB") : '-' }}
+            <p
+              style="
+                margin: 0;
+                font-size: 0.9em;
+                color: var(--color-text-secondary);
+              "
+            >
+              Period:
+            </p>
+            <p style="margin: 0 0 10px 0; font-weight: 500">
+              {{
+                detailRental.start_date
+                  ? new Date(detailRental.start_date).toLocaleDateString(
+                      "en-GB",
+                    )
+                  : "-"
+              }}
+              -
+              {{
+                detailRental.end_date
+                  ? new Date(detailRental.end_date).toLocaleDateString("en-GB")
+                  : "-"
+              }}
               ({{ detailRental.duration_months }} months)
             </p>
-            <p style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Status:</p>
-            <p style="margin: 0; font-weight: 500;">
-              <span class="status-badge" :class="'status-' + (detailRental.status || 'unknown').toLowerCase()">
+            <p
+              style="
+                margin: 0;
+                font-size: 0.9em;
+                color: var(--color-text-secondary);
+              "
+            >
+              Status:
+            </p>
+            <p style="margin: 0; font-weight: 500">
+              <span
+                class="status-badge"
+                :class="
+                  'status-' + (detailRental.status || 'unknown').toLowerCase()
+                "
+              >
                 {{ detailRental.status || "-" }}
               </span>
             </p>
           </div>
           <div>
-            <p v-if="detailRental.po_no" style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">PO No:</p>
-            <p v-if="detailRental.po_no" style="margin: 0 0 10px 0; font-weight: 500;">{{ detailRental.po_no }}</p>
-            
-            <p v-if="detailRental.installation_address" style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Installation Address:</p>
-            <p v-if="detailRental.installation_address" style="margin: 0 0 10px 0; font-weight: 500; font-size: 0.95em;">{{ detailRental.installation_address }}</p>
-            
-            <p v-if="detailRental.notes" style="margin: 0; font-size: 0.9em; color: var(--color-text-secondary);">Notes:</p>
-            <p v-if="detailRental.notes" style="margin: 0; font-weight: 500; font-size: 0.95em; white-space: pre-wrap;">{{ detailRental.notes }}</p>
+            <p
+              v-if="detailRental.po_no"
+              style="
+                margin: 0;
+                font-size: 0.9em;
+                color: var(--color-text-secondary);
+              "
+            >
+              PO No:
+            </p>
+            <p
+              v-if="detailRental.po_no"
+              style="margin: 0 0 10px 0; font-weight: 500"
+            >
+              {{ detailRental.po_no }}
+            </p>
+
+            <p
+              v-if="detailRental.installation_address"
+              style="
+                margin: 0;
+                font-size: 0.9em;
+                color: var(--color-text-secondary);
+              "
+            >
+              Installation Address:
+            </p>
+            <p
+              v-if="detailRental.installation_address"
+              style="margin: 0 0 10px 0; font-weight: 500; font-size: 0.95em"
+            >
+              {{ detailRental.installation_address }}
+            </p>
+
+            <p
+              v-if="detailRental.notes"
+              style="
+                margin: 0;
+                font-size: 0.9em;
+                color: var(--color-text-secondary);
+              "
+            >
+              Notes:
+            </p>
+            <p
+              v-if="detailRental.notes"
+              style="
+                margin: 0;
+                font-weight: 500;
+                font-size: 0.95em;
+                white-space: pre-wrap;
+              "
+            >
+              {{ detailRental.notes }}
+            </p>
           </div>
         </div>
-        
-        <h4 style="margin: 1rem 0 0.5rem; font-size: 1rem; color: var(--color-primary);">Rented Items</h4>
-        <div v-if="!detailRental.rental_items || detailRental.rental_items.length === 0" style="padding: 1rem; text-align: center; color: var(--color-text-secondary); background: var(--color-surface-sunken); border-radius: 8px;">
+
+        <h4
+          style="
+            margin: 1rem 0 0.5rem;
+            font-size: 1rem;
+            color: var(--color-primary);
+          "
+        >
+          Rented Items
+        </h4>
+        <div
+          v-if="
+            !detailRental.rental_items || detailRental.rental_items.length === 0
+          "
+          style="
+            padding: 1rem;
+            text-align: center;
+            color: var(--color-text-secondary);
+            background: var(--color-surface-sunken);
+            border-radius: 8px;
+          "
+        >
           No items found.
         </div>
-        <div v-else style="display: grid; gap: 10px;">
-          <div v-for="(item, idx) in detailRental.rental_items" :key="idx" style="padding: 12px; background: var(--color-surface-sunken); border: 1px solid var(--color-border); border-radius: 8px;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+        <div v-else style="display: grid; gap: 10px">
+          <div
+            v-for="(item, idx) in detailRental.rental_items"
+            :key="idx"
+            style="
+              padding: 12px;
+              background: var(--color-surface-sunken);
+              border: 1px solid var(--color-border);
+              border-radius: 8px;
+            "
+          >
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 8px;
+              "
+            >
               <div>
-                <strong style="font-size: 1.05em; display: block; color: var(--color-text);">
-                  <span v-if="item.unit || findUnit(item.unit_id)">Unit: {{ formatUnitDisplayName(item.unit || findUnit(item.unit_id)) }} (S/N: {{ (item.unit || findUnit(item.unit_id))?.serial_no || '-' }})</span>
-                  <span v-else-if="item.product || findProduct(item.product_id)">Consumable / Sparepart: {{ formatProductDisplayName(item.product || findProduct(item.product_id)) }}</span>
+                <strong
+                  style="
+                    font-size: 1.05em;
+                    display: block;
+                    color: var(--color-text);
+                  "
+                >
+                  <span v-if="item.unit || findUnit(item.unit_id)"
+                    >Unit:
+                    {{
+                      formatUnitDisplayName(item.unit || findUnit(item.unit_id))
+                    }}
+                    (S/N:
+                    {{
+                      (item.unit || findUnit(item.unit_id))?.serial_no || "-"
+                    }})</span
+                  >
+                  <span v-else-if="item.product || findProduct(item.product_id)"
+                    >Consumable / Sparepart:
+                    {{
+                      formatProductDisplayName(
+                        item.product || findProduct(item.product_id),
+                      )
+                    }}</span
+                  >
                   <span v-else>Item (Unknown)</span>
                 </strong>
-                <span v-if="item.placement_location" style="font-size: 0.85em; color: var(--color-text-secondary); display: inline-block; margin-top: 4px; padding: 2px 6px; background: var(--color-surface); border-radius: 4px; border: 1px solid var(--color-border-light);">
+                <span
+                  v-if="item.placement_location"
+                  style="
+                    font-size: 0.85em;
+                    color: var(--color-text-secondary);
+                    display: inline-block;
+                    margin-top: 4px;
+                    padding: 2px 6px;
+                    background: var(--color-surface);
+                    border-radius: 4px;
+                    border: 1px solid var(--color-border-light);
+                  "
+                >
                   📍 {{ item.placement_location }}
                 </span>
               </div>
-              <div style="text-align: right;">
-                <div style="font-weight: 500; color: var(--color-primary);">Qty: {{ item.qty }}</div>
-                <div v-if="canSeeAmount" style="font-size: 0.9em; color: var(--color-text-secondary);">{{ formatRupiah(item.monthly_rent) }} / mo</div>
-              </div>
-            </div>
-            
-            <div style="display: flex; gap: 24px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border-light);">
-              <div v-if="item.start_meter_bw > 0 || item.start_meter_color > 0">
-                <span style="font-size: 0.85em; color: var(--color-text-secondary); display: block; margin-bottom: 2px;">Starting Meter</span>
-                <div style="font-size: 0.9em; font-weight: 500;">
-                  <span v-if="item.start_meter_bw > 0">BW: {{ item.start_meter_bw.toLocaleString('id-ID') }}</span>
-                  <span v-if="item.start_meter_bw > 0 && item.start_meter_color > 0"> | </span>
-                  <span v-if="item.start_meter_color > 0">Color: {{ item.start_meter_color.toLocaleString('id-ID') }}</span>
+              <div style="text-align: right">
+                <div style="font-weight: 500; color: var(--color-primary)">
+                  Qty: {{ item.qty }}
                 </div>
-              </div>
-              <div v-if="item.free_quota_bw > 0 || item.free_quota_color > 0">
-                <span style="font-size: 0.85em; color: var(--color-text-secondary); display: block; margin-bottom: 2px;">Free Quota (mo)</span>
-                <div style="font-size: 0.9em; font-weight: 500;">
-                  <span v-if="item.free_quota_bw > 0">BW: {{ item.free_quota_bw.toLocaleString('id-ID') }}</span>
-                  <span v-if="item.free_quota_bw > 0 && item.free_quota_color > 0"> | </span>
-                  <span v-if="item.free_quota_color > 0">Color: {{ item.free_quota_color.toLocaleString('id-ID') }}</span>
+                <div
+                  v-if="canSeeAmount"
+                  style="font-size: 0.9em; color: var(--color-text-secondary)"
+                >
+                  {{ formatRupiah(item.monthly_rent) }} / mo
                 </div>
               </div>
             </div>
 
-            <div v-if="item.rates && item.rates.length > 0" style="margin-top: 12px; padding: 8px; background: var(--color-surface); border-radius: 6px; border: 1px solid var(--color-border-light);">
-              <span style="font-size: 0.85em; font-weight: 600; color: var(--color-text-secondary); display: block; margin-bottom: 4px; text-transform: uppercase;">Rates</span>
-              <div style="display: grid; gap: 4px;">
-                <div v-for="rate in item.rates" :key="rate.id" style="font-size: 0.85em; display: flex; justify-content: space-between;">
-                  <span>{{ rate.paper_size?.name || 'Any Size' }} ({{ rate.paper_type?.name || 'Any Type' }})</span>
-                  <span style="font-weight: 500;">
-                    <span v-if="rate.rate_per_page_bw > 0">BW: {{ formatRupiah(rate.rate_per_page_bw) }}</span>
-                    <span v-if="rate.rate_per_page_bw > 0 && rate.rate_per_page_color > 0"> | </span>
-                    <span v-if="rate.rate_per_page_color > 0">Color: {{ formatRupiah(rate.rate_per_page_color) }}</span>
+            <div
+              style="
+                display: flex;
+                gap: 24px;
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px solid var(--color-border-light);
+              "
+            >
+              <div v-if="item.start_meter_bw > 0 || item.start_meter_color > 0">
+                <span
+                  style="
+                    font-size: 0.85em;
+                    color: var(--color-text-secondary);
+                    display: block;
+                    margin-bottom: 2px;
+                  "
+                  >Starting Meter</span
+                >
+                <div style="font-size: 0.9em; font-weight: 500">
+                  <span v-if="item.start_meter_bw > 0"
+                    >BW: {{ item.start_meter_bw.toLocaleString("id-ID") }}</span
+                  >
+                  <span
+                    v-if="item.start_meter_bw > 0 && item.start_meter_color > 0"
+                  >
+                    |
+                  </span>
+                  <span v-if="item.start_meter_color > 0"
+                    >Color:
+                    {{ item.start_meter_color.toLocaleString("id-ID") }}</span
+                  >
+                </div>
+              </div>
+              <div v-if="item.free_quota_bw > 0 || item.free_quota_color > 0">
+                <span
+                  style="
+                    font-size: 0.85em;
+                    color: var(--color-text-secondary);
+                    display: block;
+                    margin-bottom: 2px;
+                  "
+                  >Free Quota (mo)</span
+                >
+                <div style="font-size: 0.9em; font-weight: 500">
+                  <span v-if="item.free_quota_bw > 0"
+                    >BW: {{ item.free_quota_bw.toLocaleString("id-ID") }}</span
+                  >
+                  <span
+                    v-if="item.free_quota_bw > 0 && item.free_quota_color > 0"
+                  >
+                    |
+                  </span>
+                  <span v-if="item.free_quota_color > 0"
+                    >Color:
+                    {{ item.free_quota_color.toLocaleString("id-ID") }}</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="item.rates && item.rates.length > 0"
+              style="
+                margin-top: 12px;
+                padding: 8px;
+                background: var(--color-surface);
+                border-radius: 6px;
+                border: 1px solid var(--color-border-light);
+              "
+            >
+              <span
+                style="
+                  font-size: 0.85em;
+                  font-weight: 600;
+                  color: var(--color-text-secondary);
+                  display: block;
+                  margin-bottom: 4px;
+                  text-transform: uppercase;
+                "
+                >Rates</span
+              >
+              <div style="display: grid; gap: 4px">
+                <div
+                  v-for="rate in item.rates"
+                  :key="rate.id"
+                  style="
+                    font-size: 0.85em;
+                    display: flex;
+                    justify-content: space-between;
+                  "
+                >
+                  <span
+                    >{{ rate.paper_size?.name || "Any Size" }} ({{
+                      rate.paper_type?.name || "Any Type"
+                    }})</span
+                  >
+                  <span style="font-weight: 500">
+                    <span v-if="rate.rate_per_page_bw > 0"
+                      >BW: {{ formatRupiah(rate.rate_per_page_bw) }}</span
+                    >
+                    <span
+                      v-if="
+                        rate.rate_per_page_bw > 0 &&
+                        rate.rate_per_page_color > 0
+                      "
+                    >
+                      |
+                    </span>
+                    <span v-if="rate.rate_per_page_color > 0"
+                      >Color: {{ formatRupiah(rate.rate_per_page_color) }}</span
+                    >
                   </span>
                 </div>
               </div>
             </div>
-            
-            <div v-if="item.description" style="font-size: 0.9em; color: var(--color-text-secondary); margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--color-border-light);">
-              <strong style="display: block; font-size: 0.9em; margin-bottom: 4px;">Description / Specs:</strong>
-              <div style="white-space: pre-wrap;">{{ item.description }}</div>
+
+            <div
+              v-if="item.description"
+              style="
+                font-size: 0.9em;
+                color: var(--color-text-secondary);
+                margin-top: 12px;
+                padding-top: 8px;
+                border-top: 1px solid var(--color-border-light);
+              "
+            >
+              <strong
+                style="display: block; font-size: 0.9em; margin-bottom: 4px"
+                >Description / Specs:</strong
+              >
+              <div style="white-space: pre-wrap">{{ item.description }}</div>
             </div>
           </div>
         </div>
 
-        <div v-if="canSeeAmount" style="margin-top: 1rem; padding: 16px; background: var(--color-surface-hover); border-radius: 8px;">
-          <div style="display: flex; justify-content: flex-end; gap: 32px; font-size: 0.95em;">
-            <div style="text-align: right;">
-              <div style="color: var(--color-text-secondary); margin-bottom: 4px;">Subtotal</div>
-              <div style="color: var(--color-text-secondary); margin-bottom: 4px;">Tax (11%)</div>
-              <div v-if="detailRental.deposit > 0" style="color: var(--color-text-secondary); margin-bottom: 4px;">Deposit</div>
-              <div style="font-weight: 600; color: var(--color-text); margin-top: 8px; font-size: 1.1em;">Total / Month</div>
+        <div
+          v-if="canSeeAmount"
+          style="
+            margin-top: 1rem;
+            padding: 16px;
+            background: var(--color-surface-hover);
+            border-radius: 8px;
+          "
+        >
+          <div
+            style="
+              display: flex;
+              justify-content: flex-end;
+              gap: 32px;
+              font-size: 0.95em;
+            "
+          >
+            <div style="text-align: right">
+              <div
+                style="color: var(--color-text-secondary); margin-bottom: 4px"
+              >
+                Subtotal
+              </div>
+              <div
+                style="color: var(--color-text-secondary); margin-bottom: 4px"
+              >
+                Tax (11%)
+              </div>
+              <div
+                v-if="detailRental.deposit > 0"
+                style="color: var(--color-text-secondary); margin-bottom: 4px"
+              >
+                Deposit
+              </div>
+              <div
+                style="
+                  font-weight: 600;
+                  color: var(--color-text);
+                  margin-top: 8px;
+                  font-size: 1.1em;
+                "
+              >
+                Total / Month
+              </div>
             </div>
-            <div style="text-align: right; font-weight: 500;">
-              <div style="margin-bottom: 4px;">{{ formatRupiah(detailRental.subtotal) }}</div>
-              <div style="margin-bottom: 4px;">{{ formatRupiah(detailRental.tax) }}</div>
-              <div v-if="detailRental.deposit > 0" style="margin-bottom: 4px;">{{ formatRupiah(detailRental.deposit) }}</div>
-              <div style="color: var(--color-primary); margin-top: 8px; font-size: 1.1em; font-weight: 700;">{{ formatRupiah(detailRental.total) }}</div>
+            <div style="text-align: right; font-weight: 500">
+              <div style="margin-bottom: 4px">
+                {{ formatRupiah(detailRental.subtotal) }}
+              </div>
+              <div style="margin-bottom: 4px">
+                {{ formatRupiah(detailRental.tax) }}
+              </div>
+              <div v-if="detailRental.deposit > 0" style="margin-bottom: 4px">
+                {{ formatRupiah(detailRental.deposit) }}
+              </div>
+              <div
+                style="
+                  color: var(--color-primary);
+                  margin-top: 8px;
+                  font-size: 1.1em;
+                  font-weight: 700;
+                "
+              >
+                {{ formatRupiah(detailRental.total) }}
+              </div>
             </div>
           </div>
         </div>
       </div>
       <template #footer>
         <button
-          v-if="can('rental:update') && detailRental && !hasActiveRentalDO(detailRental)"
+          v-if="
+            can('rental:update') &&
+            detailRental &&
+            !hasActiveRentalDO(detailRental)
+          "
           type="button"
           class="btn btn-warning"
-          style="background: #e67e22; color: #fff;"
+          style="background: #e67e22; color: #fff"
           @click="openCreateRentalDOModal(detailRental)"
         >
           🚚 Buat Surat Jalan (DO)
@@ -2077,11 +2985,18 @@ function isExpired(row: any): boolean {
           ✅ DO: {{ getRentalDONumber(detailRental) }}
         </button>
         <button
-          v-if="can('rental:update') && detailRental && detailRental.status !== 'cancelled'"
+          v-if="
+            can('rental:update') &&
+            detailRental &&
+            detailRental.status !== 'cancelled'
+          "
           type="button"
           class="btn btn-outline"
-          style="color: #2563eb; border-color: #2563eb;"
-          @click="showDetailModal = false; openExtendModal(detailRental)"
+          style="color: #2563eb; border-color: #2563eb"
+          @click="
+            showDetailModal = false;
+            openExtendModal(detailRental);
+          "
         >
           🔄 Perpanjang Kontrak
         </button>
@@ -2089,11 +3004,20 @@ function isExpired(row: any): boolean {
           v-if="can('rental:update') && detailRental"
           type="button"
           class="btn btn-primary"
-          @click="showDetailModal = false; openEdit(detailRental)"
+          @click="
+            showDetailModal = false;
+            openEdit(detailRental);
+          "
         >
           Edit Rental
         </button>
-        <button type="button" class="btn btn-outline" @click="showDetailModal = false">Close</button>
+        <button
+          type="button"
+          class="btn btn-outline"
+          @click="showDetailModal = false"
+        >
+          Close
+        </button>
       </template>
     </FormModal>
 
@@ -2183,7 +3107,11 @@ function isExpired(row: any): boolean {
               title="Lihat detail invoice items"
               @click="toggleInvoiceItems(invoice)"
             >
-              {{ isExpanded(invoice) ? 'Tutup Items' : `Detail Items (${meterCount(invoice)})` }}
+              {{
+                isExpanded(invoice)
+                  ? "Tutup Items"
+                  : `Detail Items (${meterCount(invoice)})`
+              }}
             </button>
             <button
               v-for="payment in approvedPayments(invoice)"
@@ -2218,7 +3146,7 @@ function isExpired(row: any): boolean {
             </button>
           </div>
           <div v-if="isExpanded(invoice)" class="rental-invoice-items">
-            <div style="overflow-x: auto;">
+            <div style="overflow-x: auto">
               <table class="meter-table">
                 <thead>
                   <tr>
@@ -2231,30 +3159,89 @@ function isExpired(row: any): boolean {
                 </thead>
                 <tbody>
                   <tr v-if="meterCount(invoice) === 0">
-                    <td :colspan="canSeeAmount ? 5 : 4" class="empty-cell">Tidak ada detail items untuk invoice ini.</td>
+                    <td :colspan="canSeeAmount ? 5 : 4" class="empty-cell">
+                      Tidak ada detail items untuk invoice ini.
+                    </td>
                   </tr>
-                  <tr v-for="(md, mdIdx) in meterDetailsOf(invoice)" :key="md.id || mdIdx" class="meter-row">
+                  <tr
+                    v-for="(md, mdIdx) in meterDetailsOf(invoice)"
+                    :key="md.id || mdIdx"
+                    class="meter-row"
+                  >
                     <td class="cell-no">{{ mdIdx + 1 }}</td>
                     <td class="cell-paper">
-                      <span class="paper-badge">{{ meterPaperSizeName(md) }}</span>
-                      <span class="color-pill" :class="isColorDetail(md) ? 'is-color' : 'is-bw'">{{ colorModeLabel(md) }}</span>
+                      <span class="paper-badge">{{
+                        meterPaperSizeName(md)
+                      }}</span>
+                      <span
+                        class="color-pill"
+                        :class="isColorDetail(md) ? 'is-color' : 'is-bw'"
+                        >{{ colorModeLabel(md) }}</span
+                      >
                     </td>
                     <td class="cell-meter">
-                      <div class="meter-range">{{ (md.start_meter_reading || 0).toLocaleString('id-ID') }} → {{ (md.last_meter_reading || 0).toLocaleString('id-ID') }}</div>
-                      <div class="meter-sub">Billable {{ (md.billable_copies ?? 0).toLocaleString('id-ID') }} · Free {{ (md.free_quota ?? 0) === 0 ? '-' : (md.free_quota ?? 0).toLocaleString('id-ID') }} ({{ colorModeLabel(md) }})</div>
+                      <div class="meter-range">
+                        {{
+                          (md.start_meter_reading || 0).toLocaleString("id-ID")
+                        }}
+                        →
+                        {{
+                          (md.last_meter_reading || 0).toLocaleString("id-ID")
+                        }}
+                      </div>
+                      <div class="meter-sub">
+                        Billable
+                        {{ (md.billable_copies ?? 0).toLocaleString("id-ID") }}
+                        · Free
+                        {{
+                          (md.free_quota ?? 0) === 0
+                            ? "-"
+                            : (md.free_quota ?? 0).toLocaleString("id-ID")
+                        }}
+                        ({{ colorModeLabel(md) }})
+                      </div>
                     </td>
-                    <td v-if="canSeeAmount" class="cell-amount" :class="{ 'is-zero': !(md.total_amount > 0) }">{{ formatRupiah(md.total_amount || 0) }}</td>
+                    <td
+                      v-if="canSeeAmount"
+                      class="cell-amount"
+                      :class="{ 'is-zero': !(md.total_amount > 0) }"
+                    >
+                      {{ formatRupiah(md.total_amount || 0) }}
+                    </td>
                     <td class="cell-aksi">
-                      <button type="button" class="action-btn action-btn--edit meter-eye" title="Lihat detail item" @click="openMeterDetail(md)">
-                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      <button
+                        type="button"
+                        class="action-btn action-btn--edit meter-eye"
+                        title="Lihat detail item"
+                        @click="openMeterDetail(md)"
+                      >
+                        <svg
+                          width="17"
+                          height="17"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path
+                            d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                          ></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
                       </button>
                     </td>
                   </tr>
                 </tbody>
                 <tfoot v-if="canSeeAmount && meterCount(invoice) > 0">
                   <tr>
-                    <td colspan="3" class="total-label">Total ({{ meterCount(invoice) }} items)</td>
-                    <td class="total-value">{{ formatRupiah(invoiceItemsTotal(invoice)) }}</td>
+                    <td colspan="3" class="total-label">
+                      Total ({{ meterCount(invoice) }} items)
+                    </td>
+                    <td class="total-value">
+                      {{ formatRupiah(invoiceItemsTotal(invoice)) }}
+                    </td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -2297,50 +3284,88 @@ function isExpired(row: any): boolean {
 
     <FormModal
       :open="showMeterDetail"
-      :title="selectedMeterDetail ? `Detail Item — ${meterPaperSizeName(selectedMeterDetail)} / ${selectedMeterDetail.color_mode || '-'}` : 'Detail Item'"
+      :title="
+        selectedMeterDetail
+          ? `Detail Item — ${meterPaperSizeName(selectedMeterDetail)} / ${selectedMeterDetail.color_mode || '-'}`
+          : 'Detail Item'
+      "
       max-width="520px"
       @close="closeMeterDetail"
     >
       <template v-if="selectedMeterDetail">
         <div class="meter-detail-head">
-          <span class="paper-badge">{{ meterPaperSizeName(selectedMeterDetail) }}</span>
-          <span class="color-pill" :class="isColorDetail(selectedMeterDetail) ? 'is-color' : 'is-bw'">{{ colorModeLabel(selectedMeterDetail) }}</span>
-          <span v-if="meterPaperTypeName(selectedMeterDetail) !== '-'" class="paper-type-text">{{ meterPaperTypeName(selectedMeterDetail) }}</span>
+          <span class="paper-badge">{{
+            meterPaperSizeName(selectedMeterDetail)
+          }}</span>
+          <span
+            class="color-pill"
+            :class="isColorDetail(selectedMeterDetail) ? 'is-color' : 'is-bw'"
+            >{{ colorModeLabel(selectedMeterDetail) }}</span
+          >
+          <span
+            v-if="meterPaperTypeName(selectedMeterDetail) !== '-'"
+            class="paper-type-text"
+            >{{ meterPaperTypeName(selectedMeterDetail) }}</span
+          >
         </div>
         <div class="meter-stat-grid">
           <div class="meter-stat">
             <span class="meter-stat-label">Start Meter</span>
-            <span class="meter-stat-value">{{ (selectedMeterDetail.start_meter_reading || 0).toLocaleString('id-ID') }}</span>
+            <span class="meter-stat-value">{{
+              (selectedMeterDetail.start_meter_reading || 0).toLocaleString(
+                "id-ID",
+              )
+            }}</span>
           </div>
           <div class="meter-stat">
             <span class="meter-stat-label">Last Meter</span>
-            <span class="meter-stat-value">{{ (selectedMeterDetail.last_meter_reading || 0).toLocaleString('id-ID') }}</span>
+            <span class="meter-stat-value">{{
+              (selectedMeterDetail.last_meter_reading || 0).toLocaleString(
+                "id-ID",
+              )
+            }}</span>
           </div>
           <div class="meter-stat">
             <span class="meter-stat-label">Total Copies</span>
-            <span class="meter-stat-value">{{ (selectedMeterDetail.total_copies ?? 0).toLocaleString('id-ID') }}</span>
+            <span class="meter-stat-value">{{
+              (selectedMeterDetail.total_copies ?? 0).toLocaleString("id-ID")
+            }}</span>
           </div>
           <div class="meter-stat">
-            <span class="meter-stat-label">Free Quota ({{ colorModeLabel(selectedMeterDetail) }})</span>
-            <span class="meter-stat-value">{{ (selectedMeterDetail.free_quota ?? 0).toLocaleString('id-ID') }}</span>
+            <span class="meter-stat-label"
+              >Free Quota ({{ colorModeLabel(selectedMeterDetail) }})</span
+            >
+            <span class="meter-stat-value">{{
+              (selectedMeterDetail.free_quota ?? 0).toLocaleString("id-ID")
+            }}</span>
           </div>
           <div class="meter-stat highlight">
             <span class="meter-stat-label">Billable</span>
-            <span class="meter-stat-value">{{ (selectedMeterDetail.billable_copies ?? 0).toLocaleString('id-ID') }}</span>
+            <span class="meter-stat-value">{{
+              (selectedMeterDetail.billable_copies ?? 0).toLocaleString("id-ID")
+            }}</span>
           </div>
           <div v-if="canSeeAmount" class="meter-stat">
             <span class="meter-stat-label">Rate / Page</span>
-            <span class="meter-stat-value">{{ formatRupiah(selectedMeterDetail.rate_per_page || 0) }}</span>
+            <span class="meter-stat-value">{{
+              formatRupiah(selectedMeterDetail.rate_per_page || 0)
+            }}</span>
           </div>
         </div>
-        <div class="meter-formula-hint">{{ meterFormulaHint(selectedMeterDetail) }}</div>
+        <div class="meter-formula-hint">
+          {{ meterFormulaHint(selectedMeterDetail) }}
+        </div>
         <div v-if="canSeeAmount" class="meter-detail-total">
           <span>Total Amount</span>
-          <strong>{{ formatRupiah(selectedMeterDetail.total_amount || 0) }}</strong>
+          <strong>{{
+            formatRupiah(selectedMeterDetail.total_amount || 0)
+          }}</strong>
         </div>
       </template>
       <template #footer>
-        <button type="button" class="btn btn-outline" @click="closeMeterDetail">Close</button>
+        <button type="button" class="btn btn-outline" @click="closeMeterDetail">
+          Close
+        </button>
       </template>
     </FormModal>
 
@@ -2363,7 +3388,11 @@ function isExpired(row: any): boolean {
       </div>
       <div class="form-group">
         <label class="form-label">Payment Method</label>
-        <CustomSelect v-model="paymentForm.payment_method" :options="rentPaymentMethodOptions" class="form-select" />
+        <CustomSelect
+          v-model="paymentForm.payment_method"
+          :options="rentPaymentMethodOptions"
+          class="form-select"
+        />
       </div>
       <template v-if="paymentForm.payment_method === 'transfer'">
         <div class="form-group">
@@ -2403,7 +3432,7 @@ function isExpired(row: any): boolean {
           class="form-input"
           readonly
           title="Otomatis dari total invoice"
-          style="background: var(--color-surface-raised); cursor: not-allowed;"
+          style="background: var(--color-surface-raised); cursor: not-allowed"
         />
       </div>
       <div class="form-group">
@@ -2437,7 +3466,11 @@ function isExpired(row: any): boolean {
 
     <FormModal
       :open="showModal"
-      :title="editingRental ? ('Edit Rental - ' + (editingRental.rental_no || '')) : t('rentals.modal_title')"
+      :title="
+        editingRental
+          ? 'Edit Rental - ' + (editingRental.rental_no || '')
+          : t('rentals.modal_title')
+      "
       :submit-label="editingRental ? 'Simpan Perubahan' : undefined"
       @close="showModal = false"
       @submit="handleSubmit"
@@ -2495,7 +3528,9 @@ function isExpired(row: any): boolean {
           />
         </div>
         <div class="form-group">
-          <label for="billing-day" class="form-label">Tanggal Penagihan Bulanan (Opsional)</label>
+          <label for="billing-day" class="form-label"
+            >Tanggal Penagihan Bulanan (Opsional)</label
+          >
           <input
             id="billing-day"
             v-model.number="form.billing_day"
@@ -2505,7 +3540,7 @@ function isExpired(row: any): boolean {
             class="form-input"
             placeholder="Contoh: 15 (default: tgl 1 atau tgl mulai sewa)"
           />
-          <small class="text-muted" style="font-size: 0.73rem;">
+          <small class="text-muted" style="font-size: 0.73rem">
             Khusus unit non-meter reading / tanggal custom (1–31).
           </small>
         </div>
@@ -2557,17 +3592,35 @@ function isExpired(row: any): boolean {
       </div>
 
       <div class="form-group" style="margin-bottom: var(--space-md)">
-        <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+        <label
+          class="form-label"
+          style="display: flex; align-items: center; gap: 8px"
+        >
           <input type="checkbox" v-model="form.is_new" />
           isNew (rental baru)
         </label>
       </div>
 
-      <div v-if="!form.is_new" class="form-group" style="margin-bottom: var(--space-md)">
+      <div
+        v-if="!form.is_new"
+        class="form-group"
+        style="margin-bottom: var(--space-md)"
+      >
         <label class="form-label">Assign Teknisi (draft visit copier)</label>
-        <CustomSelect v-model="form.technician_id" :options="technicianOptions" placeholder="-- Pilih Teknisi (Opsional) --" />
-        <p style="font-size: 0.75rem; color: var(--color-text-muted); margin-top: 4px;">
-          Untuk rental yang sudah berjalan sebelum sistem: assign teknisi langsung ke draft visit copier.
+        <CustomSelect
+          v-model="form.technician_id"
+          :options="technicianOptions"
+          placeholder="-- Pilih Teknisi (Opsional) --"
+        />
+        <p
+          style="
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            margin-top: 4px;
+          "
+        >
+          Untuk rental yang sudah berjalan sebelum sistem: assign teknisi
+          langsung ke draft visit copier.
         </p>
       </div>
 
@@ -2587,7 +3640,9 @@ function isExpired(row: any): boolean {
             class="form-input"
             @change="onItemModeChange(item)"
           >
-            <option value="existing">Pilih dari Inventaris (Unit / Produk)</option>
+            <option value="existing">
+              Pilih dari Inventaris (Unit / Produk)
+            </option>
             <option value="unit">Input Unit / Mesin Baru</option>
           </select>
         </div>
@@ -2597,7 +3652,9 @@ function isExpired(row: any): boolean {
           class="form-group"
           style="margin-bottom: var(--space-md)"
         >
-          <label class="form-label">Select Item (Unit / Mesin or Consumable / Sparepart)</label>
+          <label class="form-label"
+            >Select Item (Unit / Mesin or Consumable / Sparepart)</label
+          >
           <CustomSelect
             v-model="item.selected_item"
             :options="rentUnitOptions"
@@ -2609,45 +3666,59 @@ function isExpired(row: any): boolean {
 
         <div
           v-if="item.create_mode === 'unit'"
-          style="margin-bottom: var(--space-md); padding: 10px; border: 1px dashed var(--color-border-light); border-radius: 8px;"
+          style="
+            margin-bottom: var(--space-md);
+            padding: 10px;
+            border: 1px dashed var(--color-border-light);
+            border-radius: 8px;
+          "
         >
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Brand</label>
-              <select v-model="item.new_unit.brand_id" class="form-input" required>
+              <select
+                v-model="item.new_unit.brand_id"
+                class="form-input"
+                required
+              >
                 <option value="">-- Brand --</option>
-                <option
-                  v-for="b in (brands as any)"
-                  :key="b.id"
-                  :value="b.id"
-                >
+                <option v-for="b in brands as any" :key="b.id" :value="b.id">
                   {{ b.name }}
                 </option>
               </select>
             </div>
             <div class="form-group">
               <label class="form-label">Tipe Unit</label>
-              <select v-model="item.new_unit.type_id" class="form-input" required>
+              <select
+                v-model="item.new_unit.type_id"
+                class="form-input"
+                required
+              >
                 <option value="">-- Tipe --</option>
-                <option
-                  v-for="t in (unitTypes as any)"
-                  :key="t.id"
-                  :value="t.id"
-                >
+                <option v-for="t in unitTypes as any" :key="t.id" :value="t.id">
                   {{ t.name }}
                 </option>
               </select>
             </div>
           </div>
           <div
-            v-if="isUnitPrinterOrCopier(item.new_unit.type_id, item.new_unit.is_copier)"
+            v-if="
+              isUnitPrinterOrCopier(
+                item.new_unit.type_id,
+                item.new_unit.is_copier,
+              )
+            "
             class="form-group"
             style="margin-bottom: var(--space-md)"
           >
             <label class="form-label">
               Kategori Cetak (Laser / Inject) <span class="text-danger">*</span>
             </label>
-            <select v-model="item.new_unit.print_tech" class="form-input" required>
+            <select
+              v-model="item.new_unit.print_tech"
+              class="form-input"
+              required
+            >
               <option value="">-- Pilih Laser atau Inject --</option>
               <option value="Laser">Laser</option>
               <option value="Inject">Inject</option>
@@ -2667,16 +3738,27 @@ function isExpired(row: any): boolean {
               <label class="form-label">Serial No (SN)</label>
               <input
                 v-model="item.new_unit.serial_no"
-                @input="item.new_unit.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()"
+                @input="
+                  item.new_unit.serial_no = (
+                    $event.target as HTMLInputElement
+                  ).value.toUpperCase()
+                "
                 type="text"
                 class="form-input"
                 required
-                style="text-transform: uppercase;"
+                style="text-transform: uppercase"
               />
             </div>
           </div>
           <div class="form-group" style="margin-bottom: var(--space-md)">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <label
+              style="
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                cursor: pointer;
+              "
+            >
               <input
                 v-model="item.new_unit.is_copier"
                 type="checkbox"
@@ -2685,10 +3767,7 @@ function isExpired(row: any): boolean {
               <span>Copier Machine (perlu meter awal)</span>
             </label>
           </div>
-          <div
-            v-if="item.new_unit.is_copier"
-            class="form-row"
-          >
+          <div v-if="item.new_unit.is_copier" class="form-row">
             <div class="form-group">
               <label class="form-label">Current Meter BW</label>
               <input
@@ -2712,7 +3791,12 @@ function isExpired(row: any): boolean {
 
         <div
           v-if="item.create_mode === 'product'"
-          style="margin-bottom: var(--space-md); padding: 10px; border: 1px dashed var(--color-border-light); border-radius: 8px;"
+          style="
+            margin-bottom: var(--space-md);
+            padding: 10px;
+            border: 1px dashed var(--color-border-light);
+            border-radius: 8px;
+          "
         >
           <div class="form-group">
             <label class="form-label">Nama Produk</label>
@@ -2764,7 +3848,15 @@ function isExpired(row: any): boolean {
               />
             </div>
             <div class="form-group">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 24px;">
+              <label
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  cursor: pointer;
+                  margin-top: 24px;
+                "
+              >
                 <input
                   v-model="item.new_product.is_computer"
                   type="checkbox"
@@ -2805,7 +3897,8 @@ function isExpired(row: any): boolean {
               font-weight: var(--font-weight-bold);
             "
           >
-            Check if this item is a Copier Machine (Requires Initial Meter Input)
+            Check if this item is a Copier Machine (Requires Initial Meter
+            Input)
           </label>
         </div>
 
@@ -3172,21 +4265,60 @@ function isExpired(row: any): boolean {
       max-width="640px"
       :submit-label="isSubmittingDO ? 'Membuat DO...' : 'Buat Surat Jalan (DO)'"
       :is-loading="isSubmittingDO"
-      @close="showCreateDOModal = false; targetRentalForDO = null;"
+      @close="
+        showCreateDOModal = false;
+        targetRentalForDO = null;
+      "
       @submit="submitCreateRentalDO"
     >
       <div v-if="targetRentalForDO">
-        <div style="background: var(--color-surface-sunken); padding: 12px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--color-border-light);">
-          <div style="font-weight: 600; color: var(--color-primary); margin-bottom: 4px;">
-            {{ targetRentalForDO.rental_no }} — {{ findCustomer(targetRentalForDO.customer_id)?.company_name || targetRentalForDO.customer?.company_name || 'Customer' }}
+        <div
+          style="
+            background: var(--color-surface-sunken);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            border: 1px solid var(--color-border-light);
+          "
+        >
+          <div
+            style="
+              font-weight: 600;
+              color: var(--color-primary);
+              margin-bottom: 4px;
+            "
+          >
+            {{ targetRentalForDO.rental_no }} —
+            {{
+              findCustomer(targetRentalForDO.customer_id)?.company_name ||
+              targetRentalForDO.customer?.company_name ||
+              "Customer"
+            }}
           </div>
-          <div style="font-size: 0.85rem; color: var(--color-text-muted);">
-            Periode: {{ targetRentalForDO.start_date ? new Date(targetRentalForDO.start_date).toLocaleDateString("en-GB") : '-' }} s/d {{ targetRentalForDO.end_date ? new Date(targetRentalForDO.end_date).toLocaleDateString("en-GB") : '-' }}
+          <div style="font-size: 0.85rem; color: var(--color-text-muted)">
+            Periode:
+            {{
+              targetRentalForDO.start_date
+                ? new Date(targetRentalForDO.start_date).toLocaleDateString(
+                    "en-GB",
+                  )
+                : "-"
+            }}
+            s/d
+            {{
+              targetRentalForDO.end_date
+                ? new Date(targetRentalForDO.end_date).toLocaleDateString(
+                    "en-GB",
+                  )
+                : "-"
+            }}
           </div>
         </div>
 
-        <div class="form-group" style="margin-bottom: 12px;">
-          <label class="form-label">Nomor DO (Opsional - Kosongkan untuk Auto-Generate)</label>
+        <div class="form-group" style="margin-bottom: 12px">
+          <label class="form-label"
+            >Nomor DO (Opsional - Kosongkan untuk Auto-Generate)</label
+          >
           <input
             v-model="doForm.do_number"
             type="text"
@@ -3195,7 +4327,7 @@ function isExpired(row: any): boolean {
           />
         </div>
 
-        <div class="form-group" style="margin-bottom: 12px;">
+        <div class="form-group" style="margin-bottom: 12px">
           <label class="form-label">Project Name</label>
           <input
             v-model="doForm.project_name"
@@ -3203,12 +4335,25 @@ function isExpired(row: any): boolean {
             class="form-input"
             placeholder="Pengantaran [Nama Produk/Unit] ke [Alamat Penerima]"
           />
-          <span class="form-hint" style="font-size: 0.8rem; color: var(--color-text-muted);">Otomatis: Pengantaran Nama Unit ke Alamat Penerima.</span>
+          <span
+            class="form-hint"
+            style="font-size: 0.8rem; color: var(--color-text-muted)"
+            >Otomatis: Pengantaran Nama Unit ke Alamat Penerima.</span
+          >
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+        <div
+          style="
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+          "
+        >
           <div class="form-group">
-            <label class="form-label">Tanggal Pengantaran <span class="text-danger">*</span></label>
+            <label class="form-label"
+              >Tanggal Pengantaran <span class="text-danger">*</span></label
+            >
             <input
               v-model="doForm.delivery_date"
               type="date"
@@ -3227,7 +4372,7 @@ function isExpired(row: any): boolean {
           </div>
         </div>
 
-        <div class="form-group" style="margin-bottom: 12px;">
+        <div class="form-group" style="margin-bottom: 12px">
           <label class="form-label">Nama Penerima / PIC</label>
           <input
             v-model="doForm.recipient_name"
@@ -3237,8 +4382,11 @@ function isExpired(row: any): boolean {
           />
         </div>
 
-        <div class="form-group" style="margin-bottom: 12px;">
-          <label class="form-label">Alamat Pengantaran / Lokasi Instalasi <span class="text-danger">*</span></label>
+        <div class="form-group" style="margin-bottom: 12px">
+          <label class="form-label"
+            >Alamat Pengantaran / Lokasi Instalasi
+            <span class="text-danger">*</span></label
+          >
           <textarea
             v-model="doForm.delivery_address"
             class="form-textarea"
@@ -3248,7 +4396,7 @@ function isExpired(row: any): boolean {
           ></textarea>
         </div>
 
-        <div class="form-group" style="margin-bottom: 12px;">
+        <div class="form-group" style="margin-bottom: 12px">
           <label class="form-label">Teknisi Pengantar (Opsional)</label>
           <CustomSelect
             v-model="doForm.technician_id"
@@ -3257,7 +4405,7 @@ function isExpired(row: any): boolean {
           />
         </div>
 
-        <div class="form-group" style="margin-bottom: 12px;">
+        <div class="form-group" style="margin-bottom: 12px">
           <label class="form-label">Catatan Pengantaran</label>
           <input
             v-model="doForm.notes"
@@ -3269,25 +4417,66 @@ function isExpired(row: any): boolean {
 
         <!-- Rented Units to Deliver Preview -->
         <div v-if="targetRentalForDO.rental_items?.length" class="form-group">
-          <label class="form-label" style="font-weight: 600;">Unit / Barang yang Akan Diantar ({{ targetRentalForDO.rental_items.length }})</label>
-          <div style="max-height: 140px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+          <label class="form-label" style="font-weight: 600"
+            >Unit / Barang yang Akan Diantar ({{
+              targetRentalForDO.rental_items.length
+            }})</label
+          >
+          <div
+            style="
+              max-height: 140px;
+              overflow-y: auto;
+              border: 1px solid var(--color-border);
+              border-radius: 6px;
+            "
+          >
+            <table
+              style="width: 100%; border-collapse: collapse; font-size: 0.85rem"
+            >
               <thead>
-                <tr style="background: var(--color-surface-sunken); text-align: left;">
-                  <th style="padding: 6px 10px;">Item / Unit</th>
-                  <th style="padding: 6px 10px; text-align: center;">Qty</th>
-                  <th style="padding: 6px 10px;">Lokasi / Penempatan</th>
+                <tr
+                  style="
+                    background: var(--color-surface-sunken);
+                    text-align: left;
+                  "
+                >
+                  <th style="padding: 6px 10px">Item / Unit</th>
+                  <th style="padding: 6px 10px; text-align: center">Qty</th>
+                  <th style="padding: 6px 10px">Lokasi / Penempatan</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(it, i) in targetRentalForDO.rental_items" :key="i" style="border-top: 1px solid var(--color-border-light);">
-                  <td style="padding: 6px 10px;">
-                    <span v-if="it.unit || findUnit(it.unit_id)">{{ formatUnitDisplayName(it.unit || findUnit(it.unit_id)) }} (SN: {{ (it.unit || findUnit(it.unit_id))?.serial_no || '-' }})</span>
-                    <span v-else-if="it.product || findProduct(it.product_id)">{{ formatProductDisplayName(it.product || findProduct(it.product_id)) }}</span>
+                <tr
+                  v-for="(it, i) in targetRentalForDO.rental_items"
+                  :key="i"
+                  style="border-top: 1px solid var(--color-border-light)"
+                >
+                  <td style="padding: 6px 10px">
+                    <span v-if="it.unit || findUnit(it.unit_id)"
+                      >{{
+                        formatUnitDisplayName(it.unit || findUnit(it.unit_id))
+                      }}
+                      (SN:
+                      {{
+                        (it.unit || findUnit(it.unit_id))?.serial_no || "-"
+                      }})</span
+                    >
+                    <span
+                      v-else-if="it.product || findProduct(it.product_id)"
+                      >{{
+                        formatProductDisplayName(
+                          it.product || findProduct(it.product_id),
+                        )
+                      }}</span
+                    >
                     <span v-else>Item</span>
                   </td>
-                  <td style="padding: 6px 10px; text-align: center;">{{ it.qty || 1 }}</td>
-                  <td style="padding: 6px 10px; color: var(--color-text-muted);">{{ it.placement_location || '-' }}</td>
+                  <td style="padding: 6px 10px; text-align: center">
+                    {{ it.qty || 1 }}
+                  </td>
+                  <td style="padding: 6px 10px; color: var(--color-text-muted)">
+                    {{ it.placement_location || "-" }}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -3303,25 +4492,64 @@ function isExpired(row: any): boolean {
       max-width="540px"
       submit-label="Konfirmasi Perpanjang"
       :is-loading="isSubmittingExtend"
-      @close="showExtendModal = false; extendingRental = null;"
+      @close="
+        showExtendModal = false;
+        extendingRental = null;
+      "
       @submit="submitExtendRental"
     >
       <div v-if="extendingRental">
-        <div style="background: var(--color-surface-sunken); padding: 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--color-border-light);">
-          <div style="font-weight: 600; color: var(--color-primary); margin-bottom: 4px; font-size: 1rem;">
-            {{ extendingRental.rental_no }} &mdash; {{ findCustomer(extendingRental.customer_id)?.company_name || extendingRental.customer?.company_name || 'Customer' }}
+        <div
+          style="
+            background: var(--color-surface-sunken);
+            padding: 14px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            border: 1px solid var(--color-border-light);
+          "
+        >
+          <div
+            style="
+              font-weight: 600;
+              color: var(--color-primary);
+              margin-bottom: 4px;
+              font-size: 1rem;
+            "
+          >
+            {{ extendingRental.rental_no }} &mdash;
+            {{
+              findCustomer(extendingRental.customer_id)?.company_name ||
+              extendingRental.customer?.company_name ||
+              "Customer"
+            }}
           </div>
-          <div style="font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 4px;">
-            Tanggal Selesai Saat Ini: <strong style="color: var(--color-text);">{{ extendingRental.end_date ? new Date(extendingRental.end_date).toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' }) : '-' }}</strong>
+          <div
+            style="
+              font-size: 0.85rem;
+              color: var(--color-text-secondary);
+              margin-bottom: 4px;
+            "
+          >
+            Tanggal Selesai Saat Ini:
+            <strong style="color: var(--color-text)">{{
+              extendingRental.end_date
+                ? new Date(extendingRental.end_date).toLocaleDateString(
+                    "en-GB",
+                    { day: "numeric", month: "long", year: "numeric" },
+                  )
+                : "-"
+            }}</strong>
           </div>
-          <div style="font-size: 0.85rem; color: var(--color-text-muted);">
+          <div style="font-size: 0.85rem; color: var(--color-text-muted)">
             Durasi Berjalan: {{ extendingRental.duration_months }} bulan
           </div>
         </div>
 
-        <div class="form-row" style="margin-bottom: 12px;">
+        <div class="form-row" style="margin-bottom: 12px">
           <div class="form-group">
-            <label class="form-label">Tambahan Bulan (Rekomendasi: 12 Bulan / 1 Tahun) *</label>
+            <label class="form-label"
+              >Tambahan Bulan (Rekomendasi: 12 Bulan / 1 Tahun) *</label
+            >
             <input
               v-model.number="extendForm.additional_months"
               type="number"
@@ -3341,17 +4569,43 @@ function isExpired(row: any): boolean {
           </div>
         </div>
 
-        <div style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
-          <div style="font-size: 0.85rem; color: var(--color-text-secondary); margin-bottom: 2px;">
+        <div
+          style="
+            background: rgba(37, 99, 235, 0.08);
+            border: 1px solid rgba(37, 99, 235, 0.25);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+          "
+        >
+          <div
+            style="
+              font-size: 0.85rem;
+              color: var(--color-text-secondary);
+              margin-bottom: 2px;
+            "
+          >
             Pratinjau Tanggal Selesai Baru:
           </div>
-          <div style="font-size: 1.05rem; font-weight: 700; color: #1d4ed8;">
+          <div style="font-size: 1.05rem; font-weight: 700; color: #1d4ed8">
             📅 {{ computedNewEndDate }}
           </div>
         </div>
 
-        <p style="font-size: 0.8rem; color: var(--color-text-muted); line-height: 1.4; margin: 0;">
-          💡 <em>Invoice bulanan untuk masa perpanjangan akan otomatis diterbitkan terjadwal, dan kontrak terkait ikut diperpanjang masa berlakunya.</em>
+        <p
+          style="
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+            line-height: 1.4;
+            margin: 0;
+          "
+        >
+          💡
+          <em
+            >Invoice bulanan untuk masa perpanjangan akan otomatis diterbitkan
+            terjadwal, dan kontrak terkait ikut diperpanjang masa
+            berlakunya.</em
+          >
         </p>
       </div>
     </FormModal>
@@ -3359,6 +4613,93 @@ function isExpired(row: any): boolean {
 </template>
 
 <style scoped>
+.report-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 0 0 20px;
+  padding: 16px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+}
+.report-filters {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+.report-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.report-filter-customer {
+  width: min(240px, 100%);
+}
+.report-filter-month {
+  width: 160px;
+}
+.report-filter-year {
+  width: 120px;
+}
+.report-filter-date {
+  width: 160px;
+}
+.report-filter-label {
+  color: var(--color-text-muted, #64748b);
+  font-size: 11px;
+  font-weight: 600;
+}
+.report-filter :deep(.form-input),
+.report-filter > .form-input {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+.report-reset {
+  min-height: 40px;
+  white-space: nowrap;
+}
+.report-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 900px) {
+  .report-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .report-actions {
+    justify-content: flex-end;
+  }
+}
+@media (max-width: 560px) {
+  .report-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .report-filter-customer,
+  .report-filter-month,
+  .report-filter-year,
+  .report-filter-date {
+    width: auto;
+  }
+  .report-reset {
+    grid-column: 1 / -1;
+  }
+  .report-actions > .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3572,10 +4913,19 @@ function isExpired(row: any): boolean {
   white-space: nowrap;
 }
 
-.meter-table th.col-no { width: 44px; }
-.meter-table th.col-meter { text-align: right; }
-.meter-table th.col-amount { text-align: right; }
-.meter-table th.col-aksi { text-align: center; width: 60px; }
+.meter-table th.col-no {
+  width: 44px;
+}
+.meter-table th.col-meter {
+  text-align: right;
+}
+.meter-table th.col-amount {
+  text-align: right;
+}
+.meter-table th.col-aksi {
+  text-align: center;
+  width: 60px;
+}
 
 .meter-table td {
   padding: 10px 14px;
@@ -3634,7 +4984,9 @@ function isExpired(row: any): boolean {
   border: 1px solid #bfdbfe;
 }
 
-.cell-meter { text-align: right; }
+.cell-meter {
+  text-align: right;
+}
 .meter-range {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -3658,7 +5010,9 @@ function isExpired(row: any): boolean {
   color: var(--color-text-muted);
 }
 
-.cell-aksi { text-align: center; }
+.cell-aksi {
+  text-align: center;
+}
 .meter-eye {
   width: 32px;
   height: 32px;
@@ -3675,7 +5029,10 @@ function isExpired(row: any): boolean {
   border-top: 1px solid var(--color-border);
   font-weight: 700;
 }
-.total-label { text-align: right; color: var(--color-text-muted); }
+.total-label {
+  text-align: right;
+  color: var(--color-text-muted);
+}
 .total-value {
   text-align: right;
   font-variant-numeric: tabular-nums;

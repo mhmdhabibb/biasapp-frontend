@@ -1,50 +1,48 @@
 <script setup lang="ts">
 // @ts-nocheck
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import CustomSelect from '@/components/ui/CustomSelect.vue'
-import DataTable from '@/components/ui/DataTable.vue'
-import FormModal from '@/components/ui/FormModal.vue'
-import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
-import { useAuth } from '@/composables/useAuth'
-import { useHardDelete } from '@/composables/useHardDelete'
-import { useMasterStore } from '@/composables/useMasterStore'
-import { usePermission } from '@/composables/usePermission'
-import { useToast } from '@/composables/useToast'
-import { useResourcesStore } from '@/stores/resources.store'
-import { resources as resourceService } from '@/services/resource.service'
-import type { Sale, TableColumn } from '@/types'
-import { computed, reactive, ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { apiRequest } from '@/services/api'
-import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
-import { buildPaymentTimestamp } from '@/utils/paymentReceipt'
-import { normalizeRole } from '@/router/role-access'
-import html2pdf from 'html2pdf.js'
-import * as XLSX from 'xlsx'
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
+import DataTable from "@/components/ui/DataTable.vue";
+import FormModal from "@/components/ui/FormModal.vue";
+import HardDeleteDialog from "@/components/ui/HardDeleteDialog.vue";
+import PageHeader from "@/components/ui/PageHeader.vue";
+import { useAuth } from "@/composables/useAuth";
+import { useHardDelete } from "@/composables/useHardDelete";
+import { useMasterStore } from "@/composables/useMasterStore";
+import { usePermission } from "@/composables/usePermission";
+import { useToast } from "@/composables/useToast";
+import { useResourcesStore } from "@/stores/resources.store";
+import { resources as resourceService } from "@/services/resource.service";
+import type { Sale, TableColumn } from "@/types";
+import { computed, reactive, ref, onMounted, onUnmounted, watch } from "vue";
+import { useRoute } from "vue-router";
+import { apiRequest } from "@/services/api";
+import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import { buildPaymentTimestamp } from "@/utils/paymentReceipt";
+import { normalizeRole } from "@/router/role-access";
+import html2pdf from "html2pdf.js";
+import * as XLSX from "xlsx";
 
-const toast = useToast()
-const { can, isAdmin } = usePermission()
-const { currentUser } = useAuth()
+const toast = useToast();
+const { can, isAdmin } = usePermission();
+const { currentUser } = useAuth();
 
 // Helper untuk mengubah YYYY-MM-DD menjadi format ISO 8601 lengkap (misal: 2026-10-09T00:00:00Z)
 function formatToISO8601(dateStr: string): string {
-  if (!dateStr) return new Date().toISOString()
-  if (dateStr.includes('T')) return dateStr
-  return new Date(`${dateStr}T00:00:00Z`).toISOString()
+  if (!dateStr) return new Date().toISOString();
+  if (dateStr.includes("T")) return dateStr;
+  return new Date(`${dateStr}T00:00:00Z`).toISOString();
 }
 
 // CS tidak boleh melihat nominal pada detail item.
 const canSeeAmount = computed(() => {
-  if (isAdmin.value) return true
-  const role = normalizeRole(currentUser.value?.role)
-  return role === 'accounting' || role === 'admin'
-})
+  if (isAdmin.value) return true;
+  const role = normalizeRole(currentUser.value?.role);
+  return role === "accounting" || role === "admin";
+});
 
-const route = useRoute()
-const { ensureResourcesLoaded } = useMasterStore()
-
-
+const route = useRoute();
+const { ensureResourcesLoaded } = useMasterStore();
 
 const {
   sales: data,
@@ -58,127 +56,218 @@ const {
   findUnit,
   formatUnitDisplayName,
   formatProductDisplayName,
-} = useMasterStore()
+} = useMasterStore();
 
-const resources = useResourcesStore()
+const resources = useResourcesStore();
 
 const hardDelete = useHardDelete(
   (id, cascade) => resourceService.sales.hardRemove(id, cascade),
   () => useMasterStore().refreshInBackground(),
-  'sale:delete',
-)
+  "sale:delete",
+);
 
 const customerOptions = computed(() => [
-  { value: null, label: 'All Customers' },
+  { value: null, label: "All Customers" },
   ...(customers.value as any[]).map((c: any) => ({
     value: c.id,
-    label: `${c.company_name || c.name}${c.pic_name ? ' - ' + c.pic_name : ''}`,
-  }))
-])
+    label: `${c.company_name || c.name}${c.pic_name ? " - " + c.pic_name : ""}`,
+  })),
+]);
 
-const filterCustomer = ref<string | null>(null)
+const filterCustomer = ref<string | null>(null);
+const startDateFilter = ref<string>("");
+const endDateFilter = ref<string>("");
+const monthFilter = ref<string>("");
+const yearFilter = ref<string>("");
+
+const monthOptions = [
+  { value: "", label: "All Months" },
+  ...Array.from({ length: 12 }, (_, index) => ({
+    value: String(index + 1),
+    label: new Date(2000, index, 1).toLocaleDateString("en-US", {
+      month: "long",
+    }),
+  })),
+];
+
+const yearOptions = computed(() => {
+  const years = new Set<number>([new Date().getFullYear()]);
+  (data.value || []).forEach((sale: any) => {
+    const date = new Date(sale.sale_date || sale.date || "");
+    if (!Number.isNaN(date.getTime())) years.add(date.getFullYear());
+  });
+  return [
+    { value: "", label: "All Years" },
+    ...Array.from(years)
+      .sort((a, b) => b - a)
+      .map((year) => ({ value: String(year), label: String(year) })),
+  ];
+});
+
+function matchesDateRange(value: any): boolean {
+  if (!value) return !startDateFilter.value && !endDateFilter.value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const isoDate = date.toISOString().slice(0, 10);
+  if (startDateFilter.value && isoDate < startDateFilter.value) return false;
+  if (endDateFilter.value && isoDate > endDateFilter.value) return false;
+  return true;
+}
+
+function matchesMonthFilter(value: any): boolean {
+  if ((!monthFilter.value && !yearFilter.value) || !value) return true;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  return (
+    (!monthFilter.value || date.getMonth() + 1 === Number(monthFilter.value)) &&
+    (!yearFilter.value || date.getFullYear() === Number(yearFilter.value))
+  );
+}
+
 const filteredSales = computed(() => {
-  if (!filterCustomer.value) return data.value
-  return data.value.filter((s: any) => String(s.customer_id) === String(filterCustomer.value))
-})
+  let list = data.value;
+
+  if (filterCustomer.value) {
+    list = list.filter(
+      (s: any) => String(s.customer_id) === String(filterCustomer.value),
+    );
+  }
+
+  if (monthFilter.value || yearFilter.value) {
+    list = list.filter((s: any) => {
+      const dateValue = s.sale_date || s.date || "";
+      return matchesMonthFilter(dateValue);
+    });
+  }
+
+  if (startDateFilter.value || endDateFilter.value) {
+    list = list.filter((s: any) => {
+      const dateValue = s.sale_date || s.date || "";
+      return matchesDateRange(dateValue);
+    });
+  }
+
+  return list;
+});
+
+function resetDateFilters() {
+  monthFilter.value = "";
+  yearFilter.value = "";
+  startDateFilter.value = "";
+  endDateFilter.value = "";
+}
 
 const productOptions = computed(() =>
   (products.value as any[]).map((p: any) => ({
     value: p.id,
     label: p.name,
   })),
-)
+);
 
 const storageTypeOptions = [
-  { value: 'SSD', label: 'SSD' },
-  { value: 'HDD', label: 'HDD' },
-  { value: 'NVMe', label: 'NVMe' },
-]
+  { value: "SSD", label: "SSD" },
+  { value: "HDD", label: "HDD" },
+  { value: "NVMe", label: "NVMe" },
+];
 
 const warrantyTypeOptions = [
-  { value: 'machine', label: 'Machine' },
-  { value: 'sparepart', label: 'Sparepart' },
-  { value: 'service', label: 'Service' },
-]
+  { value: "machine", label: "Machine" },
+  { value: "sparepart", label: "Sparepart" },
+  { value: "service", label: "Service" },
+];
 
 const paymentMethodOptions = [
-  { value: 'CASH', label: 'Cash' },
-  { value: 'TRANSFER', label: 'Bank Transfer' },
-  { value: 'CREDIT_CARD', label: 'Credit / Debit Card' },
-]
+  { value: "CASH", label: "Cash" },
+  { value: "TRANSFER", label: "Bank Transfer" },
+  { value: "CREDIT_CARD", label: "Credit / Debit Card" },
+];
 
 const columns: TableColumn[] = [
-  { key: 'date', label: 'Transaction Date' },
-  { key: 'sale_no', label: 'Code' },
-  { key: 'customer_id', label: 'Company' },
-  { key: 'pic_name', label: 'PIC Name' },
-  { key: 'do_number', label: 'DO No.' },
-  { key: 'total', label: 'Total' },
-  { key: 'status', label: 'Status' },
-]
+  { key: "date", label: "Transaction Date" },
+  { key: "sale_no", label: "Code" },
+  { key: "po_no", label: "PO No" },
+  { key: "customer_id", label: "Company" },
+  { key: "pic_name", label: "PIC Name" },
+  { key: "do_number", label: "DO No." },
+  { key: "total", label: "Total" },
+  { key: "status", label: "Status" },
+];
 
-const showModal = ref(false)
-const showConfirm = ref(false)
-const showDetail = ref(false)
-const editingItem = ref<Sale | null>(null)
-const deletingItem = ref<Sale | null>(null)
-const viewingItem = ref<Sale | null>(null)
-const selectedSaleItem = ref<any>(null)
-const showItemDetail = ref(false)
+const showModal = ref(false);
+const showConfirm = ref(false);
+const showDetail = ref(false);
+const editingItem = ref<Sale | null>(null);
+const deletingItem = ref<Sale | null>(null);
+const viewingItem = ref<Sale | null>(null);
+const selectedSaleItem = ref<any>(null);
+const showItemDetail = ref(false);
 
 function openSaleItemDetail(si: any) {
-  selectedSaleItem.value = si
-  showItemDetail.value = true
+  selectedSaleItem.value = si;
+  showItemDetail.value = true;
 }
 
 function closeSaleItemDetail() {
-  showItemDetail.value = false
-  selectedSaleItem.value = null
+  showItemDetail.value = false;
+  selectedSaleItem.value = null;
 }
 
-const showPaymentModal = ref(false)
-const showCreateDOModal = ref(false)
-const targetSaleForDO = ref<any>(null)
-const isSubmittingDO = ref(false)
+const showPaymentModal = ref(false);
+const showCreateDOModal = ref(false);
+const targetSaleForDO = ref<any>(null);
+const isSubmittingDO = ref(false);
 const doForm = reactive({
-  do_number: '',
-  project_name: '',
-  delivery_date: '',
-  delivery_address: '',
-  recipient_name: '',
-  recipient_phone: '',
-  notes: '',
-})
+  do_number: "",
+  project_name: "",
+  delivery_date: "",
+  delivery_address: "",
+  recipient_name: "",
+  recipient_phone: "",
+  notes: "",
+});
 
-let salesTimer: any = null
+let salesTimer: any = null;
 function silentRefresh() {
-  if (showModal.value || showConfirm.value || showDetail.value || showItemDetail.value || showPaymentModal.value || showCreateDOModal.value) return
-  void useMasterStore().refreshInBackground()
+  if (
+    showModal.value ||
+    showConfirm.value ||
+    showDetail.value ||
+    showItemDetail.value ||
+    showPaymentModal.value ||
+    showCreateDOModal.value
+  )
+    return;
+  void useMasterStore().refreshInBackground();
 }
 
 onMounted(() => {
-  ensureResourcesLoaded(route.path)
-  salesTimer = setInterval(silentRefresh, 30000)
-  window.addEventListener('focus', silentRefresh)
-  window.addEventListener('bias:data-mutated', silentRefresh)
-})
+  ensureResourcesLoaded(route.path);
+  salesTimer = setInterval(silentRefresh, 30000);
+  window.addEventListener("focus", silentRefresh);
+  window.addEventListener("bias:data-mutated", silentRefresh);
+});
 
 // Prefill from survey (Buat Sale Baru)
-let lastPrefillKey = ''
+let lastPrefillKey = "";
 function applySurveyPrefill() {
-  const qCust = route.query.customer_id ? String(route.query.customer_id) : ''
-  const qUnit = route.query.unit_id ? String(route.query.unit_id) : ''
-  if (!qCust) return
-  const currentKey = `${qCust}_${qUnit}`
-  if (lastPrefillKey === currentKey) return
-  if (!customers.value || (customers.value as any[]).length === 0) return
-  lastPrefillKey = currentKey
-  openAdd()
-  form.customer_id = qCust
-  const qPrice = route.query.price ? Number(route.query.price) : 0
+  const qCust = route.query.customer_id ? String(route.query.customer_id) : "";
+  const qUnit = route.query.unit_id ? String(route.query.unit_id) : "";
+  if (!qCust) return;
+  const currentKey = `${qCust}_${qUnit}`;
+  if (lastPrefillKey === currentKey) return;
+  if (!customers.value || (customers.value as any[]).length === 0) return;
+  lastPrefillKey = currentKey;
+  openAdd();
+  form.customer_id = qCust;
+  const qPrice = route.query.price ? Number(route.query.price) : 0;
   if (qUnit) {
-    const foundU = (units.value as any[]).find((u: any) => String(u.id) === String(qUnit))
-    const initialPrice = qPrice > 0 ? qPrice : (foundU && foundU.price ? Number(foundU.price) : 0)
+    const foundU = (units.value as any[]).find(
+      (u: any) => String(u.id) === String(qUnit),
+    );
+    const initialPrice =
+      qPrice > 0 ? qPrice : foundU && foundU.price ? Number(foundU.price) : 0;
     saleItems.value = [
       {
         product_id: null as any,
@@ -187,259 +276,352 @@ function applySurveyPrefill() {
         qty: 1,
         unit_price: initialPrice,
         is_computer: false,
-        specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
-        description: '',
+        specs: {
+          cpu: "",
+          ram: "",
+          storage: "",
+          storage_type: "",
+          os: "",
+          vga: "",
+          office: "",
+        },
+        description: "",
       },
-    ]
+    ];
   }
 }
 
-watch(() => route.query.customer_id, (newVal) => {
-  if (newVal) lastPrefillKey = ''
-})
+watch(
+  () => route.query.customer_id,
+  (newVal) => {
+    if (newVal) lastPrefillKey = "";
+  },
+);
 
-watch([() => route.query.customer_id, () => route.query.unit_id, customers, units], () => {
-  applySurveyPrefill()
-}, { immediate: true })
+watch(
+  [() => route.query.customer_id, () => route.query.unit_id, customers, units],
+  () => {
+    applySurveyPrefill();
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
-  if (salesTimer) clearInterval(salesTimer)
-  window.removeEventListener('focus', silentRefresh)
-  window.removeEventListener('bias:data-mutated', silentRefresh)
-})
+  if (salesTimer) clearInterval(salesTimer);
+  window.removeEventListener("focus", silentRefresh);
+  window.removeEventListener("bias:data-mutated", silentRefresh);
+});
 
 function hasActiveDO(sale: any): boolean {
-  if (!sale || !Array.isArray(sale.delivery_orders) || sale.delivery_orders.length === 0) {
-    return false
+  if (
+    !sale ||
+    !Array.isArray(sale.delivery_orders) ||
+    sale.delivery_orders.length === 0
+  ) {
+    return false;
   }
-  return sale.delivery_orders.some((d: any) => d && d.status !== 'cancelled' && !d.deleted_at)
+  return sale.delivery_orders.some(
+    (d: any) => d && d.status !== "cancelled" && !d.deleted_at,
+  );
 }
 
 function getDONumber(sale: any): string {
-  if (!sale || !Array.isArray(sale.delivery_orders) || sale.delivery_orders.length === 0) {
-    return '-'
+  if (
+    !sale ||
+    !Array.isArray(sale.delivery_orders) ||
+    sale.delivery_orders.length === 0
+  ) {
+    return "-";
   }
-  const activeDO = sale.delivery_orders.find((d: any) => d && d.status !== 'cancelled' && !d.deleted_at)
-  return activeDO?.do_number || sale.delivery_orders[0]?.do_number || '-'
+  const activeDO = sale.delivery_orders.find(
+    (d: any) => d && d.status !== "cancelled" && !d.deleted_at,
+  );
+  return activeDO?.do_number || sale.delivery_orders[0]?.do_number || "-";
 }
 
 function openCreateDOModal(sale: any) {
   if (hasActiveDO(sale)) {
-    toast.error('Surat Jalan (DO) sudah ada dan aktif untuk transaksi penjualan ini.')
-    return
+    toast.error(
+      "Surat Jalan (DO) sudah ada dan aktif untuk transaksi penjualan ini.",
+    );
+    return;
   }
-  targetSaleForDO.value = sale
-  const existingDONo = sale?.delivery_orders?.[0]?.do_number || ''
-  const cust = sale?.customer || findCustomer(sale?.customer_id)
+  targetSaleForDO.value = sale;
+  const existingDONo = sale?.delivery_orders?.[0]?.do_number || "";
+  const cust = sale?.customer || findCustomer(sale?.customer_id);
 
-  const itemNames = (sale?.sale_items || []).map((si: any) => {
-    const p = si.product || findProduct(si.product_id);
-    if (p) return formatProductDisplayName(p);
-    const u = si.unit || findUnit(si.unit_id);
-    if (u) return formatUnitDisplayName(u);
-    return '';
-  }).filter(Boolean);
-  const productOrUnitName = itemNames.length > 0 ? itemNames.join(', ') : 'Product';
-  const recipientAddress = sale?.installation_address || cust?.address || '';
+  const itemNames = (sale?.sale_items || [])
+    .map((si: any) => {
+      const p = si.product || findProduct(si.product_id);
+      if (p) return formatProductDisplayName(p);
+      const u = si.unit || findUnit(si.unit_id);
+      if (u) return formatUnitDisplayName(u);
+      return "";
+    })
+    .filter(Boolean);
+  const productOrUnitName =
+    itemNames.length > 0 ? itemNames.join(", ") : "Product";
+  const recipientAddress = sale?.installation_address || cust?.address || "";
 
-  doForm.do_number = existingDONo
-  doForm.project_name = recipientAddress ? `Pengantaran ${productOrUnitName} ke ${recipientAddress}` : `Pengantaran ${productOrUnitName}`;
-  doForm.delivery_date = new Date().toISOString().slice(0, 10)
-  doForm.delivery_address = recipientAddress
-  doForm.recipient_name = cust?.pic_name || cust?.company_name || ''
-  doForm.recipient_phone = cust?.phone || ''
-  doForm.notes = `Delivery for sale ${sale?.sale_no || ''}`.trim()
+  doForm.do_number = existingDONo;
+  doForm.project_name = recipientAddress
+    ? `Pengantaran ${productOrUnitName} ke ${recipientAddress}`
+    : `Pengantaran ${productOrUnitName}`;
+  doForm.delivery_date = new Date().toISOString().slice(0, 10);
+  doForm.delivery_address = recipientAddress;
+  doForm.recipient_name = cust?.pic_name || cust?.company_name || "";
+  doForm.recipient_phone = cust?.phone || "";
+  doForm.notes = `Delivery for sale ${sale?.sale_no || ""}`.trim();
 
-  showCreateDOModal.value = true
+  showCreateDOModal.value = true;
 }
 
 async function submitCreateDO() {
-  if (!targetSaleForDO.value || isSubmittingDO.value) return
-  isSubmittingDO.value = true
+  if (!targetSaleForDO.value || isSubmittingDO.value) return;
+  isSubmittingDO.value = true;
   try {
     const payload = {
       do_number: doForm.do_number ? doForm.do_number.trim() : undefined,
-      project_name: doForm.project_name ? doForm.project_name.trim() : undefined,
-      delivery_date: doForm.delivery_date ? new Date(doForm.delivery_date).toISOString() : new Date().toISOString(),
+      project_name: doForm.project_name
+        ? doForm.project_name.trim()
+        : undefined,
+      delivery_date: doForm.delivery_date
+        ? new Date(doForm.delivery_date).toISOString()
+        : new Date().toISOString(),
       delivery_address: doForm.delivery_address,
       recipient_name: doForm.recipient_name,
       recipient_phone: doForm.recipient_phone,
       notes: doForm.notes,
-    }
+    };
     await apiRequest({
       url: `/sales/${targetSaleForDO.value.id}/delivery-order`,
-      method: 'POST',
+      method: "POST",
       data: payload,
-    })
-    toast.success('Surat Jalan (DO) berhasil dibuat/dipulihkan!')
-    showCreateDOModal.value = false
-    await resources.fetchAll('sales')
+    });
+    toast.success("Surat Jalan (DO) berhasil dibuat/dipulihkan!");
+    showCreateDOModal.value = false;
+    await resources.fetchAll("sales");
   } catch (err: any) {
-    toast.error(toast.fromError(err, 'Gagal membuat Surat Jalan (DO)'))
+    toast.error(toast.fromError(err, "Gagal membuat Surat Jalan (DO)"));
   } finally {
-    isSubmittingDO.value = false
+    isSubmittingDO.value = false;
   }
 }
 const paymentData = reactive({
   amount: 0,
   payment_date: new Date().toISOString().substring(0, 10),
-  method_type: 'CASH',
-  bank_name: '',
-  account_number: '',
-  sender_name: '',
-  reference_no: '',
-  notes: ''
-})
+  method_type: "CASH",
+  bank_name: "",
+  account_number: "",
+  sender_name: "",
+  reference_no: "",
+  notes: "",
+});
 
 function openPayment(item: Sale) {
-  viewingItem.value = item
-  paymentData.amount = item.total || 0
-  paymentData.payment_date = new Date().toISOString().substring(0, 10)
-  paymentData.method_type = 'CASH'
-  paymentData.bank_name = ''
-  paymentData.account_number = ''
-  paymentData.sender_name = ''
-  paymentData.reference_no = ''
-  paymentData.notes = ''
-  showPaymentModal.value = true
+  viewingItem.value = item;
+  paymentData.amount = item.total || 0;
+  paymentData.payment_date = new Date().toISOString().substring(0, 10);
+  paymentData.method_type = "CASH";
+  paymentData.bank_name = "";
+  paymentData.account_number = "";
+  paymentData.sender_name = "";
+  paymentData.reference_no = "";
+  paymentData.notes = "";
+  showPaymentModal.value = true;
 }
 
 const salePayments = computed(() => {
-  if (!viewingItem.value) return []
-  const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === viewingItem.value?.id)
-  if (!invoice) return []
-  return payments.value.filter((p: any) => p.sales_invoice_id === invoice.id)
-})
+  if (!viewingItem.value) return [];
+  const invoice = salesInvoices.value.find(
+    (inv: any) => inv.sale_id === viewingItem.value?.id,
+  );
+  if (!invoice) return [];
+  return payments.value.filter((p: any) => p.sales_invoice_id === invoice.id);
+});
 
 async function handlePayment() {
-  if (!viewingItem.value) return
+  if (!viewingItem.value) return;
   try {
-    const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === viewingItem.value?.id)
+    const invoice = salesInvoices.value.find(
+      (inv: any) => inv.sale_id === viewingItem.value?.id,
+    );
     if (invoice) {
-      let finalBankName = paymentData.bank_name
-      if (paymentData.method_type === 'TRANSFER' || paymentData.method_type === 'CREDIT_CARD') {
-        finalBankName = `${paymentData.bank_name} - ${paymentData.account_number} (A/N: ${paymentData.sender_name})`
+      let finalBankName = paymentData.bank_name;
+      if (
+        paymentData.method_type === "TRANSFER" ||
+        paymentData.method_type === "CREDIT_CARD"
+      ) {
+        finalBankName = `${paymentData.bank_name} - ${paymentData.account_number} (A/N: ${paymentData.sender_name})`;
       }
 
       const paymentPayload = {
-        payment_no: 'PAY-' + Math.floor(Date.now() / 1000),
+        payment_no: "PAY-" + Math.floor(Date.now() / 1000),
         sales_invoice_id: invoice.id,
         payment_date: buildPaymentTimestamp(paymentData.payment_date),
         amount: Number(paymentData.amount),
         tax_deduction: 0,
-        bank_name: paymentData.method_type === 'CASH' ? 'CASH' : finalBankName,
-        reference_no: paymentData.reference_no || '-'
-      }
-      await resources.create("payments", paymentPayload)
+        bank_name: paymentData.method_type === "CASH" ? "CASH" : finalBankName,
+        reference_no: paymentData.reference_no || "-",
+      };
+      await resources.create("payments", paymentPayload);
     }
 
     const payload = {
       ...viewingItem.value,
-      status: 'paid'
-    }
-    await resources.update("sales", viewingItem.value.id as any, payload)
-    await useMasterStore().refreshInBackground()
-    showPaymentModal.value = false
-    toast.success("Payment recorded successfully!")
+      status: "paid",
+    };
+    await resources.update("sales", viewingItem.value.id as any, payload);
+    await useMasterStore().refreshInBackground();
+    showPaymentModal.value = false;
+    toast.success("Payment recorded successfully!");
   } catch (err: any) {
-    toast.error("Failed to record payment! " + (err.response?.data?.message || err.message))
+    toast.error(
+      "Failed to record payment! " +
+        (err.response?.data?.message || err.message),
+    );
   }
 }
 
 function generateSingleInvoiceHtml(item: any) {
-  const customer = findCustomer(item.customer_id)
-  const custName = customer?.company_name || customer?.name || '-'
-  const custAddress = customer?.address || '-'
-  const custPhone = customer?.phone || '-'
-  const pic = customer?.pic_name || '-'
-  const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
-  const picDisplay = pic !== '-' ? prefix + pic : '-'
-  const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
+  const customer = findCustomer(item.customer_id);
+  const custName = customer?.company_name || customer?.name || "-";
+  const custAddress = customer?.address || "-";
+  const custPhone = customer?.phone || "-";
+  const pic = customer?.pic_name || "-";
+  const gender = customer?.pic_gender;
+  let prefix = "Bapak/Ibu ";
+  if (gender === "L") prefix = "Bapak ";
+  if (gender === "P") prefix = "Ibu ";
+  const picDisplay = pic !== "-" ? prefix + pic : "-";
+  const signer =
+    item?.user?.name ||
+    item?.user?.username ||
+    currentUser.value?.name ||
+    currentUser.value?.username ||
+    "-";
 
-  const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
-  const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
-  const invoiceDate = item.sale_date || item.date || invoice?.created_at || invoice?.due_date
-  const poNo = (item.po_no || item.po_number || invoice?.po_no || invoice?.po_number || invoice?.sale?.po_no || '').trim()
+  const invoice = salesInvoices.value.find(
+    (inv: any) => inv.sale_id === item.id,
+  );
+  const invoiceNo = invoice
+    ? invoice.invoice_no
+    : item.sale_no || item.code || `SLS-${item.id}`;
+  const invoiceDate =
+    item.sale_date || item.date || invoice?.created_at || invoice?.due_date;
+  const poNo = (
+    item.po_no ||
+    item.po_number ||
+    invoice?.po_no ||
+    invoice?.po_number ||
+    invoice?.sale?.po_no ||
+    ""
+  ).trim();
 
-  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+  const dateStr = invoiceDate
+    ? new Date(invoiceDate).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      })
+    : "-";
 
-  let itemsHtml = ''
+  let itemsHtml = "";
   if (item.sale_items && item.sale_items.length > 0) {
-    const groupedItems: any[] = []
+    const groupedItems: any[] = [];
     item.sale_items.forEach((si: any) => {
-      let pName = ''
-      let serialNo = ''
+      let pName = "";
+      let serialNo = "";
       if (si.product_id) {
-         const p = findProduct(si.product_id)
-         pName = p ? formatProductDisplayName(p) : ('Product ID: ' + si.product_id)
+        const p = findProduct(si.product_id);
+        pName = p
+          ? formatProductDisplayName(p)
+          : "Product ID: " + si.product_id;
       } else if (si.unit_id) {
-         const u = findUnit(si.unit_id)
-         pName = u ? formatUnitDisplayName(u) : 'Unit Only' 
-         if (u && (u.serial_no || (u as any).serial_number)) {
-             serialNo = u.serial_no || (u as any).serial_number
-         }
+        const u = findUnit(si.unit_id);
+        pName = u ? formatUnitDisplayName(u) : "Unit Only";
+        if (u && (u.serial_no || (u as any).serial_number)) {
+          serialNo = u.serial_no || (u as any).serial_number;
+        }
       }
-      const uPrice = si.unit_price || si.price || 0
-      const qty = si.qty || 1
-      
-      const existing = groupedItems.find(gi => gi.name === pName && gi.price === uPrice && gi.description === si.description)
+      const uPrice = si.unit_price || si.price || 0;
+      const qty = si.qty || 1;
+
+      const existing = groupedItems.find(
+        (gi) =>
+          gi.name === pName &&
+          gi.price === uPrice &&
+          gi.description === si.description,
+      );
       if (existing) {
-        existing.qty += qty
-        if (serialNo) existing.serial_numbers.push(serialNo)
+        existing.qty += qty;
+        if (serialNo) existing.serial_numbers.push(serialNo);
       } else {
         groupedItems.push({
-           name: pName,
-           price: uPrice,
-           qty: qty,
-           description: si.description,
-           serial_numbers: serialNo ? [serialNo] : []
-        })
+          name: pName,
+          price: uPrice,
+          qty: qty,
+          description: si.description,
+          serial_numbers: serialNo ? [serialNo] : [],
+        });
       }
-    })
+    });
 
-    itemsHtml = groupedItems.map((gi: any, idx: number) => {
-      let dispName = gi.name
-      if (gi.qty === 1 && gi.serial_numbers && gi.serial_numbers.length === 1) {
-        dispName += ` (SN: ${gi.serial_numbers[0]})`
-      }
-      if (gi.description) {
-        dispName += `<br><span style="font-size: 10px; color: #555;">${gi.description}</span>`
-      }
-      return `
+    itemsHtml = groupedItems
+      .map((gi: any, idx: number) => {
+        let dispName = gi.name;
+        if (
+          gi.qty === 1 &&
+          gi.serial_numbers &&
+          gi.serial_numbers.length === 1
+        ) {
+          dispName += ` (SN: ${gi.serial_numbers[0]})`;
+        }
+        if (gi.description) {
+          dispName += `<br><span style="font-size: 10px; color: #555;">${gi.description}</span>`;
+        }
+        return `
         <tr>
           <td style="text-align: center;">${idx + 1}</td>
           <td>${dispName}</td>
           <td style="text-align: center;">${gi.qty}</td>
           <td style="text-align: center;">unit</td>
-          <td class="rp-col">Rp</td><td class="val-col">${(gi.price).toLocaleString('id-ID')}</td>
-          <td class="rp-col">Rp</td><td class="val-col">${(gi.price * gi.qty).toLocaleString('id-ID')}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${gi.price.toLocaleString("id-ID")}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${(gi.price * gi.qty).toLocaleString("id-ID")}</td>
         </tr>
-      `
-    }).join('')
+      `;
+      })
+      .join("");
   } else {
-    const rawTotal = Number(item.subtotal || item.total_amount || item.total || 0)
+    const rawTotal = Number(
+      item.subtotal || item.total_amount || item.total || 0,
+    );
     if (rawTotal > 0) {
       itemsHtml = `
         <tr>
           <td style="text-align: center;">1</td>
-          <td>${item.sale_no ? `Penjualan (${item.sale_no})` : 'Penjualan Unit / Produk'}</td>
+          <td>${item.sale_no ? `Penjualan (${item.sale_no})` : "Penjualan Unit / Produk"}</td>
           <td style="text-align: center;">1</td>
           <td style="text-align: center;">unit</td>
-          <td class="rp-col">Rp</td><td class="val-col">${rawTotal.toLocaleString('id-ID')}</td>
-          <td class="rp-col">Rp</td><td class="val-col">${rawTotal.toLocaleString('id-ID')}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${rawTotal.toLocaleString("id-ID")}</td>
+          <td class="rp-col">Rp</td><td class="val-col">${rawTotal.toLocaleString("id-ID")}</td>
         </tr>
-      `
+      `;
     } else {
-      itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">No item data available</td></tr>`
+      itemsHtml = `<tr><td colspan="8" style="text-align: center; color: #666;">No item data available</td></tr>`;
     }
   }
 
-  const subTotalStr = (item.subtotal || item.total_amount || item.total || 0).toLocaleString('id-ID')
-  const discountStr = (item.discount || 0).toLocaleString('id-ID')
-  const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
+  const subTotalStr = (
+    item.subtotal ||
+    item.total_amount ||
+    item.total ||
+    0
+  ).toLocaleString("id-ID");
+  const discountStr = (item.discount || 0).toLocaleString("id-ID");
+  const grandTotalStr = (item.total_amount || item.total || 0).toLocaleString(
+    "id-ID",
+  );
 
   return `
     <div class="page-break" style="padding: 20px; box-sizing: border-box; max-width: 900px; margin: 0 auto;">
@@ -472,7 +654,7 @@ function generateSingleInvoiceHtml(item: any) {
               </tr>
               <tr>
                 <td class="label">PO No. :</td>
-                <td style="${poNo ? 'font-weight: bold;' : ''}">${poNo || '-'}</td>
+                <td style="${poNo ? "font-weight: bold;" : ""}">${poNo || "-"}</td>
               </tr>
 
               <tr>
@@ -561,138 +743,166 @@ function generateSingleInvoiceHtml(item: any) {
         </div>
       </div>
     </div>
-  `
+  `;
 }
 
 function exportMonthToExcel() {
-  const items = filteredData.value
+  const items = filteredData.value;
   if (items.length === 0) {
-    toast.warning('No sales invoice data to export!')
-    return
+    toast.warning("No sales invoice data to export!");
+    return;
   }
 
-  let periodLabel = 'All_Periods'
-  if (monthFilter.value) {
-    periodLabel = monthFilter.value
+  let periodLabel = "All_Periods";
+  if (monthFilter.value || yearFilter.value) {
+    periodLabel = [yearFilter.value, monthFilter.value]
+      .filter(Boolean)
+      .join("_");
   } else if (startDateFilter.value || endDateFilter.value) {
-    periodLabel = `${startDateFilter.value || 'Start'}_to_${endDateFilter.value || 'End'}`
+    periodLabel = `${startDateFilter.value || "Start"}_to_${endDateFilter.value || "End"}`;
   }
 
-  let csvContent = '\uFEFF'
+  let csvContent = "\uFEFF";
 
   items.forEach((item: any, idx: number) => {
-    const customer = findCustomer(item.customer_id)
-    const custName = (customer?.company_name || customer?.name || '-').replace(/;/g, ',')
-    const custAddress = (customer?.address || '-').replace(/;/g, ',').replace(/\n/g, ' ')
-    const custPhone = (customer?.phone || '-').replace(/;/g, ',')
-    const pic = customer?.pic_name || '-'
-    const gender = customer?.pic_gender
-    let prefix = 'Bapak/Ibu '
-    if (gender === 'L') prefix = 'Bapak '
-    if (gender === 'P') prefix = 'Ibu '
-    const picDisplay = pic !== '-' ? (prefix + pic).replace(/;/g, ',') : '-'
+    const customer = findCustomer(item.customer_id);
+    const custName = (customer?.company_name || customer?.name || "-").replace(
+      /;/g,
+      ",",
+    );
+    const custAddress = (customer?.address || "-")
+      .replace(/;/g, ",")
+      .replace(/\n/g, " ");
+    const custPhone = (customer?.phone || "-").replace(/;/g, ",");
+    const pic = customer?.pic_name || "-";
+    const gender = customer?.pic_gender;
+    let prefix = "Bapak/Ibu ";
+    if (gender === "L") prefix = "Bapak ";
+    if (gender === "P") prefix = "Ibu ";
+    const picDisplay = pic !== "-" ? (prefix + pic).replace(/;/g, ",") : "-";
 
-    const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
-    const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
-    const invoiceDate = item.sale_date || item.date || invoice?.created_at || invoice?.due_date
-    const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB') : '-'
+    const invoice = salesInvoices.value.find(
+      (inv: any) => inv.sale_id === item.id,
+    );
+    const invoiceNo = invoice
+      ? invoice.invoice_no
+      : item.sale_no || item.code || `SLS-${item.id}`;
+    const invoiceDate =
+      item.sale_date || item.date || invoice?.created_at || invoice?.due_date;
+    const dateStr = invoiceDate
+      ? new Date(invoiceDate).toLocaleDateString("en-GB")
+      : "-";
 
-    const subtotal = item.subtotal || item.total_amount || item.total || 0
-    const grandTotal = item.total_amount || item.total || 0
+    const subtotal = item.subtotal || item.total_amount || item.total || 0;
+    const grandTotal = item.total_amount || item.total || 0;
 
-    csvContent += `INVOICE SALES #${idx + 1};;;;;;\n`
-    csvContent += `PT. BIAS SURYA TEKNOLOGI;;;;;Invoice No:;"${invoiceNo}"\n`
-    csvContent += `Ruko Purimas Blok A No.47 Batam;;;;;Date:;"${dateStr}"\n`
-    csvContent += `To:;"${custName}";;;;;Status:;"${(item.status || 'pending').toUpperCase()}"\n`
-    csvContent += `Address:;"${custAddress}";;;;;Phone:;"${custPhone}"\n`
-    csvContent += `Attn:;"${picDisplay}";;;;;\n`
-    csvContent += `;;;;;;\n`
-    csvContent += `No;Product / Item Description;Qty;UOM;Unit Price (Rp);Total Amount (Rp)\n`
+    csvContent += `INVOICE SALES #${idx + 1};;;;;;\n`;
+    csvContent += `PT. BIAS SURYA TEKNOLOGI;;;;;Invoice No:;"${invoiceNo}"\n`;
+    csvContent += `Ruko Purimas Blok A No.47 Batam;;;;;Date:;"${dateStr}"\n`;
+    csvContent += `To:;"${custName}";;;;;Status:;"${(item.status || "pending").toUpperCase()}"\n`;
+    csvContent += `Address:;"${custAddress}";;;;;Phone:;"${custPhone}"\n`;
+    csvContent += `Attn:;"${picDisplay}";;;;;\n`;
+    csvContent += `;;;;;;\n`;
+    csvContent += `No;Product / Item Description;Qty;UOM;Unit Price (Rp);Total Amount (Rp)\n`;
 
     if (item.sale_items && item.sale_items.length > 0) {
-      const groupedItems: any[] = []
+      const groupedItems: any[] = [];
       item.sale_items.forEach((si: any) => {
-        let pName = ''
-        let serialNo = ''
+        let pName = "";
+        let serialNo = "";
         if (si.product_id) {
-           const p = findProduct(si.product_id)
-           pName = p ? formatProductDisplayName(p) : ('Product ID: ' + si.product_id)
+          const p = findProduct(si.product_id);
+          pName = p
+            ? formatProductDisplayName(p)
+            : "Product ID: " + si.product_id;
         } else if (si.unit_id) {
-           const u = findUnit(si.unit_id)
-           pName = u ? formatUnitDisplayName(u) : 'Unit Only' 
-           if (u && u.serial_no) {
-               serialNo = u.serial_no
-           }
+          const u = findUnit(si.unit_id);
+          pName = u ? formatUnitDisplayName(u) : "Unit Only";
+          if (u && u.serial_no) {
+            serialNo = u.serial_no;
+          }
         }
-        const uPrice = si.unit_price || si.price || 0
-        const qty = si.qty || 1
-        
-        const existing = groupedItems.find(gi => gi.name === pName && gi.price === uPrice && gi.description === si.description)
+        const uPrice = si.unit_price || si.price || 0;
+        const qty = si.qty || 1;
+
+        const existing = groupedItems.find(
+          (gi) =>
+            gi.name === pName &&
+            gi.price === uPrice &&
+            gi.description === si.description,
+        );
         if (existing) {
-          existing.qty += qty
-          if (serialNo) existing.serial_numbers.push(serialNo)
+          existing.qty += qty;
+          if (serialNo) existing.serial_numbers.push(serialNo);
         } else {
           groupedItems.push({
-             name: pName,
-             price: uPrice,
-             qty: qty,
-             description: si.description,
-             serial_numbers: serialNo ? [serialNo] : []
-          })
+            name: pName,
+            price: uPrice,
+            qty: qty,
+            description: si.description,
+            serial_numbers: serialNo ? [serialNo] : [],
+          });
         }
-      })
+      });
 
       groupedItems.forEach((gi: any, sIdx: number) => {
-        let dispName = gi.name
-        if (gi.qty === 1 && gi.serial_numbers && gi.serial_numbers.length === 1) {
-          dispName += ` (SN: ${gi.serial_numbers[0]})`
+        let dispName = gi.name;
+        if (
+          gi.qty === 1 &&
+          gi.serial_numbers &&
+          gi.serial_numbers.length === 1
+        ) {
+          dispName += ` (SN: ${gi.serial_numbers[0]})`;
         }
         if (gi.description) {
-          dispName += ` - ${gi.description}`
+          dispName += ` - ${gi.description}`;
         }
-        dispName = dispName.replace(/;/g, ',')
-        const itemTotal = gi.price * gi.qty
-        csvContent += `${sIdx + 1};"${dispName}";${gi.qty};unit;${gi.price};${itemTotal}\n`
-      })
+        dispName = dispName.replace(/;/g, ",");
+        const itemTotal = gi.price * gi.qty;
+        csvContent += `${sIdx + 1};"${dispName}";${gi.qty};unit;${gi.price};${itemTotal}\n`;
+      });
     } else {
-      csvContent += `1;"Goods / Services";1;unit;${subtotal};${subtotal}\n`
+      csvContent += `1;"Goods / Services";1;unit;${subtotal};${subtotal}\n`;
     }
 
-    csvContent += `;;;;Sub Total:;${subtotal}\n`
-    csvContent += `;;;;Discount:;${item.discount || 0}\n`
-    csvContent += `;;;;Grand Total:;${grandTotal}\n`
-    csvContent += `;;;;;;\n`
-    csvContent += `------------------------------------------------------------------------;;;;;;\n`
-    csvContent += `;;;;;;\n`
-  })
+    csvContent += `;;;;Sub Total:;${subtotal}\n`;
+    csvContent += `;;;;Discount:;${item.discount || 0}\n`;
+    csvContent += `;;;;Grand Total:;${grandTotal}\n`;
+    csvContent += `;;;;;;\n`;
+    csvContent += `------------------------------------------------------------------------;;;;;;\n`;
+    csvContent += `;;;;;;\n`;
+  });
 
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  const url = URL.createObjectURL(blob)
-  link.setAttribute('href', url)
-  link.setAttribute('download', `Document_Invoices_Sales_${periodLabel}.csv`)
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `Document_Invoices_Sales_${periodLabel}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function exportMonthToPdf() {
-  const items = filteredData.value
+  const items = filteredData.value;
   if (items.length === 0) {
-    toast.warning('No sales invoice data to export to PDF!')
-    return
+    toast.warning("No sales invoice data to export to PDF!");
+    return;
   }
 
-  let periodTitle = 'Entire Period'
-  if (monthFilter.value) {
-    const [yearStr, monthStr] = monthFilter.value.split('-')
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-    periodTitle = `${months[parseInt(monthStr) - 1]} ${yearStr}`
+  let periodTitle = "Entire Period";
+  if (monthFilter.value || yearFilter.value) {
+    const monthLabel = monthOptions.find(
+      (option) => option.value === monthFilter.value,
+    )?.label;
+    periodTitle = [monthLabel, yearFilter.value].filter(Boolean).join(" ");
   } else if (startDateFilter.value || endDateFilter.value) {
-    periodTitle = `${startDateFilter.value || 'Start'} to ${endDateFilter.value || 'End'}`
+    periodTitle = `${startDateFilter.value || "Start"} to ${endDateFilter.value || "End"}`;
   }
 
-  const invoicesHtml = items.map(item => generateSingleInvoiceHtml(item)).join('')
+  const invoicesHtml = items
+    .map((item) => generateSingleInvoiceHtml(item))
+    .join("");
 
   const html = `
     <!DOCTYPE html>
@@ -756,219 +966,360 @@ function exportMonthToPdf() {
         <\/script>
       </body>
     </html>
-  `
+  `;
 
-  const printWindow = window.open('', '_blank')
+  const printWindow = window.open("", "_blank");
   if (printWindow) {
-    printWindow.document.write(html)
-    printWindow.document.close()
+    printWindow.document.write(html);
+    printWindow.document.close();
   }
 }
 
-const saleItems = ref<{ product_id: string | null; unit_id: string | null; _combined_id: string | null; qty: number; unit_price: number; is_computer: boolean; specs: { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string; }; description: string; }[]>([])
+const saleItems = ref<
+  {
+    product_id: string | null;
+    unit_id: string | null;
+    _combined_id: string | null;
+    qty: number;
+    unit_price: number;
+    is_computer: boolean;
+    specs: {
+      cpu: string;
+      ram: string;
+      storage: string;
+      storage_type: string;
+      os: string;
+      vga: string;
+      office: string;
+    };
+    description: string;
+  }[]
+>([]);
 
 const form = reactive({
-  sale_no: '',
+  sale_no: "",
   customer_id: null as string | null,
-  sale_date: '',
-  po_no: '',
-  installation_address: '',
+  sale_date: "",
+  po_no: "",
+  installation_address: "",
   total_amount: 0,
   discount: 0,
-  status: 'approved',
+  status: "approved",
   has_warranty: true,
   warranty: {
-    warranty_type: 'machine',
-    warranty_types: ['machine'] as string[],
+    warranty_type: "machine",
+    warranty_types: ["machine"] as string[],
     duration_months: 12,
     duration_days: 0,
-    expired_date: '',
-    terms_conditions: ''
-  }
-})
+    expired_date: "",
+    terms_conditions: "",
+  },
+});
 
 function toISODate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function addMonthsISO(dateStr: string, months: number): string {
-  const d = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date()
-  d.setMonth(d.getMonth() + months)
-  return toISODate(d)
+  const d = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date();
+  d.setMonth(d.getMonth() + months);
+  return toISODate(d);
 }
 
-const calcSubtotal = computed(() => saleItems.value.reduce((sum, item) => sum + (item.qty * item.unit_price), 0))
-const calcDiscount = computed(() => Math.max(0, Number(form.discount) || 0))
-const calcTotal = computed(() => Math.max(0, calcSubtotal.value - calcDiscount.value))
+const calcSubtotal = computed(() =>
+  saleItems.value.reduce((sum, item) => sum + item.qty * item.unit_price, 0),
+);
+const calcDiscount = computed(() => Math.max(0, Number(form.discount) || 0));
+const calcTotal = computed(() =>
+  Math.max(0, calcSubtotal.value - calcDiscount.value),
+);
 
 function addSaleItem() {
-  saleItems.value.push({ product_id: null, unit_id: null, _combined_id: null, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' })
+  saleItems.value.push({
+    product_id: null,
+    unit_id: null,
+    _combined_id: null,
+    qty: 1,
+    unit_price: 0,
+    is_computer: false,
+    specs: {
+      cpu: "",
+      ram: "",
+      storage: "",
+      storage_type: "",
+      os: "",
+      vga: "",
+      office: "",
+    },
+    description: "",
+  });
 }
 
 function removeSaleItem(idx: number) {
-  saleItems.value.splice(idx, 1)
+  saleItems.value.splice(idx, 1);
 }
 
 function onCombinedItemChange(idx: number) {
-  const item = saleItems.value[idx]
-  if (!item) return
+  const item = saleItems.value[idx];
+  if (!item) return;
   if (!item._combined_id) {
-    item.product_id = null
-    item.unit_id = null
-    item.unit_price = 0
-    item.is_computer = false
-    return
+    item.product_id = null;
+    item.unit_id = null;
+    item.unit_price = 0;
+    item.is_computer = false;
+    return;
   }
 
   const parseSpecs = (raw: any) => {
-    const blank = { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }
-    if (!raw) return blank
+    const blank = {
+      cpu: "",
+      ram: "",
+      storage: "",
+      storage_type: "",
+      os: "",
+      vga: "",
+      office: "",
+    };
+    if (!raw) return blank;
     try {
-      const parsed = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw
-      return { ...blank, ...parsed }
-    } catch { return blank }
-  }
-
-  if (item._combined_id.startsWith('P_')) {
-    item.product_id = item._combined_id.replace('P_', '')
-    item.unit_id = null
-    const prod = findProduct(item.product_id)
-    if (prod) {
-      item.unit_price = prod.price
-      item.is_computer = !!prod.is_computer
-      if (item.is_computer) item.specs = parseSpecs((prod as any).specs)
+      const parsed = typeof raw === "string" ? JSON.parse(raw || "{}") : raw;
+      return { ...blank, ...parsed };
+    } catch {
+      return blank;
     }
-  } else if (item._combined_id.startsWith('U_')) {
-    item.unit_id = item._combined_id.replace('U_', '')
-    item.product_id = null
-    const unit = findUnit(item.unit_id)
-    item.unit_price = (unit && (unit as any).price) ? (unit as any).price : 0
+  };
+
+  if (item._combined_id.startsWith("P_")) {
+    item.product_id = item._combined_id.replace("P_", "");
+    item.unit_id = null;
+    const prod = findProduct(item.product_id);
+    if (prod) {
+      item.unit_price = prod.price;
+      item.is_computer = !!prod.is_computer;
+      if (item.is_computer) item.specs = parseSpecs((prod as any).specs);
+    }
+  } else if (item._combined_id.startsWith("U_")) {
+    item.unit_id = item._combined_id.replace("U_", "");
+    item.product_id = null;
+    const unit = findUnit(item.unit_id);
+    item.unit_price = unit && (unit as any).price ? (unit as any).price : 0;
     if (unit) {
-      item.is_computer = !!unit.is_computer
-      if (item.is_computer) item.specs = parseSpecs((unit as any).specs)
+      item.is_computer = !!unit.is_computer;
+      if (item.is_computer) item.specs = parseSpecs((unit as any).specs);
     }
   }
 }
 
-const currentStep = ref(1)
-const isSubmitting = ref(false)
+const currentStep = ref(1);
+const isSubmitting = ref(false);
 
 function openAdd() {
-  editingItem.value = null
-  currentStep.value = 1
-  Object.assign(form, { sale_no: `SLS-${Date.now().toString().slice(-6)}`, customer_id: null, sale_date: new Date().toISOString().slice(0, 10), po_no: '', installation_address: '', total_amount: 0, discount: 0, status: 'approved', has_warranty: true, warranty: { warranty_type: 'machine', warranty_types: ['machine'], duration_months: 12, duration_days: 0, expired_date: addMonthsISO(new Date().toISOString().slice(0, 10), 12), terms_conditions: '' } })
-  saleItems.value = [{ product_id: null as any, unit_id: null, _combined_id: null, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
-  showModal.value = true
+  editingItem.value = null;
+  currentStep.value = 1;
+  Object.assign(form, {
+    sale_no: `SLS-${Date.now().toString().slice(-6)}`,
+    customer_id: null,
+    sale_date: new Date().toISOString().slice(0, 10),
+    po_no: "",
+    installation_address: "",
+    total_amount: 0,
+    discount: 0,
+    status: "approved",
+    has_warranty: true,
+    warranty: {
+      warranty_type: "machine",
+      warranty_types: ["machine"],
+      duration_months: 12,
+      duration_days: 0,
+      expired_date: addMonthsISO(new Date().toISOString().slice(0, 10), 12),
+      terms_conditions: "",
+    },
+  });
+  saleItems.value = [
+    {
+      product_id: null as any,
+      unit_id: null,
+      _combined_id: null,
+      qty: 1,
+      unit_price: 0,
+      is_computer: false,
+      specs: {
+        cpu: "",
+        ram: "",
+        storage: "",
+        storage_type: "",
+        os: "",
+        vga: "",
+        office: "",
+      },
+      description: "",
+    },
+  ];
+  showModal.value = true;
 }
 
 function openView(item: any) {
-  viewingItem.value = item
-  showDetail.value = true
+  viewingItem.value = item;
+  showDetail.value = true;
 }
 
 function openEdit(item: any) {
-  editingItem.value = item
-  currentStep.value = 1
+  editingItem.value = item;
+  currentStep.value = 1;
   Object.assign(form, {
     sale_no: item.sale_no || `SLS-${item.id}`,
     customer_id: item.customer_id,
-    po_no: item.po_no || '',
-    installation_address: item.installation_address || '',
-    sale_date: item.sale_date ? item.sale_date.slice(0, 10) : '',
+    po_no: item.po_no || "",
+    installation_address: item.installation_address || "",
+    sale_date: item.sale_date ? item.sale_date.slice(0, 10) : "",
     total_amount: item.total_amount || item.total,
     discount: item.discount || 0,
-    status: item.status || 'approved',
-    has_warranty: item.has_warranty || (item.warranties && item.warranties.length > 0) || false,
-    warranty: item.warranties && item.warranties.length > 0 ? {
-      warranty_type: item.warranties?.[0]?.warranty_type || 'machine',
-      warranty_types: (() => {
-        const list = item.warranties.map((w: any) => w.warranty_type).filter(Boolean)
-        return list.length ? [...new Set(list)] : ['machine']
-      })(),
-      duration_months: item.warranties?.[0]?.duration_months || 0,
-      duration_days: item.warranties?.[0]?.duration_days || 0,
-      expired_date: item.warranties?.[0]?.end_date ? String(item.warranties[0].end_date).substring(0, 10) : addMonthsISO(item.sale_date ? item.sale_date.slice(0, 10) : '', 12),
-      terms_conditions: item.warranties?.[0]?.terms_conditions || ''
-    } : {
-      warranty_type: 'machine',
-      warranty_types: ['machine'],
-      duration_months: 12,
-      duration_days: 0,
-      expired_date: addMonthsISO(item.sale_date ? item.sale_date.slice(0, 10) : '', 12),
-      terms_conditions: ''
-    }
-  })
+    status: item.status || "approved",
+    has_warranty:
+      item.has_warranty ||
+      (item.warranties && item.warranties.length > 0) ||
+      false,
+    warranty:
+      item.warranties && item.warranties.length > 0
+        ? {
+            warranty_type: item.warranties?.[0]?.warranty_type || "machine",
+            warranty_types: (() => {
+              const list = item.warranties
+                .map((w: any) => w.warranty_type)
+                .filter(Boolean);
+              return list.length ? [...new Set(list)] : ["machine"];
+            })(),
+            duration_months: item.warranties?.[0]?.duration_months || 0,
+            duration_days: item.warranties?.[0]?.duration_days || 0,
+            expired_date: item.warranties?.[0]?.end_date
+              ? String(item.warranties[0].end_date).substring(0, 10)
+              : addMonthsISO(
+                  item.sale_date ? item.sale_date.slice(0, 10) : "",
+                  12,
+                ),
+            terms_conditions: item.warranties?.[0]?.terms_conditions || "",
+          }
+        : {
+            warranty_type: "machine",
+            warranty_types: ["machine"],
+            duration_months: 12,
+            duration_days: 0,
+            expired_date: addMonthsISO(
+              item.sale_date ? item.sale_date.slice(0, 10) : "",
+              12,
+            ),
+            terms_conditions: "",
+          },
+  });
   if (item.sale_items && item.sale_items.length > 0) {
     saleItems.value = item.sale_items.map((si: any) => {
-      let parsedSpecs = { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }
+      let parsedSpecs = {
+        cpu: "",
+        ram: "",
+        storage: "",
+        storage_type: "",
+        os: "",
+        vga: "",
+        office: "",
+      };
       if (si.specs) {
-        try { parsedSpecs = typeof si.specs === 'string' ? JSON.parse(si.specs) : si.specs } catch (e) { }
+        try {
+          parsedSpecs =
+            typeof si.specs === "string" ? JSON.parse(si.specs) : si.specs;
+        } catch (e) {}
       }
       return {
         product_id: si.product_id,
         unit_id: si.unit_id || null,
-        _combined_id: si.unit_id ? `U_${si.unit_id}` : (si.product_id ? `P_${si.product_id}` : null),
+        _combined_id: si.unit_id
+          ? `U_${si.unit_id}`
+          : si.product_id
+            ? `P_${si.product_id}`
+            : null,
         qty: si.qty,
         unit_price: si.unit_price || si.price || 0,
-        is_computer: si.unit_id ? !!(findUnit(si.unit_id)?.is_computer) : !!(findProduct(si.product_id)?.is_computer),
+        is_computer: si.unit_id
+          ? !!findUnit(si.unit_id)?.is_computer
+          : !!findProduct(si.product_id)?.is_computer,
         specs: parsedSpecs,
-        description: si.description || ''
-      }
-    })
+        description: si.description || "",
+      };
+    });
   } else {
-    saleItems.value = [{ product_id: null as any, unit_id: null, _combined_id: null, qty: 1, unit_price: 0, is_computer: false, specs: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }, description: '' }]
+    saleItems.value = [
+      {
+        product_id: null as any,
+        unit_id: null,
+        _combined_id: null,
+        qty: 1,
+        unit_price: 0,
+        is_computer: false,
+        specs: {
+          cpu: "",
+          ram: "",
+          storage: "",
+          storage_type: "",
+          os: "",
+          vga: "",
+          office: "",
+        },
+        description: "",
+      },
+    ];
   }
-  showModal.value = true
+  showModal.value = true;
 }
 
 async function handleSubmit() {
-  if (isSubmitting.value) return
+  if (isSubmitting.value) return;
   if (!form.customer_id) {
-    toast.warning('Customer is required.')
-    return
+    toast.warning("Customer is required.");
+    return;
   }
   if (!form.installation_address.trim()) {
-    toast.warning('Installation/delivery address is required.')
-    return
+    toast.warning("Installation/delivery address is required.");
+    return;
   }
   if (!saleItems.value || saleItems.value.length === 0) {
-    toast.warning('At least 1 item is required.')
-    return
+    toast.warning("At least 1 item is required.");
+    return;
   }
   for (let i = 0; i < saleItems.value.length; i++) {
-    const it = saleItems.value[i]
+    const it = saleItems.value[i];
     if (!it.product_id && !it.unit_id) {
-      toast.warning(`Please select a product or unit for item #${i + 1}.`)
-      return
+      toast.warning(`Please select a product or unit for item #${i + 1}.`);
+      return;
     }
   }
 
   // Konversi expired date -> duration
-  const warrantyPayload = { ...form.warranty }
+  const warrantyPayload = { ...form.warranty };
   if (form.has_warranty) {
     if (!warrantyPayload.expired_date) {
-      toast.warning('Warranty expired date is required.')
-      return
+      toast.warning("Warranty expired date is required.");
+      return;
     }
-    const types = [...new Set((warrantyPayload.warranty_types || []).filter(Boolean))]
+    const types = [
+      ...new Set((warrantyPayload.warranty_types || []).filter(Boolean)),
+    ];
     if (types.length === 0) {
-      toast.warning('Pilih minimal 1 warranty type.')
-      return
+      toast.warning("Pilih minimal 1 warranty type.");
+      return;
     }
-    const start = new Date(`${form.sale_date}T00:00:00`)
-    const end = new Date(`${warrantyPayload.expired_date}T00:00:00`)
-    const diffDays = Math.round((end.getTime() - start.getTime()) / 86400000)
+    const start = new Date(`${form.sale_date}T00:00:00`);
+    const end = new Date(`${warrantyPayload.expired_date}T00:00:00`);
+    const diffDays = Math.round((end.getTime() - start.getTime()) / 86400000);
     if (diffDays < 0) {
-      toast.warning('Warranty expired date must not be before the sale date.')
-      return
+      toast.warning("Warranty expired date must not be before the sale date.");
+      return;
     }
-    warrantyPayload.start_date = formatToISO8601(form.sale_date)
-    warrantyPayload.duration_months = 0
-    warrantyPayload.duration_days = diffDays
-    warrantyPayload.warranty_type = types?.[0] || 'machine'
-    warrantyPayload.warranty_types = types
+    warrantyPayload.start_date = formatToISO8601(form.sale_date);
+    warrantyPayload.duration_months = 0;
+    warrantyPayload.duration_days = diffDays;
+    warrantyPayload.warranty_type = types?.[0] || "machine";
+    warrantyPayload.warranty_types = types;
   }
 
-  isSubmitting.value = true
+  isSubmitting.value = true;
 
   const saleData = {
     ...form,
@@ -976,95 +1327,166 @@ async function handleSubmit() {
     sale_date: formatToISO8601(form.sale_date),
     warranty: warrantyPayload,
     warranties: form.has_warranty
-      ? [...new Set((form.warranty.warranty_types || []).filter(Boolean))].map((t) => ({
-        warranty_type: t,
-        start_date: formatToISO8601(form.sale_date),
-        duration_months: warrantyPayload.duration_months,
-        duration_days: warrantyPayload.duration_days,
-        terms_conditions: form.warranty.terms_conditions || '',
-      }))
+      ? [...new Set((form.warranty.warranty_types || []).filter(Boolean))].map(
+          (t) => ({
+            warranty_type: t,
+            start_date: formatToISO8601(form.sale_date),
+            duration_months: warrantyPayload.duration_months,
+            duration_days: warrantyPayload.duration_days,
+            terms_conditions: form.warranty.terms_conditions || "",
+          }),
+        )
       : [],
     subtotal: calcSubtotal.value,
     discount: calcDiscount.value,
     total: calcTotal.value,
-    sale_items: saleItems.value.map(item => ({
+    sale_items: saleItems.value.map((item) => ({
       product_id: item.product_id ? String(item.product_id) : null,
       unit_id: item.unit_id ? String(item.unit_id) : null,
       qty: item.qty || 1,
       price: item.unit_price || 0,
       specs: JSON.stringify(item.specs),
-      description: item.description || ''
-    }))
-  }
+      description: item.description || "",
+    })),
+  };
 
   let pw: Window | null = null;
   if (!editingItem.value) {
-    pw = window.open('', '_blank');
+    pw = window.open("", "_blank");
     if (pw) {
-      pw.document.write('Loading invoice...');
+      pw.document.write("Loading invoice...");
     }
   }
 
   try {
     let res;
     if (editingItem.value) {
-      res = await resources.update("sales", editingItem.value.id as any, saleData)
+      res = await resources.update(
+        "sales",
+        editingItem.value.id as any,
+        saleData,
+      );
     } else {
-      res = await resources.create("sales", saleData)
+      res = await resources.create("sales", saleData);
     }
-    await useMasterStore().refreshInBackground()
-    showModal.value = false
-    toast.success(editingItem.value ? "Sale updated successfully!" : "Sale saved successfully!")
+    await useMasterStore().refreshInBackground();
+    showModal.value = false;
+    toast.success(
+      editingItem.value
+        ? "Sale updated successfully!"
+        : "Sale saved successfully!",
+    );
 
     if (!editingItem.value && res && res.id) {
-      const newSale = useMasterStore().sales.value.find(s => s.id === res.id)
+      const newSale = useMasterStore().sales.value.find((s) => s.id === res.id);
       if (newSale) {
-        printInvoice(newSale, pw)
+        printInvoice(newSale, pw);
       } else {
-        printInvoice(res, pw)
+        printInvoice(res, pw);
       }
     }
   } catch (error: any) {
     if (pw) pw.close();
-    const errMsg = error.message || error.response?.data?.message || "Unknown error";
-    toast.error("Failed to save data! " + errMsg)
+    const errMsg =
+      error.message || error.response?.data?.message || "Unknown error";
+    toast.error("Failed to save data! " + errMsg);
   } finally {
     isSubmitting.value = false;
   }
 }
 
-function openDelete(item: Sale) { deletingItem.value = item; showConfirm.value = true }
+function openDelete(item: Sale) {
+  deletingItem.value = item;
+  showConfirm.value = true;
+}
 async function handleDelete() {
   if (deletingItem.value) {
     try {
-      await resources.remove("sales", deletingItem.value.id as any)
-      useMasterStore().refreshInBackground()
-      toast.success("Sale deleted successfully!")
+      await resources.remove("sales", deletingItem.value.id as any);
+      useMasterStore().refreshInBackground();
+      toast.success("Sale deleted successfully!");
     } catch (error) {
-      toast.error("Failed to delete data!")
+      toast.error("Failed to delete data!");
     }
   }
-  showConfirm.value = false
+  showConfirm.value = false;
 }
 
 function customerName(id: any): string {
-  const c = findCustomer(id as any) as any
-  if (!c) return '-'
-  return c.company_name || c.name || '-'
+  const c = findCustomer(id as any) as any;
+  if (!c) return "-";
+  return c.company_name || c.name || "-";
 }
 
 function picName(id: any): string {
-  const c = findCustomer(id as any) as any
-  if (!c) return '-'
-  return c.pic_name || '-'
+  const c = findCustomer(id as any) as any;
+  if (!c) return "-";
+  return c.pic_name || "-";
 }
 
 function formatRupiah(val: number): string {
-  return 'Rp ' + val.toLocaleString('id-ID')
+  return "Rp " + val.toLocaleString("id-ID");
+}
+
+function formatExportAmount(value: unknown): string {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount.toLocaleString("id-ID") : "0";
+}
+
+function sanitizeExportNamePart(value: string): string {
+  return (
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/[. ]+$/g, "")
+      .slice(0, 64) || "Unknown"
+  );
+}
+
+function buildExportFileName(items: any[], extension: "pdf" | "xlsx"): string {
+  const companyNames = new Set(
+    items
+      .map((item) => {
+        const customer = findCustomer(item.customer_id) as any;
+        return customer?.company_name || customer?.name || "";
+      })
+      .map((name) => String(name).trim())
+      .filter(Boolean),
+  );
+  const companyList = Array.from(companyNames);
+  const companyName =
+    companyList.length === 1
+      ? companyList[0]
+      : companyList.length > 1
+        ? "Multiple_Companies"
+        : filterCustomer.value
+          ? `Company_${filterCustomer.value}`
+          : "All_Companies";
+  const monthName = monthOptions.find(
+    (option) => option.value === monthFilter.value,
+  )?.label;
+  const periodParts = [
+    yearFilter.value || "All_Years",
+    monthFilter.value ? monthName || monthFilter.value : "All_Months",
+  ];
+  if (startDateFilter.value || endDateFilter.value) {
+    periodParts.push(
+      `${startDateFilter.value || "No_Start"}_to_${endDateFilter.value || "No_End"}`,
+    );
+  }
+
+  const now = new Date();
+  const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}-${String(now.getMinutes()).padStart(2, "0")}`;
+  const timestampPart = monthFilter.value ? "" : `_${timestamp}`;
+  return `Sales_Report_${sanitizeExportNamePart(companyName)}_${sanitizeExportNamePart(periodParts.join("_"))}${timestampPart}.${extension}`;
 }
 
 function printInvoice(item: any, existingWindow?: Window | null) {
-  const invoiceContentHtml = generateSingleInvoiceHtml(item)
+  const invoiceContentHtml = generateSingleInvoiceHtml(item);
   const html = `
     <!DOCTYPE html>
     <html>
@@ -1113,27 +1535,40 @@ function printInvoice(item: any, existingWindow?: Window | null) {
         <\/script>
       </body>
     </html>
-  `
+  `;
 
-  const printWindow = existingWindow || window.open('', '_blank')
+  const printWindow = existingWindow || window.open("", "_blank");
   if (printWindow) {
-    printWindow.document.open()
-    printWindow.document.write(html)
-    printWindow.document.close()
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
   }
 }
 
 function generateSingleReceiptHtml(item: any) {
-  const customer = findCustomer(item.customer_id)
-  const compName = customer?.company_name
-  const custName = customer?.pic_name
+  const customer = findCustomer(item.customer_id);
+  const compName = customer?.company_name;
+  const custName = customer?.pic_name;
 
-  const invoice = salesInvoices.value.find((inv: any) => inv.sale_id === item.id)
-  const invoiceNo = invoice ? invoice.invoice_no : (item.sale_no || item.code || `SLS-${item.id}`)
-  const invoiceDate = item.sale_date || item.date || invoice?.created_at || invoice?.due_date
+  const invoice = salesInvoices.value.find(
+    (inv: any) => inv.sale_id === item.id,
+  );
+  const invoiceNo = invoice
+    ? invoice.invoice_no
+    : item.sale_no || item.code || `SLS-${item.id}`;
+  const invoiceDate =
+    item.sale_date || item.date || invoice?.created_at || invoice?.due_date;
 
-  const dateStr = invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
-  const amountStr = (item.total_amount || item.total || 0).toLocaleString('id-ID')
+  const dateStr = invoiceDate
+    ? new Date(invoiceDate).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      })
+    : "-";
+  const amountStr = (item.total_amount || item.total || 0).toLocaleString(
+    "id-ID",
+  );
 
   return `
     <div class="page-break" style="padding: 40px; box-sizing: border-box; max-width: 800px; margin: 0 auto; font-family: 'Segoe UI', sans-serif;">
@@ -1185,69 +1620,95 @@ function generateSingleReceiptHtml(item: any) {
         </div>
       </div>
     </div>
-  `
+  `;
 }
 
 function exportToExcel() {
   const exportData = filteredSales.value.map((j: any) => ({
-    'Transaction Date': j.date ? new Date(j.date).toLocaleDateString('en-GB') : '-',
-    'PO No': (j.po_no || j.po_number || '').trim() || '-',
-    'Customer': findCustomer(j.customer_id)?.company_name || findCustomer(j.customer_id)?.name || '-',
-    'PIC Name': findCustomer(j.customer_id)?.pic_name || '-',
-    'Total': j.total || 0,
-    'Status': j.status || '-'
-  }))
+    "Transaction Date": j.date
+      ? new Date(j.date).toLocaleDateString("en-GB")
+      : "-",
+    "PO No": (j.po_no || j.po_number || "").trim() || "-",
+    Customer:
+      findCustomer(j.customer_id)?.company_name ||
+      findCustomer(j.customer_id)?.name ||
+      "-",
+    "PIC Name": findCustomer(j.customer_id)?.pic_name || "-",
+    Total: formatExportAmount(j.total),
+    Status: j.status || "-",
+  }));
   if (!exportData.length) {
-    toast.error('No data to export')
-    return
+    toast.error("No data to export");
+    return;
   }
-  const ws = XLSX.utils.json_to_sheet(exportData)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, "Sales")
-  XLSX.writeFile(wb, `Sales_${Date.now()}.xlsx`)
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Sales");
+  XLSX.writeFile(wb, buildExportFileName(filteredSales.value, "xlsx"));
 }
 
 function exportToPdf() {
   const exportData = filteredSales.value.map((j: any) => ({
-    'Transaction Date': j.date ? new Date(j.date).toLocaleDateString('en-GB') : '-',
-    'PO No': (j.po_no || j.po_number || '').trim() || '-',
-    'Customer': findCustomer(j.customer_id)?.company_name || findCustomer(j.customer_id)?.name || '-',
-    'PIC Name': findCustomer(j.customer_id)?.pic_name || '-',
-    'Total': (j.total || 0).toLocaleString('id-ID'),
-    'Status': String(j.status || '-').toUpperCase()
-  }))
+    "Transaction Date": j.date
+      ? new Date(j.date).toLocaleDateString("en-GB")
+      : "-",
+    "PO No": (j.po_no || j.po_number || "").trim() || "-",
+    Customer:
+      findCustomer(j.customer_id)?.company_name ||
+      findCustomer(j.customer_id)?.name ||
+      "-",
+    "PIC Name": findCustomer(j.customer_id)?.pic_name || "-",
+    Total: formatExportAmount(j.total),
+    Status: String(j.status || "-").toUpperCase(),
+  }));
   if (!exportData.length) {
-    toast.error('No data to export')
-    return
+    toast.error("No data to export");
+    return;
   }
 
-  let html = '<h2 style="font-family: sans-serif; text-align: center;">Sales Report</h2><table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px; text-align: center;">'
-  html += '<thead><tr style="background-color: #5b9bd5; color: white;">'
-  const keys = Object.keys(exportData[0]!)
-  keys.forEach(k => html += `<th>${k}</th>`)
-  html += '</tr></thead><tbody>'
-  exportData.forEach(row => {
-    html += '<tr>'
-    keys.forEach(k => html += `<td>${(row as any)[k]}</td>`)
-    html += '</tr>'
-  })
-  html += '</tbody></table>'
+  const tableHtml = [
+    "<style>",
+    "body{font-family:Arial,sans-serif;margin:0;padding:18px;color:#222}",
+    "table{width:100%;border-collapse:collapse;font-size:11px}",
+    "th,td{border:1px solid #bfc8d9;padding:8px 10px;text-align:left;vertical-align:top}",
+    "th{background:#5b9bd5;color:#fff;font-weight:700}",
+    "tbody tr:nth-child(even){background:#f7f9fc}",
+    "</style>",
+    '<h2 style="margin:0 0 14px;text-align:center;">Sales Report</h2>',
+    "<table>",
+    "<thead><tr>",
+    Object.keys(exportData[0])
+      .map((k) => `<th>${k}</th>`)
+      .join(""),
+    "</tr></thead>",
+    "<tbody>",
+    exportData
+      .map(
+        (row) =>
+          `<tr>${Object.keys(row)
+            .map((k) => `<td>${(row as any)[k]}</td>`)
+            .join("")}</tr>`,
+      )
+      .join(""),
+    "</tbody>",
+    "</table>",
+  ].join("");
 
-  const wrapper = document.createElement('div')
-  wrapper.innerHTML = html
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = tableHtml;
 
   const opt = {
-    margin: 0.5,
-    filename: `Sales_Report_${Date.now()}.pdf`,
-    image: { type: 'jpeg' as const, quality: 0.98 },
-    html2canvas: { scale: 2 },
-    jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' as const }
-  }
-  html2pdf().set(opt).from(wrapper).save()
+    margin: 0.4,
+    filename: buildExportFileName(filteredSales.value, "pdf"),
+    image: { type: "jpeg" as const, quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: "in", format: "legal", orientation: "landscape" as const },
+  };
+  html2pdf().set(opt).from(wrapper).save();
 }
 
 function printReceipt(item: any, existingWindow?: Window | null) {
-  const receiptContentHtml = generateSingleReceiptHtml(item)
+  const receiptContentHtml = generateSingleReceiptHtml(item);
   const html = `
     <!DOCTYPE html>
     <html>
@@ -1269,125 +1730,303 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         <\/script>
       </body>
     </html>
-  `
-  const printWindow = existingWindow || window.open('', '_blank')
+  `;
+  const printWindow = existingWindow || window.open("", "_blank");
   if (printWindow) {
-    printWindow.document.open()
-    printWindow.document.write(html)
-    printWindow.document.close()
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
   }
 }
 
 const combinedItemOptions = computed(() => {
-  const opts: { value: string; label: string }[] = []
-  products.value.forEach(p => {
-    opts.push({ value: `P_${p.id}`, label: `[Product] ${formatProductDisplayName(p)}` })
-  })
+  const opts: { value: string; label: string }[] = [];
+  products.value.forEach((p) => {
+    opts.push({
+      value: `P_${p.id}`,
+      label: `[Product] ${formatProductDisplayName(p)}`,
+    });
+  });
 
-  const groupedUnits: { [key: string]: any[] } = {}
-  units.value.filter(u => u.status !== 'sold').forEach(u => {
-    const key = formatUnitDisplayName(u)
-    if (!groupedUnits[key]) {
-      groupedUnits[key] = []
-    }
-    groupedUnits[key].push(u)
-  })
+  const groupedUnits: { [key: string]: any[] } = {};
+  units.value
+    .filter((u) => u.status !== "sold")
+    .forEach((u) => {
+      const key = formatUnitDisplayName(u);
+      if (!groupedUnits[key]) {
+        groupedUnits[key] = [];
+      }
+      groupedUnits[key].push(u);
+    });
 
-  Object.values(groupedUnits).forEach(group => {
+  Object.values(groupedUnits).forEach((group) => {
     if (group.length === 1) {
-      const u = group[0]
-      opts.push({ value: `U_${u.id}`, label: `[Unit] ${formatUnitDisplayName(u)} ${u.serial_no ? '(SN: ' + u.serial_no + ')' : ''}` })
+      const u = group[0];
+      opts.push({
+        value: `U_${u.id}`,
+        label: `[Unit] ${formatUnitDisplayName(u)} ${u.serial_no ? "(SN: " + u.serial_no + ")" : ""}`,
+      });
     } else if (group.length > 1) {
-      const u = group[0]
-      opts.push({ value: `U_${u.id}`, label: `[Unit] ${formatUnitDisplayName(u)}` })
+      const u = group[0];
+      opts.push({
+        value: `U_${u.id}`,
+        label: `[Unit] ${formatUnitDisplayName(u)}`,
+      });
     }
-  })
+  });
 
-  return opts
-})
-
+  return opts;
+});
 </script>
 <template>
   <div>
-    <PageHeader title="Sales" button-label="Add Sale" permission="sale:create" @add="openAdd">
-      <template #actions>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <CustomSelect v-model="filterCustomer" :options="customerOptions" placeholder="Filter by Customer" style="min-width: 200px;" />
-          <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
-            Export PDF
-          </button>
-          <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
-            Export Excel
-          </button>
-        </div>
-      </template>
-    </PageHeader>
-    
-    <DataTable :columns="columns" :data="filteredSales" search-placeholder="Search sales..." @edit="openEdit"
-      @delete="openDelete">
-      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
-      <template #cell-pic_name="{ row }">{{ picName(row.customer_id) }}</template>
-      <template #cell-date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
-      <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-service_charge="{ value }">{{ formatRupiah(value || 0) }}</template>
+    <PageHeader
+      title="Sales"
+      button-label="Add Sale"
+      permission="sale:create"
+      @add="openAdd"
+    />
+
+    <section class="report-toolbar" aria-label="Sales filters and exports">
+      <div class="report-filters">
+        <label class="report-filter report-filter-customer">
+          <span class="report-filter-label">Customer</span>
+          <CustomSelect
+            v-model="filterCustomer"
+            :options="customerOptions"
+            placeholder="All Customers"
+          />
+        </label>
+        <label class="report-filter report-filter-month">
+          <span class="report-filter-label">Month</span>
+          <CustomSelect
+            v-model="monthFilter"
+            :options="monthOptions"
+            placeholder="All Months"
+          />
+        </label>
+        <label class="report-filter report-filter-year">
+          <span class="report-filter-label">Year</span>
+          <CustomSelect
+            v-model="yearFilter"
+            :options="yearOptions"
+            placeholder="All Years"
+          />
+        </label>
+        <label class="report-filter report-filter-date">
+          <span class="report-filter-label">Start date</span>
+          <input v-model="startDateFilter" type="date" class="form-input" />
+        </label>
+        <label class="report-filter report-filter-date">
+          <span class="report-filter-label">End date</span>
+          <input v-model="endDateFilter" type="date" class="form-input" />
+        </label>
+        <button
+          v-if="monthFilter || yearFilter || startDateFilter || endDateFilter"
+          type="button"
+          class="btn btn-outline report-reset"
+          @click="resetDateFilters"
+        >
+          Reset filters
+        </button>
+      </div>
+      <div class="report-actions">
+        <button type="button" class="btn btn-outline" @click="exportToPdf">
+          Export PDF
+        </button>
+        <button type="button" class="btn btn-outline" @click="exportToExcel">
+          Export Excel
+        </button>
+      </div>
+    </section>
+
+    <DataTable
+      :columns="columns"
+      :data="filteredSales"
+      search-placeholder="Search sales..."
+      @edit="openEdit"
+      @delete="openDelete"
+    >
+      <template #cell-customer_id="{ value }">{{
+        customerName(value as any)
+      }}</template>
+      <template #cell-pic_name="{ row }">{{
+        picName(row.customer_id)
+      }}</template>
+      <template #cell-date="{ value }">{{
+        value ? new Date(value).toLocaleDateString("en-GB") : "-"
+      }}</template>
+      <template #cell-subtotal="{ value }">{{
+        formatRupiah(value || 0)
+      }}</template>
+      <template #cell-service_charge="{ value }">{{
+        formatRupiah(value || 0)
+      }}</template>
       <template #cell-tax="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-do_number="{ row }">
-        <span v-if="hasActiveDO(row)" class="badge badge-info" style="font-family: monospace; font-size: 0.78rem;">
+        <span
+          v-if="hasActiveDO(row)"
+          class="badge badge-info"
+          style="font-family: monospace; font-size: 0.78rem"
+        >
           {{ getDONumber(row) }}
         </span>
-        <span v-else class="text-muted" style="font-size: 0.78rem; font-style: italic;">
+        <span
+          v-else
+          class="text-muted"
+          style="font-size: 0.78rem; font-style: italic"
+        >
           No DO
         </span>
       </template>
-      <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
+      <template #cell-total="{ value }">{{
+        formatRupiah(value || 0)
+      }}</template>
       <template #cell-status="{ value }">
         <span
-          :class="(!value || value === 'pending') ? 'badge badge-info' : value === 'approved' ? 'badge badge-success' : value === 'paid' ? 'badge badge-success' : 'badge badge-danger'">
-          {{ (!value || value === 'pending') ? 'Approved' : value === 'approved' ? 'Approved' : value === 'paid' ? 'Paid'
-            : 'Cancelled' }}
+          :class="
+            !value || value === 'pending'
+              ? 'badge badge-info'
+              : value === 'approved'
+                ? 'badge badge-success'
+                : value === 'paid'
+                  ? 'badge badge-success'
+                  : 'badge badge-danger'
+          "
+        >
+          {{
+            !value || value === "pending"
+              ? "Approved"
+              : value === "approved"
+                ? "Approved"
+                : value === "paid"
+                  ? "Paid"
+                  : "Cancelled"
+          }}
         </span>
       </template>
       <template #actions="{ row }">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <button v-if="can('sale:read')" class="action-btn action-btn--edit" title="Detail" @click="openView(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <div style="display: flex; align-items: center; gap: 6px">
+          <button
+            v-if="can('sale:read')"
+            class="action-btn action-btn--edit"
+            title="Detail"
+            @click="openView(row)"
+            style="color: var(--color-text-muted); width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
               <circle cx="12" cy="12" r="3"></circle>
             </svg>
           </button>
-          <button v-if="row.status !== 'paid' && can('payment:create')" class="action-btn action-btn--edit" title="Payment" @click="openPayment(row)" style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button
+            v-if="row.status !== 'paid' && can('payment:create')"
+            class="action-btn action-btn--edit"
+            title="Payment"
+            @click="openPayment(row)"
+            style="color: var(--color-success); width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
               <line x1="2" y1="10" x2="22" y2="10"></line>
             </svg>
           </button>
-          <button v-if="row.status === 'paid' && can('sale:read')" class="action-btn action-btn--edit" title="Print Receipt"
-            @click="printReceipt(row)" style="color: var(--color-success); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <button
+            v-if="row.status === 'paid' && can('sale:read')"
+            class="action-btn action-btn--edit"
+            title="Print Receipt"
+            @click="printReceipt(row)"
+            style="color: var(--color-success); width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+              ></path>
               <polyline points="14 2 14 8 20 8"></polyline>
               <line x1="16" y1="13" x2="8" y2="13"></line>
               <line x1="16" y1="17" x2="8" y2="17"></line>
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
           </button>
-          <button v-if="row.status === 'approved' && can('sale:read')" class="action-btn action-btn--edit" title="Print Invoice"
-            @click="printInvoice(row)" style="color: var(--color-primary); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button
+            v-if="row.status === 'approved' && can('sale:read')"
+            class="action-btn action-btn--edit"
+            title="Print Invoice"
+            @click="printInvoice(row)"
+            style="color: var(--color-primary); width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <polyline points="6 9 6 2 18 2 18 9"></polyline>
-              <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+              <path
+                d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"
+              ></path>
               <rect x="6" y="14" width="12" height="8"></rect>
             </svg>
           </button>
-          <button v-if="can('sale:update')" class="action-btn action-btn--edit" title="Edit" @click="openEdit(row)" style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          <button
+            v-if="can('sale:update')"
+            class="action-btn action-btn--edit"
+            title="Edit"
+            @click="openEdit(row)"
+            style="width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
+              ></path>
+              <path
+                d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
+              ></path>
             </svg>
           </button>
           <!-- Create / Restore Delivery Order Button -->
@@ -1396,31 +2035,31 @@ const combinedItemOptions = computed(() => {
             class="action-btn action-btn--edit"
             title="Buat / Pulihkan Surat Jalan (DO)"
             @click="openCreateDOModal(row)"
-            style="color: #e67e22; width: 36px; height: 36px;"
+            style="color: #e67e22; width: 36px; height: 36px"
           >
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <rect x="1" y="3" width="15" height="13"></rect>
               <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
               <circle cx="5.5" cy="18.5" r="2.5"></circle>
               <circle cx="18.5" cy="18.5" r="2.5"></circle>
             </svg>
           </button>
-          <button v-if="can('sale:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDelete(row)" style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-              <line x1="10" y1="11" x2="10" y2="17"></line>
-              <line x1="14" y1="11" x2="14" y2="17"></line>
-            </svg>
-          </button>
           <button
-            v-if="hardDelete.isSuperadmin"
-            class="action-btn action-btn--hard"
-            title="Hapus permanen dari database (superadmin)"
-            @click="hardDelete.open(row)"
-            style="width: 36px; height: 36px;"
+            v-if="can('sale:delete')"
+            class="action-btn action-btn--delete"
+            title="Delete"
+            @click="openDelete(row)"
+            style="width: 36px; height: 36px"
           >
             <svg
               class="action-icon"
@@ -1434,22 +2073,61 @@ const combinedItemOptions = computed(() => {
               stroke-linejoin="round"
             >
               <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <path
+                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+              ></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          </button>
+          <button
+            v-if="hardDelete.isSuperadmin"
+            class="action-btn action-btn--hard"
+            title="Hapus permanen dari database (superadmin)"
+            @click="hardDelete.open(row)"
+            style="width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path
+                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+              ></path>
               <line x1="12" y1="11" x2="12" y2="17"></line>
             </svg>
           </button>
         </div>
       </template>
     </DataTable>
-    <FormModal :open="showModal" :title="editingItem ? 'Edit Sale' : 'Add Sale'" @close="showModal = false" :max-width="'700px'">
+    <FormModal
+      :open="showModal"
+      :title="editingItem ? 'Edit Sale' : 'Add Sale'"
+      @close="showModal = false"
+      :max-width="'700px'"
+    >
       <!-- Stepper Header -->
       <div class="stepper-container">
-        <div class="stepper-item" :class="{ active: currentStep === 1, completed: currentStep > 1 }">
+        <div
+          class="stepper-item"
+          :class="{ active: currentStep === 1, completed: currentStep > 1 }"
+        >
           <div class="step-circle">1</div>
           <div class="step-label">General Info</div>
         </div>
         <div class="stepper-line" :class="{ active: currentStep > 1 }"></div>
-        <div class="stepper-item" :class="{ active: currentStep === 2, completed: currentStep > 2 }">
+        <div
+          class="stepper-item"
+          :class="{ active: currentStep === 2, completed: currentStep > 2 }"
+        >
           <div class="step-circle">2</div>
           <div class="step-label">Sale Items</div>
         </div>
@@ -1465,203 +2143,671 @@ const combinedItemOptions = computed(() => {
         <div class="form-row">
           <div class="form-group">
             <label for="sale-no" class="form-label">Sale No. (Auto)</label>
-            <input id="sale-no" v-model="form.sale_no" type="text" class="form-input" disabled style="background: var(--color-surface-raised); cursor: not-allowed;">
+            <input
+              id="sale-no"
+              v-model="form.sale_no"
+              type="text"
+              class="form-input"
+              disabled
+              style="
+                background: var(--color-surface-raised);
+                cursor: not-allowed;
+              "
+            />
           </div>
           <div class="form-group">
             <label for="sale-customer" class="form-label">Customer</label>
-            <CustomSelect id="sale-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
+            <CustomSelect
+              id="sale-customer"
+              v-model="form.customer_id"
+              :options="customerOptions"
+              placeholder="-- Select Customer --"
+              class="form-select"
+            />
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label for="sale-date" class="form-label">Date</label>
-            <input id="sale-date" v-model="form.sale_date" type="date" class="form-input">
+            <input
+              id="sale-date"
+              v-model="form.sale_date"
+              type="date"
+              class="form-input"
+            />
           </div>
           <div class="form-group">
             <label for="sale-po-no" class="form-label">PO No (Optional)</label>
-            <input id="sale-po-no" v-model="form.po_no" type="text" class="form-input" placeholder="E.g. PO-2024-001">
+            <input
+              id="sale-po-no"
+              v-model="form.po_no"
+              type="text"
+              class="form-input"
+              placeholder="E.g. PO-2024-001"
+            />
           </div>
         </div>
         <div class="form-group">
-          <label for="sale-installation-address" class="form-label">Installation / Delivery Address</label>
-          <textarea id="sale-installation-address" v-model="form.installation_address" class="form-textarea" rows="3" placeholder="Enter the full delivery address..." required></textarea>
+          <label for="sale-installation-address" class="form-label"
+            >Installation / Delivery Address</label
+          >
+          <textarea
+            id="sale-installation-address"
+            v-model="form.installation_address"
+            class="form-textarea"
+            rows="3"
+            placeholder="Enter the full delivery address..."
+            required
+          ></textarea>
         </div>
       </div>
 
       <!-- Step 2 -->
       <div v-show="currentStep === 2" class="step-content">
-        <div class="form-section-title" style="margin-top: 0;">Sale Items</div>
-      <div v-for="(item, idx) in saleItems" :key="idx" class="sale-item-row">
-        <div class="form-group sale-item-product" style="grid-column: span 2;">
-          <CustomSelect v-model="item._combined_id" :options="combinedItemOptions" placeholder="-- Item (Product or Unit) --" class="form-select" @update:modelValue="onCombinedItemChange(idx)" />
-        </div>
-        <div class="form-group sale-item-qty">
-          <input v-model.number="item.qty" type="number" class="form-input" min="1" placeholder="Qty">
-        </div>
-        <div class="form-group sale-item-price">
-          <input :value="(item.unit_price || 0).toLocaleString('id-ID')" type="text" class="form-input" min="0" placeholder="Price" readonly style="background: var(--color-surface-raised); cursor: not-allowed;">
-        </div>
-        <button type="button" class="btn-remove-item" title="Remove item" @click="removeSaleItem(idx)">✕</button>
+        <div class="form-section-title" style="margin-top: 0">Sale Items</div>
+        <div v-for="(item, idx) in saleItems" :key="idx" class="sale-item-row">
+          <div class="form-group sale-item-product" style="grid-column: span 2">
+            <CustomSelect
+              v-model="item._combined_id"
+              :options="combinedItemOptions"
+              placeholder="-- Item (Product or Unit) --"
+              class="form-select"
+              @update:modelValue="onCombinedItemChange(idx)"
+            />
+          </div>
+          <div class="form-group sale-item-qty">
+            <input
+              v-model.number="item.qty"
+              type="number"
+              class="form-input"
+              min="1"
+              placeholder="Qty"
+            />
+          </div>
+          <div class="form-group sale-item-price">
+            <input
+              :value="(item.unit_price || 0).toLocaleString('id-ID')"
+              type="text"
+              class="form-input"
+              min="0"
+              placeholder="Price"
+              readonly
+              style="
+                background: var(--color-surface-raised);
+                cursor: not-allowed;
+              "
+            />
+          </div>
+          <button
+            type="button"
+            class="btn-remove-item"
+            title="Remove item"
+            @click="removeSaleItem(idx)"
+          >
+            ✕
+          </button>
 
-        <div v-if="item.is_computer" style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
-          <h4 style="margin-bottom: 0.75rem; font-weight: 600; font-size: 0.95rem; color: var(--color-primary);">Computer / PC Specifications</h4>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem;">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Processor (CPU)</label>
-              <input v-model="item.specs.cpu" type="text" class="form-input" placeholder="E.g. Intel Core i5">
+          <div
+            v-if="item.is_computer"
+            style="
+              grid-column: 1 / -1;
+              margin-top: 1rem;
+              border-top: 1px dashed var(--color-border-light);
+              padding-top: 1rem;
+            "
+          >
+            <h4
+              style="
+                margin-bottom: 0.75rem;
+                font-weight: 600;
+                font-size: 0.95rem;
+                color: var(--color-primary);
+              "
+            >
+              Computer / PC Specifications
+            </h4>
+            <div
+              style="
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 0.75rem;
+              "
+            >
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.8rem"
+                  >Processor (CPU)</label
+                >
+                <input
+                  v-model="item.specs.cpu"
+                  type="text"
+                  class="form-input"
+                  placeholder="E.g. Intel Core i5"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.8rem">RAM</label>
+                <input
+                  v-model="item.specs.ram"
+                  type="text"
+                  class="form-input"
+                  placeholder="E.g. 16GB DDR4"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.8rem"
+                  >VGA / GPU</label
+                >
+                <input
+                  v-model="item.specs.vga"
+                  type="text"
+                  class="form-input"
+                  placeholder="E.g. Intel UHD Graphics"
+                />
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">RAM</label>
-              <input v-model="item.specs.ram" type="text" class="form-input" placeholder="E.g. 16GB DDR4">
+            <div
+              style="
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 0.75rem;
+                margin-top: 0.75rem;
+              "
+            >
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.8rem"
+                  >Storage Type</label
+                >
+                <input
+                  v-model="item.specs.storage_type"
+                  type="text"
+                  class="form-input"
+                  placeholder="E.g. SSD, HDD, NVMe"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.8rem"
+                  >Storage Capacity</label
+                >
+                <input
+                  v-model="item.specs.storage"
+                  type="text"
+                  class="form-input"
+                  placeholder="E.g. 512GB"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.8rem"
+                  >Operating System (OS)</label
+                >
+                <input
+                  v-model="item.specs.os"
+                  type="text"
+                  class="form-input"
+                  placeholder="E.g. Windows 11 Pro"
+                />
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">VGA / GPU</label>
-              <input v-model="item.specs.vga" type="text" class="form-input" placeholder="E.g. Intel UHD Graphics">
+            <div
+              style="
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+                margin-top: 0.75rem;
+              "
+            >
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.8rem"
+                  >Office Package</label
+                >
+                <input
+                  v-model="item.specs.office"
+                  type="text"
+                  class="form-input"
+                  placeholder="E.g. Microsoft Office 2021"
+                />
+              </div>
             </div>
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 0.75rem;">
+
+          <div
+            style="
+              grid-column: 1 / -1;
+              margin-top: 1rem;
+              border-top: 1px dashed var(--color-border-light);
+              padding-top: 1rem;
+            "
+          >
             <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Storage Type</label>
-              <input v-model="item.specs.storage_type" type="text" class="form-input" placeholder="E.g. SSD, HDD, NVMe">
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Storage Capacity</label>
-              <input v-model="item.specs.storage" type="text" class="form-input" placeholder="E.g. 512GB">
-            </div>
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Operating System (OS)</label>
-              <input v-model="item.specs.os" type="text" class="form-input" placeholder="E.g. Windows 11 Pro">
-            </div>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 0.75rem;">
-            <div class="form-group">
-              <label class="form-label" style="font-size: 0.8rem;">Office Package</label>
-              <input v-model="item.specs.office" type="text" class="form-input" placeholder="E.g. Microsoft Office 2021">
+              <label class="form-label" style="font-size: 0.8rem"
+                >Description / Notes (Shown on Invoice)</label
+              >
+              <textarea
+                v-model="item.description"
+                class="form-input"
+                placeholder="E.g. Good condition, including power cable..."
+                rows="2"
+              ></textarea>
             </div>
           </div>
         </div>
-
-        <div style="grid-column: 1 / -1; margin-top: 1rem; border-top: 1px dashed var(--color-border-light); padding-top: 1rem;">
-          <div class="form-group">
-            <label class="form-label" style="font-size: 0.8rem;">Description / Notes (Shown on Invoice)</label>
-            <textarea v-model="item.description" class="form-input" placeholder="E.g. Good condition, including power cable..." rows="2"></textarea>
-          </div>
-        </div>
-      </div>
-      <button type="button" class="btn btn-outline btn-sm" @click="addSaleItem" style="margin-top: 1rem;">+ Add Item</button>
-
+        <button
+          type="button"
+          class="btn btn-outline btn-sm"
+          @click="addSaleItem"
+          style="margin-top: 1rem"
+        >
+          + Add Item
+        </button>
       </div>
 
       <!-- Step 3 -->
       <div v-show="currentStep === 3" class="step-content">
-        <div class="form-section-title" style="margin-top: 0;">Warranty & Services</div>
-      <div style="border: 1px solid var(--color-border); padding: 1rem; border-radius: var(--radius-md); background-color: var(--color-surface); margin-bottom: 1.5rem;">
-        <div style="display: flex; flex-direction: column; gap: 1rem;">
-          <div class="form-group">
-            <label class="form-label">Warranty Type <span class="text-muted" style="font-weight: 400;">(bisa pilih lebih dari 1)</span></label>
-            <div class="warranty-type-checks">
-              <label v-for="opt in warrantyTypeOptions" :key="opt.value" class="warranty-type-check">
-                <input type="checkbox" :value="opt.value" v-model="form.warranty.warranty_types" />
-                {{ opt.label }}
-              </label>
+        <div class="form-section-title" style="margin-top: 0">
+          Warranty & Services
+        </div>
+        <div
+          style="
+            border: 1px solid var(--color-border);
+            padding: 1rem;
+            border-radius: var(--radius-md);
+            background-color: var(--color-surface);
+            margin-bottom: 1.5rem;
+          "
+        >
+          <div style="display: flex; flex-direction: column; gap: 1rem">
+            <div class="form-group">
+              <label class="form-label"
+                >Warranty Type
+                <span class="text-muted" style="font-weight: 400"
+                  >(bisa pilih lebih dari 1)</span
+                ></label
+              >
+              <div class="warranty-type-checks">
+                <label
+                  v-for="opt in warrantyTypeOptions"
+                  :key="opt.value"
+                  class="warranty-type-check"
+                >
+                  <input
+                    type="checkbox"
+                    :value="opt.value"
+                    v-model="form.warranty.warranty_types"
+                  />
+                  {{ opt.label }}
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Warranty Expired Date</label>
+              <input
+                v-model="form.warranty.expired_date"
+                type="date"
+                class="form-input"
+              />
             </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Warranty Expired Date</label>
-            <input v-model="form.warranty.expired_date" type="date" class="form-input">
+          <div class="form-group" style="margin-top: 0.75rem">
+            <label class="form-label">Warranty Terms & Conditions</label>
+            <textarea
+              v-model="form.warranty.terms_conditions"
+              class="form-input"
+              rows="3"
+              placeholder="E.g. Warranty is void if the seal is broken, due to human error, or water damage..."
+            ></textarea>
           </div>
         </div>
-        <div class="form-group" style="margin-top: 0.75rem;">
-          <label class="form-label">Warranty Terms & Conditions</label>
-          <textarea v-model="form.warranty.terms_conditions" class="form-input" rows="3" placeholder="E.g. Warranty is void if the seal is broken, due to human error, or water damage..."></textarea>
+
+        <div class="form-group">
+          <label for="sale-discount" class="form-label">Discount (Rp)</label>
+          <input
+            id="sale-discount"
+            v-model.number="form.discount"
+            type="number"
+            class="form-input"
+            min="0"
+            placeholder="0"
+          />
         </div>
-      </div>
 
-      <div class="form-group">
-        <label for="sale-discount" class="form-label">Discount (Rp)</label>
-        <input id="sale-discount" v-model.number="form.discount" type="number" class="form-input" min="0" placeholder="0">
-      </div>
-
-      <div class="sale-summary">
-        <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(calcSubtotal) }}</span></div>
-        <div class="summary-row"><span>Discount</span><span>{{ formatRupiah(calcDiscount) }}</span></div>
-        <div class="summary-row summary-total"><span>Total</span><span>{{ formatRupiah(calcTotal) }}</span></div>
-      </div>
+        <div class="sale-summary">
+          <div class="summary-row">
+            <span>Subtotal</span><span>{{ formatRupiah(calcSubtotal) }}</span>
+          </div>
+          <div class="summary-row">
+            <span>Discount</span><span>{{ formatRupiah(calcDiscount) }}</span>
+          </div>
+          <div class="summary-row summary-total">
+            <span>Total</span><span>{{ formatRupiah(calcTotal) }}</span>
+          </div>
+        </div>
       </div>
 
       <template #footer>
-        <button class="btn btn-outline" @click="showModal = false">Cancel</button>
-        <div style="flex: 1;"></div>
-        <button v-if="currentStep > 1" class="btn btn-outline" @click="currentStep--">Previous</button>
-        <button v-if="currentStep < 3" class="btn btn-accent" @click="currentStep++">Next</button>
-        <button v-if="currentStep === 3" class="btn btn-accent" :disabled="isSubmitting" @click="handleSubmit">{{ isSubmitting ? 'Saving...' : 'Save Sale' }}</button>
+        <button class="btn btn-outline" @click="showModal = false">
+          Cancel
+        </button>
+        <div style="flex: 1"></div>
+        <button
+          v-if="currentStep > 1"
+          class="btn btn-outline"
+          @click="currentStep--"
+        >
+          Previous
+        </button>
+        <button
+          v-if="currentStep < 3"
+          class="btn btn-accent"
+          @click="currentStep++"
+        >
+          Next
+        </button>
+        <button
+          v-if="currentStep === 3"
+          class="btn btn-accent"
+          :disabled="isSubmitting"
+          @click="handleSubmit"
+        >
+          {{ isSubmitting ? "Saving..." : "Save Sale" }}
+        </button>
       </template>
     </FormModal>
-    <ConfirmDialog :open="showConfirm" title="Delete Sale"
-      :message="`Are you sure you want to delete sale ID ${deletingItem?.id}?`" @close="showConfirm = false"
-      @confirm="handleDelete" />
+    <ConfirmDialog
+      :open="showConfirm"
+      title="Delete Sale"
+      :message="`Are you sure you want to delete sale ID ${deletingItem?.id}?`"
+      @close="showConfirm = false"
+      @confirm="handleDelete"
+    />
 
-    <FormModal :open="showDetail" title="Sale Details" @close="showDetail = false" @submit="showDetail = false">
+    <FormModal
+      :open="showDetail"
+      title="Sale Details"
+      @close="showDetail = false"
+      @submit="showDetail = false"
+    >
       <template #default>
         <template v-if="viewingItem">
-          <div style="margin-bottom: var(--space-md);">
+          <div style="margin-bottom: var(--space-md)">
             <div
-              style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); margin-bottom: var(--space-md);">
+              style="
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: var(--space-md);
+                margin-bottom: var(--space-md);
+              "
+            >
               <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Sales Code</p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{ viewingItem.sale_no || '-' }}
+                <p
+                  style="
+                    font-size: var(--font-size-xs);
+                    color: var(--color-text-muted);
+                    margin: 0;
+                  "
+                >
+                  Sales Code
+                </p>
+                <p
+                  style="
+                    font-weight: var(--font-weight-medium);
+                    margin: 4px 0 0 0;
+                  "
+                >
+                  {{ viewingItem.sale_no || "-" }}
                 </p>
               </div>
               <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Transaction Date
+                <p
+                  style="
+                    font-size: var(--font-size-xs);
+                    color: var(--color-text-muted);
+                    margin: 0;
+                  "
+                >
+                  Transaction Date
                 </p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{ (viewingItem.sale_date || (viewingItem as any).date) ? new
-                  Date(viewingItem.sale_date || (viewingItem as any).date).toLocaleDateString('en-GB') : '-' }}</p>
+                <p
+                  style="
+                    font-weight: var(--font-weight-medium);
+                    margin: 4px 0 0 0;
+                  "
+                >
+                  {{
+                    viewingItem.sale_date || (viewingItem as any).date
+                      ? new Date(
+                          viewingItem.sale_date || (viewingItem as any).date,
+                        ).toLocaleDateString("en-GB")
+                      : "-"
+                  }}
+                </p>
               </div>
               <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">Customer</p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{
-                  customerName(viewingItem.customer_id) }}</p>
+                <p
+                  style="
+                    font-size: var(--font-size-xs);
+                    color: var(--color-text-muted);
+                    margin: 0;
+                  "
+                >
+                  Customer
+                </p>
+                <p
+                  style="
+                    font-weight: var(--font-weight-medium);
+                    margin: 4px 0 0 0;
+                  "
+                >
+                  {{ customerName(viewingItem.customer_id) }}
+                </p>
               </div>
               <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">PIC Name</p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{
-                  picName(viewingItem.customer_id) }}</p>
+                <p
+                  style="
+                    font-size: var(--font-size-xs);
+                    color: var(--color-text-muted);
+                    margin: 0;
+                  "
+                >
+                  PIC Name
+                </p>
+                <p
+                  style="
+                    font-weight: var(--font-weight-medium);
+                    margin: 4px 0 0 0;
+                  "
+                >
+                  {{ picName(viewingItem.customer_id) }}
+                </p>
               </div>
               <div>
-                <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0;">PO No</p>
-                <p style="font-weight: var(--font-weight-medium); margin: 4px 0 0 0;">{{ viewingItem.po_no || '-' }}</p>
+                <p
+                  style="
+                    font-size: var(--font-size-xs);
+                    color: var(--color-text-muted);
+                    margin: 0;
+                  "
+                >
+                  PO No
+                </p>
+                <p
+                  style="
+                    font-weight: var(--font-weight-medium);
+                    margin: 4px 0 0 0;
+                  "
+                >
+                  {{ viewingItem.po_no || "-" }}
+                </p>
               </div>
             </div>
           </div>
 
           <div class="form-section-title">Items Sold</div>
           <div
-            style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-md); flex-shrink: 0; min-height: 100px;">
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
-              <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
+            style="
+              border: 1px solid var(--color-border);
+              border-radius: var(--radius-md);
+              overflow: hidden;
+              margin-bottom: var(--space-md);
+              flex-shrink: 0;
+              min-height: 100px;
+            "
+          >
+            <table
+              style="
+                width: 100%;
+                border-collapse: collapse;
+                text-align: left;
+                font-size: var(--font-size-sm);
+              "
+            >
+              <thead
+                style="
+                  background: var(--color-surface-raised);
+                  border-bottom: 1px solid var(--color-border);
+                "
+              >
                 <tr>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Product</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Unit</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center;">Qty</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Unit Price</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Total</th>
-                  <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: center; width: 64px;">Aksi</th>
+                  <th
+                    style="
+                      padding: 12px;
+                      font-weight: var(--font-weight-semibold);
+                    "
+                  >
+                    Product
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      font-weight: var(--font-weight-semibold);
+                    "
+                  >
+                    Unit
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      font-weight: var(--font-weight-semibold);
+                      text-align: center;
+                    "
+                  >
+                    Qty
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      font-weight: var(--font-weight-semibold);
+                      text-align: right;
+                    "
+                  >
+                    Unit Price
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      font-weight: var(--font-weight-semibold);
+                      text-align: right;
+                    "
+                  >
+                    Total
+                  </th>
+                  <th
+                    style="
+                      padding: 12px;
+                      font-weight: var(--font-weight-semibold);
+                      text-align: center;
+                      width: 64px;
+                    "
+                  >
+                    Aksi
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="!viewingItem.sale_items || viewingItem.sale_items.length === 0">
-                  <td colspan="5" style="padding: 16px; text-align: center; color: var(--color-text-muted);">No item data available</td>
+                <tr
+                  v-if="
+                    !viewingItem.sale_items ||
+                    viewingItem.sale_items.length === 0
+                  "
+                >
+                  <td
+                    colspan="5"
+                    style="
+                      padding: 16px;
+                      text-align: center;
+                      color: var(--color-text-muted);
+                    "
+                  >
+                    No item data available
+                  </td>
                 </tr>
-                <tr v-for="(si, idx) in viewingItem.sale_items" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
-                  <td style="padding: 12px;">{{ si.product_id ? (formatProductDisplayName(findProduct(si.product_id) || si.product) || 'Product ID: ' + si.product_id) : '-' }}</td>
-                  <td style="padding: 12px;">{{ si.unit_id ? (formatUnitDisplayName(findUnit(si.unit_id) || si.unit) + ((findUnit(si.unit_id) || si.unit)?.serial_no ? ' (' + (findUnit(si.unit_id) || si.unit)?.serial_no + ')' : '')) : '-' }}</td>
-                  <td style="padding: 12px; text-align: center;">{{ si.qty }}</td>
-                  <td style="padding: 12px; text-align: right;">{{ formatRupiah(si.unit_price || (si as any).price || 0) }}</td>
-                  <td style="padding: 12px; text-align: right;">{{ formatRupiah((si.unit_price || (si as any).price || 0) * (si.qty || 1)) }}</td>
-                  <td style="padding: 12px; text-align: center;">
-                    <button type="button" class="action-btn action-btn--edit" title="Lihat detail item" @click="openSaleItemDetail(si)" style="width: 32px; height: 32px; color: var(--color-text-muted);">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <tr
+                  v-for="(si, idx) in viewingItem.sale_items"
+                  :key="idx"
+                  style="border-bottom: 1px solid var(--color-border-light)"
+                >
+                  <td style="padding: 12px">
+                    {{
+                      si.product_id
+                        ? formatProductDisplayName(
+                            findProduct(si.product_id) || si.product,
+                          ) || "Product ID: " + si.product_id
+                        : "-"
+                    }}
+                  </td>
+                  <td style="padding: 12px">
+                    {{
+                      si.unit_id
+                        ? formatUnitDisplayName(
+                            findUnit(si.unit_id) || si.unit,
+                          ) +
+                          ((findUnit(si.unit_id) || si.unit)?.serial_no
+                            ? " (" +
+                              (findUnit(si.unit_id) || si.unit)?.serial_no +
+                              ")"
+                            : "")
+                        : "-"
+                    }}
+                  </td>
+                  <td style="padding: 12px; text-align: center">
+                    {{ si.qty }}
+                  </td>
+                  <td style="padding: 12px; text-align: right">
+                    {{ formatRupiah(si.unit_price || (si as any).price || 0) }}
+                  </td>
+                  <td style="padding: 12px; text-align: right">
+                    {{
+                      formatRupiah(
+                        (si.unit_price || (si as any).price || 0) *
+                          (si.qty || 1),
+                      )
+                    }}
+                  </td>
+                  <td style="padding: 12px; text-align: center">
+                    <button
+                      type="button"
+                      class="action-btn action-btn--edit"
+                      title="Lihat detail item"
+                      @click="openSaleItemDetail(si)"
+                      style="
+                        width: 32px;
+                        height: 32px;
+                        color: var(--color-text-muted);
+                      "
+                    >
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path
+                          d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                        ></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
                     </button>
                   </td>
                 </tr>
@@ -1669,116 +2815,398 @@ const combinedItemOptions = computed(() => {
             </table>
           </div>
 
-          <div v-if="viewingItem.has_warranty || (viewingItem.warranties && viewingItem.warranties.length > 0)">
+          <div
+            v-if="
+              viewingItem.has_warranty ||
+              (viewingItem.warranties && viewingItem.warranties.length > 0)
+            "
+          >
             <div class="form-section-title">Warranty Details</div>
-            <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.25rem; margin-bottom: var(--space-md); background-color: var(--color-surface-raised);">
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.25rem;">
+            <div
+              style="
+                border: 1px solid var(--color-border);
+                border-radius: var(--radius-md);
+                padding: 1.25rem;
+                margin-bottom: var(--space-md);
+                background-color: var(--color-surface-raised);
+              "
+            >
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: 1fr 1fr 1fr;
+                  gap: 1.25rem;
+                "
+              >
                 <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Warranty Type</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0; text-transform: capitalize;">
-                    {{ viewingItem.warranties && viewingItem.warranties.length > 0 ? [...new Set(viewingItem.warranties.map((w: any) => w.warranty_type).filter(Boolean))].join(', ') : '-' }}
+                  <p
+                    style="
+                      font-size: var(--font-size-xs);
+                      color: var(--color-text-muted);
+                      margin: 0 0 4px 0;
+                    "
+                  >
+                    Warranty Type
+                  </p>
+                  <p
+                    style="
+                      font-weight: var(--font-weight-medium);
+                      margin: 0;
+                      text-transform: capitalize;
+                    "
+                  >
+                    {{
+                      viewingItem.warranties &&
+                      viewingItem.warranties.length > 0
+                        ? [
+                            ...new Set(
+                              viewingItem.warranties
+                                .map((w: any) => w.warranty_type)
+                                .filter(Boolean),
+                            ),
+                          ].join(", ")
+                        : "-"
+                    }}
                   </p>
                 </div>
                 <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Warranty Expired Date</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0;">
-                    {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].end_date) ? String(viewingItem.warranties[0].end_date).substring(0, 10) : '-' }}
+                  <p
+                    style="
+                      font-size: var(--font-size-xs);
+                      color: var(--color-text-muted);
+                      margin: 0 0 4px 0;
+                    "
+                  >
+                    Warranty Expired Date
+                  </p>
+                  <p style="font-weight: var(--font-weight-medium); margin: 0">
+                    {{
+                      viewingItem.warranties &&
+                      viewingItem.warranties.length > 0 &&
+                      viewingItem.warranties[0].end_date
+                        ? String(viewingItem.warranties[0].end_date).substring(
+                            0,
+                            10,
+                          )
+                        : "-"
+                    }}
                   </p>
                 </div>
                 <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Status</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0; text-transform: capitalize;">
-                    <span v-if="viewingItem.warranties && viewingItem.warranties.length > 0" 
-                          :style="{ 
-                            display: 'inline-block', 
-                            padding: '4px 10px', 
-                            borderRadius: '12px', 
-                            fontSize: '0.75rem', 
-                            fontWeight: '600',
-                            backgroundColor: viewingItem.warranties[0].status === 'active' ? '#e6f4ea' : '#fce8e6',
-                            color: viewingItem.warranties[0].status === 'active' ? '#137333' : '#c5221f'
-                          }">
-                      {{ viewingItem.warranties[0].status === 'active' ? 'Active' : viewingItem.warranties[0].status }}
+                  <p
+                    style="
+                      font-size: var(--font-size-xs);
+                      color: var(--color-text-muted);
+                      margin: 0 0 4px 0;
+                    "
+                  >
+                    Status
+                  </p>
+                  <p
+                    style="
+                      font-weight: var(--font-weight-medium);
+                      margin: 0;
+                      text-transform: capitalize;
+                    "
+                  >
+                    <span
+                      v-if="
+                        viewingItem.warranties &&
+                        viewingItem.warranties.length > 0
+                      "
+                      :style="{
+                        display: 'inline-block',
+                        padding: '4px 10px',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        backgroundColor:
+                          viewingItem.warranties[0].status === 'active'
+                            ? '#e6f4ea'
+                            : '#fce8e6',
+                        color:
+                          viewingItem.warranties[0].status === 'active'
+                            ? '#137333'
+                            : '#c5221f',
+                      }"
+                    >
+                      {{
+                        viewingItem.warranties[0].status === "active"
+                          ? "Active"
+                          : viewingItem.warranties[0].status
+                      }}
                     </span>
                     <span v-else>-</span>
                   </p>
                 </div>
-                
+
                 <div>
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 4px 0;">Valid From</p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0;">
-                    {{ (viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].start_date) ? String(viewingItem.warranties[0].start_date).substring(0, 10) : '-' }}
+                  <p
+                    style="
+                      font-size: var(--font-size-xs);
+                      color: var(--color-text-muted);
+                      margin: 0 0 4px 0;
+                    "
+                  >
+                    Valid From
+                  </p>
+                  <p style="font-weight: var(--font-weight-medium); margin: 0">
+                    {{
+                      viewingItem.warranties &&
+                      viewingItem.warranties.length > 0 &&
+                      viewingItem.warranties[0].start_date
+                        ? String(
+                            viewingItem.warranties[0].start_date,
+                          ).substring(0, 10)
+                        : "-"
+                    }}
                   </p>
                 </div>
-                <div style="grid-column: 1 / -1; margin-top: 0.5rem; padding-top: 1rem; border-top: 1px dashed var(--color-border-light);">
-                  <p style="font-size: var(--font-size-xs); color: var(--color-text-muted); margin: 0 0 8px 0;">Terms & Conditions</p>
-                  <div style="font-weight: var(--font-weight-medium); margin: 0; white-space: pre-line; background: var(--color-surface); padding: 12px; border-radius: 8px; border: 1px solid var(--color-border-light); font-size: 0.85rem; color: var(--color-text);">
-                    {{ viewingItem.warranties && viewingItem.warranties.length > 0 && viewingItem.warranties[0].terms_conditions ? viewingItem.warranties[0].terms_conditions : 'No specific terms & conditions.' }}
+                <div
+                  style="
+                    grid-column: 1 / -1;
+                    margin-top: 0.5rem;
+                    padding-top: 1rem;
+                    border-top: 1px dashed var(--color-border-light);
+                  "
+                >
+                  <p
+                    style="
+                      font-size: var(--font-size-xs);
+                      color: var(--color-text-muted);
+                      margin: 0 0 8px 0;
+                    "
+                  >
+                    Terms & Conditions
+                  </p>
+                  <div
+                    style="
+                      font-weight: var(--font-weight-medium);
+                      margin: 0;
+                      white-space: pre-line;
+                      background: var(--color-surface);
+                      padding: 12px;
+                      border-radius: 8px;
+                      border: 1px solid var(--color-border-light);
+                      font-size: 0.85rem;
+                      color: var(--color-text);
+                    "
+                  >
+                    {{
+                      viewingItem.warranties &&
+                      viewingItem.warranties.length > 0 &&
+                      viewingItem.warranties[0].terms_conditions
+                        ? viewingItem.warranties[0].terms_conditions
+                        : "No specific terms & conditions."
+                    }}
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div v-if="salePayments && salePayments.length > 0" style="margin-top: var(--space-lg);">
+          <div
+            v-if="salePayments && salePayments.length > 0"
+            style="margin-top: var(--space-lg)"
+          >
             <div class="form-section-title">Payment History</div>
-            <div style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; margin-bottom: var(--space-md);">
-              <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
-                <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
+            <div
+              style="
+                border: 1px solid var(--color-border);
+                border-radius: var(--radius-md);
+                overflow: hidden;
+                margin-bottom: var(--space-md);
+              "
+            >
+              <table
+                style="
+                  width: 100%;
+                  border-collapse: collapse;
+                  text-align: left;
+                  font-size: var(--font-size-sm);
+                "
+              >
+                <thead
+                  style="
+                    background: var(--color-surface-raised);
+                    border-bottom: 1px solid var(--color-border);
+                  "
+                >
                   <tr>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Payment Date</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Ref No.</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold);">Method</th>
-                    <th style="padding: 12px; font-weight: var(--font-weight-semibold); text-align: right;">Amount</th>
+                    <th
+                      style="
+                        padding: 12px;
+                        font-weight: var(--font-weight-semibold);
+                      "
+                    >
+                      Payment Date
+                    </th>
+                    <th
+                      style="
+                        padding: 12px;
+                        font-weight: var(--font-weight-semibold);
+                      "
+                    >
+                      Ref No.
+                    </th>
+                    <th
+                      style="
+                        padding: 12px;
+                        font-weight: var(--font-weight-semibold);
+                      "
+                    >
+                      Method
+                    </th>
+                    <th
+                      style="
+                        padding: 12px;
+                        font-weight: var(--font-weight-semibold);
+                        text-align: right;
+                      "
+                    >
+                      Amount
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(pay, idx) in salePayments" :key="idx" style="border-bottom: 1px solid var(--color-border-light);">
-                    <td style="padding: 12px;">{{ pay.payment_date ? String(pay.payment_date).substring(0, 10) : '-' }}</td>
-                    <td style="padding: 12px;">{{ pay.reference_no || '-' }}</td>
-                    <td style="padding: 12px;">{{ pay.bank_name || 'CASH' }}</td>
-                    <td style="padding: 12px; text-align: right; font-weight: 600; color: var(--color-success);">{{ formatRupiah(pay.amount || 0) }}</td>
+                  <tr
+                    v-for="(pay, idx) in salePayments"
+                    :key="idx"
+                    style="border-bottom: 1px solid var(--color-border-light)"
+                  >
+                    <td style="padding: 12px">
+                      {{
+                        pay.payment_date
+                          ? String(pay.payment_date).substring(0, 10)
+                          : "-"
+                      }}
+                    </td>
+                    <td style="padding: 12px">{{ pay.reference_no || "-" }}</td>
+                    <td style="padding: 12px">{{ pay.bank_name || "CASH" }}</td>
+                    <td
+                      style="
+                        padding: 12px;
+                        text-align: right;
+                        font-weight: 600;
+                        color: var(--color-success);
+                      "
+                    >
+                      {{ formatRupiah(pay.amount || 0) }}
+                    </td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
 
-          <div class="sale-summary" style="margin-top: var(--space-md);">
-            <div class="summary-row"><span>Subtotal</span><span>{{ formatRupiah(viewingItem.subtotal || 0) }}</span>
+          <div class="sale-summary" style="margin-top: var(--space-md)">
+            <div class="summary-row">
+              <span>Subtotal</span
+              ><span>{{ formatRupiah(viewingItem.subtotal || 0) }}</span>
             </div>
-            <div class="summary-row"><span>Service Fee</span><span>{{ formatRupiah(viewingItem.service_charge || 0)
-                }}</span></div>
-            <div class="summary-row"><span>Tax (VAT)</span><span>{{ formatRupiah(viewingItem.tax || 0) }}</span></div>
-            <div class="summary-row summary-total"><span>Grand Total</span><span>{{ formatRupiah(viewingItem.total || 0)
-                }}</span></div>
+            <div class="summary-row">
+              <span>Service Fee</span
+              ><span>{{ formatRupiah(viewingItem.service_charge || 0) }}</span>
+            </div>
+            <div class="summary-row">
+              <span>Tax (VAT)</span
+              ><span>{{ formatRupiah(viewingItem.tax || 0) }}</span>
+            </div>
+            <div class="summary-row summary-total">
+              <span>Grand Total</span
+              ><span>{{ formatRupiah(viewingItem.total || 0) }}</span>
+            </div>
           </div>
 
           <!-- Hide submit button for view only using CSS in modal -->
-          <div style="display: flex; justify-content: flex-end; margin-top: var(--space-lg);">
-            <button type="button" class="btn btn-outline" @click="showDetail = false">Close</button>
+          <div
+            style="
+              display: flex;
+              justify-content: flex-end;
+              margin-top: var(--space-lg);
+            "
+          >
+            <button
+              type="button"
+              class="btn btn-outline"
+              @click="showDetail = false"
+            >
+              Close
+            </button>
           </div>
         </template>
       </template>
       <template #footer>
-        <span style="display:none;"></span>
+        <span style="display: none"></span>
       </template>
     </FormModal>
-    <FormModal :open="showItemDetail" :title="selectedSaleItem ? `Detail Item — ${(selectedSaleItem.product_id ? formatProductDisplayName(findProduct(selectedSaleItem.product_id) || selectedSaleItem.product) : formatUnitDisplayName(findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit)) || 'Item'}` : 'Detail Item'" @close="closeSaleItemDetail" max-width="480px">
+    <FormModal
+      :open="showItemDetail"
+      :title="
+        selectedSaleItem
+          ? `Detail Item — ${(selectedSaleItem.product_id ? formatProductDisplayName(findProduct(selectedSaleItem.product_id) || selectedSaleItem.product) : formatUnitDisplayName(findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit)) || 'Item'}`
+          : 'Detail Item'
+      "
+      @close="closeSaleItemDetail"
+      max-width="480px"
+    >
       <template v-if="selectedSaleItem">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
           <div class="form-group">
             <label class="form-label">Product</label>
-            <div style="font-weight: 600;">{{ selectedSaleItem.product_id ? (formatProductDisplayName(findProduct(selectedSaleItem.product_id) || selectedSaleItem.product) || 'Product ID: ' + selectedSaleItem.product_id) : '-' }}</div>
-            <div style="font-size: 12px; color: var(--color-text-muted);">SKU: {{ selectedSaleItem.product_id ? ((findProduct(selectedSaleItem.product_id) || selectedSaleItem.product)?.sku || '-') : '-' }}</div>
+            <div style="font-weight: 600">
+              {{
+                selectedSaleItem.product_id
+                  ? formatProductDisplayName(
+                      findProduct(selectedSaleItem.product_id) ||
+                        selectedSaleItem.product,
+                    ) || "Product ID: " + selectedSaleItem.product_id
+                  : "-"
+              }}
+            </div>
+            <div style="font-size: 12px; color: var(--color-text-muted)">
+              SKU:
+              {{
+                selectedSaleItem.product_id
+                  ? (
+                      findProduct(selectedSaleItem.product_id) ||
+                      selectedSaleItem.product
+                    )?.sku || "-"
+                  : "-"
+              }}
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">UOM</label>
-            <div>{{ selectedSaleItem.product_id ? (((findProduct(selectedSaleItem.product_id) || selectedSaleItem.product) as any)?.uom?.name || '-') : '-' }}</div>
+            <div>
+              {{
+                selectedSaleItem.product_id
+                  ? (
+                      (findProduct(selectedSaleItem.product_id) ||
+                        selectedSaleItem.product) as any
+                    )?.uom?.name || "-"
+                  : "-"
+              }}
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Unit</label>
-            <div>{{ selectedSaleItem.unit_id ? (formatUnitDisplayName(findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit) + ((findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit)?.serial_no ? ` (${(findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit)?.serial_no})` : '')) : '-' }}</div>
+            <div>
+              {{
+                selectedSaleItem.unit_id
+                  ? formatUnitDisplayName(
+                      findUnit(selectedSaleItem.unit_id) ||
+                        selectedSaleItem.unit,
+                    ) +
+                    ((
+                      findUnit(selectedSaleItem.unit_id) ||
+                      selectedSaleItem.unit
+                    )?.serial_no
+                      ? ` (${(findUnit(selectedSaleItem.unit_id) || selectedSaleItem.unit)?.serial_no})`
+                      : "")
+                  : "-"
+              }}
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Qty</label>
@@ -1786,106 +3214,408 @@ const combinedItemOptions = computed(() => {
           </div>
           <div v-if="canSeeAmount" class="form-group">
             <label class="form-label">Unit Price</label>
-            <div>{{ formatRupiah(selectedSaleItem.unit_price || (selectedSaleItem as any).price || 0) }}</div>
+            <div>
+              {{
+                formatRupiah(
+                  selectedSaleItem.unit_price ||
+                    (selectedSaleItem as any).price ||
+                    0,
+                )
+              }}
+            </div>
           </div>
-          <div v-if="canSeeAmount" class="form-group" style="grid-column: span 2;">
+          <div
+            v-if="canSeeAmount"
+            class="form-group"
+            style="grid-column: span 2"
+          >
             <label class="form-label">Total</label>
-            <div style="font-weight: 700; color: var(--color-success);">{{ formatRupiah((selectedSaleItem.unit_price || (selectedSaleItem as any).price || 0) * (selectedSaleItem.qty || 1)) }}</div>
+            <div style="font-weight: 700; color: var(--color-success)">
+              {{
+                formatRupiah(
+                  (selectedSaleItem.unit_price ||
+                    (selectedSaleItem as any).price ||
+                    0) * (selectedSaleItem.qty || 1),
+                )
+              }}
+            </div>
           </div>
-          <div v-if="(selectedSaleItem as any).description" class="form-group" style="grid-column: span 2;">
+          <div
+            v-if="(selectedSaleItem as any).description"
+            class="form-group"
+            style="grid-column: span 2"
+          >
             <label class="form-label">Description</label>
-            <div style="white-space: pre-line; background: var(--color-surface-raised); padding: 10px; border-radius: 8px; border: 1px solid var(--color-border-light);">{{ (selectedSaleItem as any).description }}</div>
+            <div
+              style="
+                white-space: pre-line;
+                background: var(--color-surface-raised);
+                padding: 10px;
+                border-radius: 8px;
+                border: 1px solid var(--color-border-light);
+              "
+            >
+              {{ (selectedSaleItem as any).description }}
+            </div>
           </div>
         </div>
       </template>
       <template #footer>
-        <button type="button" class="btn btn-outline" @click="closeSaleItemDetail">Close</button>
+        <button
+          type="button"
+          class="btn btn-outline"
+          @click="closeSaleItemDetail"
+        >
+          Close
+        </button>
       </template>
     </FormModal>
-    <FormModal :open="showPaymentModal" title="Process Payment" @close="showPaymentModal = false" @submit="handlePayment">
-      <div style="display: flex; flex-direction: column; gap: var(--space-md);">
+    <FormModal
+      :open="showPaymentModal"
+      title="Process Payment"
+      @close="showPaymentModal = false"
+      @submit="handlePayment"
+    >
+      <div style="display: flex; flex-direction: column; gap: var(--space-md)">
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Date</label>
-          <input type="date" class="form-input" v-model="paymentData.payment_date" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+          <label
+            class="form-label"
+            style="
+              display: block;
+              margin-bottom: 4px;
+              font-weight: var(--font-weight-medium);
+            "
+            >Payment Date</label
+          >
+          <input
+            type="date"
+            class="form-input"
+            v-model="paymentData.payment_date"
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid var(--color-border);
+              border-radius: 4px;
+            "
+            required
+          />
         </div>
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Method</label>
-          <CustomSelect v-model="paymentData.method_type" :options="paymentMethodOptions" class="form-input" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" />
+          <label
+            class="form-label"
+            style="
+              display: block;
+              margin-bottom: 4px;
+              font-weight: var(--font-weight-medium);
+            "
+            >Payment Method</label
+          >
+          <CustomSelect
+            v-model="paymentData.method_type"
+            :options="paymentMethodOptions"
+            class="form-input"
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid var(--color-border);
+              border-radius: 4px;
+            "
+          />
         </div>
-        
+
         <template v-if="paymentData.method_type === 'TRANSFER'">
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Bank Name</label>
-            <input type="text" class="form-input" v-model="paymentData.bank_name" placeholder="E.g. BCA, Mandiri, BRI" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label
+              class="form-label"
+              style="
+                display: block;
+                margin-bottom: 4px;
+                font-weight: var(--font-weight-medium);
+              "
+              >Bank Name</label
+            >
+            <input
+              type="text"
+              class="form-input"
+              v-model="paymentData.bank_name"
+              placeholder="E.g. BCA, Mandiri, BRI"
+              style="
+                width: 100%;
+                padding: 8px;
+                border: 1px solid var(--color-border);
+                border-radius: 4px;
+              "
+              required
+            />
           </div>
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Account Number</label>
-            <input type="text" class="form-input" v-model="paymentData.account_number" placeholder="Sender account number" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label
+              class="form-label"
+              style="
+                display: block;
+                margin-bottom: 4px;
+                font-weight: var(--font-weight-medium);
+              "
+              >Account Number</label
+            >
+            <input
+              type="text"
+              class="form-input"
+              v-model="paymentData.account_number"
+              placeholder="Sender account number"
+              style="
+                width: 100%;
+                padding: 8px;
+                border: 1px solid var(--color-border);
+                border-radius: 4px;
+              "
+              required
+            />
           </div>
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Sender Name</label>
-            <input type="text" class="form-input" v-model="paymentData.sender_name" placeholder="Account holder name" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label
+              class="form-label"
+              style="
+                display: block;
+                margin-bottom: 4px;
+                font-weight: var(--font-weight-medium);
+              "
+              >Sender Name</label
+            >
+            <input
+              type="text"
+              class="form-input"
+              v-model="paymentData.sender_name"
+              placeholder="Account holder name"
+              style="
+                width: 100%;
+                padding: 8px;
+                border: 1px solid var(--color-border);
+                border-radius: 4px;
+              "
+              required
+            />
           </div>
         </template>
-        
+
         <template v-if="paymentData.method_type === 'CREDIT_CARD'">
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Card Provider / Bank</label>
-            <input type="text" class="form-input" v-model="paymentData.bank_name" placeholder="E.g. Visa, Mastercard, BCA" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label
+              class="form-label"
+              style="
+                display: block;
+                margin-bottom: 4px;
+                font-weight: var(--font-weight-medium);
+              "
+              >Card Provider / Bank</label
+            >
+            <input
+              type="text"
+              class="form-input"
+              v-model="paymentData.bank_name"
+              placeholder="E.g. Visa, Mastercard, BCA"
+              style="
+                width: 100%;
+                padding: 8px;
+                border: 1px solid var(--color-border);
+                border-radius: 4px;
+              "
+              required
+            />
           </div>
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Card Number (Last 4 Digits)</label>
-            <input type="text" class="form-input" v-model="paymentData.account_number" placeholder="E.g. 1234" maxlength="16" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label
+              class="form-label"
+              style="
+                display: block;
+                margin-bottom: 4px;
+                font-weight: var(--font-weight-medium);
+              "
+              >Card Number (Last 4 Digits)</label
+            >
+            <input
+              type="text"
+              class="form-input"
+              v-model="paymentData.account_number"
+              placeholder="E.g. 1234"
+              maxlength="16"
+              style="
+                width: 100%;
+                padding: 8px;
+                border: 1px solid var(--color-border);
+                border-radius: 4px;
+              "
+              required
+            />
           </div>
           <div>
-            <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Cardholder Name</label>
-            <input type="text" class="form-input" v-model="paymentData.sender_name" placeholder="Name as shown on card" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" required />
+            <label
+              class="form-label"
+              style="
+                display: block;
+                margin-bottom: 4px;
+                font-weight: var(--font-weight-medium);
+              "
+              >Cardholder Name</label
+            >
+            <input
+              type="text"
+              class="form-input"
+              v-model="paymentData.sender_name"
+              placeholder="Name as shown on card"
+              style="
+                width: 100%;
+                padding: 8px;
+                border: 1px solid var(--color-border);
+                border-radius: 4px;
+              "
+              required
+            />
           </div>
         </template>
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Payment Amount</label>
-          <input type="text" class="form-input" :value="Number(paymentData.amount || 0).toLocaleString('id-ID')" readonly title="Otomatis dari total invoice" style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface-raised); cursor: not-allowed;" />
+          <label
+            class="form-label"
+            style="
+              display: block;
+              margin-bottom: 4px;
+              font-weight: var(--font-weight-medium);
+            "
+            >Payment Amount</label
+          >
+          <input
+            type="text"
+            class="form-input"
+            :value="Number(paymentData.amount || 0).toLocaleString('id-ID')"
+            readonly
+            title="Otomatis dari total invoice"
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid var(--color-border);
+              border-radius: 4px;
+              background: var(--color-surface-raised);
+              cursor: not-allowed;
+            "
+          />
         </div>
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Reference No. / Receipt (Optional)</label>
-          <input type="text" class="form-input" v-model="paymentData.reference_no" placeholder="Enter reference number..." style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;" />
+          <label
+            class="form-label"
+            style="
+              display: block;
+              margin-bottom: 4px;
+              font-weight: var(--font-weight-medium);
+            "
+            >Reference No. / Receipt (Optional)</label
+          >
+          <input
+            type="text"
+            class="form-input"
+            v-model="paymentData.reference_no"
+            placeholder="Enter reference number..."
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid var(--color-border);
+              border-radius: 4px;
+            "
+          />
         </div>
         <div>
-          <label class="form-label" style="display: block; margin-bottom: 4px; font-weight: var(--font-weight-medium);">Notes (Optional)</label>
-          <textarea class="form-input" v-model="paymentData.notes" rows="3" placeholder="Add payment notes..." style="width: 100%; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px;"></textarea>
+          <label
+            class="form-label"
+            style="
+              display: block;
+              margin-bottom: 4px;
+              font-weight: var(--font-weight-medium);
+            "
+            >Notes (Optional)</label
+          >
+          <textarea
+            class="form-input"
+            v-model="paymentData.notes"
+            rows="3"
+            placeholder="Add payment notes..."
+            style="
+              width: 100%;
+              padding: 8px;
+              border: 1px solid var(--color-border);
+              border-radius: 4px;
+            "
+          ></textarea>
         </div>
       </div>
       <template #footer>
-        <button class="btn btn-outline" @click="showPaymentModal = false">Cancel</button>
-        <button class="btn btn-accent" @click="handlePayment">Save Payment</button>
+        <button class="btn btn-outline" @click="showPaymentModal = false">
+          Cancel
+        </button>
+        <button class="btn btn-accent" @click="handlePayment">
+          Save Payment
+        </button>
       </template>
     </FormModal>
 
     <FormModal
       :open="showCreateDOModal"
-      :title="hasActiveDO(targetSaleForDO) ? 'Surat Jalan / Delivery Order (DO)' : 'Buat / Pulihkan Surat Jalan (DO)'"
+      :title="
+        hasActiveDO(targetSaleForDO)
+          ? 'Surat Jalan / Delivery Order (DO)'
+          : 'Buat / Pulihkan Surat Jalan (DO)'
+      "
       @close="showCreateDOModal = false"
       @submit="submitCreateDO"
       :max-width="'650px'"
     >
-      <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; flex-direction: column; gap: 14px">
         <!-- Sale Info Banner -->
-        <div style="background: var(--color-surface-raised, #f8f9fa); padding: 12px; border-radius: 8px; border: 1px solid var(--color-border);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span style="font-size: 0.85rem; color: var(--color-text-muted);">Sale Code:</span>
-            <strong style="font-family: monospace; font-size: 0.95rem;">{{ targetSaleForDO?.sale_no }}</strong>
+        <div
+          style="
+            background: var(--color-surface-raised, #f8f9fa);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--color-border);
+          "
+        >
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 6px;
+            "
+          >
+            <span style="font-size: 0.85rem; color: var(--color-text-muted)"
+              >Sale Code:</span
+            >
+            <strong style="font-family: monospace; font-size: 0.95rem">{{
+              targetSaleForDO?.sale_no
+            }}</strong>
           </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 0.85rem; color: var(--color-text-muted);">Customer:</span>
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            "
+          >
+            <span style="font-size: 0.85rem; color: var(--color-text-muted)"
+              >Customer:</span
+            >
             <strong>{{ customerName(targetSaleForDO?.customer_id) }}</strong>
           </div>
         </div>
 
         <!-- DO Number Field -->
         <div class="form-group">
-          <label class="form-label" style="display: flex; justify-content: space-between;">
+          <label
+            class="form-label"
+            style="display: flex; justify-content: space-between"
+          >
             <span>DO Number (Nomor Surat Jalan)</span>
-            <span style="font-size: 0.78rem; color: var(--color-text-muted);">Kosongkan untuk nomor otomatis baru</span>
+            <span style="font-size: 0.78rem; color: var(--color-text-muted)"
+              >Kosongkan untuk nomor otomatis baru</span
+            >
           </label>
           <input
             v-model="doForm.do_number"
@@ -1893,8 +3623,19 @@ const combinedItemOptions = computed(() => {
             class="form-input"
             placeholder="Contoh: Bi/DO/0001/X-2026 atau nomor DO sebelumnya"
           />
-          <small style="display: block; margin-top: 4px; color: var(--color-text-muted); font-size: 0.78rem;">
-            💡 <em>Jika DO unassigned sebelumnya terhapus dari database, isi nomor yang sama di atas agar dibuat ulang dengan nomor yang sama.</em>
+          <small
+            style="
+              display: block;
+              margin-top: 4px;
+              color: var(--color-text-muted);
+              font-size: 0.78rem;
+            "
+          >
+            💡
+            <em
+              >Jika DO unassigned sebelumnya terhapus dari database, isi nomor
+              yang sama di atas agar dibuat ulang dengan nomor yang sama.</em
+            >
           </small>
         </div>
 
@@ -1907,13 +3648,20 @@ const combinedItemOptions = computed(() => {
             class="form-input"
             placeholder="Pengantaran [Nama Produk/Unit] ke [Alamat Penerima]"
           />
-          <small style="display: block; margin-top: 4px; color: var(--color-text-muted); font-size: 0.78rem;">
+          <small
+            style="
+              display: block;
+              margin-top: 4px;
+              color: var(--color-text-muted);
+              font-size: 0.78rem;
+            "
+          >
             Otomatis: Pengantaran Nama Produk/Unit ke Alamat Penerima.
           </small>
         </div>
 
         <!-- Date & Recipient Fields -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
           <div class="form-group">
             <label class="form-label">Delivery Date</label>
             <input
@@ -1957,24 +3705,69 @@ const combinedItemOptions = computed(() => {
 
         <!-- Items to Deliver -->
         <div v-if="targetSaleForDO?.sale_items?.length" class="form-group">
-          <label class="form-label">Items to be Delivered ({{ targetSaleForDO.sale_items.length }})</label>
-          <div style="max-height: 140px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+          <label class="form-label"
+            >Items to be Delivered ({{
+              targetSaleForDO.sale_items.length
+            }})</label
+          >
+          <div
+            style="
+              max-height: 140px;
+              overflow-y: auto;
+              border: 1px solid var(--color-border);
+              border-radius: 6px;
+            "
+          >
+            <table
+              style="width: 100%; border-collapse: collapse; font-size: 0.85rem"
+            >
               <thead>
-                <tr style="background: var(--color-surface-raised, #f1f3f5); text-align: left;">
-                  <th style="padding: 6px 10px;">Item</th>
-                  <th style="padding: 6px 10px; width: 60px; text-align: center;">Qty</th>
+                <tr
+                  style="
+                    background: var(--color-surface-raised, #f1f3f5);
+                    text-align: left;
+                  "
+                >
+                  <th style="padding: 6px 10px">Item</th>
+                  <th
+                    style="padding: 6px 10px; width: 60px; text-align: center"
+                  >
+                    Qty
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(si, idx) in targetSaleForDO.sale_items" :key="idx" style="border-top: 1px solid var(--color-border);">
-                  <td style="padding: 6px 10px;">
-                    {{ si.product_id ? formatProductDisplayName(findProduct(si.product_id) || si.product) : si.unit_id ? formatUnitDisplayName(findUnit(si.unit_id) || si.unit) : 'Item' }}
-                    <span v-if="(findUnit(si.unit_id) || si.unit)?.serial_no" style="font-size: 0.75rem; color: var(--color-text-muted);">
+                <tr
+                  v-for="(si, idx) in targetSaleForDO.sale_items"
+                  :key="idx"
+                  style="border-top: 1px solid var(--color-border)"
+                >
+                  <td style="padding: 6px 10px">
+                    {{
+                      si.product_id
+                        ? formatProductDisplayName(
+                            findProduct(si.product_id) || si.product,
+                          )
+                        : si.unit_id
+                          ? formatUnitDisplayName(
+                              findUnit(si.unit_id) || si.unit,
+                            )
+                          : "Item"
+                    }}
+                    <span
+                      v-if="(findUnit(si.unit_id) || si.unit)?.serial_no"
+                      style="font-size: 0.75rem; color: var(--color-text-muted)"
+                    >
                       (SN: {{ (findUnit(si.unit_id) || si.unit)?.serial_no }})
                     </span>
                   </td>
-                  <td style="padding: 6px 10px; text-align: center; font-weight: bold;">
+                  <td
+                    style="
+                      padding: 6px 10px;
+                      text-align: center;
+                      font-weight: bold;
+                    "
+                  >
                     {{ si.qty }}
                   </td>
                 </tr>
@@ -1985,12 +3778,35 @@ const combinedItemOptions = computed(() => {
       </div>
 
       <template #footer>
-        <div style="display: flex; justify-content: flex-end; gap: 8px; width: 100%;">
-          <button type="button" class="btn btn-outline" @click="showCreateDOModal = false" :disabled="isSubmittingDO">
+        <div
+          style="
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            width: 100%;
+          "
+        >
+          <button
+            type="button"
+            class="btn btn-outline"
+            @click="showCreateDOModal = false"
+            :disabled="isSubmittingDO"
+          >
             Batal
           </button>
-          <button type="button" class="btn btn-primary" @click="submitCreateDO" :disabled="isSubmittingDO">
-            {{ isSubmittingDO ? 'Memproses...' : (hasActiveDO(targetSaleForDO) ? 'Buat Ulang DO' : 'Buat Surat Jalan (DO)') }}
+          <button
+            type="button"
+            class="btn btn-primary"
+            @click="submitCreateDO"
+            :disabled="isSubmittingDO"
+          >
+            {{
+              isSubmittingDO
+                ? "Memproses..."
+                : hasActiveDO(targetSaleForDO)
+                  ? "Buat Ulang DO"
+                  : "Buat Surat Jalan (DO)"
+            }}
           </button>
         </div>
       </template>
@@ -2017,7 +3833,6 @@ const combinedItemOptions = computed(() => {
       @confirm="hardDelete.confirm"
       @close="hardDelete.close"
     />
-
   </div>
 </template>
 
@@ -2045,7 +3860,10 @@ const combinedItemOptions = computed(() => {
   cursor: pointer;
   user-select: none;
   background: var(--color-surface);
-  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
 }
 .warranty-type-check:hover {
   border-color: var(--color-text-muted);
@@ -2071,8 +3889,14 @@ const combinedItemOptions = computed(() => {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .stepper-container {
@@ -2215,7 +4039,110 @@ const combinedItemOptions = computed(() => {
   border-radius: var(--radius-lg, 12px);
   border: 1px solid var(--color-border-light, #e2e8f0);
   margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.report-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 0 0 20px;
+  padding: 16px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+}
+
+.report-filters {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.report-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.report-filter-customer {
+  width: min(240px, 100%);
+}
+
+.report-filter-month {
+  width: 160px;
+}
+
+.report-filter-year {
+  width: 120px;
+}
+
+.report-filter-date {
+  width: 160px;
+}
+
+.report-filter-label {
+  color: var(--color-text-muted, #64748b);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.report-filter :deep(.form-input),
+.report-filter > .form-input {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.report-reset {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.report-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .report-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-actions {
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 560px) {
+  .report-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-filter-customer,
+  .report-filter-month,
+  .report-filter-year,
+  .report-filter-date {
+    width: auto;
+  }
+
+  .report-reset {
+    grid-column: 1 / -1;
+  }
+
+  .report-actions > .btn {
+    flex: 1;
+    justify-content: center;
+  }
 }
 
 .filter-inputs {

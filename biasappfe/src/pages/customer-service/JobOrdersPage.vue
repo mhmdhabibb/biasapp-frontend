@@ -18,7 +18,8 @@ const authStore = useAuthStore();
 const isSuperadmin = useIsSuperadmin();
 const route = useRoute();
 const masterStore = useMasterStore();
-const { technicians, units, products, serviceReports } = masterStore;
+const { technicians, units, products, serviceReports, findCustomer } =
+  masterStore;
 
 const showDeleteJobModal = ref(false);
 const jobToDelete = ref<any | null>(null);
@@ -94,8 +95,12 @@ async function fetchJobOrders(silent = false) {
       const doTargetId = j.delivery_order_id || doObj?.id;
       if (doTargetId) {
         const fullDo =
-          deliveryOrders.value.find((d: any) => String(d.id) === String(doTargetId)) ||
-          ((masterStore.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === String(doTargetId));
+          deliveryOrders.value.find(
+            (d: any) => String(d.id) === String(doTargetId),
+          ) ||
+          ((masterStore.deliveryOrders?.value || []) as any[]).find(
+            (d: any) => String(d.id) === String(doTargetId),
+          );
         if (fullDo) {
           doObj = { ...fullDo, ...doObj };
         }
@@ -151,7 +156,11 @@ async function fetchJobOrders(silent = false) {
 
 async function fetchServiceRequests() {
   try {
-    const res = await api.get<any>("/service-requests?page=1&limit=100", true, true);
+    const res = await api.get<any>(
+      "/service-requests?page=1&limit=100",
+      true,
+      true,
+    );
     serviceRequests.value = extractArray(res);
   } catch (error) {
     console.error("Failed to fetch data SR", error);
@@ -160,7 +169,11 @@ async function fetchServiceRequests() {
 
 async function fetchDeliveryOrders() {
   try {
-    const res = await api.get<any>("/delivery-orders?page=1&limit=100", true, true);
+    const res = await api.get<any>(
+      "/delivery-orders?page=1&limit=100",
+      true,
+      true,
+    );
     const rawList = extractArray(res);
     deliveryOrders.value = rawList.filter((d: any) =>
       ["rental", "sale", "inbound", "service"].includes(
@@ -177,10 +190,18 @@ let autoReloadTimer: any = null;
 const isReloading = ref(false);
 
 async function reloadSilently() {
-  if (isReloading.value || draggedRequest || showAssignModal.value || isAssigning.value) {
+  if (
+    isReloading.value ||
+    draggedRequest ||
+    showAssignModal.value ||
+    isAssigning.value
+  ) {
     return;
   }
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+  if (
+    typeof document !== "undefined" &&
+    document.visibilityState !== "visible"
+  ) {
     return;
   }
   isReloading.value = true;
@@ -194,7 +215,10 @@ async function reloadSilently() {
 }
 
 function onVisibilityOrFocus() {
-  if (typeof document !== "undefined" && document.visibilityState === "visible") {
+  if (
+    typeof document !== "undefined" &&
+    document.visibilityState === "visible"
+  ) {
     void reloadSilently();
   }
 }
@@ -206,7 +230,7 @@ async function loadAllData(silent = false) {
       api.get<any>("/delivery-orders?page=1&limit=100", true, true),
       api.get<any>("/job-orders?page=1&limit=100", true, true),
       api.get<any>("/service-requests?page=1&limit=100", true, true),
-      masterStore.refreshOnly(['serviceReports', 'technicians']),
+      masterStore.refreshOnly(["serviceReports", "technicians"]),
     ]);
 
     const doRes = results[0].status === "fulfilled" ? results[0].value : null;
@@ -247,7 +271,9 @@ async function loadAllData(silent = false) {
       if (doTargetId) {
         const fullDo =
           rawDos.find((d: any) => String(d.id) === String(doTargetId)) ||
-          ((masterStore.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === String(doTargetId));
+          ((masterStore.deliveryOrders?.value || []) as any[]).find(
+            (d: any) => String(d.id) === String(doTargetId),
+          );
         if (fullDo) {
           doObj = { ...fullDo, ...doObj };
         }
@@ -354,8 +380,12 @@ watch(
           doTargetId
         ) {
           const fullDo =
-            deliveryOrders.value.find((d: any) => String(d.id) === String(doTargetId)) ||
-            ((masterStore.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === String(doTargetId));
+            deliveryOrders.value.find(
+              (d: any) => String(d.id) === String(doTargetId),
+            ) ||
+            ((masterStore.deliveryOrders?.value || []) as any[]).find(
+              (d: any) => String(d.id) === String(doTargetId),
+            );
           if (fullDo) {
             return {
               ...j,
@@ -606,8 +636,12 @@ function getJobsForTech(techId: string | number): any[] {
         doTargetId
       ) {
         const fullDo =
-          deliveryOrders.value.find((d: any) => String(d.id) === String(doTargetId)) ||
-          ((masterStore.deliveryOrders?.value || []) as any[]).find((d: any) => String(d.id) === String(doTargetId));
+          deliveryOrders.value.find(
+            (d: any) => String(d.id) === String(doTargetId),
+          ) ||
+          ((masterStore.deliveryOrders?.value || []) as any[]).find(
+            (d: any) => String(d.id) === String(doTargetId),
+          );
         if (fullDo) {
           doObj = { ...fullDo, ...doObj };
         }
@@ -1181,7 +1215,8 @@ async function confirmAssign() {
     const existingJob = jobOrders.value.find(
       (j: any) =>
         !j.technician_id &&
-        String(j.delivery_order_id || j.delivery_order?.id || "") === String(task.id)
+        String(j.delivery_order_id || j.delivery_order?.id || "") ===
+          String(task.id),
     );
     if (existingJob) {
       const payload = {
@@ -1192,7 +1227,11 @@ async function confirmAssign() {
         assigner_name: assignerName,
       };
       try {
-        await apiRequest({ url: `/job-orders/${existingJob.id}`, method: "PUT", data: payload });
+        await apiRequest({
+          url: `/job-orders/${existingJob.id}`,
+          method: "PUT",
+          data: payload,
+        });
         invalidateCache();
         await loadAllData();
         toast.success("Delivery order successfully assigned to technician.");
@@ -1223,7 +1262,7 @@ async function confirmAssign() {
     const existingJob = jobOrders.value.find(
       (j: any) =>
         !j.technician_id &&
-        String(j.service_request_id || "") === String(task.id)
+        String(j.service_request_id || "") === String(task.id),
     );
     if (existingJob) {
       const payload = {
@@ -1234,7 +1273,11 @@ async function confirmAssign() {
         assigner_name: assignerName,
       };
       try {
-        await apiRequest({ url: `/job-orders/${existingJob.id}`, method: "PUT", data: payload });
+        await apiRequest({
+          url: `/job-orders/${existingJob.id}`,
+          method: "PUT",
+          data: payload,
+        });
         invalidateCache();
         await loadAllData();
         toast.success("Job order successfully assigned to technician.");
@@ -1301,7 +1344,7 @@ async function handleDeleteJob() {
   const job = jobToDelete.value;
   try {
     isDeleting.value = true;
-    if (job.taskType === 'visit') {
+    if (job.taskType === "visit") {
       const targetReportId = job.service_report_id || job.id;
       if (job.id && job.id !== targetReportId) {
         try {
@@ -1315,7 +1358,7 @@ async function handleDeleteJob() {
           await api.delete(`/job-orders/${job.id}?permanent=true`);
         }
       }
-    } else if (job.taskType === 'do' && !job.job_order_no && job.do_number) {
+    } else if (job.taskType === "do" && !job.job_order_no && job.do_number) {
       await api.delete(`/delivery-orders/${job.id}?permanent=true`);
     } else {
       try {
@@ -1336,10 +1379,13 @@ async function handleDeleteJob() {
     closeDetail();
     invalidateCache();
     await loadAllData(true);
-    masterStore.refreshOnly(['serviceReports']);
+    masterStore.refreshOnly(["serviceReports"]);
   } catch (err: any) {
-    console.error('Failed to delete job:', err);
-    toast.error('Gagal menghapus job: ' + (err.response?.data?.message || err.message || 'Error'));
+    console.error("Failed to delete job:", err);
+    toast.error(
+      "Gagal menghapus job: " +
+        (err.response?.data?.message || err.message || "Error"),
+    );
   } finally {
     isDeleting.value = false;
   }
@@ -1361,10 +1407,13 @@ async function handleDeleteTech() {
     techToDelete.value = null;
     invalidateCache();
     await loadAllData(true);
-    masterStore.refreshOnly(['technicians']);
+    masterStore.refreshOnly(["technicians"]);
   } catch (err: any) {
-    console.error('Failed to delete technician:', err);
-    toast.error('Gagal menghapus teknisi: ' + (err.response?.data?.message || err.message || 'Error'));
+    console.error("Failed to delete technician:", err);
+    toast.error(
+      "Gagal menghapus teknisi: " +
+        (err.response?.data?.message || err.message || "Error"),
+    );
   } finally {
     isDeleting.value = false;
   }
@@ -1381,16 +1430,32 @@ async function handleDeleteTech() {
           assign it
         </p>
       </div>
-      <div class="jo-summary" style="display: flex; align-items: center; gap: 10px;">
+      <div
+        class="jo-summary"
+        style="display: flex; align-items: center; gap: 10px"
+      >
         <button
           class="btn btn-outline btn-sm"
-          style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 0.82rem;"
+          style="
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            font-size: 0.82rem;
+          "
           :disabled="isReloading"
           @click="reloadSilently"
           title="Refresh Job Orders"
         >
-          <span :style="{ display: 'inline-block', transform: isReloading ? 'rotate(360deg)' : 'none', transition: 'transform 0.5s ease' }">🔄</span>
-          <span>{{ isReloading ? 'Refreshing...' : 'Refresh' }}</span>
+          <span
+            :style="{
+              display: 'inline-block',
+              transform: isReloading ? 'rotate(360deg)' : 'none',
+              transition: 'transform 0.5s ease',
+            }"
+            >🔄</span
+          >
+          <span>{{ isReloading ? "Refreshing..." : "Refresh" }}</span>
         </button>
         <div class="summary-chip">
           <span class="summary-value">{{
@@ -1952,10 +2017,32 @@ async function handleDeleteTech() {
               </div>
             </div>
           </div>
-          <div class="pagination" style="display: flex; justify-content: center; gap: 8px; padding: 8px;">
-            <button class="btn btn-outline btn-sm" :disabled="unassignedPage <= 1" @click="unassignedPage--">Prev</button>
-            <span style="font-size: 12px; line-height: 28px;">{{ unassignedPage }} / {{ unassignedTotalPages }}</span>
-            <button class="btn btn-outline btn-sm" :disabled="unassignedPage >= unassignedTotalPages" @click="unassignedPage++">Next</button>
+          <div
+            class="pagination"
+            style="
+              display: flex;
+              justify-content: center;
+              gap: 8px;
+              padding: 8px;
+            "
+          >
+            <button
+              class="btn btn-outline btn-sm"
+              :disabled="unassignedPage <= 1"
+              @click="unassignedPage--"
+            >
+              Prev
+            </button>
+            <span style="font-size: 12px; line-height: 28px"
+              >{{ unassignedPage }} / {{ unassignedTotalPages }}</span
+            >
+            <button
+              class="btn btn-outline btn-sm"
+              :disabled="unassignedPage >= unassignedTotalPages"
+              @click="unassignedPage++"
+            >
+              Next
+            </button>
           </div>
         </div>
       </aside>
@@ -2062,9 +2149,20 @@ async function handleDeleteTech() {
                 :title="`Hapus Teknisi ${techName(t)} (Khusus Superadmin)`"
                 @click.stop="openDeleteTech(t)"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
                   <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <path
+                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                  />
                 </svg>
               </button>
             </div>
@@ -2122,9 +2220,20 @@ async function handleDeleteTech() {
                       title="Hapus Job Ini (Khusus Superadmin)"
                       @click.stop="openDeleteJob(job)"
                     >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
                         <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        <path
+                          d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -2155,8 +2264,12 @@ async function handleDeleteTech() {
                     job.service_request?.customer?.name ||
                     job.service_report?.customer?.company_name ||
                     job.service_report?.customer?.name ||
-                    findCustomer(job.customer_id || job.delivery_order?.customer_id)?.company_name ||
-                    findCustomer(job.customer_id || job.delivery_order?.customer_id)?.name ||
+                    findCustomer(
+                      job.customer_id || job.delivery_order?.customer_id,
+                    )?.company_name ||
+                    findCustomer(
+                      job.customer_id || job.delivery_order?.customer_id,
+                    )?.name ||
                     "-"
                   }}</span>
                 </div>
@@ -2686,7 +2799,10 @@ async function handleDeleteTech() {
         <button
           v-if="selectedJob && selectedJob.technician_id"
           class="btn btn-outline"
-          style="color: var(--color-warning, #d97706); border-color: rgba(217, 119, 6, 0.4);"
+          style="
+            color: var(--color-warning, #d97706);
+            border-color: rgba(217, 119, 6, 0.4);
+          "
           @click="cancelJobAssignment(selectedJob.id)"
         >
           Cancel Assignment
@@ -2694,12 +2810,23 @@ async function handleDeleteTech() {
         <button
           v-if="isSuperadmin && selectedJob"
           class="btn btn-danger"
-          style="display: inline-flex; align-items: center; gap: 6px;"
+          style="display: inline-flex; align-items: center; gap: 6px"
           @click="openDeleteJob(selectedJob)"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <path
+              d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+            />
           </svg>
           Hapus Job Order
         </button>
@@ -2945,7 +3072,10 @@ async function handleDeleteTech() {
       variant="danger"
       :loading="isDeleting"
       @confirm="handleDeleteJob"
-      @cancel="showDeleteJobModal = false; jobToDelete = null"
+      @cancel="
+        showDeleteJobModal = false;
+        jobToDelete = null;
+      "
     />
 
     <!-- Superadmin Delete Technician Lane Confirmation Modal -->
@@ -2958,7 +3088,10 @@ async function handleDeleteTech() {
       variant="danger"
       :loading="isDeleting"
       @confirm="handleDeleteTech"
-      @cancel="showDeleteTechModal = false; techToDelete = null"
+      @cancel="
+        showDeleteTechModal = false;
+        techToDelete = null;
+      "
     />
   </div>
 </template>
@@ -3510,6 +3643,7 @@ async function handleDeleteTech() {
   font-size: var(--font-size-xs);
   line-height: 1.4;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
@@ -3541,6 +3675,7 @@ async function handleDeleteTech() {
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
