@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -18,14 +19,18 @@ const columns: TableColumn[] = [
 ]
 
 const data = ref<PaperType[]>([])
+const isLoading = ref(true)
 
 async function fetchData() {
+  isLoading.value = true
   try {
     const res = await resources.paperTypes.list()
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch paper types:', error)
     toast.error('Failed to fetch data: ' + ((error as any).message || 'Error'))
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -88,12 +93,18 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Paper Type" button-label="Add Paper Type" permission="paper_type:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search paper types..." permission="paper_type" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
-      <template #toolbar>
-        <ExcelImportButtons master-key="paper_type" @imported="fetchData" />
-      </template>
-    </DataTable>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :columns="2" :rows="6" />
+
+    <!-- Real Content -->
+    <template v-else>
+      <PageHeader title="Paper Type" button-label="Add Paper Type" permission="paper_type:create" @add="openAdd" />
+      <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search paper types..." permission="paper_type" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+        <template #toolbar>
+          <ExcelImportButtons master-key="paper_type" @imported="fetchData" />
+        </template>
+      </DataTable>
+    </template>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Paper Type' : 'Add Paper Type'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="pt-name" class="form-label">Paper Type Name</label>
@@ -106,5 +117,3 @@ async function handleDelete() {
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
-
-

@@ -3,6 +3,7 @@
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
 import DataTable from "@/components/ui/DataTable.vue";
+import PageSkeleton from "@/components/ui/PageSkeleton.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import HardDeleteDialog from "@/components/ui/HardDeleteDialog.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
@@ -26,6 +27,7 @@ import * as XLSX from "xlsx";
 const toast = useToast();
 const { can, isAdmin } = usePermission();
 const { currentUser } = useAuth();
+const isLoading = ref(true);
 
 // Helper untuk mengubah YYYY-MM-DD menjadi format ISO 8601 lengkap (misal: 2026-10-09T00:00:00Z)
 function formatToISO8601(dateStr: string): string {
@@ -242,8 +244,12 @@ function silentRefresh() {
   void useMasterStore().refreshInBackground();
 }
 
-onMounted(() => {
-  ensureResourcesLoaded(route.path);
+onMounted(async () => {
+  try {
+    await ensureResourcesLoaded(route.path);
+  } finally {
+    isLoading.value = false;
+  }
   salesTimer = setInterval(silentRefresh, 30000);
   window.addEventListener("focus", silentRefresh);
   window.addEventListener("bias:data-mutated", silentRefresh);
@@ -1780,6 +1786,13 @@ const combinedItemOptions = computed(() => {
 </script>
 <template>
   <div>
+    <PageSkeleton
+      v-if="isLoading"
+      :columns="8"
+      :rows="8"
+      :show-header-actions="true"
+    />
+    <div v-show="!isLoading">
     <PageHeader
       title="Sales"
       button-label="Add Sale"
@@ -2108,6 +2121,7 @@ const combinedItemOptions = computed(() => {
         </div>
       </template>
     </DataTable>
+    </div>
     <FormModal
       :open="showModal"
       :title="editingItem ? 'Edit Sale' : 'Add Sale'"

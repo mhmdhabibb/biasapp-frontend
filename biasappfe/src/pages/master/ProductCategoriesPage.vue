@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -18,14 +19,18 @@ const columns: TableColumn[] = [
 ]
 
 const data = ref<ProductCategory[]>([])
+const isLoading = ref(true)
 
 async function fetchData() {
+  isLoading.value = true
   try {
     const res = await resources.productCategories.list()
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch product categories:', error)
     toast.error('Failed to fetch data: ' + ((error as any).message || 'Error'))
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -88,12 +93,18 @@ async function handleDelete() {
 
 <template>
   <div>
-    <PageHeader title="Items" button-label="Add Item" permission="product_category:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search items..." permission="product_category" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
-      <template #toolbar>
-        <ExcelImportButtons master-key="product_category" @imported="fetchData" />
-      </template>
-    </DataTable>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :columns="2" :rows="6" />
+
+    <!-- Real Content -->
+    <template v-else>
+      <PageHeader title="Items" button-label="Add Item" permission="product_category:create" @add="openAdd" />
+      <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search items..." permission="product_category" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+        <template #toolbar>
+          <ExcelImportButtons master-key="product_category" @imported="fetchData" />
+        </template>
+      </DataTable>
+    </template>
     <FormModal :open="showModal" :title="editingItem ? 'Edit Item' : 'Add Item'" @close="showModal = false" @submit="handleSubmit">
       <div class="form-group">
         <label for="cat-name" class="form-label">Item Name</label>
@@ -106,5 +117,3 @@ async function handleDelete() {
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
-
-

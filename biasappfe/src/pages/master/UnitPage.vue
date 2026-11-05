@@ -2,6 +2,7 @@
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
@@ -43,8 +44,10 @@ const paperSizeOptions = computed(() => paperSizes.value.map(p => ({ value: p.id
 const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
 const data = ref<Unit[]>([])
+const isLoading = ref(true)
 
 async function fetchData() {
+  isLoading.value = true
   try {
     const [resUnits, resBrands, resTypes, resPaperSizes, resUoms] = await Promise.all([
       resources.units.list(),
@@ -61,6 +64,8 @@ async function fetchData() {
   } catch (error: any) {
     console.error('Failed to fetch data:', error)
     toast.error('Failed to fetch data from server: ' + (error.message || 'Error'))
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -711,6 +716,11 @@ function exportStockPdf() {
 
 <template>
   <div>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :cards="5" :columns="10" :rows="8" :show-header-actions="true" />
+
+    <!-- Real Content -->
+    <div v-show="!isLoading">
     <PageHeader title="Products" :button-label="isTechnician ? undefined : 'Add Product'" permission="unit:create"
       @add="openAdd">
       <template #actions>
@@ -768,7 +778,7 @@ function exportStockPdf() {
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #003366;">{{ formatRupiah(totalUnitValue) }}</div>
       </div>
     </div>
-    <DataTable :columns="columns" :data="filteredData" search-placeholder="Search products..." permission="unit" @edit="openEdit"
+    <DataTable :columns="columns" :data="filteredData" :loading="isLoading" search-placeholder="Search products..." permission="unit" @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #toolbar>
         <div style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">
@@ -832,6 +842,7 @@ function exportStockPdf() {
         </span>
       </template>
     </DataTable>
+    </div>
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'"
       @close="closeModal" @submit="handleSubmit">
       <div class="form-group">

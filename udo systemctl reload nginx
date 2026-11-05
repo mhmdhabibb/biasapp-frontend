@@ -1,0 +1,1105 @@
+[33mcommit 6175ee7a83635d758ea3df92c72947a1fa77c4eb[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Thu Nov 5 09:28:51 2026 +0700
+
+    fix: change code sales to no po
+
+[33mcommit 62fbc06efb9eb029563be36329b352dff1e6bc55[m
+Author: hansenjonatann <biasadmin@srv2025412.hstgr.cloud>
+Date:   Tue Nov 3 10:08:38 2026 +0000
+
+    feat: update
+
+[33mcommit 649729df336ae511a72b8d092c6f98ae8f844362[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Nov 3 09:17:54 2026 +0000
+
+    feawt: update
+
+[33mcommit 0c832d64486ca370ef5e19cd3420b92731b99b6a[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Nov 3 04:02:11 2026 +0000
+
+    feat: update
+
+[33mcommit be09cd9feb1615948a0506e41a6b696280c90110[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Nov 3 01:39:46 2026 +0000
+
+    feat: update ui and some features
+
+[33mcommit 7ca49aa595406bc17a030d8471d2a4d7a1581ba1[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Nov 1 10:25:39 2026 +0000
+
+    feat: update
+
+[33mcommit 5623a3668ba98c07d31e4e46516010ceab91e9f9[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 31 23:25:53 2026 +0700
+
+    feat: 3-photo upload for all service forms, auto refresh, rental lookup safety and onDataMutated fix
+
+[33mcommit 5ca51fccd31b64d7da998090faaaef453b3a351c[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 31 05:03:42 2026 +0000
+
+    feat: update
+
+[33mcommit fd0db63193aabdb84154b808a488cee7840f8b53[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 30 23:04:31 2026 +0700
+
+    fix(rentals): resolve refreshInBackground reference and extend endpoint
+
+[33mcommit f8c8426686203b2db6e60e14aad137a090ea6df9[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 30 22:51:47 2026 +0700
+
+    fix: item source options, machine creation buttons, and form state assignment
+
+[33mcommit 1586851e45434ddc2c03b5c933a748c628c316d3[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 30 22:28:18 2026 +0700
+
+    feat: rental billing day and extend contract modal with expiry badges
+
+[33mcommit a86d3c1c0744c5b4c4da842ae9d6f775b71f3bd1[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 30 10:04:03 2026 +0000
+
+    feat: u[date
+
+[33mcommit 9fa2b74635724a581fa21918eeb3222747194b51[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 30 07:42:01 2026 +0000
+
+    feat: update
+
+[33mcommit 9659a41bb1619489b6b1cdb62d4fb6aeb6a28e1f[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 30 07:00:58 2026 +0000
+
+    feat: update
+
+[33mcommit 9d0fead4a159c8dbba19d52242ef8280da42c5b2[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 29 21:33:33 2026 +0700
+
+    feat: update
+
+[33mcommit 52c1e5dcc4e547e75a4384b39c7ee48b8919af10[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 29 19:16:30 2026 +0700
+
+    feat: update
+
+[33mcommit 8e416188047aed56fc6319cf16424f4a1e64c446[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 29 18:52:48 2026 +0700
+
+    feat: update
+
+[33mcommit 4ed253dfc184dcd3904447f3a236f726cf2d6bdb[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Oct 28 23:26:26 2026 +0700
+
+    feat: update
+
+[33mcommit ac05067fc6ea7d47ba1bbcaf224198b73309d09f[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Oct 28 22:36:58 2026 +0700
+
+    feat: update
+
+[33mcommit 2cb8fef7558592dde0244a58c5681554ef0d7592[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Oct 28 02:21:12 2026 +0000
+
+    feat: update
+
+[33mcommit 437d651b26cdfb2c29f81ad75a6a06c85625a204[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Oct 27 21:04:29 2026 +0700
+
+    feat: update
+
+[33mcommit 73fbf0a5b98e9de6fdd366b56ddf627b0b2e1881[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Oct 27 09:05:21 2026 +0000
+
+    feat: update
+
+[33mcommit 99ef35424abad75a07b30dece4188c2e3b40c06b[m[33m ([m[1;31morigin/updates[m[33m, [m[1;32mupdates[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Oct 27 06:53:28 2026 +0000
+
+    feat: update
+
+[33mcommit d0011dbbd7e97d8089d05356610d45d6270b9aa2[m
+Merge: 6148c29 6f9f13e
+Author: hansenjonatann <biasadmin@srv2025412.hstgr.cloud>
+Date:   Tue Oct 27 03:12:10 2026 +0000
+
+    Merge branch 'main' of github.com:mhmdhabibb/biasapp-frontend into updates
+
+[33mcommit 6148c2995066db08efebc76747167365e04eadb6[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Oct 27 03:10:36 2026 +0000
+
+    feat: update
+
+[33mcommit 6f9f13e09d49bf5f16a82eeb6da2d9dd376c319d[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Tue Oct 27 10:09:32 2026 +0700
+
+    fix: date on saltes invoice
+
+[33mcommit 474e32445145014d140ea80adc574d659ff259b0[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Tue Oct 27 09:55:34 2026 +0700
+
+    fix: bug on technican copier job
+
+[33mcommit d49a7b36a5b6b90fd14bda46ef3e7040226faac3[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 26 23:16:17 2026 +0700
+
+    feat: updae
+
+[33mcommit 898866a577e0654d120e3fdada1d32d4c0ae9493[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 26 22:21:19 2026 +0700
+
+    feat: update
+
+[33mcommit 3cf47a6a839a6c2c1153721a8f2a83c39873b02e[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 26 21:15:36 2026 +0700
+
+    feat: update
+
+[33mcommit fa0e03f3bcaef766e83574ac8d0de1207299101a[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 26 09:15:28 2026 +0000
+
+    feat: update
+
+[33mcommit 1da557caa96f43270fc0c00bb2c840fc0475ca71[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 26 08:08:23 2026 +0000
+
+    feat: update
+
+[33mcommit 535c1ad57034dfe243492a153825e5c0477f6ef3[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 25 23:45:56 2026 +0700
+
+    feat: improve speeds
+
+[33mcommit 25016259171a79a544bb6177cc6119b982005ae1[m
+Merge: 7a18620 1f7b8ea
+Author: Hansen Jonatan <114968570+hansenjonatann@users.noreply.github.com>
+Date:   Sun Oct 25 20:32:11 2026 +0700
+
+    Merge pull request #7 from mhmdhabibb/fix-ui
+    
+    feat: update ui
+
+[33mcommit 1f7b8eab13bde6631be0c3f3e38cf8ae48b2a1a2[m[33m ([m[1;31morigin/fix-ui[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 25 20:29:20 2026 +0700
+
+    feat: update ui
+
+[33mcommit 7a18620df7375416d3a0b1157df657529dbe5d76[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 25 01:38:34 2026 +0700
+
+    feat: add superadmin hard delete dialog and actions for rental, sales invoice, rental invoice, and sale
+
+[33mcommit 702cb1095e2fcc249ed40139c50e17f2b0e890f6[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 25 01:08:10 2026 +0700
+
+    fix: pass cascade value correctly to hard delete and fix superadmin parsing
+
+[33mcommit 23b419748706b89cbede9c341abea212a3a34fa0[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 23:57:37 2026 +0700
+
+    fix: fixi error when deleting the data with the relations while the user logged in as superadmin
+
+[33mcommit c0055b99eb3b9e2373589d35127df7c36ba4e67d[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 23:44:33 2026 +0700
+
+    feat: update
+
+[33mcommit 086cfb3fc0da5fca7f3e148e63c208bca07d24b4[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 17:21:03 2026 +0700
+
+    feat: update
+
+[33mcommit 788d714a31c68a1a9ae95e9bdde3104439948257[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 05:12:31 2026 +0000
+
+    feat; update
+
+[33mcommit 505157cc3b3b50441f58e3405925086bb90b726e[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 04:15:51 2026 +0000
+
+    feat: update
+
+[33mcommit ba17185ae8ee2004fa8262c61b254bc36f47548e[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 03:54:19 2026 +0000
+
+    feat: update
+
+[33mcommit a2394f591a315b278605074defd5a8652bffe27a[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 03:37:10 2026 +0000
+
+    feat: update
+
+[33mcommit d5da2d50d74b14e2509b32e996ed04cd2a504a28[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 02:51:03 2026 +0000
+
+    feat: update
+
+[33mcommit 3b4b41ae98d9e090be2008a4654c2ed8c453ab9d[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 02:29:37 2026 +0000
+
+    feat :update
+
+[33mcommit 34a5534a5ddb4fa7e505c2e77dc6380bd35aaa15[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 02:25:57 2026 +0000
+
+    feat: update
+
+[33mcommit f6147db21c40903d094d4452c364e5553305c0c5[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 24 02:00:04 2026 +0000
+
+    feat: update
+
+[33mcommit c7b227d4cf67bf0fd247917b84a31be648d4e36b[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 23 22:37:16 2026 +0700
+
+    feat: pdates
+
+[33mcommit e34886c1e89f7928dbb7c08e120a4a5b7c47953d[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 23 22:09:21 2026 +0700
+
+    feat: pdates
+
+[33mcommit 306a70783c3f4254466c70dfd051f4ddb83ee949[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 23 21:52:07 2026 +0700
+
+    feat: update
+
+[33mcommit 9121f8d28664029ad182fc12c535fff095f4ce6b[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 23 21:28:53 2026 +0700
+
+    feat: update
+
+[33mcommit b14a0b7dd829a5c52214678ebc30afc715e123ef[m
+Author: Hansen Jonatan <114968570+hansenjonatann@users.noreply.github.com>
+Date:   Fri Oct 23 17:59:21 2026 +0700
+
+    Update JobOrdersPage.vue
+
+[33mcommit dbb2f878faf1b3174a649e769f6e95ea9051a6ed[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 23 09:51:40 2026 +0000
+
+    feat: update
+
+[33mcommit c88fe924b744b01e7d249a28a36c2dab733f22c3[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 23 10:52:22 2026 +0700
+
+    feat: upgrade node js version
+
+[33mcommit 3619073f7e4a136c8b0cb00b695378414e85d87c[m[33m ([m[1;31morigin/fix-v5[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 23 10:34:26 2026 +0700
+
+    feat: update
+
+[33mcommit d1f8e9fb2f4efede35bc74b68f924d95ca39108d[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 23 02:52:55 2026 +0700
+
+    feat updat
+
+[33mcommit 6b39270ce4c0d3e43e28279dae8511c04dc75b8f[m
+Merge: f22ae58 ba7e218
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 22 17:03:35 2026 +0700
+
+    feat: update
+
+[33mcommit f22ae5886f1aed4c28b8d43068bbfdc924ad23d5[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 22 16:02:13 2026 +0700
+
+    feat: update
+
+[33mcommit ba7e218676a96b72295d8d609f06a25838f1665f[m[33m ([m[1;31morigin/fix-v4[m[33m)[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Thu Oct 22 15:59:51 2026 +0700
+
+    feat: request form
+
+[33mcommit 8f2a5bfe06877c364e5826bdbbb7e662b49b8bb9[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Oct 21 16:57:30 2026 +0700
+
+    fix: update (draft)
+
+[33mcommit cd226a10b63899938e308308383a405819d8bc0a[m
+Merge: 987254a 58c59cd
+Author: Hansen Jonatan <114968570+hansenjonatann@users.noreply.github.com>
+Date:   Tue Oct 20 23:45:59 2026 +0700
+
+    Merge pull request #6 from mhmdhabibb/fix-v
+    
+    feat:update
+
+[33mcommit 58c59cd751cd35a51fec3cdab6354fcae70c4464[m[33m ([m[1;31morigin/fix-v[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Oct 20 23:43:18 2026 +0700
+
+    feat:update
+
+[33mcommit 987254a135b8fdbd098e41e35fff1374b9674144[m
+Merge: 4615f0e 948dbcb
+Author: Hansen Jonatan <114968570+hansenjonatann@users.noreply.github.com>
+Date:   Mon Oct 19 23:51:35 2026 +0700
+
+    Merge pull request #5 from mhmdhabibb/dev
+    
+    feat: update
+
+[33mcommit 948dbcb7c7fd8c269b544d439ccdfd879a9a20a7[m[33m ([m[1;31morigin/dev[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 19 23:49:04 2026 +0700
+
+    feat: update
+
+[33mcommit 4615f0e40fc54e09f035a9861c96c273d6b4f78f[m
+Merge: f91a1fb 545f577
+Author: Hansen Jonatan <114968570+hansenjonatann@users.noreply.github.com>
+Date:   Mon Oct 19 23:26:53 2026 +0700
+
+    Merge pull request #4 from mhmdhabibb/dev
+    
+    feat: update;
+
+[33mcommit 545f577d42c96cd5e8c9ecf743d117e698223e19[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 19 23:25:43 2026 +0700
+
+    feat: update;
+
+[33mcommit f91a1fbd6c4de0a503702dab8d83a5ee0f804dcb[m
+Merge: dd801b1 fd9232e
+Author: Hansen Jonatan <114968570+hansenjonatann@users.noreply.github.com>
+Date:   Mon Oct 19 23:09:55 2026 +0700
+
+    Merge pull request #3 from mhmdhabibb/dev
+    
+    Dev
+
+[33mcommit fd9232e4f940e35cb5a4dbf312c0be7b15fd95f0[m
+Merge: 0e013e2 0e94ecd
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 19 23:06:07 2026 +0700
+
+    Merge branch 'fix-v2' into dev
+
+[33mcommit 0e013e2213a126e6387c3ae651050306eacdfbd0[m
+Merge: ee10f3c dd801b1
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 19 22:58:23 2026 +0700
+
+    Merge branch 'main' into dev
+
+[33mcommit 0e94ecd502e34e7a4b3eb08c3e96f33dbf9ba87c[m[33m ([m[1;31morigin/fix-v2[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 19 22:47:27 2026 +0700
+
+    feat: updateee
+
+[33mcommit dd801b18f15ae693d3e142519b7021ae98e1a9f4[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 19 03:59:36 2026 +0000
+
+    feat: update
+
+[33mcommit b90e926ea51c63cd3bd6aea0fdabc3ebc1bfd10d[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Oct 19 03:42:26 2026 +0000
+
+    feat: update
+
+[33mcommit 23661bb409bf0bbfde1e5aa6ed035ae9c8a3e849[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 18 22:38:24 2026 +0700
+
+    feat: updateee
+
+[33mcommit a5265e0baa2475134f62269d228bd278e2e0e926[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 18 22:14:04 2026 +0700
+
+    feat: update
+
+[33mcommit e16a8cf1d6a3bedc61af8fe478946222e6605bf1[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 10 21:01:32 2026 +0700
+
+    feat: update
+
+[33mcommit bfe9f2982b005b403e30328950e7b52219351096[m[33m ([m[1;31morigin/refactor-minor[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 10 20:56:37 2026 +0700
+
+    feat: add cs signature when the cs want assign a job to technician
+
+[33mcommit 184f8c2df5d0de755c7879906762da3912f098b4[m[33m ([m[1;31morigin/refactor4[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 10 17:19:16 2026 +0700
+
+    feat: refactor DO view and create DO print out view
+
+[33mcommit 9bf907fcbe0b96e93607c04802eaed0649cadf8d[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 10 03:45:16 2026 +0000
+
+    feat: update
+
+[33mcommit 4d14b9443480495e98b6df512e7de3784bd5a00f[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 10 02:46:32 2026 +0000
+
+    feat: update
+
+[33mcommit 2c9ceebbea0dafba92490432ee85f0764787555a[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 10 02:01:24 2026 +0000
+
+    feat: update
+
+[33mcommit f73b8457946a269fe316933df1e48847a874c244[m[33m ([m[1;31morigin/refactor-prod-v2[m[33m)[m
+Merge: c9a1ddd 63d04c0
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 9 16:24:14 2026 +0700
+
+    Merge branch 'fix' of https://github.com/mhmdhabibb/biasapp-frontend into refactor-prod-v2
+
+[33mcommit c9a1ddde11d918963a8e97c56897a4a087cbe713[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 9 16:24:00 2026 +0700
+
+    feat: update
+
+[33mcommit 63d04c07c01c70ecbce6b92ad75c111578659e59[m[33m ([m[1;31morigin/fix[m[33m)[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Fri Oct 9 16:22:30 2026 +0700
+
+    feat: upload picture on delivery
+
+[33mcommit ee51b3256f396cce298bf93d9e9a0c1b45695c68[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 9 13:50:37 2026 +0700
+
+    feat: update prod refactor
+
+[33mcommit c34353c48a2fc327a78734780d138e473f420729[m[33m ([m[1;31morigin/refactor2[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 22:42:50 2026 +0700
+
+    feat: update
+
+[33mcommit 29c2652bb1fd70f0eec70484845837e923ec6dbb[m[33m ([m[1;31morigin/refactor-prod[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 16:42:01 2026 +0700
+
+    feat: add project name field into service request form and refactor some funciton also view
+
+[33mcommit 69aeacabd48efd4a4009884b1beec104e41c5f1d[m
+Author: hansenjonatann <biasadmin@srv2025412.hstgr.cloud>
+Date:   Thu Oct 8 08:30:39 2026 +0000
+
+    feaT: update
+
+[33mcommit 8f6878b62526dac04b15b32acda06b70670fd090[m
+Merge: 10f806b 0268512
+Author: hansenjonatann <biasadmin@srv2025412.hstgr.cloud>
+Date:   Thu Oct 8 04:47:07 2026 +0000
+
+    Merge branch 'main' of github.com:mhmdhabibb/biasapp-frontend
+
+[33mcommit 0268512e0875bea601b1ff6b84efbe0313a26279[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 11:45:14 2026 +0700
+
+    feat: update
+
+[33mcommit e8b7f9c67d0320a6d3df5f378e6730cf74781585[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 11:32:01 2026 +0700
+
+    feat: update
+
+[33mcommit d1381806f398a628f723d0144f6a7ccff4a84a67[m
+Merge: 2309b4d 29dc7cd
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 11:29:52 2026 +0700
+
+    Merge branch 'repair-minor' into main
+
+[33mcommit 2309b4d9add1572a4b206bacbd607fa0a21f5786[m
+Merge: 2b132f6 460254d
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 11:27:53 2026 +0700
+
+    feat: update
+
+[33mcommit 29dc7cda53a7cdc7e819977ec042256a96673496[m[33m ([m[1;31morigin/repair-minor[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 11:26:36 2026 +0700
+
+    feat: update
+
+[33mcommit 9bdc9e99a80536ad9000edf4d4dc9f033794e00b[m
+Merge: c85c7d6 f62b39b
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 10:43:41 2026 +0700
+
+    Merge branch 'fix' of https://github.com/mhmdhabibb/biasapp-frontend into repair-minor
+
+[33mcommit c85c7d64f411e7946d1074fcc4231f071538ba04[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 8 10:42:48 2026 +0700
+
+    feat: update
+
+[33mcommit f62b39b853e36e15d5dfdc645a6b7140c251ef8e[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Thu Oct 8 09:57:03 2026 +0700
+
+    fix: technician form
+
+[33mcommit 27e456b3aa6ccf7cb278050971d937e18661ca86[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Oct 7 17:01:43 2026 +0700
+
+    feat: add selection tab on service request
+
+[33mcommit 5f65a13816b6cb933f3c1cb3176a6e924d447a93[m[33m ([m[1;31morigin/fix-and-refactor[m[33m)[m
+Merge: a275851 a596a6f
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Oct 7 00:18:36 2026 +0700
+
+    feat: half creating
+
+[33mcommit a596a6fe2c0ae69a869bb555ab77c36d0fc5b39b[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Oct 6 17:08:12 2026 +0700
+
+    feat: refactor copier service report flow
+
+[33mcommit 8cc0f7d65712dd15cc5c608cdc55dc313904dd97[m
+Merge: ac19ff7 2b132f6
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Oct 6 08:34:10 2026 +0700
+
+    fix: fixing conflict
+
+[33mcommit ac19ff77a229ec10f845a0428c30732c53d03b77[m
+Merge: 460254d 3886764
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Oct 6 08:22:52 2026 +0700
+
+    Merge branch 'fix' of https://github.com/mhmdhabibb/biasapp-frontend into fix-and-refactor
+
+[33mcommit 38867647ee3e27c9d778ae35c90cc47778a62bfd[m
+Merge: 114e237 64fd922
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Tue Oct 6 08:21:04 2026 +0700
+
+    Merge branch 'fix' of https://github.com/mhmdhabibb/biasapp-frontend into fix
+    
+    # Conflicts:
+    #       biasappfe/src/pages/technician/TechCallServiceDetailPage.vue
+
+[33mcommit 114e237245185ab7ae1fae8d1340c84ef8bf2ac6[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Mon Oct 5 16:53:37 2026 +0700
+
+    feat: modals on technician
+
+[33mcommit 10f806bba87b83d2c4a70ad2da8d5b21ca0c8e94[m
+Merge: 460254d b229dae
+Author: hansenjonatann <biasadmin@srv2025412.hstgr.cloud>
+Date:   Sun Oct 4 17:07:34 2026 +0000
+
+    Merge branch 'fix-and-refactor' of github.com:mhmdhabibb/biasapp-frontend
+
+[33mcommit 460254d696d109092cee71fa04cc62411eec6bc9[m
+Author: hansenjonatann <biasadmin@srv2025412.hstgr.cloud>
+Date:   Sun Oct 4 16:55:32 2026 +0000
+
+    feat: solve problem
+
+[33mcommit af85605e8e0270d61fad8ff38f88735ed8d83f67[m
+Author: Bias Surya Teknologi <biasadmin@srv2025412.hstgr.cloud>
+Date:   Sun Oct 4 14:49:35 2026 +0000
+
+    feat: vps update
+
+[33mcommit a2758513ff3cfbcb1bb4c3f8b01d913435b98e22[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 4 21:20:37 2026 +0700
+
+    feat: update
+
+[33mcommit b229daeaf767c5dca0b16eba00e7b1a3fc6bb8a0[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 4 20:43:21 2026 +0700
+
+    feat: update
+
+[33mcommit 01c4c9d1bf12c4a901fb492e0c10ac9e80362747[m
+Merge: 64116f1 64fd922
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 4 18:37:23 2026 +0700
+
+    Merge branch 'fix' of https://github.com/mhmdhabibb/biasapp-frontend into fix-and-refactor
+
+[33mcommit 64116f1773f8281203f51f8f63490b9b94b9fdef[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 4 18:36:57 2026 +0700
+
+    feat: refactor some ui and major update
+
+[33mcommit 64fd922820e98018e1e346b1d7b6fa9d9eb2c0dc[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Sun Oct 4 14:57:17 2026 +0700
+
+    fix: add visits tab to job orders sidebar
+
+[33mcommit 28916af02669e7b8fcdb82f914be442989bd9612[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Sun Oct 4 14:36:30 2026 +0700
+
+    fix: merge sparepart requests into service reports
+
+[33mcommit eed0a1dd8cecf13644b8230bbd4d872af33734ab[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Sun Oct 4 14:03:45 2026 +0700
+
+    fix: colorful action buttons & custom approval confirm dialog
+
+[33mcommit 28153490ba6b7b703ceff26e25919ca1756c8d20[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Oct 4 03:39:01 2026 +0700
+
+    feat: update some views and reports
+
+[33mcommit 17f160090cde2ea446dfb6bfbb1cdeb6ce36ea65[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 3 12:06:35 2026 +0700
+
+    feat; update
+
+[33mcommit 2b132f66c1c729a1d9ef0100f5618e973636d737[m
+Merge: f462b7b c0a965b
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Oct 3 08:36:34 2026 +0700
+
+    fix: fix conflict
+
+[33mcommit f462b7beeb8e99425dd4e8854bca7fa3b880016d[m
+Merge: 4aaabfa 00e1fed
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 2 16:37:52 2026 +0700
+
+    feat:
+
+[33mcommit c0a965b4de7c189a605fbafde3272ac5a9097d38[m
+Merge: 00e1fed 767349b
+Author: Hansen Jonatan <114968570+hansenjonatann@users.noreply.github.com>
+Date:   Fri Oct 2 16:31:00 2026 +0700
+
+    Merge pull request #2 from mhmdhabibb/feature-refactor
+    
+    Feature refactor
+
+[33mcommit 767349b2dae0f7bdcf7b36b70e31d9d56de2e25c[m[33m ([m[1;31morigin/feature-refactor[m[33m, [m[1;32mfeature-refactor[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 2 16:18:05 2026 +0700
+
+    feat: update
+
+[33mcommit c95e0d02e96fd8e949194ffe5e2046c0565902f0[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Oct 2 06:08:23 2026 +0700
+
+    feat: major update
+
+[33mcommit 56f293238004c0f1a37e0c32a15e7d157cf163c7[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 1 23:31:35 2026 +0700
+
+    feat: change several ui and adding approve and reject button on finance dashboard
+
+[33mcommit 91b5cadae3935db1d97e8dec3f7fadfca734cef6[m
+Merge: f713d0a c384079
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 1 18:56:16 2026 +0700
+
+    fix: fixing merge conflict
+
+[33mcommit f713d0a1a7c28437a156e83d309341fea38b0596[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 1 17:05:20 2026 +0700
+
+    feat: fix some problem
+
+[33mcommit c384079ea81c2cf82e19ee7ae89720aa59246d10[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Thu Oct 1 14:44:35 2026 +0700
+
+    fix: contract & items
+
+[33mcommit 67d2244a685c937234ea0beec9761d4d00755278[m
+Merge: 80dc1a3 140e36b
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 1 12:43:06 2026 +0700
+
+    Merge branch 'fix' of https://github.com/mhmdhabibb/biasapp-frontend into feature-refactor
+    
+    # Conflicts:
+    #       biasappfe/src/router/role-access.ts
+
+[33mcommit 80dc1a3171c1e6048184527be4d859d2036b75c9[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 1 12:41:43 2026 +0700
+
+    feat: update and fix some bugs
+
+[33mcommit 140e36b72962fb50963f37c46d63d066716fb6f0[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Thu Oct 1 11:45:37 2026 +0700
+
+    UI adjustments, role access fixes, and bugfixes
+
+[33mcommit 3cf073d5ca4d1a7434ac5ec7752bff97a85ce612[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Oct 1 01:31:41 2026 +0700
+
+    feat: update
+
+[33mcommit 7e5b0d48705a02f07d09bd2b065f6dfc2c25469e[m
+Merge: 8572efc c1b45e0
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Sep 30 22:05:16 2026 +0700
+
+    fix: fixing merge conflict
+
+[33mcommit 8572efca3819dd1107c83c8b0a073516b906994e[m
+Merge: f6f5f70 4adc14b
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Sep 30 22:01:31 2026 +0700
+
+    fix: fix merge conflict
+
+[33mcommit c1b45e0c1649fad870908bc1d3c781009176d19a[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Wed Sep 30 21:33:05 2026 +0700
+
+    fix: service reports
+
+[33mcommit 4adc14b42b4b02e37c4fd9051d77a0f18c4f8341[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Sep 30 16:54:44 2026 +0700
+
+    feat: update
+
+[33mcommit 8c5761d69bb89755f252b87199f11baea31f9ee0[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Wed Sep 30 15:23:11 2026 +0700
+
+    feat: dashboard technician
+
+[33mcommit 561b81c437828ea81b10518af37561445ce7114c[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Sep 30 11:55:55 2026 +0700
+
+    feat: update
+
+[33mcommit 00e1fed6140254ec55582557c6aa0a22dde427a2[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Wed Sep 30 11:36:45 2026 +0700
+
+    fix: layouting notification
+
+[33mcommit 277bc0b0ad9f6bd6a21f2155607b2d251368e761[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Wed Sep 30 10:35:54 2026 +0700
+
+    fix: layout notification
+
+[33mcommit ab1f3e844184787bcf80ebed1f480a82564820ce[m
+Merge: e56af4a f6f5f70
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Wed Sep 30 08:04:51 2026 +0700
+
+    Merge branch 'origin/main' into main
+
+[33mcommit f6f5f7042dcac9864b45e3370d700109368f7bd3[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Sep 29 21:18:29 2026 +0700
+
+    feat: latest update
+
+[33mcommit e2b91101455a94101bd63dbdbc04802d0da63f8c[m[33m ([m[1;31morigin/staging[m[33m)[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Sep 29 20:58:40 2026 +0700
+
+    feat: last update
+
+[33mcommit ee10f3caeb4a327d37dbfe6f1c256410bc9ca500[m
+Merge: 1fadad8 d3fb70c
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Sep 29 20:47:47 2026 +0700
+
+    fix: fixing error
+
+[33mcommit 1fadad8abeaaff9ecb17e71c93eef8968927415f[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Sep 29 18:42:37 2026 +0700
+
+    feat: update
+
+[33mcommit 4aaabfa2f147ba5377b575257dc3be3aaae22370[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Sep 29 17:03:46 2026 +0700
+
+    feat: update
+
+[33mcommit e4b9033acba961470e88f2e6916a442d72d15859[m
+Merge: 71642ad e56af4a
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Sep 29 16:58:12 2026 +0700
+
+    feat: update
+
+[33mcommit d3fb70c036489a8993857565206ce71a1b2bd115[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Sep 29 16:33:11 2026 +0700
+
+    feat: fix conflict with create a new branch name staging
+
+[33mcommit 71642adb1edcdcd8ab665212e566919a6b507212[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Tue Sep 29 16:27:42 2026 +0700
+
+    feat: update
+
+[33mcommit e56af4a0797e003709a1d2d49325f93eeead06af[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Tue Sep 29 16:17:31 2026 +0700
+
+    update dashboard accounting
+
+[33mcommit 8bbf1b43e0db9f8323c05fd71a70a4cefae7c9c0[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Sep 28 17:02:41 2026 +0700
+
+    feat: update
+
+[33mcommit baeb01fe95531b5754f8425ac74b94a2f6c809bd[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Sep 28 14:21:07 2026 +0700
+
+    feat: update revision
+
+[33mcommit ca0845eb91cc61377256960eac3fbbf22b2e444b[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Sep 28 14:20:34 2026 +0700
+
+    feat: update revision
+
+[33mcommit ed18ea33f1205f172f2d4e9396ff171da93137d8[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Mon Sep 28 01:07:03 2026 +0700
+
+    feat:update
+
+[33mcommit c1fbd1977ae54297039064be553d4d8f441e7495[m
+Merge: 405c201 38f4066
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Sep 27 19:38:05 2026 +0700
+
+    feat: fix coflict
+
+[33mcommit 405c201e5a981b7f0e3a79933409e6428708f124[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sun Sep 27 14:04:43 2026 +0700
+
+    feat: update
+
+[33mcommit 38f4066587462d7a235a8e0e6e71b26c04b226d3[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Sun Sep 27 13:40:31 2026 +0700
+
+    feat: create add job in tech dashboard
+
+[33mcommit d4a738357fee1a1b864fffbc793c82b8935fb7b9[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Sep 26 20:33:59 2026 +0700
+
+    fix: repair some ui error
+
+[33mcommit f5e7911f03c1870aa3bbb9b78a3d57bbc804b318[m
+Merge: 05cfe5e 0deac8f
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Sep 26 16:54:55 2026 +0700
+
+    Merge branch 'main' of https://github.com/mhmdhabibb/biasapp-frontend into dev
+    
+    # Conflicts:
+    #       biasappfe/src/components/layout/TopBar.vue
+    #       biasappfe/src/pages/technician/TechDashboardPage.vue
+
+[33mcommit 05cfe5e5e0ed5aded566eb95bc3195d239e979c5[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Sep 26 12:03:05 2026 +0700
+
+    feat: beta (not tested)
+
+[33mcommit 0deac8f3a30805a5df2887d4236dace572e80926[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Sat Sep 26 12:03:01 2026 +0700
+
+    feat: dashboard cs
+
+[33mcommit 404ad9f15db56bdc20a9964299520dd7880b8ff2[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Sep 26 08:18:14 2026 +0700
+
+    feat: technician mobile layout & UI updates
+
+[33mcommit d8ddbfc688585cc3423d8764491e22d4d3e4c930[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Sep 26 04:59:59 2026 +0700
+
+    feat: update
+
+[33mcommit 3bb79f107260911343087141a7cf94306ccbbd20[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Sat Sep 26 00:30:47 2026 +0700
+
+    feat: update and refactoui
+
+[33mcommit b18085cc223786b2f0b9a6577d3485a4f0ce5517[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Fri Sep 25 16:57:35 2026 +0700
+
+    feat: test some ui and solve some bug
+
+[33mcommit 2a0dbade71b97077cc2dc64fbf8147397249c820[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Thu Sep 24 17:02:02 2026 +0700
+
+    feat: refactor some ui
+
+[33mcommit a0f17361a2a5ba383b0f682f6faaee2fea0ebbff[m
+Merge: 189845d fb9257f
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Wed Sep 23 21:25:01 2026 +0700
+
+    Merge main and add accounting UI
+
+[33mcommit 189845d534d90499c20a44ccc91cea716594bd21[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Wed Sep 23 21:15:09 2026 +0700
+
+    feat: modul PO for accounting
+
+[33mcommit fb9257f019b41236559d6f3158d394288fd11576[m
+Author: hansenjonatann <hansenjonatann@gmail.com>
+Date:   Wed Sep 23 16:26:29 2026 +0700
+
+    feat: update
+
+[33mcommit af24a739e03fc88322ce81357e2487658a486764[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Tue Sep 22 22:36:27 2026 +0700
+
+    fix: flow customer services
+
+[33mcommit 3f5dd82635c7abb5a7fabb652b2bff749ccd373e[m
+Merge: 9ccc7cd 66d70e9
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Mon Sep 21 22:00:29 2026 +0700
+
+    Resolve merge conflicts and add Customer Service role
+
+[33mcommit 9ccc7cd3f6d084de45b8572d8ae65d37f0064113[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Mon Sep 21 21:55:18 2026 +0700
+
+    feat: cs features
+
+[33mcommit 66d70e98af3d8db80d01e4366a1cc704258c45f9[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Sat Sep 19 12:01:00 2026 +0700
+
+    fix: units modul
+
+[33mcommit 7c631d35df0ed19b2beb07850136006330e711eb[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Sat Sep 19 11:17:39 2026 +0700
+
+    fix: change icon delete and edit
+
+[33mcommit 4b87fc0cf286e5f80fea9add4c5e87c4735b3d58[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Sat Sep 19 09:32:43 2026 +0700
+
+    fix: language and layouting
+
+[33mcommit 1f41a5856caecdd7addbb5f6836941979dea3e93[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Fri Sep 18 16:09:33 2026 +0700
+
+    feat: change logo and recreate login page
+
+[33mcommit 51628af52b006c3c10ded97a12646913dc001797[m
+Author: muhammad habib <muhammadhabiib2@gmail.com>
+Date:   Thu Sep 17 21:26:24 2026 +0700
+
+    feat: master data
+
+[33mcommit 064bd96c8f3defa3b0b4bc3ebfde7af3879c9d64[m
+Author: Lng Internasional <muhammadhabiib2@gmail.com>
+Date:   Thu Sep 17 10:39:25 2026 +0700
+
+    setup initial

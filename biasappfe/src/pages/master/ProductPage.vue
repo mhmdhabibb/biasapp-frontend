@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onUnmounted, watch, computed } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from "@/components/ui/ExcelImportButtons.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
@@ -35,6 +36,7 @@ const columns: TableColumn[] = [
 ];
 
 const data = ref<Product[]>([]);
+const isLoading = ref(true);
 const categories = ref<ProductCategory[]>([]);
 const uoms = ref<UOM[]>([]);
 
@@ -42,12 +44,15 @@ const categoryOptions = computed(() => categories.value.map(c => ({ value: c.id,
 const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
 async function fetchData() {
+  isLoading.value = true;
   try {
     const res = await resources.products.list();
     data.value = Array.isArray(res.data) ? (res.data as any) : [];
   } catch (error) {
     console.error("Failed to fetch products:", error);
     toast.error("Failed to fetch data: " + ((error as any).message || "Error"));
+  } finally {
+    isLoading.value = false;
   }
 }
 
@@ -508,6 +513,11 @@ function exportStockPdf() {
 
 <template>
   <div>
+    <!-- Skeleton Screen -->
+    <PageSkeleton v-if="isLoading" :cards="3" :columns="8" :rows="8" :show-header-actions="true" />
+
+    <!-- Real Content -->
+    <div v-show="!isLoading">
     <PageHeader
       title="Consumable / Sparepart"
       button-label="Add Consumable / Sparepart"
@@ -545,6 +555,7 @@ function exportStockPdf() {
     <DataTable
       :columns="columns"
       :data="data"
+      :loading="isLoading"
       search-placeholder="Search consumable / sparepart..."
       permission="product"
       @edit="openEdit"
@@ -567,6 +578,7 @@ function exportStockPdf() {
         </span>
       </template>
     </DataTable>
+    </div>
     <FormModal
       :open="showModal"
       :title="editingItem ? 'Edit Consumable / Sparepart' : 'Add Consumable / Sparepart'"
