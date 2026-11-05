@@ -35,6 +35,7 @@ const columns: TableColumn[] = [
 ];
 
 const data = ref<Product[]>([]);
+const isLoading = ref(true);
 const categories = ref<ProductCategory[]>([]);
 const uoms = ref<UOM[]>([]);
 
@@ -42,12 +43,15 @@ const categoryOptions = computed(() => categories.value.map(c => ({ value: c.id,
 const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
 async function fetchData() {
+  isLoading.value = true;
   try {
     const res = await resources.products.list();
     data.value = Array.isArray(res.data) ? (res.data as any) : [];
   } catch (error) {
     console.error("Failed to fetch products:", error);
     toast.error("Failed to fetch data: " + ((error as any).message || "Error"));
+  } finally {
+    isLoading.value = false;
   }
 }
 
@@ -545,6 +549,7 @@ function exportStockPdf() {
     <DataTable
       :columns="columns"
       :data="data"
+      :loading="isLoading"
       search-placeholder="Search consumable / sparepart..."
       permission="product"
       @edit="openEdit"

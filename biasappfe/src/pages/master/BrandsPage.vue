@@ -18,7 +18,7 @@ const columns: TableColumn[] = [
   { key: 'name', label: 'Brand Name' },
 ]
 
-const { brands: data, fetchAll, create, update, remove, hardRemove, error } = useBrands()
+const { brands: data, isLoading, fetchAll, create, update, remove, hardRemove, error } = useBrands()
 fetchAll()
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -63,7 +63,7 @@ async function handleDelete() {
   <div>
     <PageHeader title="Brands" button-label="Add Brand" permission="brand:create" @add="openAdd" />
     <div v-if="error" class="page-error" role="alert">{{ error }}</div>
-    <DataTable :columns="columns" :data="data" search-placeholder="Search brands..." permission="brand" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+    <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search brands..." permission="brand" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #toolbar>
         <ExcelImportButtons master-key="brand" @imported="fetchAll" />
       </template>

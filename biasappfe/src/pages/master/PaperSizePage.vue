@@ -18,14 +18,18 @@ const columns: TableColumn[] = [
 ]
 
 const data = ref<PaperSize[]>([])
+const isLoading = ref(true)
 
 async function fetchData() {
+  isLoading.value = true
   try {
     const res = await resources.paperSizes.list()
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch paper sizes:', error)
     toast.error('Failed to fetch data: ' + ((error as any).message || 'Error'))
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -89,7 +93,7 @@ async function handleDelete() {
 <template>
   <div>
     <PageHeader title="Paper Size" button-label="Add Paper Size" permission="paper_size:create" @add="openAdd" />
-    <DataTable :columns="columns" :data="data" search-placeholder="Search paper sizes..." permission="paper_size" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+    <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search paper sizes..." permission="paper_size" @edit="openEdit" @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #toolbar>
         <ExcelImportButtons master-key="paper_size" @imported="fetchData" />
       </template>
@@ -106,5 +110,3 @@ async function handleDelete() {
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
-
-

@@ -43,8 +43,10 @@ const paperSizeOptions = computed(() => paperSizes.value.map(p => ({ value: p.id
 const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
 const data = ref<Unit[]>([])
+const isLoading = ref(true)
 
 async function fetchData() {
+  isLoading.value = true
   try {
     const [resUnits, resBrands, resTypes, resPaperSizes, resUoms] = await Promise.all([
       resources.units.list(),
@@ -61,6 +63,8 @@ async function fetchData() {
   } catch (error: any) {
     console.error('Failed to fetch data:', error)
     toast.error('Failed to fetch data from server: ' + (error.message || 'Error'))
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -768,7 +772,7 @@ function exportStockPdf() {
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #003366;">{{ formatRupiah(totalUnitValue) }}</div>
       </div>
     </div>
-    <DataTable :columns="columns" :data="filteredData" search-placeholder="Search products..." permission="unit" @edit="openEdit"
+    <DataTable :columns="columns" :data="filteredData" :loading="isLoading" search-placeholder="Search products..." permission="unit" @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #toolbar>
         <div style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">

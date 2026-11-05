@@ -43,6 +43,7 @@ const canSeeAmount = computed(() => {
 
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
+const isLoading = ref(true)
 
 
 
@@ -156,8 +157,12 @@ function silentRefresh() {
   void useMasterStore().refreshInBackground()
 }
 
-onMounted(() => {
-  ensureResourcesLoaded(route.path)
+onMounted(async () => {
+  try {
+    await ensureResourcesLoaded(route.path)
+  } finally {
+    isLoading.value = false
+  }
   salesTimer = setInterval(silentRefresh, 30000)
   window.addEventListener('focus', silentRefresh)
   window.addEventListener('bias:data-mutated', silentRefresh)
@@ -1323,7 +1328,7 @@ const combinedItemOptions = computed(() => {
       </template>
     </PageHeader>
     
-    <DataTable :columns="columns" :data="filteredSales" search-placeholder="Search sales..." @edit="openEdit"
+    <DataTable :columns="columns" :data="filteredSales" :loading="isLoading" search-placeholder="Search sales..." @edit="openEdit"
       @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-pic_name="{ row }">{{ picName(row.customer_id) }}</template>
