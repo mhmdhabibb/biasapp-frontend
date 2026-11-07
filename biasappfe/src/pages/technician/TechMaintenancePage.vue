@@ -6,6 +6,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
+import { normalizeRole } from '@/router/role-access'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
@@ -15,6 +16,7 @@ import { useRoute } from 'vue-router'
 const toast = useToast()
 const { can } = usePermission()
 const { currentUser } = useAuth()
+const isTechnician = computed(() => normalizeRole(currentUser.value?.role) === 'technician')
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
 const {
@@ -290,6 +292,10 @@ function openJob(job: any) {
 }
 
 async function startJob() {
+  if (!isTechnician.value) {
+    toast.error('Hanya teknisi yang dapat memulai pekerjaan.')
+    return
+  }
   if (!selectedJob.value || form.value.work_start) return
   const now = new Date().toISOString()
   form.value.work_start = now
@@ -542,7 +548,7 @@ async function completeJob() {
               </div>
             </div>
 
-            <div v-if="!form.work_start && selectedJob.status !== 'completed'" class="mf-start-hint">
+            <div v-if="isTechnician && !form.work_start && selectedJob.status !== 'completed'" class="mf-start-hint">
               <button class="mf-btn-start" @click="startJob">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 Start Job — Record Work Start Time

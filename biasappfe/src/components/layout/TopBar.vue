@@ -12,9 +12,14 @@ defineEmits<{ (e: "toggle-sidebar"): void }>();
 
 const router = useRouter();
 const toast = useToast();
-const { notifications, fetchAll, markRead, clearAll } = useNotificationsStore();
+const { notifications, fetchAll, markRead, remove, clearAll } = useNotificationsStore();
 const { currentUser } = useAuth();
 const showNotif = ref(false);
+const isClearingNotifications = ref(false);
+const isMarkingNotificationsRead = ref(false);
+const notificationTab = ref<"all" | "unread" | "read">("all");
+const notificationPage = ref(1);
+const notificationsPerPage = 3;
 
 const { accessibleItems, iconPaths } = useNavigationMenu();
 
@@ -139,6 +144,32 @@ const filteredNotifications = computed(() => {
 const unreadCount = computed(
   () => filteredNotifications.value.filter((item) => !item.is_read).length,
 );
+const readCount = computed(() => filteredNotifications.value.length - unreadCount.value);
+const notificationsForTab = computed(() => {
+  if (notificationTab.value === "unread") {
+    return filteredNotifications.value.filter((item) => !item.is_read);
+  }
+  if (notificationTab.value === "read") {
+    return filteredNotifications.value.filter((item) => item.is_read);
+  }
+  return filteredNotifications.value;
+});
+const notificationPageCount = computed(() =>
+  Math.max(1, Math.ceil(notificationsForTab.value.length / notificationsPerPage)),
+);
+const visibleNotifications = computed(() => {
+  const start = (notificationPage.value - 1) * notificationsPerPage;
+  return notificationsForTab.value.slice(start, start + notificationsPerPage);
+});
+
+watch(notificationTab, () => {
+  notificationPage.value = 1;
+});
+
+watch(notificationPageCount, (pageCount) => {
+  if (notificationPage.value > pageCount) notificationPage.value = pageCount;
+});
+
 let notificationInterval: ReturnType<typeof setInterval> | undefined;
 
 onMounted(() => {
@@ -202,24 +233,43 @@ async function openNotification(notification: Notification) {
 }
 
 async function handleClearAll() {
-  if (!confirm("Apakah Anda yakin ingin membersihkan semua notifikasi?")) return;
+  if (!confirm("Hapus semua notifikasi dari daftar Anda? Notifikasi pengguna lain tidak akan terpengaruh.")) return;
+  isClearingNotifications.value = true;
   try {
     await clearAll();
-    toast.success("Semua notifikasi berhasil dibersihkan");
+    notificationPage.value = 1;
+    toast.success("Semua notifikasi berhasil dibersihkan dari daftar Anda");
   } catch (err: any) {
     console.error("Gagal membersihkan notifikasi:", err);
     toast.error("Gagal membersihkan notifikasi: " + (err.message || "Error"));
+  } finally {
+    isClearingNotifications.value = false;
+  }
+}
+
+async function handleRemoveNotification(notification: Notification) {
+  const id = String(notification.id);
+  try {
+    await remove(id);
+    toast.success("Notifikasi dihapus dari daftar Anda");
+  } catch (err: any) {
+    console.error("Gagal menghapus notifikasi:", err);
+    toast.error("Gagal menghapus notifikasi: " + (err.message || "Error"));
   }
 }
 
 async function handleMarkAllAsRead() {
   const unreadItems = filteredNotifications.value.filter((n) => !n.is_read);
-  if (unreadItems.length === 0) return;
+  if (unreadItems.length === 0 || isMarkingNotificationsRead.value) return;
+  isMarkingNotificationsRead.value = true;
   try {
     await Promise.all(unreadItems.map((n) => markRead(String(n.id))));
     toast.success("Semua notifikasi telah ditandai dibaca");
   } catch (err: any) {
     console.warn("Gagal menandai notifikasi dibaca:", err);
+    toast.error("Gagal menandai notifikasi dibaca");
+  } finally {
+    isMarkingNotificationsRead.value = false;
   }
 }
 </script>
@@ -376,35 +426,61 @@ async function handleMarkAllAsRead() {
         </button>
 
         <div v-if="showNotif" class="notif-dropdown">
-          <div class="notif-header" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--color-border-light);">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <h4 style="margin: 0; font-size: 14px; font-weight: 600;">Notifications</h4>
-              <span v-if="unreadCount" class="badge" style="background: var(--color-primary, #3b82f6); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 10px;">{{ unreadCount }} baru</span>
+          <div class="notif-header">
+            <div class="notif-heading">
+              <h4>Notifications</h4>
+              <span v-if="unreadCount" class="notif-unread-count">{{ unreadCount }} baru</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="notif-actions">
               <button
                 v-if="unreadCount > 0"
                 type="button"
                 @click.stop="handleMarkAllAsRead"
-                style="padding: 2px 6px; font-size: 11px; border: none; background: transparent; color: var(--color-primary); cursor: pointer; text-decoration: underline;"
+                :disabled="isMarkingNotificationsRead"
                 title="Tandai semua sudah dibaca"
               >
-                Tandai dibaca
+                {{ isMarkingNotificationsRead ? 'Menyimpan...' : 'Tandai dibaca' }}
               </button>
               <button
                 v-if="filteredNotifications.length"
                 type="button"
-                class="text-danger"
+                class="notif-clear-all"
                 @click.stop="handleClearAll"
-                style="padding: 2px 6px; font-size: 11px; border: none; background: transparent; cursor: pointer; text-decoration: underline;"
-                title="Hapus semua notifikasi"
+                :disabled="isClearingNotifications"
+                title="Bersihkan semua notifikasi dari daftar Anda"
               >
-                Clear All
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" />
+                </svg>
+                {{ isClearingNotifications ? 'Menghapus...' : 'Hapus semua' }}
               </button>
             </div>
           </div>
+          <div class="notif-tabs" role="tablist" aria-label="Filter notifikasi">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="notificationTab === 'all'"
+              :class="{ 'is-active': notificationTab === 'all' }"
+              @click="notificationTab = 'all'"
+            >Semua <span>{{ filteredNotifications.length }}</span></button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="notificationTab === 'unread'"
+              :class="{ 'is-active': notificationTab === 'unread' }"
+              @click="notificationTab = 'unread'"
+            >Belum dibaca <span>{{ unreadCount }}</span></button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="notificationTab === 'read'"
+              :class="{ 'is-active': notificationTab === 'read' }"
+              @click="notificationTab = 'read'"
+            >Dibaca <span>{{ readCount }}</span></button>
+          </div>
           <div class="notif-body">
-            <div v-if="!filteredNotifications.length" class="notif-empty">
+            <div v-if="!notificationsForTab.length" class="notif-empty">
               <svg
                 width="32"
                 height="32"
@@ -420,27 +496,59 @@ async function handleMarkAllAsRead() {
                 <polyline points="14 2 14 8 20 8"></polyline>
                 <line x1="9" y1="15" x2="15" y2="15"></line>
               </svg>
-              <p>No new notifications</p>
+              <p>Tidak ada notifikasi</p>
             </div>
-            <button
-              v-for="notification in filteredNotifications"
+            <div
+              v-for="notification in visibleNotifications"
               :key="notification.id"
               class="notif-item"
               :class="{ 'notif-item-unread': !notification.is_read }"
               @click="openNotification(notification)"
+              @keydown.enter="openNotification(notification)"
+              @keydown.space.prevent="openNotification(notification)"
+              @contextmenu.prevent="handleRemoveNotification(notification)"
+              role="button"
+              tabindex="0"
+              :aria-label="`${notification.title}. Klik untuk membuka, klik kanan untuk menghapus.`"
             >
-              <div class="notif-icon-wrapper" style="background: rgba(var(--color-primary-rgb, 59, 130, 246), 0.1); color: var(--color-primary); padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+              <div class="notif-icon-wrapper">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                   <path d="M13.73 21a2 2 0 01-3.46 0"></path>
                 </svg>
               </div>
-              <div class="notif-content" style="flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 2px;">
-                <span class="notif-item-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ notification.title }}</span>
-                <span class="notif-item-message" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">{{ notification.message }}</span>
-                <time style="margin-top: 4px;">{{ new Date(notification.created_at).toLocaleString("id-ID") }}</time>
+              <div class="notif-content">
+                <span class="notif-item-title">{{ notification.title }}</span>
+                <span class="notif-item-message">{{ notification.message }}</span>
+                <time>{{ new Date(notification.created_at).toLocaleString("id-ID") }}</time>
               </div>
-            </button>
+              <button
+                type="button"
+                class="notif-remove"
+                :aria-label="`Hapus notifikasi ${notification.title}`"
+                title="Hapus notifikasi"
+                @click.stop="handleRemoveNotification(notification)"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div v-if="notificationPageCount > 1" class="notif-pagination">
+            <button
+              type="button"
+              aria-label="Halaman sebelumnya"
+              :disabled="notificationPage === 1"
+              @click="notificationPage--"
+            >Sebelumnya</button>
+            <span>{{ notificationPage }} / {{ notificationPageCount }}</span>
+            <button
+              type="button"
+              aria-label="Halaman berikutnya"
+              :disabled="notificationPage === notificationPageCount"
+              @click="notificationPage++"
+            >Berikutnya</button>
           </div>
         </div>
       </div>
@@ -825,9 +933,9 @@ async function handleMarkAllAsRead() {
   position: absolute;
   top: calc(100% + 12px);
   right: -8px;
-  width: 320px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 100px);
+  width: 380px;
+  max-width: min(380px, calc(100vw - 24px));
+  max-height: min(520px, calc(100dvh - 88px));
   display: flex;
   flex-direction: column;
   background: var(--color-surface);
@@ -839,7 +947,11 @@ async function handleMarkAllAsRead() {
 }
 
 .notif-header {
-  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--color-border-light);
   background: var(--color-surface);
   flex-shrink: 0;
@@ -847,16 +959,135 @@ async function handleMarkAllAsRead() {
 
 .notif-header h4 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text);
 }
 
+.notif-heading,
+.notif-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif-actions {
+  flex-shrink: 0;
+  gap: 10px;
+}
+
+.notif-actions button {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.notif-actions button.text-danger {
+  color: var(--color-danger, #dc2626);
+}
+
+.notif-actions button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.notif-actions .notif-clear-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--color-danger, #dc2626);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-danger, #dc2626);
+  text-decoration: none;
+}
+
+.notif-unread-count {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.notif-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 8px 10px 0;
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+}
+
+.notif-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.notif-tabs button.is-active {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.notif-tabs button span {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
 .notif-body {
-  max-height: 400px;
+  min-height: 0;
+  max-height: 440px;
   overflow-y: auto;
   background: var(--color-surface-sunken);
   flex-grow: 1;
+}
+
+.notif-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.notif-pagination button {
+  padding: 5px 8px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.notif-pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .notif-empty {
@@ -895,20 +1126,80 @@ async function handleMarkAllAsRead() {
   cursor: pointer;
 }
 
+.notif-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 .notif-item:hover,
 .notif-item-unread {
   background: var(--color-surface-raised);
 }
 
+.notif-item-unread {
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+.notif-icon-wrapper {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(var(--color-primary-rgb, 59, 130, 246), 0.1);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notif-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.notif-remove {
+  display: flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.notif-remove:hover {
+  background: var(--color-danger-surface, #fef2f2);
+  color: var(--color-danger, #dc2626);
+}
+
 .notif-item-title {
   font-size: 13px;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .notif-item-message,
 .notif-item time {
   color: var(--color-text-secondary);
   font-size: 12px;
+}
+
+.notif-item-message {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .notif-item time {
@@ -919,6 +1210,12 @@ async function handleMarkAllAsRead() {
 .notif-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 40;
+}
+
+@media (max-width: 480px) {
+  .notif-dropdown {
+    right: -8px;
+  }
 }
 </style>

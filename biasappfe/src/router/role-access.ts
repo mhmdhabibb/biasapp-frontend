@@ -18,7 +18,7 @@ export const dashboardRouteNames: string[] = [
 ];
 
 // Each built-in role always keeps its own dashboard in the sidebar
-// (and may only open that dashboard). Admin is unrestricted (see callers).
+// (and may only open that dashboard).
 export const dashboardRouteByRole: Record<string, string> = {
   customer_service: "csDashboard",
   accounting: "accDashboard",

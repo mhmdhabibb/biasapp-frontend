@@ -11,9 +11,14 @@ const { success: toastSuccess } = useToast()
 const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
+const rememberMe = ref(false)
 
 async function handleSubmit() {
-  const success = await login({ username: username.value, password: password.value })
+  const success = await login({
+    username: username.value,
+    password: password.value,
+    remember_me: rememberMe.value,
+  })
   if (success) {
     toastSuccess('Login successful')
     router.push('/')
@@ -103,6 +108,11 @@ async function handleSubmit() {
               </button>
             </div>
           </div>
+
+          <label class="remember-me">
+            <input v-model="rememberMe" type="checkbox">
+            <span>Remember me</span>
+          </label>
 
           <button type="submit" class="login-submit">
             Login
@@ -244,6 +254,23 @@ async function handleSubmit() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.remember-me {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.remember-me input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-primary);
 }
 
 .form-label {

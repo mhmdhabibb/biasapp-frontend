@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from "@/components/ui/PageHeader.vue";
+import DashboardSkeleton from "@/components/ui/DashboardSkeleton.vue";
 import { useAuth } from "@/composables/useAuth";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
@@ -12,7 +13,13 @@ const router = useRouter();
 const route = useRoute()
 const { currentUser } = useAuth();
 const { canAny } = usePermission();
-const { ensureResourcesLoaded } = useMasterStore()
+const { ensureResourcesLoaded, loadedResources } = useMasterStore()
+const dashboardResources = [
+  "jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests",
+]
+const isDashboardLoading = computed(() =>
+  dashboardResources.some((resource) => !loadedResources.value.has(resource)),
+)
 const {
   jobOrders,
   serviceReports,
@@ -141,7 +148,8 @@ function goToDetail(id: number) {
 </script>
 
 <template>
-  <div class="tech-dashboard">
+  <DashboardSkeleton v-if="isDashboardLoading" variant="technician" />
+  <div v-else class="tech-dashboard">
     <div class="welcome-header">
       <div class="user-greeting">
         <h1 class="greeting-title">

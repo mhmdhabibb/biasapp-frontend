@@ -6,6 +6,7 @@ import DataTable from '@/components/ui/DataTable.vue'
 import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
@@ -19,6 +20,7 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 const toast = useToast()
 const data = ref<Customer[]>([])
+const isLoading = ref(true)
 
 const filterCategory = ref('')
 const filterCategoryOptions = [
@@ -43,6 +45,8 @@ async function fetchData() {
   } catch (error) {
     console.error('Failed to fetch customers:', error)
     toast.error('Failed to fetch customer data: ' + ((error as any).message || 'Error'))
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -358,7 +362,8 @@ function goToForm(item: any) {
 </script>
 
 <template>
-  <div>
+  <PageSkeleton v-if="isLoading" :columns="6" :rows="8" :show-filter="true" />
+  <div v-else>
     <PageHeader title="Customers" :button-label="isTechnician ? undefined : 'Add Customer'" permission="customer:create" @add="openAdd" />
     <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
       <CustomSelect v-model="filterCategory" :options="filterCategoryOptions" placeholder="Filter Type" style="min-width: 160px; max-width: 250px;" />

@@ -10,18 +10,38 @@ interface AuthUser {
   permissions: string[];
 }
 
-const token = ref(sessionStorage.getItem("bias_token"));
+const rememberSession = ref(Boolean(localStorage.getItem("bias_token")));
+
+function preferredStorage() {
+  return rememberSession.value ? localStorage : sessionStorage;
+}
+
+function getStoredAuth(key: string) {
+  const preferred = preferredStorage();
+  const fallback = rememberSession.value ? sessionStorage : localStorage;
+  return preferred.getItem(key) ?? fallback.getItem(key);
+}
+
+function clearStoredAuth() {
+  for (const storage of [localStorage, sessionStorage]) {
+    storage.removeItem("bias_token");
+    storage.removeItem("bias_user");
+    storage.removeItem("bias_permissions");
+  }
+}
+
+const token = ref(getStoredAuth("bias_token"));
 const currentUser = ref<AuthUser | null>(readUser());
 const isLoading = ref(false);
 const error = ref("");
 
 function readUser(): AuthUser | null {
-  const value = sessionStorage.getItem("bias_user");
+  const value = getStoredAuth("bias_user");
   if (!value) return null;
   const user = JSON.parse(value) as AuthUser;
   // Fallback if permissions isn't in session storage yet
   if (!user.permissions) {
-    const perms = sessionStorage.getItem("bias_permissions");
+    const perms = getStoredAuth("bias_permissions");
     user.permissions = perms ? JSON.parse(perms) : [];
   }
   return user;
@@ -57,9 +77,8 @@ if (typeof window !== "undefined") {
   window.addEventListener("bias:auth-expired", () => {
     token.value = null;
     currentUser.value = null;
-    sessionStorage.removeItem("bias_token");
-    sessionStorage.removeItem("bias_user");
-    sessionStorage.removeItem("bias_permissions");
+    rememberSession.value = false;
+    clearStoredAuth();
     if (window.location.pathname !== "/login" && !window.location.pathname.startsWith("/verify-payment")) {
       window.location.href = "/login";
     }
@@ -83,9 +102,12 @@ export function useAuthStore() {
       const perms = (response.data as any).permissions || [];
       currentUser.value.permissions = perms;
 
-      sessionStorage.setItem("bias_token", token.value);
-      sessionStorage.setItem("bias_user", JSON.stringify(currentUser.value));
-      sessionStorage.setItem("bias_permissions", JSON.stringify(perms));
+      rememberSession.value = Boolean(credentials.remember_me);
+      clearStoredAuth();
+      const storage = preferredStorage();
+      storage.setItem("bias_token", token.value);
+      storage.setItem("bias_user", JSON.stringify(currentUser.value));
+      storage.setItem("bias_permissions", JSON.stringify(perms));
       return true;
     } catch (reason) {
       error.value =
@@ -101,9 +123,8 @@ export function useAuthStore() {
   function logout() {
     token.value = null;
     currentUser.value = null;
-    sessionStorage.removeItem("bias_token");
-    sessionStorage.removeItem("bias_user");
-    sessionStorage.removeItem("bias_permissions");
+    rememberSession.value = false;
+    clearStoredAuth();
   }
 
   async function refreshPermissions(): Promise<void> {
@@ -124,8 +145,9 @@ export function useAuthStore() {
         permissions: perms,
       };
 
-      sessionStorage.setItem("bias_user", JSON.stringify(currentUser.value));
-      sessionStorage.setItem("bias_permissions", JSON.stringify(perms));
+      const storage = preferredStorage();
+      storage.setItem("bias_user", JSON.stringify(currentUser.value));
+      storage.setItem("bias_permissions", JSON.stringify(perms));
     } catch (reason) {
       console.warn("Failed to refresh permissions:", reason);
     }

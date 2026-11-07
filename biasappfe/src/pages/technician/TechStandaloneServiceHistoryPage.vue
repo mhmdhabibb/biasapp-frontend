@@ -327,6 +327,7 @@ async function saveAssign() {
               <th>Keterangan / Alasan</th>
               <th>Technician</th>
               <th>Job Order</th>
+              <th>JO Status</th>
               <th class="th-actions">Actions</th>
             </tr>
           </thead>
@@ -366,10 +367,13 @@ async function saveAssign() {
                   <span class="badge badge-primary jo-badge">
                     {{ findJobOrderForDO(row.id).job_order_no }}
                   </span>
-                  <div class="text-xs text-muted">
-                    {{ findJobOrderForDO(row.id).status?.toUpperCase().replace('_', ' ') }}
-                  </div>
                 </template>
+                <span v-else class="text-xs text-muted">—</span>
+              </td>
+              <td>
+                <span v-if="findJobOrderForDO(row.id)" class="jo-status">
+                  {{ findJobOrderForDO(row.id).status?.toUpperCase().replace('_', ' ') || '—' }}
+                </span>
                 <span v-else class="text-xs text-muted">—</span>
               </td>
               <td class="td-actions">
@@ -421,7 +425,7 @@ async function saveAssign() {
               </td>
             </tr>
             <tr v-if="standaloneList.length === 0">
-              <td colspan="8" class="text-center py-lg text-muted">No forms from CS yet.</td>
+              <td colspan="10" class="text-center py-lg text-muted">No forms from CS yet.</td>
             </tr>
           </tbody>
         </table>
@@ -466,6 +470,10 @@ async function saveAssign() {
               <span class="m-val">
                 <span class="badge badge-primary" style="font-size:11px;">{{ findJobOrderForDO(row.id).job_order_no }}</span>
               </span>
+            </div>
+            <div class="m-row" v-if="findJobOrderForDO(row.id)">
+              <span class="m-label">JO Status:</span>
+              <span class="m-val">{{ findJobOrderForDO(row.id).status?.toUpperCase().replace('_', ' ') || '—' }}</span>
             </div>
           </div>
 
@@ -667,11 +675,23 @@ async function saveAssign() {
 }
 
 .sa-table {
-  min-width: 980px;
+  min-width: 1820px;
   width: 100%;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
 }
+
+.sa-table th:nth-child(1), .sa-table td:nth-child(1) { width: 140px; }
+.sa-table th:nth-child(2), .sa-table td:nth-child(2) { width: 240px; }
+.sa-table th:nth-child(3), .sa-table td:nth-child(3) { width: 120px; }
+.sa-table th:nth-child(4), .sa-table td:nth-child(4) { width: 145px; }
+.sa-table th:nth-child(5), .sa-table td:nth-child(5) { width: 120px; }
+.sa-table th:nth-child(6), .sa-table td:nth-child(6) { width: 210px; }
+.sa-table th:nth-child(7), .sa-table td:nth-child(7) { width: 145px; }
+.sa-table th:nth-child(8), .sa-table td:nth-child(8) { width: 160px; }
+.sa-table th:nth-child(9), .sa-table td:nth-child(9) { width: 130px; }
+.sa-table th:nth-child(10), .sa-table td:nth-child(10) { width: 410px; }
 
 .sa-table th {
   position: sticky;
@@ -699,14 +719,23 @@ async function saveAssign() {
   background: var(--color-surface-sunken, #f8fafc);
 }
 
+.sa-table tbody tr:nth-child(even) {
+  background: #fafbfd;
+}
+
+.sa-table tbody tr:nth-child(even):hover {
+  background: var(--color-surface-sunken, #f8fafc);
+}
+
 .td-do-number {
-  max-width: 140px;
+  max-width: 150px;
 }
 .do-number-text {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-primary);
-  word-break: break-all;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 .td-nowrap {
@@ -714,27 +743,33 @@ async function saveAssign() {
 }
 
 .th-actions {
-  min-width: 240px;
+  min-width: 410px;
   text-align: center;
 }
 
 .td-actions {
   text-align: center;
+  white-space: nowrap;
 }
 
 /* ── Action button group ── */
 .action-btn-group {
-  display: inline-flex;
-  gap: 5px;
-  flex-wrap: wrap;
+  display: flex;
+  width: max-content;
+  max-width: none;
+  gap: 4px;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: center;
+  margin: 0 auto;
 }
 
 .action-btn-group .btn {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-  padding: 5px 8px;
+  padding: 5px 7px;
   font-size: 12px;
   white-space: nowrap;
 }
@@ -760,8 +795,19 @@ async function saveAssign() {
 }
 
 .jo-badge {
+  display: inline-flex;
+  max-width: none;
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 11px;
   letter-spacing: 0.3px;
+}
+
+.jo-status {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* ── Mobile View ── */

@@ -2,12 +2,9 @@ import { useAuth } from "@/composables/useAuth";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { canView, routeNamesByMenuOrder } from "@/router/permission-map";
 import {
-  allowedRouteNamesByRole,
-  dashboardRouteByRole,
-  dashboardRouteNames,
-  homeRouteNameByRole,
-  normalizeRole,
-  technicianOnlyRouteNames,
+    allowedRouteNamesByRole,
+    homeRouteNameByRole,
+    normalizeRole
 } from "@/router/role-access";
 import { createRouter, createWebHistory } from "vue-router";
 
@@ -392,20 +389,18 @@ router.beforeEach((to) => {
 
   // `view` gate: a page is only reachable when the role holds `<key>:view`
   // for the route's permission key (read alone unlocks the API only).
-  if (role !== "admin") {
-    const perms = currentUser.value?.permissions || [];
-    if (!canView(to.name as string, perms)) {
-      const home = homeRouteNameByRole[role];
-      if (home && home !== to.name && canView(home, perms)) {
-        return { name: home };
-      }
-      const fallback = routeNamesByMenuOrder.find(
-        (name) => name !== to.name && canView(name, perms),
-      );
-      if (fallback) return { name: fallback };
-      // Nothing this role can view: stay put instead of looping.
-      return true;
+  const perms = currentUser.value?.permissions || [];
+  if (!canView(to.name as string, perms)) {
+    const home = homeRouteNameByRole[role];
+    if (home && home !== to.name && canView(home, perms)) {
+      return { name: home };
     }
+    const fallback = routeNamesByMenuOrder.find(
+      (name) => name !== to.name && canView(name, perms),
+    );
+    if (fallback) return { name: fallback };
+    // Nothing this role can view: stay put instead of looping.
+    return true;
   }
 
   return true;

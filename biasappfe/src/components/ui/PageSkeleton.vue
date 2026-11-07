@@ -12,6 +12,8 @@ defineProps<{
   rows?: number
   /** Show action buttons area in header */
   showHeaderActions?: boolean
+  /** Show a filter control between the page header and table */
+  showFilter?: boolean
 }>()
 </script>
 
@@ -25,6 +27,10 @@ defineProps<{
         <div class="skel-btn skel-shimmer" />
       </div>
       <div v-else class="skel-btn-accent skel-shimmer" />
+    </div>
+
+    <div v-if="showFilter" class="skel-filter-wrap">
+      <div class="skel-filter skel-shimmer" />
     </div>
 
     <!-- Summary Cards Skeleton -->
@@ -127,6 +133,18 @@ defineProps<{
 .skel-btn-accent {
   width: 140px;
   height: 36px;
+  border-radius: 8px;
+}
+
+.skel-filter-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.skel-filter {
+  width: 210px;
+  height: 40px;
   border-radius: 8px;
 }
 

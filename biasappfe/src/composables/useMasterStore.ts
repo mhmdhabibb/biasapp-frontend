@@ -1,37 +1,36 @@
 // @ts-nocheck
-import { useResourcesStore } from "@/stores/resources.store";
 import { useAuthStore } from "@/stores/auth.store";
+import { useResourcesStore } from "@/stores/resources.store";
 import type {
-  Brand,
-  ContractItem,
-  Customer,
-  DeliveryOrder,
-  Indent,
-  MonthlyMeterReading,
-  Payment,
-  Product,
-  RentalInvoice,
-  Sale,
-  SalesInvoice,
-  ServiceReport,
-  SparepartRequest,
-  Technician,
-  Unit,
-  UnitType,
-  Warranty,
-  WarrantyClaim,
-  PurchaseOrder,
-  PurchaseOrderItem,
-  ProcurementDeliveryOrder,
+    Brand,
+    ContractItem,
+    Customer,
+    DeliveryOrder,
+    Indent,
+    MonthlyMeterReading,
+    Payment,
+    ProcurementDeliveryOrder,
+    Product,
+    PurchaseOrder,
+    RentalInvoice,
+    Sale,
+    SalesInvoice,
+    ServiceReport,
+    SparepartRequest,
+    Technician,
+    Unit,
+    UnitType,
+    Warranty,
+    WarrantyClaim
 } from "@/types";
-import { reactive, toRefs, ref } from "vue";
 import {
-  formatUnitDisplayName as utilFormatUnitDisplayName,
-  formatProductDisplayName as utilFormatProductDisplayName,
-  isCopierOrPrinter,
-  resolvePrintTech,
+    isCopierOrPrinter,
+    resolvePrintTech,
+    formatProductDisplayName as utilFormatProductDisplayName,
+    formatUnitDisplayName as utilFormatUnitDisplayName,
 } from "@/utils/format";
 import { invalidateCache } from "@/utils/requestCache";
+import { reactive, ref, toRefs } from "vue";
 
 const store = reactive({
   customers: [] as Customer[],
@@ -80,7 +79,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   // Dashboards (All Roles)
   "/customer-service/dashboard": ["serviceRequests", "jobOrders", "serviceReports", "contractItems", "serviceSpareparts", "warrantyClaims", "rents"],
   "/accounting/dashboard": ["serviceSpareparts", "purchaseOrders", "deliveryOrders", "rentalInvoices", "salesInvoices", "payments"],
-  "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units"],
+  "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests"],
 
   // Customer Service Operational Pages
   "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments", "technicians", "deliveryOrders"],
@@ -346,7 +345,10 @@ export function useMasterStore() {
         : Object.values(registry)
     ) as Array<() => Promise<void>>;
 
-    if (picked.length === 0) return Promise.resolve();
+    if (picked.length === 0) {
+      if (names) names.forEach((name) => loadedResources.value.add(name));
+      return Promise.resolve();
+    }
 
     return (async () => {
       // Execute all targeted tasks in parallel for instant network throughput
@@ -407,8 +409,8 @@ export function useMasterStore() {
 
     const notLoaded = targetResources.filter((r) => !loadedResources.value.has(r));
     if (notLoaded.length > 0) {
-      // First visit: load not-yet-cached resources for this page directly in parallel
-      return runSyncTasks(notLoaded, false);
+      // First visit: track initial requests so list pages can show skeleton rows.
+      return runSyncTasks(notLoaded, true);
     }
 
     // Resources already in memory: page renders INSTANTLY (0ms)
@@ -758,6 +760,7 @@ export function useMasterStore() {
 
   return {
     ...toRefs(store),
+    loadedResources,
     refresh: syncFromApi,
     refreshInBackground,
     refreshOnly,

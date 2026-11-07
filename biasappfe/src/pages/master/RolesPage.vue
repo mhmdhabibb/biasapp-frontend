@@ -8,6 +8,7 @@ import { useHardDelete } from '@/composables/useHardDelete'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { useAuthStore } from '@/stores/auth.store'
+import { normalizeRole } from '@/router/role-access'
 import type { Module, Permission, Role } from '@/types'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -27,6 +28,8 @@ const selectedRoleId = ref<string | null>(null)
 const selectedPermissions = ref<string[]>([])
 const isSaving = ref(false)
 const isLoading = ref(true)
+let permissionSaveQueue: Promise<void> = Promise.resolve()
+let permissionSaveSequence = 0
 
 // Modals
 const showModal = ref(false)
@@ -75,6 +78,8 @@ const filteredRoles = computed(() => {
 })
 
 const selectedRole = computed(() => roles.value.find(r => String(r.id) === selectedRoleId.value))
+const currentUserRole = computed(() => authStore.currentUser.value?.role || '')
+const isEditingCurrentRole = computed(() => normalizeRole(selectedRole.value?.name) === normalizeRole(currentUserRole.value))
 const enabledModuleCount = computed(() => permissionsByModule.value.filter(group => isModuleFullySelected(group.module)).length)
 
 const permissionsByModule = computed(() => {
@@ -229,27 +234,34 @@ function toggleAll(checked: boolean) {
   savePermissions()
 }
 
-async function savePermissions() {
+function savePermissions() {
   if (!selectedRoleId.value) return
+  const roleId = selectedRoleId.value
+  const permissionIds = [...selectedPermissions.value]
+  const sequence = ++permissionSaveSequence
   isSaving.value = true
-  try {
-    await api.patch(`/roles/${selectedRoleId.value}/permissions`, {
-      permissions: selectedPermissions.value
-    })
-    // Optionally update locally instead of full refetch to prevent flickering
-    const roleIdx = roles.value.findIndex(r => String(r.id) === selectedRoleId.value)
-    if (roleIdx > -1) {
-      const currentSelection = [...selectedPermissions.value]
-      roles.value[roleIdx].permissions = allPermissions.value.filter(p => currentSelection.includes(String(p.id)))
+
+  permissionSaveQueue = permissionSaveQueue.catch(() => undefined).then(async () => {
+    try {
+      await api.patch(`/roles/${roleId}/permissions`, {
+        permissions: permissionIds
+      })
+      const roleIdx = roles.value.findIndex(r => String(r.id) === roleId)
+      if (roleIdx > -1) {
+        roles.value[roleIdx].permissions = allPermissions.value.filter(p => permissionIds.includes(String(p.id)))
+      }
+      if (sequence === permissionSaveSequence) {
+        await authStore.refreshPermissions()
+      }
+    } catch (error: any) {
+      console.error(error)
+      toast.error('Failed to save: ' + (error.message || 'Error'))
+    } finally {
+      if (sequence === permissionSaveSequence) isSaving.value = false
     }
-    // Refresh the current user's permissions so the sidebar updates immediately
-    await authStore.refreshPermissions()
-  } catch (error: any) {
-    console.error(error)
-    toast.error('Failed to save: ' + (error.message || 'Error'))
-  } finally {
-    isSaving.value = false
-  }
+  })
+
+  return permissionSaveQueue
 }
 
 const isDeduplicating = ref(false)
@@ -360,6 +372,9 @@ async function handleDeduplicatePermissions() {
             <p class="permission-eyebrow">ROLE ACCESS</p>
             <h2>{{ selectedRole.name }}</h2>
             <p class="permission-subtitle">Manage modules and actions available to this role.</p>
+            <p v-if="!isEditingCurrentRole" class="role-context-note">
+              Menu akun aktif mengikuti role {{ currentUserRole }}, bukan role yang sedang diedit.
+            </p>
           </div>
           <div class="access-summary" aria-live="polite">
             <strong>{{ selectedPermissions.length }}</strong>
@@ -717,6 +732,14 @@ async function handleDeduplicatePermissions() {
   margin: 5px 0 0;
   color: #738091;
   font-size: 13px;
+}
+
+.role-context-note {
+  margin: 8px 0 0;
+  padding-left: 9px;
+  border-left: 2px solid #35b5d8;
+  color: #5f6f80;
+  font-size: 12px;
 }
 
 .access-summary {

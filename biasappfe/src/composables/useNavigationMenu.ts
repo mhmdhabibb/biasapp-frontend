@@ -1,16 +1,16 @@
-import { computed } from "vue";
-import { useRouter } from "vue-router";
-import { useI18n } from "vue-i18n";
 import { useAuth } from "@/composables/useAuth";
 import { useModules } from "@/composables/useModules";
 import { canView, permissionKeysFor } from "@/router/permission-map";
 import {
-  allowedRouteNamesByRole,
-  dashboardRouteByRole,
-  dashboardRouteNames,
-  normalizeRole,
+    allowedRouteNamesByRole,
+    dashboardRouteByRole,
+    dashboardRouteNames,
+    normalizeRole,
 } from "@/router/role-access";
 import type { MenuGroup, MenuItem } from "@/types";
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 
 export const allMenuGroups: MenuGroup[] = [
   {
@@ -365,16 +365,13 @@ export function useNavigationMenu() {
               return false;
             }
 
-            // 3. Superadmin (admin) sees everything else
-            if (role === "admin") return true;
-
-            // 4. Role allowlist: restrict roles with explicit route allowlists (e.g., technician)
+            // 3. Role allowlist: restrict roles with explicit route allowlists (e.g., technician)
             const allowedRoutes = allowedRouteNamesByRole[role];
             if (allowedRoutes && !allowedRoutes.includes(routeName)) {
               return false;
             }
 
-            // 5. Explicit module gate (e.g. maintenance): the menu hides when
+            // 4. Explicit module gate (e.g. maintenance): the menu hides when
             //    the module is deactivated in Master > Modules.
             if (item.module) {
               const mod = (modules.value || []).find(
@@ -383,18 +380,18 @@ export function useNavigationMenu() {
               if (mod && !mod.is_active) return false;
             }
 
-            // 6. Role-restricted items (technician menu): role decides, no permission checks
+            // 5. Role-restricted items (technician menu): role decides, no permission checks
             if (item.roles) return item.roles.includes(role);
 
             const permissions = currentUser.value?.permissions || [];
 
-            // 7. Dashboards are pinned: each built-in role keeps its own dashboard.
+            // 6. Dashboards are pinned: each built-in role keeps its own dashboard.
             if (dashboardRouteNames.includes(routeName)) {
               const own = dashboardRouteByRole[role];
               return own ? routeName === own : true;
             }
 
-            // 8. Everything else is dynamic: visibility follows the role's live
+            // 7. Everything else is dynamic: visibility follows the role's live
             //    `<key>:view` permissions (see router/permission-map.ts).
             //    `read` alone never opens a menu.
             if (!canView(routeName, permissions)) return false;

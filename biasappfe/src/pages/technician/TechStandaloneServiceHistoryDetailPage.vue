@@ -18,6 +18,7 @@ import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import { printServiceReport, type ReportType } from '@/utils/printReport'
+import { normalizeRole } from '@/router/role-access'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -374,8 +375,7 @@ const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].include
 const myTechId = computed(() => (store as any).getTechnicianIdByUser?.(currentUser.value?.id || null))
 
 const isTechnician = computed(() => {
-  const r = String(currentUser.value?.role || '').trim().toLowerCase()
-  return r === 'technician'
+  return normalizeRole(currentUser.value?.role) === 'technician'
 })
 const isSuperadminOrAdmin = computed(() => {
   const r = String(currentUser.value?.role || '').trim().toLowerCase()
@@ -401,6 +401,10 @@ const isEditable = computed(() => {
 const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
 
 async function startJob() {
+  if (!isTechnician.value) {
+    toast.error('Hanya teknisi yang dapat memulai pekerjaan.')
+    return
+  }
   isSaving.value = true
   try {
     const now = new Date()
@@ -656,7 +660,7 @@ onMounted(async () => {
         </span>
       </div>
 
-      <div v-if="isEditable && isPending" class="text-center py-xl">
+      <div v-if="isTechnician && isEditable && isPending" class="text-center py-xl">
         <p class="mb-lg text-muted">Mulai pekerjaan untuk mencatat waktu (Time In) dan mengisi form detail servis.</p>
         <button class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSaving" @click="startJob">
           {{ isSaving ? 'Memproses...' : 'Mulai Pekerjaan (Start Job)' }}
@@ -891,7 +895,11 @@ onMounted(async () => {
     <FormModal :open="printModalOpen" title="Pilih Format Print" @close="printModalOpen = false" @submit="handleConfirmPrint">
       <div class="form-group">
         <label class="form-label">Tipe Format Report</label>
-        <CustomSelect v-model="printType" :options="printTypeOptions" class="form-select" />
+        <select v-model="printType" class="form-select" aria-label="Tipe Format Report">
+          <option v-for="option in printTypeOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="printModalOpen = false">Batal</button>

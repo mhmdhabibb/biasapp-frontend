@@ -2,6 +2,7 @@
 import { usePermission } from "@/composables/usePermission";
 import { useIsSuperadmin } from "@/composables/useHardDelete";
 import ActivityLogModal from "@/components/ui/ActivityLogModal.vue";
+import { activeApiRequests } from "@/services/api";
 import type { TableColumn } from "@/types";
 import { computed, ref, useSlots, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { debounce } from "@/utils/requestCache";
@@ -54,6 +55,29 @@ const emit = defineEmits<{
 
 const slots = useSlots();
 const { can } = usePermission();
+const showInitialLoadSkeleton = ref(false);
+let initialLoadTimer: ReturnType<typeof setTimeout> | undefined;
+
+const hasEmptyDataRequest = computed(
+  () => (props.data || []).length === 0 && activeApiRequests.value > 0,
+);
+
+watch(hasEmptyDataRequest, (isPending) => {
+  if (initialLoadTimer) clearTimeout(initialLoadTimer);
+  if (!isPending) {
+    showInitialLoadSkeleton.value = false;
+    return;
+  }
+  initialLoadTimer = setTimeout(() => {
+    showInitialLoadSkeleton.value = true;
+  }, 120);
+}, { immediate: true });
+
+const isLoading = computed(() => props.loading || showInitialLoadSkeleton.value);
+
+onBeforeUnmount(() => {
+  if (initialLoadTimer) clearTimeout(initialLoadTimer);
+});
 
 const showEdit = computed(
   () => !props.permission || can(`${props.permission}:update`),
@@ -220,7 +244,7 @@ const visiblePages = computed(() => {
     </div>
 
     <!-- Skeleton Loading State -->
-    <div v-if="loading" class="table-scroll" :style="maxHeight && maxHeight !== 'none' ? { maxHeight } : {}">
+    <div v-if="isLoading" class="table-scroll" :style="maxHeight && maxHeight !== 'none' ? { maxHeight } : {}">
       <table class="data-table skeleton-table">
         <thead>
           <tr>

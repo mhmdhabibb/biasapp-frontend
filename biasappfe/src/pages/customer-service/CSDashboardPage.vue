@@ -2,12 +2,20 @@
 import { computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/ui/PageHeader.vue";
+import DashboardSkeleton from "@/components/ui/DashboardSkeleton.vue";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
 
 const route = useRoute();
 const router = useRouter();
-const { ensureResourcesLoaded } = useMasterStore();
+const { ensureResourcesLoaded, loadedResources } = useMasterStore();
+const dashboardResources = [
+  "serviceRequests", "jobOrders", "serviceReports", "contractItems",
+  "serviceSpareparts", "warrantyClaims", "rents",
+];
+const isDashboardLoading = computed(() =>
+  dashboardResources.some((resource) => !loadedResources.value.has(resource)),
+);
 
 onMounted(() => {
   ensureResourcesLoaded(route.path);
@@ -159,7 +167,8 @@ const completionPercentage = computed(() =>
 </script>
 
 <template>
-  <div class="dashboard-container">
+  <DashboardSkeleton v-if="isDashboardLoading" variant="customer-service" />
+  <div v-else class="dashboard-container">
     <PageHeader title="Dashboard" />
     <p class="subtitle">Monitor and manage your customer service operations.</p>
 

@@ -613,6 +613,7 @@ export interface SystemSetting {
 
 export interface Notification {
   id: string | number;
+  user_id?: string | null;
   title: string;
   message: string;
   type?: string;

@@ -3,6 +3,7 @@ import { api, type ApiResponse } from "./api";
 export interface LoginRequest {
   username: string;
   password: string;
+  remember_me?: boolean;
 }
 export interface LoginResponse {
   token: string;

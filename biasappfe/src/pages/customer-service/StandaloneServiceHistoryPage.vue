@@ -962,7 +962,11 @@ async function exportPdf() {
     <FormModal :open="printModalOpen" title="Pilih Format Print" @close="printModalOpen = false" @submit="handleConfirmPrint">
       <div class="form-group">
         <label class="form-label">Tipe Format Report</label>
-        <CustomSelect v-model="printType" :options="printTypeOptions" class="form-select" />
+        <select v-model="printType" class="form-select" aria-label="Tipe Format Report">
+          <option v-for="option in printTypeOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="printModalOpen = false">Batal</button>
