@@ -250,6 +250,15 @@ function getDeductionSummary(item: any, type: 'bw' | 'color'): string {
   return `Deduksi: -${tot.toLocaleString()} (${parts.join(', ')})`
 }
 
+function getDetailGross(item: any, mode: 'bw' | 'color'): number {
+  if (!item) return 0
+  const gross = mode === 'bw' ? Number(item.gross_counter_bw || 0) : Number(item.gross_counter_color || 0)
+  if (gross > 0) return gross
+  const akhir = mode === 'bw' ? Number(item.counter_akhir_bw || 0) : Number(item.counter_akhir_color || 0)
+  const deduct = getItemDeductions(item).reduce((s, d) => s + (mode === 'bw' ? d.bw : d.color), 0)
+  return akhir + deduct
+}
+
 function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
   const detected = getPaperSizesForPrinter(unitId, inv)
   const currentMap = new Map<string, { bw: number; color: number }>()
@@ -1796,7 +1805,7 @@ function printAtlasSlip(item: any) {
         <div class="metric-label">Total Number of B&amp;W Pages</div>
         <div class="metric-val-wrap">
           <div class="metric-icon">📄</div>
-          <div class="metric-val">${bwAkhir.toLocaleString('id-ID')}</div>
+          <div class="metric-val">${bwGross.toLocaleString('id-ID')}</div>
         </div>
       </div>
 
@@ -1804,7 +1813,7 @@ function printAtlasSlip(item: any) {
         <div class="metric-label">Total Number of Color Pages</div>
         <div class="metric-val-wrap">
           <div class="metric-icon" style="color: #2563eb;">🎨</div>
-          <div class="metric-val">${colAkhir.toLocaleString('id-ID')}</div>
+          <div class="metric-val">${colGross.toLocaleString('id-ID')}</div>
         </div>
       </div>
     </div>
@@ -3480,7 +3489,7 @@ async function exportExcel() {
                 <div class="metric-title">Total Number of Pages</div>
                 <div class="metric-value-row">
                   <span class="metric-icon">📑</span>
-                  <span class="metric-num">{{ ((Number(detailItem.gross_counter_bw || (Number(detailItem.counter_akhir_bw || 0) + Number(detailItem.a3_counter_bw || 0)))) + (Number(detailItem.gross_counter_color || (Number(detailItem.counter_akhir_color || 0) + Number(detailItem.a3_counter_color || 0))))).toLocaleString('id-ID') }}</span>
+                  <span class="metric-num">{{ (getDetailGross(detailItem, 'bw') + getDetailGross(detailItem, 'color')).toLocaleString('id-ID') }}</span>
                 </div>
               </div>
 
@@ -3488,7 +3497,7 @@ async function exportExcel() {
                 <div class="metric-title">Total Number of B&amp;W Pages</div>
                 <div class="metric-value-row">
                   <span class="metric-icon">📄</span>
-                  <span class="metric-num">{{ (Number(detailItem.gross_counter_bw || (Number(detailItem.counter_akhir_bw || 0) + Number(detailItem.a3_counter_bw || 0)))).toLocaleString('id-ID') }}</span>
+                  <span class="metric-num">{{ getDetailGross(detailItem, 'bw').toLocaleString('id-ID') }}</span>
                 </div>
               </div>
 
@@ -3496,7 +3505,7 @@ async function exportExcel() {
                 <div class="metric-title">Total Number of Color Pages</div>
                 <div class="metric-value-row">
                   <span class="metric-icon" style="color: #2563eb;">🎨</span>
-                  <span class="metric-num">{{ (Number(detailItem.gross_counter_color || (Number(detailItem.counter_akhir_color || 0) + Number(detailItem.a3_counter_color || 0)))).toLocaleString('id-ID') }}</span>
+                  <span class="metric-num">{{ getDetailGross(detailItem, 'color').toLocaleString('id-ID') }}</span>
                 </div>
               </div>
             </div>
