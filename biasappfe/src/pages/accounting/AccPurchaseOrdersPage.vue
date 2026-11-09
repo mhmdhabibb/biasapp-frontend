@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useResourcesStore } from '@/stores/resources.store'
 import { usePermission } from '@/composables/usePermission'
@@ -549,6 +550,28 @@ function updateStatus(po: PurchaseOrder, newStatus: string) {
   return run(po.id, () => resources.update('purchaseOrders', String(po.id), { status: newStatus }))
 }
 
+const showCancelConfirm = ref(false)
+const targetCancelPO = ref<PurchaseOrder | null>(null)
+
+function handleCancelPO(po: PurchaseOrder) {
+  targetCancelPO.value = po
+  showCancelConfirm.value = true
+}
+
+async function confirmCancelPO() {
+  if (!targetCancelPO.value) return
+  const po = targetCancelPO.value
+  showCancelConfirm.value = false
+  await run(po.id, async () => {
+    await resources.update('purchaseOrders', String(po.id), { status: 'cancelled' })
+    toast.success(`Request Form ${po.po_no || ''} berhasil dibatalkan.`)
+    if (detailPO.value && detailPO.value.id === po.id) {
+      detailPO.value.status = 'cancelled'
+      closeDetail()
+    }
+  })
+}
+
 async function handleGenerateDO(po: PurchaseOrder) {
   await run(po.id, async () => {
     await resources.create('deliveryOrders', {
@@ -739,6 +762,20 @@ const printInvoice = printPO
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>
           </button>
+          <button
+            v-if="(row.status === 'draft' || row.status === 'submitted') && (can('purchase_order:update') || can('purchase_order:submit') || can('purchase_order:approve') || can('purchase_order:delete'))"
+            class="action-btn action-btn--delete"
+            :disabled="busyId === row.id"
+            title="Batalkan Request Form (PO)"
+            @click="handleCancelPO(row)"
+            style="color: var(--color-danger, #ef4444); width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="15" y1="9" x2="9" y2="15"></line>
+              <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+          </button>
           <span v-if="['do_created', 'completed'].includes(row.status)" class="text-muted text-sm">
             DO Generated
           </span>
@@ -865,6 +902,14 @@ const printInvoice = printPO
       <template #footer>
         <button class="btn btn-outline" @click="closeDetail">Close</button>
         <button
+          v-if="detailPO && (detailPO.status === 'draft' || detailPO.status === 'submitted') && (can('purchase_order:update') || can('purchase_order:submit') || can('purchase_order:approve') || can('purchase_order:delete'))"
+          class="btn btn-outline"
+          style="color: #ef4444; border-color: #fecaca; margin-right: auto;"
+          @click="handleCancelPO(detailPO)"
+        >
+          Batalkan Request Form
+        </button>
+        <button
           v-if="detailPO && can('purchase_order:read')"
           class="btn btn-accent"
           @click="printPO(detailPO)"
@@ -873,6 +918,17 @@ const printInvoice = printPO
         </button>
       </template>
     </FormModal>
+
+    <!-- CONFIRM CANCEL PO DIALOG -->
+    <ConfirmDialog
+      :open="showCancelConfirm"
+      title="Batalkan Request Form (PO)"
+      :message="`Apakah Anda yakin ingin membatalkan Request Form ${targetCancelPO?.po_no || ''}? Status PO akan diubah menjadi CANCELLED.`"
+      confirmLabel="Ya, Batalkan PO"
+      variant="danger"
+      @confirm="confirmCancelPO"
+      @close="showCancelConfirm = false"
+    />
   </div>
 </template>
 

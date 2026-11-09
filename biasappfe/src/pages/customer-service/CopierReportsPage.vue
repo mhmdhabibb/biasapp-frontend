@@ -150,6 +150,10 @@ function detailReadings(item: any): any[] {
   return [...arr].sort((a, b) => {
     const pA = a.paper_size?.name || ''
     const pB = b.paper_size?.name || ''
+    const aIsA4 = /a4/i.test(pA) || !pA
+    const bIsA4 = /a4/i.test(pB) || !pB
+    if (aIsA4 && !bIsA4) return -1
+    if (!aIsA4 && bIsA4) return 1
     if (pA !== pB) return pA.localeCompare(pB)
     const cA = a.color_mode || ''
     const cB = b.color_mode || ''
@@ -160,7 +164,7 @@ function detailReadings(item: any): any[] {
 function readingUsage(r: any): string {
   const s = Number(r.start_meter || 0)
   const end = r.last_meter ?? r.end_meter
-  if (end == null) return '-'
+  if (end == null || Number(end) === 0) return '-'
   return (Number(end) - s).toLocaleString('id-ID')
 }
 
@@ -540,7 +544,7 @@ async function handleDelete() {
               <tr v-for="(r, idx) in detailReadings(detailItem)" :key="r.id || idx">
                 <td>{{ r.paper_size?.name || '-' }}</td>
                 <td>{{ String(r.color_mode || '-').toUpperCase() }}</td>
-                <td style="text-align: right; white-space: nowrap;">{{ Number(r.start_meter || 0).toLocaleString('id-ID') }} → {{ (r.last_meter ?? r.end_meter) != null ? Number(r.last_meter ?? r.end_meter).toLocaleString('id-ID') : '-' }}</td>
+                <td style="text-align: right; white-space: nowrap;">{{ Number(r.start_meter || 0).toLocaleString('id-ID') }} → {{ (r.last_meter ?? r.end_meter) && Number(r.last_meter ?? r.end_meter) > 0 ? Number(r.last_meter ?? r.end_meter).toLocaleString('id-ID') : '-' }}</td>
                 <td style="text-align: right;">{{ readingUsage(r) }}</td>
               </tr>
             </tbody>

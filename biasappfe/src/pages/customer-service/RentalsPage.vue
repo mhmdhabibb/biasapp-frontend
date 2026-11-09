@@ -411,7 +411,19 @@ async function openRentalDetail(rental: any) {
 }
 
 function meterDetailsOf(invoice: any): any[] {
-  return invoice?.meter_details || invoice?.meterDetails || [];
+  const arr = invoice?.meter_details || invoice?.meterDetails || [];
+  return [...arr].sort((a: any, b: any) => {
+    const pA = a.paper_size?.name || '';
+    const pB = b.paper_size?.name || '';
+    const aIsA4 = /a4/i.test(pA) || !pA;
+    const bIsA4 = /a4/i.test(pB) || !pB;
+    if (aIsA4 && !bIsA4) return -1;
+    if (!aIsA4 && bIsA4) return 1;
+    if (pA !== pB) return pA.localeCompare(pB);
+    const cA = a.color_mode || '';
+    const cB = b.color_mode || '';
+    return cA.localeCompare(cB);
+  });
 }
 function meterCount(invoice: any): number {
   return meterDetailsOf(invoice).length;
@@ -540,6 +552,11 @@ const rentalItems = ref<
       office: string;
     };
     description: string;
+    additional_paper_meters?: {
+      paper_size_id: string;
+      start_meter_bw: number;
+      start_meter_color: number;
+    }[];
     rates: {
       paper_size_id: string | null;
       paper_type_id: string | null;
@@ -548,6 +565,8 @@ const rentalItems = ref<
       free_quota_bw: number;
       free_quota_color: number;
       quota_applies_to: string;
+      start_meter_bw?: number;
+      start_meter_color?: number;
     }[];
   }[]
 >([]);
@@ -787,12 +806,34 @@ function addRentalItem(mode?: "existing" | "unit" | "product") {
       office: "",
     },
     description: "",
+    additional_paper_meters: [],
     rates: [],
   });
 }
 
 function removeRentalItem(idx: number) {
   rentalItems.value.splice(idx, 1);
+}
+
+function addAdditionalPaperMeter(item: any) {
+  if (!item.additional_paper_meters) {
+    item.additional_paper_meters = [];
+  }
+  const a3 = ((paperSizes.value as any[]) || []).find(
+    (p: any) => String(p.name || "").trim().toUpperCase() === "A3",
+  );
+  const defaultSizeId = a3 ? a3.id : (paperSizes.value?.[0]?.id || "");
+  item.additional_paper_meters.push({
+    paper_size_id: defaultSizeId,
+    start_meter_bw: 0,
+    start_meter_color: 0,
+  });
+}
+
+function removeAdditionalPaperMeter(item: any, idx: number) {
+  if (item.additional_paper_meters) {
+    item.additional_paper_meters.splice(idx, 1);
+  }
 }
 
 function addItemRate(item: any) {
@@ -804,6 +845,8 @@ function addItemRate(item: any) {
     rate_per_page_color: 0,
     free_quota_bw: 0,
     free_quota_color: 0,
+    start_meter_bw: 0,
+    start_meter_color: 0,
     quota_applies_to: "color",
   });
 }
@@ -860,7 +903,14 @@ function onItemSelectChange(item: any) {
       (target: any) => String(target.id) === String(unitId),
     );
     if (u) {
-      item.is_copier = !!u.is_copier;
+      const typeName = getTypeName(u.type_id || (u as any).type?.id || (u as any).unit_type_id).toLowerCase().trim();
+      const isCopierType =
+        typeName === "copier" ||
+        typeName.includes("copier") ||
+        typeName.includes("photocopy") ||
+        typeName.includes("fotocopy") ||
+        typeName.includes("fotokopi");
+      item.is_copier = !!u.is_copier || isCopierType;
       item.is_computer = !!(u as any).is_computer;
       // NOTE: Initial meter is NOT auto-filled from the master unit.
       // Admin must enter it manually on the first rental to keep reports accurate.
@@ -908,8 +958,6 @@ function onItemModeChange(item: any) {
   } else if (item.create_mode === "unit") {
     item.selected_item = "";
     item.is_copier = !!item.new_unit.is_copier;
-    item.start_meter_bw = item.new_unit.current_meter_bw || 0;
-    item.start_meter_color = item.new_unit.current_meter_color || 0;
   } else if (item.create_mode === "product") {
     item.selected_item = "";
     item.is_copier = false;
@@ -921,12 +969,23 @@ function onItemModeChange(item: any) {
 }
 
 function syncNewUnitMeter(item: any) {
-  if (item.create_mode === "unit" && item.new_unit.is_copier) {
+  if (item.create_mode === "unit") {
+    item.is_copier = !!item.new_unit.is_copier;
+  }
+}
+
+function onNewUnitTypeChange(item: any) {
+  const typeId = item.new_unit?.type_id;
+  const tName = getTypeName(typeId).toLowerCase().trim();
+  const isCopier =
+    tName === "copier" ||
+    tName.includes("copier") ||
+    tName.includes("photocopy") ||
+    tName.includes("fotocopy") ||
+    tName.includes("fotokopi");
+  if (isCopier) {
+    item.new_unit.is_copier = true;
     item.is_copier = true;
-    item.start_meter_bw = item.new_unit.current_meter_bw || 0;
-    item.start_meter_color = item.new_unit.current_meter_color || 0;
-  } else if (item.create_mode === "unit") {
-    item.is_copier = false;
   }
 }
 
@@ -1007,6 +1066,7 @@ async function openAdd() {
         office: "",
       },
       description: "",
+      additional_paper_meters: [],
       rates: [],
     },
   ];
@@ -1059,6 +1119,30 @@ async function openEdit(row: any) {
       const isCopier = unit ? !!unit.is_copier : false;
       const isComputer = unit ? !!(unit as any).is_computer : false;
 
+      const addMeters: {
+        paper_size_id: string;
+        start_meter_bw: number;
+        start_meter_color: number;
+      }[] = [];
+      if (item.rates && Array.isArray(item.rates)) {
+        for (const r of item.rates) {
+          const pName = ((paperSizes.value as any[]) || []).find(
+            (p: any) => String(p.id) === String(r.paper_size_id)
+          )?.name?.toUpperCase();
+          const isA4 = pName === "A4";
+          if (
+            r.paper_size_id &&
+            (!isA4 || Number(r.start_meter_bw) > 0 || Number(r.start_meter_color) > 0)
+          ) {
+            addMeters.push({
+              paper_size_id: String(r.paper_size_id),
+              start_meter_bw: Number(r.start_meter_bw) || 0,
+              start_meter_color: Number(r.start_meter_color) || 0,
+            });
+          }
+        }
+      }
+
       return {
         id: item.id,
         selected_item: selectedItem,
@@ -1101,6 +1185,7 @@ async function openEdit(row: any) {
           office: "",
         },
         description: item.description || "",
+        additional_paper_meters: addMeters,
         rates: (item.rates || []).map((r: any) => ({
           paper_size_id: r.paper_size_id || null,
           paper_type_id: r.paper_type_id || null,
@@ -1108,6 +1193,8 @@ async function openEdit(row: any) {
           rate_per_page_color: r.rate_per_page_color || 0,
           free_quota_bw: r.free_quota_bw || 0,
           free_quota_color: r.free_quota_color || 0,
+          start_meter_bw: r.start_meter_bw || 0,
+          start_meter_color: r.start_meter_color || 0,
           quota_applies_to: r.quota_applies_to || "color",
         })),
       };
@@ -1156,6 +1243,7 @@ async function openEdit(row: any) {
           office: "",
         },
         description: "",
+        additional_paper_meters: [],
         rates: [],
       },
     ];
@@ -1341,6 +1429,15 @@ async function handleSubmit() {
               item.new_unit.model,
               item.new_unit.is_copier,
             );
+            const tName = getTypeName(item.new_unit.type_id).toLowerCase().trim();
+            const isCopierType =
+              tName === "copier" ||
+              tName.includes("copier") ||
+              tName.includes("photocopy") ||
+              tName.includes("fotocopy") ||
+              tName.includes("fotokopi");
+            const isCopierVal = Boolean(item.new_unit.is_copier || item.is_copier || isCopierType);
+
             const res: any = await resources.units.create({
               name: computedName || item.new_unit.model || "Unit",
               brand_id: item.new_unit.brand_id,
@@ -1348,12 +1445,11 @@ async function handleSubmit() {
               model: item.new_unit.model,
               serial_no: serialUpper,
               print_tech: techVal,
-              is_copier: !!item.new_unit.is_copier,
+              is_copier: isCopierVal,
               is_external: true,
               status: "available",
-              current_meter_bw: Number(item.new_unit.current_meter_bw) || 0,
-              current_meter_color:
-                Number(item.new_unit.current_meter_color) || 0,
+              current_meter_bw: Number(item.start_meter_bw) || 0,
+              current_meter_color: Number(item.start_meter_color) || 0,
             });
             newId = String(res?.data?.id || res?.id || "");
             if (!newId) throw new Error("Gagal membuat unit baru");
@@ -1374,10 +1470,16 @@ async function handleSubmit() {
           }
         }
         if (!newId) throw new Error("Gagal membuat unit baru");
+        const tName = getTypeName(item.new_unit.type_id).toLowerCase().trim();
+        const isCopierType =
+          tName === "copier" ||
+          tName.includes("copier") ||
+          tName.includes("photocopy") ||
+          tName.includes("fotocopy") ||
+          tName.includes("fotokopi");
+        const isCopierVal = Boolean(item.new_unit.is_copier || item.is_copier || isCopierType);
         item.selected_item = "unit_" + newId;
-        item.is_copier = !!item.new_unit.is_copier;
-        item.start_meter_bw = Number(item.new_unit.current_meter_bw) || 0;
-        item.start_meter_color = Number(item.new_unit.current_meter_color) || 0;
+        item.is_copier = isCopierVal;
       } else if (item.create_mode === "product") {
         const res: any = await resources.products.create({
           name: item.new_product.name,
@@ -1444,6 +1546,45 @@ async function handleSubmit() {
         ? item.selected_item.replace("prod_", "").trim()
         : null;
 
+      // Merge additional_paper_meters into rates
+      const combinedRates = [...(item.rates || [])];
+      if (item.is_copier && Array.isArray(item.additional_paper_meters)) {
+        for (const apm of item.additional_paper_meters) {
+          if (!apm.paper_size_id) continue;
+          const existingRate = combinedRates.find(
+            (r: any) => String(r.paper_size_id) === String(apm.paper_size_id),
+          );
+          if (existingRate) {
+            existingRate.start_meter_bw = Math.max(
+              0,
+              Math.round(Number(apm.start_meter_bw) || 0),
+            );
+            existingRate.start_meter_color = Math.max(
+              0,
+              Math.round(Number(apm.start_meter_color) || 0),
+            );
+          } else {
+            combinedRates.push({
+              paper_size_id: String(apm.paper_size_id),
+              paper_type_id: null,
+              rate_per_page_bw: 0,
+              rate_per_page_color: 0,
+              free_quota_bw: 0,
+              free_quota_color: 0,
+              start_meter_bw: Math.max(
+                0,
+                Math.round(Number(apm.start_meter_bw) || 0),
+              ),
+              start_meter_color: Math.max(
+                0,
+                Math.round(Number(apm.start_meter_color) || 0),
+              ),
+              quota_applies_to: "color",
+            });
+          }
+        }
+      }
+
       return {
         id: item.id || undefined,
         unit_id: unitId || null,
@@ -1466,14 +1607,16 @@ async function handleSubmit() {
         placement_location: (item.placement_location || "").trim() || "",
         specs: item.specs || {},
         description: item.description ? String(item.description).trim() : "",
-        rates: (item.rates || [])
+        rates: combinedRates
           .filter(
             (r: any) =>
               r.paper_size_id ||
               Number(r.rate_per_page_bw) ||
               Number(r.rate_per_page_color) ||
               Number(r.free_quota_bw) ||
-              Number(r.free_quota_color),
+              Number(r.free_quota_color) ||
+              Number(r.start_meter_bw) ||
+              Number(r.start_meter_color),
           )
           .map((r: any) => ({
             paper_size_id: r.paper_size_id ? String(r.paper_size_id) : null,
@@ -1493,6 +1636,14 @@ async function handleSubmit() {
             free_quota_color: Math.max(
               0,
               Math.round(Number(r.free_quota_color) || 0),
+            ),
+            start_meter_bw: Math.max(
+              0,
+              Math.round(Number(r.start_meter_bw) || 0),
+            ),
+            start_meter_color: Math.max(
+              0,
+              Math.round(Number(r.start_meter_color) || 0),
             ),
             quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
           })),
@@ -3592,13 +3743,54 @@ function isExpired(row: any): boolean {
       </div>
 
       <div class="form-group" style="margin-bottom: var(--space-md)">
-        <label
-          class="form-label"
-          style="display: flex; align-items: center; gap: 8px"
-        >
-          <input type="checkbox" v-model="form.is_new" />
-          isNew (rental baru)
-        </label>
+        <label class="form-label" style="font-weight: 600; margin-bottom: 8px">Tipe Transaksi Rental</label>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px">
+          <div
+            @click="form.is_new = true"
+            :style="{
+              border: form.is_new ? '2px solid var(--color-primary)' : '1px solid var(--color-border-light)',
+              backgroundColor: form.is_new ? 'var(--color-primary-light, #eff6ff)' : '#fff',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              transition: 'all 0.2s ease',
+            }"
+          >
+            <input type="radio" :checked="form.is_new" style="margin-top: 3px; cursor: pointer" />
+            <div>
+              <div style="font-weight: 600; font-size: 0.9rem; color: var(--color-text-main)">Rental Baru</div>
+              <div style="font-size: 0.78rem; color: var(--color-text-muted); margin-top: 2px">
+                Unit disiapkan dari inventaris gudang dan akan dikirim ke customer.
+              </div>
+            </div>
+          </div>
+
+          <div
+            @click="form.is_new = false"
+            :style="{
+              border: !form.is_new ? '2px solid var(--color-primary)' : '1px solid var(--color-border-light)',
+              backgroundColor: !form.is_new ? 'var(--color-primary-light, #eff6ff)' : '#fff',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              transition: 'all 0.2s ease',
+            }"
+          >
+            <input type="radio" :checked="!form.is_new" style="margin-top: 3px; cursor: pointer" />
+            <div>
+              <div style="font-weight: 600; font-size: 0.9rem; color: var(--color-text-main)">Transaksi Sudah Berjalan</div>
+              <div style="font-size: 0.78rem; color: var(--color-text-muted); margin-top: 2px">
+                Unit sudah terpasang di lokasi customer (migrasi kontrak lama / belum masuk sistem).
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div
@@ -3693,6 +3885,7 @@ function isExpired(row: any): boolean {
                 v-model="item.new_unit.type_id"
                 class="form-input"
                 required
+                @change="onNewUnitTypeChange(item)"
               >
                 <option value="">-- Tipe --</option>
                 <option v-for="t in unitTypes as any" :key="t.id" :value="t.id">
@@ -3757,6 +3950,7 @@ function isExpired(row: any): boolean {
                 align-items: center;
                 gap: 8px;
                 cursor: pointer;
+                font-weight: 500;
               "
             >
               <input
@@ -3764,28 +3958,8 @@ function isExpired(row: any): boolean {
                 type="checkbox"
                 @change="syncNewUnitMeter(item)"
               />
-              <span>Copier Machine (perlu meter awal)</span>
+              <span>Mesin Fotokopi / Copier (perlu meter awal &amp; tarif per lembar)</span>
             </label>
-          </div>
-          <div v-if="item.new_unit.is_copier" class="form-row">
-            <div class="form-group">
-              <label class="form-label">Current Meter BW</label>
-              <input
-                v-model.number="item.new_unit.current_meter_bw"
-                type="number"
-                class="form-input"
-                min="0"
-              />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Current Meter Color</label>
-              <input
-                v-model.number="item.new_unit.current_meter_color"
-                type="number"
-                class="form-input"
-                min="0"
-              />
-            </div>
           </div>
         </div>
 
@@ -3869,7 +4043,7 @@ function isExpired(row: any): boolean {
         </div>
 
         <div
-          v-if="!item.selected_item.startsWith('prod_')"
+          v-if="item.create_mode === 'existing' && item.selected_item && !item.selected_item.startsWith('prod_')"
           style="
             display: flex;
             flex-direction: row;
@@ -3897,21 +4071,19 @@ function isExpired(row: any): boolean {
               font-weight: var(--font-weight-bold);
             "
           >
-            Check if this item is a Copier Machine (Requires Initial Meter
-            Input)
+            Item ini adalah Mesin Fotokopi (Perlu Input Meter Awal &amp; Tarif Cetak)
           </label>
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
           <label class="form-label" style="font-size: 0.8rem"
-            >Delivery Address for this machine (optional — empty follows the
-            address above; distinct addresses get separate DOs)</label
+            >Alamat Pengantaran / Penempatan Mesin (opsional &mdash; kosongkan jika mengikuti alamat pemasangan di atas)</label
           >
           <textarea
             v-model="item.placement_location"
             class="form-input"
             rows="2"
-            placeholder="Leave empty to use the installation address above"
+            placeholder="Kosongkan jika mengikuti alamat pemasangan di atas"
           ></textarea>
         </div>
 
@@ -3938,7 +4110,7 @@ function isExpired(row: any): boolean {
           </div>
         </div>
 
-        <!-- Copier Section moved from Figure 1 to Figure 2 -->
+        <!-- Copier Section -->
         <div
           v-if="item.is_copier"
           style="
@@ -3955,7 +4127,7 @@ function isExpired(row: any): boolean {
               color: var(--color-primary);
             "
           >
-            Photocopy Machine Details
+            Detail Mesin Fotokopi &amp; Tarif Cetak
           </h4>
           <div
             style="
@@ -3966,29 +4138,139 @@ function isExpired(row: any): boolean {
           >
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem"
-                >Initial BW Meter (Rental Start) *</label
+                >Meter Awal BW (Mulai Rental) *</label
               >
               <input
                 v-model.number="item.start_meter_bw"
                 type="number"
                 class="form-input"
                 min="0"
-                placeholder="Required on first rental"
+                placeholder="0"
                 :required="item.is_copier"
               />
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem"
-                >Initial Colour Meter (Rental Start) *</label
+                >Meter Awal Warna (Mulai Rental) *</label
               >
               <input
                 v-model.number="item.start_meter_color"
                 type="number"
                 class="form-input"
                 min="0"
-                placeholder="Required on first rental"
+                placeholder="0"
                 :required="item.is_copier"
               />
+            </div>
+          </div>
+
+          <!-- Additional Paper Meters (A3, Folio, Legal, etc.) -->
+          <div
+            style="
+              margin-top: 1rem;
+              padding-top: 0.85rem;
+              border-top: 1px dashed var(--color-border-light, #e2e8f0);
+            "
+          >
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 0.5rem;
+              "
+            >
+              <div>
+                <label
+                  class="form-label"
+                  style="margin: 0; font-weight: 600; font-size: 0.85rem"
+                >
+                  Meter Awal Ukuran Kertas Tambahan (A3, Folio, Legal, dll)
+                </label>
+                <div class="text-muted" style="font-size: 0.75rem">
+                  Diperlukan bila mesin fotokopi mencatat counter terpisah (misal counter A3 untuk deduksi Atlas Copco).
+                </div>
+              </div>
+              <button
+                type="button"
+                @click="addAdditionalPaperMeter(item)"
+                class="btn btn-secondary btn-sm"
+                style="padding: 0.2rem 0.5rem; font-size: 0.75rem"
+              >
+                + Tambah Ukuran Kertas
+              </button>
+            </div>
+
+            <div
+              v-if="!item.additional_paper_meters || item.additional_paper_meters.length === 0"
+              style="
+                font-size: 0.75rem;
+                color: #94a3b8;
+                font-style: italic;
+                margin-bottom: 0.5rem;
+              "
+            >
+              Belum ada ukuran tambahan. Klik "+ Tambah Ukuran Kertas" jika mesin menghitung A3/ukuran lain secara terpisah.
+            </div>
+
+            <div
+              v-for="(apm, apmIdx) in item.additional_paper_meters"
+              :key="apmIdx"
+              style="
+                display: grid;
+                grid-template-columns: 1.5fr 1fr 1fr auto;
+                gap: 0.5rem;
+                align-items: flex-end;
+                margin-bottom: 0.5rem;
+                background: #ffffff;
+                padding: 0.6rem 0.75rem;
+                border-radius: 6px;
+                border: 1px solid var(--color-border-light, #e2e8f0);
+              "
+            >
+              <div class="form-group" style="margin: 0">
+                <label class="form-label" style="font-size: 0.75rem">Ukuran Kertas *</label>
+                <CustomSelect
+                  v-model="apm.paper_size_id"
+                  :options="rentPaperSizeOptions"
+                  placeholder="Pilih Ukuran (misal A3)"
+                  class="form-select"
+                  style="font-size: 0.8rem"
+                />
+              </div>
+              <div class="form-group" style="margin: 0">
+                <label class="form-label" style="font-size: 0.75rem">Meter Awal BW</label>
+                <input
+                  v-model.number="apm.start_meter_bw"
+                  type="number"
+                  class="form-input"
+                  min="0"
+                  placeholder="0"
+                  style="font-size: 0.8rem"
+                />
+              </div>
+              <div class="form-group" style="margin: 0">
+                <label class="form-label" style="font-size: 0.75rem">Meter Awal Warna</label>
+                <input
+                  v-model.number="apm.start_meter_color"
+                  type="number"
+                  class="form-input"
+                  min="0"
+                  placeholder="0"
+                  style="font-size: 0.8rem"
+                />
+              </div>
+              <div>
+                <button
+                  type="button"
+                  @click="removeAdditionalPaperMeter(item, apmIdx)"
+                  class="btn btn-sm"
+                  style="color: #ef4444; font-size: 0.85rem; padding: 0.35rem 0.6rem; border: 1px solid #fee2e2"
+                  title="Hapus Ukuran"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           </div>
 
@@ -4099,6 +4381,28 @@ function isExpired(row: any): boolean {
                     class="form-input"
                     min="0"
                     placeholder="Masukkan tarif warna"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Meter Awal BW (opsional)</label>
+                  <input
+                    v-model.number="rate.start_meter_bw"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="0"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Meter Awal Warna (opsional)</label>
+                  <input
+                    v-model.number="rate.start_meter_color"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="0"
                     style="font-size: 0.8rem"
                   />
                 </div>

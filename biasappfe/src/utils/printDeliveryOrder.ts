@@ -125,18 +125,28 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
     let pName = doi.description || "-";
     let remarks = doi.remarks || "-";
     let serialNo = "-";
+    let uom = "Unit";
+
+    const isSparepart = Boolean(doi.remarks && doi.remarks.toLowerCase().includes("sparepart"));
 
     if (doi.product_id) {
       const p = masterStore.findProduct(doi.product_id);
-      pName = p ? p.name : "Product ID: " + doi.product_id;
+      pName = p ? p.name : (doi.description || "Product ID: " + doi.product_id);
+      uom = p?.uom?.name || p?.unit || (isSparepart ? "Pcs" : "Unit");
     }
     
     if (doi.unit_id) {
       const u = masterStore.findUnit(doi.unit_id);
-      if (!doi.product_id) {
-        pName = u ? u.name || u.model : "Unit Only";
+      if (!doi.product_id && !isSparepart) {
+        pName = u ? (u.name || u.model) : "Unit Only";
+      } else if (isSparepart && u) {
+        pName += ` (Unit: ${u.model || u.name})`;
       }
-      serialNo = u ? u.serial_no : "-";
+      if (!isSparepart) {
+        serialNo = u ? u.serial_no : "-";
+      }
+    } else if (isSparepart) {
+      uom = "Pcs";
     }
 
     const qty = doi.qty || 1;
@@ -149,6 +159,7 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
       groupedItems.push({
         name: pName,
         qty: qty,
+        uom: uom,
         remarks: remarks,
         serial_numbers: serialNo !== "-" ? [serialNo] : []
       });
@@ -164,7 +175,7 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
             <td style="text-align: center;">${idx + 1}</td>
             <td>${gi.name}</td>
             <td style="text-align: center;">${gi.qty}</td>
-            <td style="text-align: center;">Unit</td>
+            <td style="text-align: center;">${gi.uom || "Unit"}</td>
             <td style="text-align: center;">${gi.remarks}</td>
           </tr>
         `;

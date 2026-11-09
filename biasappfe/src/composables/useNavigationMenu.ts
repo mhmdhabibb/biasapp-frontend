@@ -61,11 +61,6 @@ export const allMenuGroups: MenuGroup[] = [
         icon: "shield-check",
         route: "/master/warranties",
       },
-      {
-        label: "sidebar.warranty_claims",
-        icon: "alert-circle",
-        route: "/customer-service/warranty-claims",
-      },
     ],
   },
   {

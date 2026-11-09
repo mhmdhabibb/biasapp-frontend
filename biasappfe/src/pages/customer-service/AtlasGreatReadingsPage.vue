@@ -171,14 +171,18 @@ function getPaperSizesForPrinter(unitId?: string, invoice?: any): string[] {
     if (Array.isArray(invoice.meter_details)) {
       for (const d of invoice.meter_details) {
         const pName = d.paper_size?.name || d.paper_size_name || resolveName(d.paper_size_id)
-        if (pName && String(pName).trim()) paperNames.add(String(pName).trim().toUpperCase())
+        if (pName && String(pName).trim() && !/^A4/i.test(String(pName).trim())) {
+          paperNames.add(String(pName).trim().toUpperCase())
+        }
       }
     }
     const ciRates = invoice.contract_item?.rates || invoice.rental?.rental_items?.[0]?.rates || []
     if (Array.isArray(ciRates)) {
       for (const r of ciRates) {
         const pName = r.paper_size?.name || resolveName(r.paper_size_id)
-        if (pName && String(pName).trim()) paperNames.add(String(pName).trim().toUpperCase())
+        if (pName && String(pName).trim() && !/^A4/i.test(String(pName).trim())) {
+          paperNames.add(String(pName).trim().toUpperCase())
+        }
       }
     }
   }
@@ -190,7 +194,9 @@ function getPaperSizesForPrinter(unitId?: string, invoice?: any): string[] {
     if (u && Array.isArray(u.rates)) {
       for (const r of u.rates) {
         const pName = r.paper_size?.name || resolveName(r.paper_size_id)
-        if (pName && String(pName).trim()) paperNames.add(String(pName).trim().toUpperCase())
+        if (pName && String(pName).trim() && !/^A4/i.test(String(pName).trim())) {
+          paperNames.add(String(pName).trim().toUpperCase())
+        }
       }
     }
     // Check contract items terkait unit ini
@@ -199,34 +205,49 @@ function getPaperSizesForPrinter(unitId?: string, invoice?: any): string[] {
       if (Array.isArray(ci.rates)) {
         for (const r of ci.rates) {
           const pName = r.paper_size?.name || resolveName(r.paper_size_id)
-          if (pName && String(pName).trim()) paperNames.add(String(pName).trim().toUpperCase())
+          if (pName && String(pName).trim() && !/^A4/i.test(String(pName).trim())) {
+            paperNames.add(String(pName).trim().toUpperCase())
+          }
         }
       }
     }
   }
 
-  if (paperNames.size > 0) {
-    return Array.from(paperNames)
+  // Filter agar A4 tidak menjadi deduksi
+  const nonA4 = Array.from(paperNames).filter(p => !/^A4/i.test(p))
+  if (nonA4.length > 0) {
+    return nonA4
   }
 
   return ['A3']
 }
 
-function getDeductionSummary(item: any, type: 'bw' | 'color'): string {
-  if (item.paper_deductions) {
+function getItemDeductions(item: any): PaperDeduction[] {
+  if (item?.paper_deductions) {
     try {
       const parsed = typeof item.paper_deductions === 'string' ? JSON.parse(item.paper_deductions) : item.paper_deductions
       if (Array.isArray(parsed) && parsed.length > 0) {
-        if (parsed.length === 1) {
-          return `${parsed[0].name}: -${Number(parsed[0][type] || 0).toLocaleString()}`
-        }
-        const parts = parsed.map((p: any) => `${p.name}: ${Number(p[type] || 0).toLocaleString()}`)
-        const tot = parsed.reduce((sum: number, p: any) => sum + Number(p[type] || 0), 0)
-        return `Deduksi: -${tot.toLocaleString()} (${parts.join(', ')})`
+        return parsed.map((p: any) => ({
+          name: String(p.name || 'A3').trim().toUpperCase(),
+          bw: Number(p.bw || 0),
+          color: Number(p.color || 0),
+        }))
       }
     } catch (e) {}
   }
-  return `A3: -${Number((type === 'bw' ? item.a3_counter_bw : item.a3_counter_color) || 0).toLocaleString()}`
+  const bw = Number(item?.a3_counter_bw || 0)
+  const color = Number(item?.a3_counter_color || 0)
+  return [{ name: 'A3', bw, color }]
+}
+
+function getDeductionSummary(item: any, type: 'bw' | 'color'): string {
+  const deducts = getItemDeductions(item)
+  if (deducts.length === 1) {
+    return `${deducts[0].name}: -${Number(deducts[0][type] || 0).toLocaleString()}`
+  }
+  const parts = deducts.map((p: any) => `${p.name}: ${Number(p[type] || 0).toLocaleString()}`)
+  const tot = deducts.reduce((sum: number, p: any) => sum + Number(p[type] || 0), 0)
+  return `Deduksi: -${tot.toLocaleString()} (${parts.join(', ')})`
 }
 
 function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
@@ -234,6 +255,23 @@ function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
   const currentMap = new Map<string, { bw: number; color: number }>()
   for (const d of (form.paper_deductions || [])) {
     currentMap.set(d.name.toUpperCase(), { bw: Number(d.bw || 0), color: Number(d.color || 0) })
+  }
+
+  // Juga periksa meter details jika ada pada inv
+  const mDetails: any[] = Array.isArray(inv?.meter_details) ? inv.meter_details : []
+  for (const d of mDetails) {
+    const pName = String(d.paper_size?.name || d.paper_size_name || '').trim().toUpperCase()
+    if (pName && !pName.includes('A4')) {
+      if (!currentMap.has(pName)) {
+        currentMap.set(pName, { bw: 0, color: 0 })
+      }
+      const val = Number(d.last_meter_reading || d.start_meter_reading || d.total_copies || 0)
+      if (/bw|mono|b\/w|black/i.test(d.color_mode || '')) {
+        currentMap.get(pName)!.bw = val
+      } else if (/colou?r/i.test(d.color_mode || '')) {
+        currentMap.get(pName)!.color = val
+      }
+    }
   }
 
   const newDeductions: PaperDeduction[] = []
@@ -252,6 +290,19 @@ function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
 
   form.paper_deductions = newDeductions
   onGrossOrDeductionChange()
+}
+
+function addPredefinedPaper(paperName: string) {
+  const cleanName = paperName.trim().toUpperCase()
+  if (!form.paper_deductions.some(d => d.name.toUpperCase() === cleanName)) {
+    form.paper_deductions.push({
+      name: cleanName,
+      bw: 0,
+      color: 0,
+    })
+    onGrossOrDeductionChange()
+    toast.success(`Ukuran kertas ${cleanName} ditambahkan ke daftar deduksi`)
+  }
 }
 
 function promptAddPaper() {
@@ -384,6 +435,53 @@ function resolveInvoiceUnit(inv: any) {
   return null
 }
 
+function getInvoiceContractInfo(inv: any) {
+  if (!inv) return null
+  const c = inv.contract
+  const r = inv.rental
+  const cStart = c?.start_date || r?.start_date
+  const cEnd = c?.end_date || r?.end_date
+
+  let labelRange = ''
+  if (cStart && cEnd) {
+    const sD = new Date(cStart)
+    const eD = new Date(cEnd)
+    if (!isNaN(sD.getTime()) && !isNaN(eD.getTime())) {
+      const sMonth = sD.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })
+      const eMonth = eD.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })
+      labelRange = `${sMonth} - ${eMonth}`
+    }
+  }
+
+  let isLastVisit = false
+  if (cEnd) {
+    const endD = new Date(cEnd)
+    const invDateStr = inv.period_end || inv.period_start || inv.invoice_date
+    if (invDateStr && !isNaN(endD.getTime())) {
+      const invD = new Date(invDateStr)
+      if (!isNaN(invD.getTime())) {
+        isLastVisit = (invD.getFullYear() === endD.getFullYear() && invD.getMonth() === endD.getMonth())
+      }
+    }
+  }
+
+  return {
+    cStart,
+    cEnd,
+    labelRange,
+    isLastVisit,
+  }
+}
+
+const selectedInvoiceContractInfo = ref<{
+  cStart?: string
+  cEnd?: string
+  labelRange?: string
+  isLastVisit?: boolean
+  startBW?: number
+  startColor?: number
+} | null>(null)
+
 const rentalInvoiceOptions = computed(() => {
   const list = (rentalInvoices.value || []) as any[]
   const targetType = form.customer_type === 'atlas' ? 'atlas' : 'great'
@@ -411,11 +509,17 @@ const rentalInvoiceOptions = computed(() => {
       const pLabel = inv.period_start
         ? `${inv.period_start.slice(0, 10)} s/d ${inv.period_end ? inv.period_end.slice(0, 10) : ''}`
         : (inv.monthly_date ? inv.monthly_date.slice(0, 10) : '')
+
+      const cInfo = getInvoiceContractInfo(inv)
+      const cLabel = cInfo?.labelRange ? ` • [Kontrak: ${cInfo.labelRange}]` : ''
+      const lastBadge = cInfo?.isLastVisit ? ' ★ Visit Terakhir Kontrak' : ''
+
       return {
         value: inv.id,
-        label: `${invNo} — ${cName} • [Unit: ${uDesc}] ${pLabel ? `• (${pLabel})` : ''}`,
+        label: `${invNo} — ${cName} • [Unit: ${uDesc}] ${pLabel ? `• (${pLabel})` : ''}${cLabel}${lastBadge}`,
         invoice: inv,
         unit: u,
+        contractInfo: cInfo,
       }
     })
 })
@@ -436,10 +540,14 @@ async function onRentalInvoiceChange(invId: string) {
   // Otomatis set Unit yang terikat dengan invoice ini
   if (u?.id) {
     form.unit_id = u.id
-    await onUnitChange(u.id)
+    if (form.customer_type === 'atlas') {
+      autoSyncPrinterPaperSizes(u.id, inv)
+    }
   } else if (inv.unit_id) {
     form.unit_id = inv.unit_id
-    await onUnitChange(inv.unit_id)
+    if (form.customer_type === 'atlas') {
+      autoSyncPrinterPaperSizes(inv.unit_id, inv)
+    }
   }
 
   // Otomatis set Periode
@@ -452,29 +560,94 @@ async function onRentalInvoiceChange(invId: string) {
     }
   }
 
-  // Otomatis ambil Counter Awal & Akhir bila ada di invoice
-  const bwStart = Number(inv.meter_start || inv.meter_start_bw || 0)
-  const bwEnd = Number(inv.meter_end || inv.meter_end_bw || 0)
-  const colStart = Number(inv.meter_start_color || inv.meter_start_colour || 0)
-  const colEnd = Number(inv.meter_end_color || inv.meter_end_colour || 0)
+  // Otomatis ambil Counter Awal & Akhir / Gross dari invoice (baik dari meter_details maupun flat fields)
+  const mDetails: any[] = Array.isArray(inv.meter_details) ? inv.meter_details : []
+  const a4Details = mDetails.filter((d: any) => {
+    const pName = String(d.paper_size?.name || d.paper_size_name || '').trim().toUpperCase()
+    return !pName || pName.includes('A4')
+  })
+  const nonA4Details = mDetails.filter((d: any) => {
+    const pName = String(d.paper_size?.name || d.paper_size_name || '').trim().toUpperCase()
+    return pName && !pName.includes('A4')
+  })
 
-  if (bwStart > 0) form.start_meter_bw = bwStart
-  if (bwEnd > 0) {
-    if (form.customer_type === 'atlas') {
-      form.gross_meter_bw = bwEnd
-      form.end_meter_bw = Math.max(0, bwEnd - Number(form.a3_meter_bw || 0))
-    } else {
-      form.end_meter_bw = bwEnd
+  const a4BW = a4Details.find((d: any) => /bw|mono|b\/w|black/i.test(d.color_mode || ''))
+  const a4Color = a4Details.find((d: any) => /colou?r/i.test(d.color_mode || ''))
+
+  const bwStart = a4BW ? Number(a4BW.start_meter_reading || 0) : Number(inv.meter_start || inv.meter_start_bw || 0)
+  const bwEnd = a4BW ? Number(a4BW.last_meter_reading || 0) : Number(inv.meter_end || inv.meter_end_bw || 0)
+  const colStart = a4Color ? Number(a4Color.start_meter_reading || 0) : Number(inv.meter_start_color || inv.meter_start_colour || 0)
+  const colEnd = a4Color ? Number(a4Color.last_meter_reading || 0) : Number(inv.meter_end_color || inv.meter_end_colour || 0)
+
+  // Map non-A4 details (seperti A3, Folio, dll) ke paper_deductions
+  if (nonA4Details.length > 0 && form.customer_type === 'atlas') {
+    const dedMap = new Map<string, { bw: number; color: number }>()
+    for (const d of nonA4Details) {
+      const pName = String(d.paper_size?.name || d.paper_size_name || 'A3').trim().toUpperCase()
+      if (!dedMap.has(pName)) {
+        dedMap.set(pName, { bw: 0, color: 0 })
+      }
+      const entry = dedMap.get(pName)!
+      const start = Number(d.start_meter_reading || 0)
+      const last = Number(d.last_meter_reading || 0)
+      // Ambil nilai meter reading fisik non-A4 dari input teknisi / admin
+      const val = Number(last || start || d.total_copies || 0)
+      if (/bw|mono|b\/w|black/i.test(d.color_mode || '')) {
+        entry.bw = val
+      } else if (/colou?r/i.test(d.color_mode || '')) {
+        entry.color = val
+      }
+    }
+    form.paper_deductions = Array.from(dedMap.entries()).map(([name, val]) => ({
+      name,
+      bw: val.bw,
+      color: val.color,
+    }))
+    onGrossOrDeductionChange()
+  }
+
+  // Simpan info kontrak yang terkait dengan invoice ini
+  selectedInvoiceContractInfo.value = opt?.contractInfo || getInvoiceContractInfo(inv)
+
+  // Khusus Atlas Copco: Cari meter awal kontrak jika tersedia (Akumulasi seluruh masa kontrak)
+  const matchedCI = (contractItems.value || []).find((ci: any) => 
+    (ci.contract_id && inv.contract_id && String(ci.contract_id) === String(inv.contract_id)) ||
+    (u?.id && String(ci.unit_id) === String(u.id))
+  ) || inv.contract_item || inv.meter_details?.[0]?.contract_item
+
+  let contractStartBW = Number(matchedCI?.start_meter_bw ?? matchedCI?.start_meter ?? 0)
+  let contractStartColor = Number(matchedCI?.start_meter_color ?? 0)
+
+  if (contractStartBW === 0) {
+    const rItem = inv.rental?.rental_items?.[0]
+    if (rItem) {
+      contractStartBW = Number(rItem.start_meter_bw ?? 0)
+      contractStartColor = Number(rItem.start_meter_color ?? 0)
     }
   }
-  if (colStart > 0) form.start_meter_color = colStart
-  if (colEnd > 0) {
-    if (form.customer_type === 'atlas') {
-      form.gross_meter_color = colEnd
-      form.end_meter_color = Math.max(0, colEnd - Number(form.a3_meter_color || 0))
-    } else {
-      form.end_meter_color = colEnd
-    }
+
+  if (contractStartBW === 0) contractStartBW = bwStart
+  if (contractStartColor === 0) contractStartColor = colStart
+
+  if (form.customer_type === 'atlas') {
+    if (contractStartBW > 0) form.start_meter_bw = contractStartBW
+    if (contractStartColor > 0) form.start_meter_color = contractStartColor
+    if (bwEnd > 0) form.gross_meter_bw = bwEnd
+    if (colEnd > 0) form.gross_meter_color = colEnd
+    onGrossOrDeductionChange()
+  } else {
+    if (bwStart > 0) form.start_meter_bw = bwStart
+    if (colStart > 0) form.start_meter_color = colStart
+    if (bwEnd > 0) form.end_meter_bw = bwEnd
+    if (colEnd > 0) form.end_meter_color = colEnd
+  }
+
+  // Jika invoice belum terisi meter_details atau deduksi masih 0 pada atlas, tarik otomatis dari reading teknisi
+  if (form.unit_id && (
+    (bwEnd === 0 && colEnd === 0) ||
+    (form.customer_type === 'atlas' && totalDeductionBW.value === 0 && totalDeductionColor.value === 0)
+  )) {
+    await handleAutoFetchMeter()
   }
 
   toast.success(`Unit ${u ? (u.model || u.name || '') : ''} & Customer otomatis terpilih dari ${inv.invoice_no || 'Rental Invoice'}`)
@@ -526,9 +699,12 @@ const unitOptions = computed(() => {
     })
   }
 
-  // Fallback: Jika belum ada kontrak rental atau user memilih opsi lihat semua unit copier
-  const allUnitsList = (units.value || []).filter((u: any) => u.is_copier || showAllUnitsFallback.value)
-  return allUnitsList.map((u: any) => {
+  // Fallback otomatis: Tampilkan seluruh unit printer / copier master (atau semua unit fisik)
+  const candidateUnits = (units.value || []).filter((u: any) => 
+    showAllUnitsFallback.value || u.is_copier || (u.name && (u.name.toLowerCase().includes('copier') || u.name.toLowerCase().includes('printer') || u.name.toLowerCase().includes('epson')))
+  )
+  const listToUse = candidateUnits.length > 0 ? candidateUnits : (units.value || [])
+  return listToUse.map((u: any) => {
     const disp = formatUnitDisplayName ? formatUnitDisplayName(u) : `${u.name || u.model || 'Unit'}${u.serial_no ? ` (SN: ${u.serial_no})` : ''}`
     return {
       value: u.id,
@@ -594,18 +770,11 @@ const tabCustomerFilterOptions = computed(() => {
 })
 
 const modalCustomerOptions = computed(() => {
-  if (form.customer_type === 'atlas') {
-    const list = (customers.value || []).filter((c: any) => getCustomerName(c).toLowerCase().includes('atlas'))
-    if (list.length > 0) {
-      return list.map((c: any) => ({ value: c.id, label: getCustomerName(c) }))
-    }
-  } else if (form.customer_type === 'great') {
-    const list = (customers.value || []).filter((c: any) => getCustomerName(c).toLowerCase().includes('great'))
-    if (list.length > 0) {
-      return list.map((c: any) => ({ value: c.id, label: getCustomerName(c) }))
-    }
-  }
-  return customerOptions.value
+  // Metode Atlas & Great tidak terbatas hanya pada Atlas/Great, dapat digunakan untuk seluruh customer rental
+  return (customers.value || []).map((c: any) => ({
+    value: c.id,
+    label: getCustomerName(c),
+  }))
 })
 
 watch(activeTab, () => {
@@ -752,6 +921,54 @@ async function handleAutoFetchMeter() {
       form.start_meter_color = Number(payload.counter_awal_color ?? payload.start_meter_color ?? 0)
       form.end_meter_color = Number(payload.counter_akhir_color ?? payload.end_meter_color ?? 0)
 
+      if (payload.contract_start_date || payload.contract_end_date) {
+        const sDate = payload.contract_start_date || ''
+        const eDate = payload.contract_end_date || ''
+        let labelRange = ''
+        if (sDate && eDate) {
+          const sD = new Date(sDate)
+          const eD = new Date(eDate)
+          labelRange = `${sD.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })} - ${eD.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' })}`
+        }
+        selectedInvoiceContractInfo.value = {
+          cStart: sDate,
+          cEnd: eDate,
+          labelRange,
+          isLastVisit: Boolean(payload.is_last_visit),
+          startBW: Number(payload.contract_start_bw || 0),
+          startColor: Number(payload.contract_start_color || 0),
+        }
+      }
+
+      if (form.customer_type === 'atlas') {
+        // Sesuai ketentuan Atlas: Gunakan meter awal kontrak jika tersedia (akumulasi seluruh masa kontrak)
+        if (Number(payload.contract_start_bw || 0) > 0) {
+          form.start_meter_bw = Number(payload.contract_start_bw)
+        }
+        if (Number(payload.contract_start_color || 0) > 0) {
+          form.start_meter_color = Number(payload.contract_start_color)
+        }
+
+        const grossBW = Number(payload.gross_counter_bw ?? payload.counter_akhir_bw ?? 0)
+        const grossCol = Number(payload.gross_counter_color ?? payload.counter_akhir_color ?? 0)
+        if (grossBW > 0) form.gross_meter_bw = grossBW
+        if (grossCol > 0) form.gross_meter_color = grossCol
+
+        if (Array.isArray(payload.paper_deductions) && payload.paper_deductions.length > 0) {
+          form.paper_deductions = payload.paper_deductions.map((d: any) => ({
+            name: d.name,
+            bw: Number(d.bw || 0),
+            color: Number(d.color || 0),
+          }))
+          const a3Item = form.paper_deductions.find(d => d.name === 'A3')
+          if (a3Item) {
+            form.a3_meter_bw = a3Item.bw
+            form.a3_meter_color = a3Item.color
+          }
+        }
+        onGrossOrDeductionChange()
+      }
+
       const srcText = payload.source === 'technician_monthly_readings'
         ? 'Monthly Reading Teknisi'
         : payload.source === 'previous_record'
@@ -836,6 +1053,7 @@ function openAddModal(type?: 'atlas' | 'great') {
 
   form.unit_id = ''
   form.rental_invoice_id = ''
+  selectedInvoiceContractInfo.value = null
   form.period_month = new Date().getMonth() + 1
   form.period_year = new Date().getFullYear()
   const mStr = String(form.period_month).padStart(2, '0')
@@ -1021,10 +1239,9 @@ function printAtlasSlip(item: any) {
   const unitModel = getUnitDisplayName(item)
   const unitSN = getUnitSN(item)
   const branchLoc = item.customer?.address || '20242 (Cab.Batam)'
-  const periodStr = item.period_label || (item.period_date ? new Date(item.period_date).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '-')
-
-  const bwA3 = Number(item.a3_counter_bw || 0)
-  const colA3 = Number(item.a3_counter_color || 0)
+  const deductions = getItemDeductions(item)
+  const bwA3 = deductions.reduce((sum, d) => sum + d.bw, 0)
+  const colA3 = deductions.reduce((sum, d) => sum + d.color, 0)
   const bwGross = Number(item.gross_counter_bw || (Number(item.counter_akhir_bw || 0) + bwA3))
   const colGross = Number(item.gross_counter_color || (Number(item.counter_akhir_color || 0) + colA3))
   const bwAkhir = Number(item.counter_akhir_bw || (bwGross - bwA3))
@@ -1604,13 +1821,6 @@ function printAtlasSlip(item: any) {
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td>A3/Ledger</td>
-          <td>0</td>
-          <td>0</td>
-          <td>0</td>
-          <td>0</td>
-        </tr>
         <tr class="row-highlight">
           <td><strong>A4/Letter</strong></td>
           <td>${bwAkhir.toLocaleString('id-ID')}</td>
@@ -1618,6 +1828,14 @@ function printAtlasSlip(item: any) {
           <td>0</td>
           <td>0</td>
         </tr>
+        ${deductions.map(d => `
+        <tr>
+          <td><strong>${d.name === 'A3' ? 'A3/Ledger' : d.name}</strong></td>
+          <td>${Number(d.bw || 0).toLocaleString('id-ID')}</td>
+          <td>${Number(d.color || 0).toLocaleString('id-ID')}</td>
+          <td>0</td>
+          <td>0</td>
+        </tr>`).join('')}
         <tr>
           <td>A5</td>
           <td>0</td>
@@ -1668,7 +1886,7 @@ function printAtlasSlip(item: any) {
       Last Meter B&amp;W (dari admin Emas) -<br>
       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;B&amp;W&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Colour<br>
       Total Mesin : ${bwGross.toLocaleString('en-US')}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${colGross.toLocaleString('en-US')}<br>
-      Deduksi A3&nbsp;&nbsp;: ${bwA3.toLocaleString('en-US')}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${colA3.toLocaleString('en-US')} (-)<br>
+      ${deductions.map(d => `Deduksi ${d.name}&nbsp;&nbsp;: ${Number(d.bw || 0).toLocaleString('en-US')}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${Number(d.color || 0).toLocaleString('en-US')} (-)<br>`).join('')}
       Last Meter&nbsp;&nbsp;: <strong>${bwAkhir.toLocaleString('en-US')}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${colAkhir.toLocaleString('en-US')}</strong>
     </div>
 
@@ -2618,12 +2836,12 @@ async function exportExcel() {
           <CustomSelect
             v-model="form.unit_id"
             :options="unitOptions"
-            :placeholder="!form.customer_id ? 'Pilih Customer terlebih dahulu...' : isLoadingCustomerUnits ? 'Sedang memuat unit rental...' : unitOptions.length === 0 ? 'Tidak ada unit rental untuk customer ini' : 'Pilih Unit Mesin...'"
+            :placeholder="!form.customer_id ? 'Pilih Customer terlebih dahulu...' : isLoadingCustomerUnits ? 'Sedang memuat unit rental...' : 'Pilih Unit Mesin...'"
             :disabled="!form.customer_id || isLoadingCustomerUnits"
             @update:modelValue="onUnitChange"
           />
-          <div v-if="form.customer_id && !isLoadingCustomerUnits && customerRentedUnits.length === 0" style="margin-top: 6px; font-size: 12px; color: #d97706; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-            <span>Customer ini belum memiliki unit rental terdaftar di kontrak/rental.</span>
+          <div v-if="form.customer_id && !isLoadingCustomerUnits && customerRentedUnits.length === 0" style="margin-top: 6px; font-size: 12px; color: #2563eb; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span>ℹ️ Menampilkan semua unit printer/copier tersedia (dapat langsung dipilih).</span>
             <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--color-primary); font-weight: 500;">
               <input type="checkbox" v-model="showAllUnitsFallback" />
               Tampilkan semua unit mesin
@@ -2710,6 +2928,35 @@ async function exportExcel() {
           </button>
         </div>
 
+        <!-- BANNER KETENTUAN MASA KONTRAK & VISIT TERAKHIR KHUSUS ATLAS -->
+        <div
+          v-if="form.customer_type === 'atlas' && selectedInvoiceContractInfo?.labelRange"
+          class="atlas-contract-status-box full-width"
+          :class="selectedInvoiceContractInfo.isLastVisit ? 'is-last-visit' : 'is-intermediate-visit'"
+        >
+          <div class="status-box-header">
+            <span class="status-icon">{{ selectedInvoiceContractInfo.isLastVisit ? '🎯' : 'ℹ️' }}</span>
+            <div class="status-text">
+              <div class="status-title">
+                <span v-if="selectedInvoiceContractInfo.isLastVisit">
+                  ★ Visit Terakhir Masa Kontrak (Periode Kontrak: {{ selectedInvoiceContractInfo.labelRange }})
+                </span>
+                <span v-else>
+                  Masa Kontrak: {{ selectedInvoiceContractInfo.labelRange }} (Bukan Visit Terakhir)
+                </span>
+              </div>
+              <div class="status-desc">
+                <span v-if="selectedInvoiceContractInfo.isLastVisit">
+                  Sesuai ketentuan Atlas Copco, perhitungan lembar pemakaian diterbitkan pada <strong>visit terakhir kontrak</strong>. Counter Awal dihitung akumulasi sejak awal kontrak ({{ Number(form.start_meter_bw).toLocaleString() }} BW / {{ Number(form.start_meter_color).toLocaleString() }} CL) hingga pembacaan fisik visit terakhir ({{ Number(form.gross_meter_bw).toLocaleString() }} BW / {{ Number(form.gross_meter_color).toLocaleString() }} CL).
+                </span>
+                <span v-else>
+                  Catatan: Berdasarkan ketentuan Atlas Copco, perhitungan lembar pemakaian dihitung dan diterbitkan pada <strong>visit terakhir kontrak</strong>. Pilihan bulan ini tetap dapat diproses dan Counter Awal otomatis diakumulasikan dari awal kontrak.
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- COUNTER INPUTS (Kondisional: Atlas ada Gross & Deduksi Kertas Dinamis, Great hanya Awal & Akhir) -->
         <div class="counter-box full-width">
           <div class="counter-box-header" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;">
@@ -2722,7 +2969,7 @@ async function exportExcel() {
 
             <!-- Toolbar Kertas Printer Khusus Atlas -->
             <div v-if="form.customer_type === 'atlas'" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-              <span style="font-size: 11px; color: #475569; font-weight: 500;">Kertas Terdeteksi:</span>
+              <span style="font-size: 11px; color: #475569; font-weight: 500;">Kertas Deduksi:</span>
               <span
                 v-for="pd in form.paper_deductions"
                 :key="'badge-' + pd.name"
@@ -2731,11 +2978,38 @@ async function exportExcel() {
                 {{ pd.name }}
               </span>
               <button
+                v-if="!form.paper_deductions.some(d => d.name === 'A3')"
                 type="button"
                 style="padding: 2px 8px; font-size: 11px; border: 1px dashed #3b82f6; color: #2563eb; background: #eff6ff; border-radius: 4px; cursor: pointer; font-weight: 500;"
+                title="Tambah deduksi kertas A3"
+                @click="addPredefinedPaper('A3')"
+              >
+                + A3
+              </button>
+              <button
+                v-if="!form.paper_deductions.some(d => d.name === 'FOLIO' || d.name === 'F4')"
+                type="button"
+                style="padding: 2px 8px; font-size: 11px; border: 1px dashed #3b82f6; color: #2563eb; background: #eff6ff; border-radius: 4px; cursor: pointer; font-weight: 500;"
+                title="Tambah deduksi kertas Folio / F4"
+                @click="addPredefinedPaper('Folio')"
+              >
+                + Folio
+              </button>
+              <button
+                v-if="!form.paper_deductions.some(d => d.name === 'LEGAL')"
+                type="button"
+                style="padding: 2px 8px; font-size: 11px; border: 1px dashed #3b82f6; color: #2563eb; background: #eff6ff; border-radius: 4px; cursor: pointer; font-weight: 500;"
+                title="Tambah deduksi kertas Legal"
+                @click="addPredefinedPaper('Legal')"
+              >
+                + Legal
+              </button>
+              <button
+                type="button"
+                style="padding: 2px 8px; font-size: 11px; border: 1px dashed #64748b; color: #475569; background: #f8fafc; border-radius: 4px; cursor: pointer; font-weight: 500;"
                 @click="promptAddPaper"
               >
-                + Tambah Kertas Lain
+                + Tambah Kertas Lain...
               </button>
             </div>
           </div>
@@ -3241,17 +3515,17 @@ async function exportExcel() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td class="font-medium">A3/Ledger</td>
-                    <td class="text-right font-semibold">{{ Number(detailItem.a3_counter_bw || 0).toLocaleString('id-ID') }}</td>
-                    <td class="text-right font-semibold text-blue-700">{{ Number(detailItem.a3_counter_color || 0).toLocaleString('id-ID') }}</td>
-                    <td class="text-right">0</td>
-                    <td class="text-right">0</td>
-                  </tr>
                   <tr class="highlight-row">
                     <td class="font-bold text-slate-900">A4/Letter</td>
                     <td class="text-right font-bold text-slate-900">{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}</td>
                     <td class="text-right font-bold text-blue-700">{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</td>
+                    <td class="text-right">0</td>
+                    <td class="text-right">0</td>
+                  </tr>
+                  <tr v-for="d in getItemDeductions(detailItem)" :key="'detail-table-' + d.name">
+                    <td class="font-medium">{{ d.name === 'A3' ? 'A3/Ledger' : d.name }}</td>
+                    <td class="text-right font-semibold">{{ Number(d.bw || 0).toLocaleString('id-ID') }}</td>
+                    <td class="text-right font-semibold text-blue-700">{{ Number(d.color || 0).toLocaleString('id-ID') }}</td>
                     <td class="text-right">0</td>
                     <td class="text-right">0</td>
                   </tr>
@@ -3306,8 +3580,10 @@ async function exportExcel() {
               <strong>Note :</strong><br>
               Last Meter B&amp;W (dari admin Emas) -<br>
               &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;B&amp;W&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Colour<br>
-              Total Mesin : {{ (Number(detailItem.gross_counter_bw || (Number(detailItem.counter_akhir_bw || 0) + Number(detailItem.a3_counter_bw || 0)))).toLocaleString('id-ID') }}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ (Number(detailItem.gross_counter_color || (Number(detailItem.counter_akhir_color || 0) + Number(detailItem.a3_counter_color || 0)))).toLocaleString('id-ID') }}<br>
-              Deduksi A3&nbsp;&nbsp;: {{ Number(detailItem.a3_counter_bw || 0).toLocaleString('id-ID') }}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ Number(detailItem.a3_counter_color || 0).toLocaleString('id-ID') }} (-)<br>
+              Total Mesin : {{ (Number(detailItem.gross_counter_bw || (Number(detailItem.counter_akhir_bw || 0) + getItemDeductions(detailItem).reduce((s, d) => s + d.bw, 0)))).toLocaleString('id-ID') }}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ (Number(detailItem.gross_counter_color || (Number(detailItem.counter_akhir_color || 0) + getItemDeductions(detailItem).reduce((s, d) => s + d.color, 0)))).toLocaleString('id-ID') }}<br>
+              <template v-for="d in getItemDeductions(detailItem)" :key="'detail-note-' + d.name">
+                Deduksi {{ d.name }}&nbsp;&nbsp;: {{ Number(d.bw || 0).toLocaleString('id-ID') }}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ Number(d.color || 0).toLocaleString('id-ID') }} (-)<br>
+              </template>
               Last Meter&nbsp;&nbsp;: <strong>{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</strong>
             </div>
 
@@ -3333,11 +3609,12 @@ async function exportExcel() {
 
     <!-- CONFIRM DELETE DIALOG -->
     <ConfirmDialog
-      v-model="showDeleteConfirm"
+      :open="showDeleteConfirm"
       title="Hapus Pencatatan Meter"
       message="Apakah Anda yakin ingin menghapus pencatatan meter ini? Data yang dihapus tidak dapat dikembalikan."
       confirmLabel="Hapus"
-      type="danger"
+      variant="danger"
+      @close="showDeleteConfirm = false"
       @confirm="handleDelete"
     />
   </div>
@@ -3704,6 +3981,13 @@ async function exportExcel() {
   align-items: center;
   justify-content: center;
   transition: all 0.15s ease;
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.btn-icon svg {
+  pointer-events: none;
 }
 
 .btn-icon:hover {
@@ -4474,6 +4758,58 @@ async function exportExcel() {
 .btn-excel-top:hover {
   background: #15803d !important;
   border-color: #15803d !important;
+}
+
+/* Banner Status Kontrak Atlas Copco */
+.atlas-contract-status-box {
+  margin-bottom: 14px;
+  border-radius: 8px;
+  padding: 12px 16px;
+  border: 1.5px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.atlas-contract-status-box.is-last-visit {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.atlas-contract-status-box.is-intermediate-visit {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+.atlas-contract-status-box .status-box-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.atlas-contract-status-box .status-icon {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.atlas-contract-status-box .status-title {
+  font-weight: 700;
+  font-size: 13.5px;
+  margin-bottom: 3px;
+}
+
+.atlas-contract-status-box.is-last-visit .status-title {
+  color: #15803d;
+}
+
+.atlas-contract-status-box.is-intermediate-visit .status-title {
+  color: #1d4ed8;
+}
+
+.atlas-contract-status-box .status-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.95;
 }
 
 </style>

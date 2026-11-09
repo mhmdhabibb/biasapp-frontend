@@ -523,8 +523,17 @@ function renderRentalInvoiceBody(item: any): string {
         byPaperSize.get(key)!.push(detail)
       }
 
+      // Urutkan agar A4 tampil pertama, lalu ukuran kertas lainnya
+      const sortedPaperSizes = Array.from(byPaperSize.entries()).sort(([a], [b]) => {
+        const aIsA4 = /a4/i.test(a) || !a
+        const bIsA4 = /a4/i.test(b) || !b
+        if (aIsA4 && !bIsA4) return -1
+        if (!aIsA4 && bIsA4) return 1
+        return a.localeCompare(b)
+      })
+
       let rowIdx = 2
-      for (const [paperSize, details] of byPaperSize) {
+      for (const [paperSize, details] of sortedPaperSizes) {
         const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
         const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
         // Jika tidak ada ukuran kertasnya kosongin aja
@@ -1073,7 +1082,16 @@ async function exportInvoicesToExcel(
           byPaperSize.get(key)!.push(detail)
         }
 
-        for (const [paperSize, details] of byPaperSize) {
+        // Urutkan agar A4 tampil pertama, lalu ukuran kertas lainnya
+        const sortedPaperSizes = Array.from(byPaperSize.entries()).sort(([a], [b]) => {
+          const aIsA4 = /a4/i.test(a) || !a
+          const bIsA4 = /a4/i.test(b) || !b
+          if (aIsA4 && !bIsA4) return -1
+          if (!aIsA4 && bIsA4) return 1
+          return a.localeCompare(b)
+        })
+
+        for (const [paperSize, details] of sortedPaperSizes) {
           const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
           const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
           // Jika tidak ada ukuran kertasnya kosongin aja

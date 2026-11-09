@@ -139,8 +139,8 @@ function openCreatePOModal(request: SparepartRequest) {
     (s: any) => String(s.id) === String(request.service_report_id)
   ) || request.service_report
   const prod = request.product || store.findProduct(request.product_id)
-  const cust = sr?.customer_id ? store.findCustomer(sr.customer_id) : (sr?.customer || null)
-  const unit = sr?.unit_id ? store.findUnit(sr.unit_id) : (sr?.unit || null)
+  const cust = request.customer || request.sale?.customer || request.rental?.customer || (sr?.customer_id ? store.findCustomer(sr.customer_id) : (sr?.customer || null))
+  const unit = request.unit || (sr?.unit_id ? store.findUnit(sr.unit_id) : (sr?.unit || null))
   const tech = getTechnician(request)
 
   poForm.request_form_no = ''
@@ -310,6 +310,12 @@ function getProduct(row: any) {
 }
 
 function getSR(row: any) {
+  if (row?.reference_type === 'sale' || row?.sale_id) {
+    return `[Sale] ${row?.sale?.sale_no || row?.sale_id || '-'}`
+  }
+  if (row?.reference_type === 'rental' || row?.rental_id) {
+    return `[Rental] ${row?.rental?.rental_no || row?.rental_id || '-'}`
+  }
   const id = row?.service_report_id ?? row
   const sr = (row as any)?.service_report || store.findServiceReport(id as any)
   return sr ? sr.report_no || (sr as any).service_report_no || '-' : '-'
@@ -321,6 +327,9 @@ function techNameOf(tech: any): string {
 }
 
 function getTechnician(row: any) {
+  if (row?.user?.name || row?.user?.username) {
+    return `${row.user.name || row.user.username} (Admin)`
+  }
   const direct =
     row?.technician ||
     (row?.technician_id ? store.findTechnician(row.technician_id as any) : null)
@@ -350,8 +359,8 @@ async function handleCreatePO() {
     const sr = (store.serviceReports.value as any[]).find(
       (s: any) => String(s.id) === String(request.service_report_id)
     ) || request.service_report
-    const customerId = sr?.customer_id || null
-    const unitId = sr?.unit_id || null
+    const customerId = request.customer_id || request.sale?.customer_id || request.rental?.customer_id || sr?.customer_id || null
+    const unitId = request.unit_id || sr?.unit_id || null
     const serviceReportId = request.service_report_id || sr?.id || null
 
     const purchaseOrderItems: any[] = []

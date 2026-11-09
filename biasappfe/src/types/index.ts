@@ -495,12 +495,28 @@ export interface MenuGroup {
 export interface SparepartRequest {
   id: string | number;
   request_no: string;
-  service_report_id: string | number | null;
+  group_no?: string | null;
+  reference_type?: 'service_report' | 'sale' | 'rental' | string;
+  service_report_id?: string | number | null;
+  service_report?: ServiceReport | null;
+  sale_id?: string | number | null;
+  sale?: any | null;
+  rental_id?: string | number | null;
+  rental?: any | null;
+  customer_id?: string | number | null;
+  customer?: Customer | null;
+  unit_id?: string | number | null;
+  unit?: Unit | null;
+  user_id?: string | number | null;
+  user?: any | null;
   technician_id?: string | number | null;
   technician?: Technician | null;
-  product_id: string | number | null;
+  product_id?: string | number | null;
+  product?: Product | null;
+  item_name?: string;
   qty: number;
   status: string;
+  notes?: string;
   created_at: string;
   updated_at: string;
 }

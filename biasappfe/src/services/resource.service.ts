@@ -89,8 +89,11 @@ export const resources = {
   serviceRequests: createResourceService<ResourceRecord>("service-requests"),
   jobOrders: createResourceService<ResourceRecord>("job-orders"),
   serviceReports: createResourceService<ResourceRecord>("service-reports"),
-  serviceSpareparts:
-    createResourceService<ResourceRecord>("service-spareparts"),
+  serviceSpareparts: {
+    ...createResourceService<ResourceRecord>("service-spareparts"),
+    getUndeliveredSources: () =>
+      api.get<{ sales: any[]; rentals: any[] }>("/service-spareparts/undelivered-sources"),
+  },
   monthlyMeterReadings: createResourceService<ResourceRecord>(
     "monthly-meter-readings",
   ),

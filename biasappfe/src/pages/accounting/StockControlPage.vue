@@ -105,7 +105,7 @@ const filteredProducts = computed(() => {
 async function fetchMovements() {
   loadingMovements.value = true;
   try {
-    const res = await resources.stockMovements.list({ limit: 200 });
+    const res = await resources.stockMovements.list({ limit: 500 }, true, false);
     movements.value = res.data || [];
   } catch (err: any) {
     console.error("Gagal memuat pergerakan stok:", err);
