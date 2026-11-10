@@ -91,6 +91,8 @@ interface PaperDeduction {
   name: string
   bw: number
   color: number
+  bw_double?: number
+  color_double?: number
 }
 
 const form = reactive({
@@ -108,9 +110,15 @@ const form = reactive({
   end_meter_color: 0,
   gross_meter_bw: 0,
   gross_meter_color: 0,
+  start_meter_bw_double: 0,
+  end_meter_bw_double: 0,
+  start_meter_color_double: 0,
+  end_meter_color_double: 0,
+  gross_meter_bw_double: 0,
+  gross_meter_color_double: 0,
   a3_meter_bw: 0,
   a3_meter_color: 0,
-  paper_deductions: [{ name: 'A3', bw: 0, color: 0 }] as PaperDeduction[],
+  paper_deductions: [{ name: 'A3', bw: 0, color: 0, bw_double: 0, color_double: 0 }] as PaperDeduction[],
   percentage_bw: 88,
   percentage_color: 12,
   remarks: '',
@@ -130,6 +138,16 @@ const totalDeductionColor = computed(() => {
   return form.paper_deductions.reduce((sum, d) => sum + Number(d.color || 0), 0)
 })
 
+const totalDeductionBWDouble = computed(() => {
+  if (!form.paper_deductions || form.paper_deductions.length === 0) return 0
+  return form.paper_deductions.reduce((sum, d) => sum + Number(d.bw_double || 0), 0)
+})
+
+const totalDeductionColorDouble = computed(() => {
+  if (!form.paper_deductions || form.paper_deductions.length === 0) return 0
+  return form.paper_deductions.reduce((sum, d) => sum + Number(d.color_double || 0), 0)
+})
+
 function onGrossOrDeductionChange() {
   const totBW = totalDeductionBW.value
   const totCol = totalDeductionColor.value
@@ -138,6 +156,14 @@ function onGrossOrDeductionChange() {
   }
   if (form.gross_meter_color > 0 || totCol > 0) {
     form.end_meter_color = Math.max(0, Number(form.gross_meter_color || 0) - totCol)
+  }
+  const totBWDouble = totalDeductionBWDouble.value
+  const totColDouble = totalDeductionColorDouble.value
+  if (form.gross_meter_bw_double > 0 || totBWDouble > 0) {
+    form.end_meter_bw_double = Math.max(0, Number(form.gross_meter_bw_double || 0) - totBWDouble)
+  }
+  if (form.gross_meter_color_double > 0 || totColDouble > 0) {
+    form.end_meter_color_double = Math.max(0, Number(form.gross_meter_color_double || 0) - totColDouble)
   }
   // Sync ke field a3 untuk kompatibilitas
   form.a3_meter_bw = totBW
@@ -231,13 +257,15 @@ function getItemDeductions(item: any): PaperDeduction[] {
           name: String(p.name || 'A3').trim().toUpperCase(),
           bw: Number(p.bw || 0),
           color: Number(p.color || 0),
+          bw_double: Number(p.bw_double || p.bw_2sided || 0),
+          color_double: Number(p.color_double || p.color_2sided || 0),
         }))
       }
     } catch (e) {}
   }
   const bw = Number(item?.a3_counter_bw || 0)
   const color = Number(item?.a3_counter_color || 0)
-  return [{ name: 'A3', bw, color }]
+  return [{ name: 'A3', bw, color, bw_double: 0, color_double: 0 }]
 }
 
 function getDeductionSummary(item: any, type: 'bw' | 'color'): string {
@@ -261,9 +289,14 @@ function getDetailGross(item: any, mode: 'bw' | 'color'): number {
 
 function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
   const detected = getPaperSizesForPrinter(unitId, inv)
-  const currentMap = new Map<string, { bw: number; color: number }>()
+  const currentMap = new Map<string, { bw: number; color: number; bw_double: number; color_double: number }>()
   for (const d of (form.paper_deductions || [])) {
-    currentMap.set(d.name.toUpperCase(), { bw: Number(d.bw || 0), color: Number(d.color || 0) })
+    currentMap.set(d.name.toUpperCase(), {
+      bw: Number(d.bw || 0),
+      color: Number(d.color || 0),
+      bw_double: Number(d.bw_double || 0),
+      color_double: Number(d.color_double || 0),
+    })
   }
 
   // Juga periksa meter details jika ada pada inv
@@ -272,7 +305,7 @@ function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
     const pName = String(d.paper_size?.name || d.paper_size_name || '').trim().toUpperCase()
     if (pName && !pName.includes('A4')) {
       if (!currentMap.has(pName)) {
-        currentMap.set(pName, { bw: 0, color: 0 })
+        currentMap.set(pName, { bw: 0, color: 0, bw_double: 0, color_double: 0 })
       }
       const val = Number(d.last_meter_reading || d.start_meter_reading || d.total_copies || 0)
       if (/bw|mono|b\/w|black/i.test(d.color_mode || '')) {
@@ -290,11 +323,13 @@ function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
       name: pName,
       bw: existing ? existing.bw : (pName === 'A3' ? Number(form.a3_meter_bw || 0) : 0),
       color: existing ? existing.color : (pName === 'A3' ? Number(form.a3_meter_color || 0) : 0),
+      bw_double: existing ? existing.bw_double : 0,
+      color_double: existing ? existing.color_double : 0,
     })
   }
 
   if (newDeductions.length === 0) {
-    newDeductions.push({ name: 'A3', bw: Number(form.a3_meter_bw || 0), color: Number(form.a3_meter_color || 0) })
+    newDeductions.push({ name: 'A3', bw: Number(form.a3_meter_bw || 0), color: Number(form.a3_meter_color || 0), bw_double: 0, color_double: 0 })
   }
 
   form.paper_deductions = newDeductions
@@ -308,6 +343,8 @@ function addPredefinedPaper(paperName: string) {
       name: cleanName,
       bw: 0,
       color: 0,
+      bw_double: 0,
+      color_double: 0,
     })
     onGrossOrDeductionChange()
     toast.success(`Ukuran kertas ${cleanName} ditambahkan ke daftar deduksi`)
@@ -323,6 +360,8 @@ function promptAddPaper() {
         name: cleanName,
         bw: 0,
         color: 0,
+        bw_double: 0,
+        color_double: 0,
       })
       onGrossOrDeductionChange()
       toast.success(`Ukuran kertas ${cleanName} ditambahkan ke daftar deduksi printer`)
@@ -336,6 +375,8 @@ function removePaperDeduction(index: number) {
   if (form.paper_deductions.length <= 1) {
     form.paper_deductions[0].bw = 0
     form.paper_deductions[0].color = 0
+    form.paper_deductions[0].bw_double = 0
+    form.paper_deductions[0].color_double = 0
   } else {
     form.paper_deductions.splice(index, 1)
   }
@@ -353,6 +394,20 @@ const calcBaseUsageBW = computed(() => {
 const calcBaseUsageColor = computed(() => {
   const start = Number(form.start_meter_color || 0)
   const end = Number(form.end_meter_color || 0)
+  if (end <= start) return 0
+  return end - start
+})
+
+const calcBaseUsageBWDouble = computed(() => {
+  const start = Number(form.start_meter_bw_double || 0)
+  const end = Number(form.end_meter_bw_double || form.gross_meter_bw_double || 0)
+  if (end <= start) return 0
+  return end - start
+})
+
+const calcBaseUsageColorDouble = computed(() => {
+  const start = Number(form.start_meter_color_double || 0)
+  const end = Number(form.end_meter_color_double || form.gross_meter_color_double || 0)
   if (end <= start) return 0
   return end - start
 })
@@ -957,17 +1012,30 @@ async function handleAutoFetchMeter() {
         if (Number(payload.contract_start_color || 0) > 0) {
           form.start_meter_color = Number(payload.contract_start_color)
         }
+        if (Number(payload.contract_start_bw_double || 0) > 0) {
+          form.start_meter_bw_double = Number(payload.contract_start_bw_double)
+        }
+        if (Number(payload.contract_start_color_double || 0) > 0) {
+          form.start_meter_color_double = Number(payload.contract_start_color_double)
+        }
 
         const grossBW = Number(payload.gross_counter_bw ?? payload.counter_akhir_bw ?? 0)
         const grossCol = Number(payload.gross_counter_color ?? payload.counter_akhir_color ?? 0)
         if (grossBW > 0) form.gross_meter_bw = grossBW
         if (grossCol > 0) form.gross_meter_color = grossCol
 
+        const grossBWDouble = Number(payload.gross_counter_bw_double ?? payload.counter_akhir_bw_double ?? 0)
+        const grossColDouble = Number(payload.gross_counter_color_double ?? payload.counter_akhir_color_double ?? 0)
+        if (grossBWDouble > 0) form.gross_meter_bw_double = grossBWDouble
+        if (grossColDouble > 0) form.gross_meter_color_double = grossColDouble
+
         if (Array.isArray(payload.paper_deductions) && payload.paper_deductions.length > 0) {
           form.paper_deductions = payload.paper_deductions.map((d: any) => ({
             name: d.name,
             bw: Number(d.bw || 0),
             color: Number(d.color || 0),
+            bw_double: Number(d.bw_double || 0),
+            color_double: Number(d.color_double || 0),
           }))
           const a3Item = form.paper_deductions.find(d => d.name === 'A3')
           if (a3Item) {
@@ -1073,9 +1141,15 @@ function openAddModal(type?: 'atlas' | 'great') {
   form.end_meter_color = 0
   form.gross_meter_bw = 0
   form.gross_meter_color = 0
+  form.start_meter_bw_double = 0
+  form.end_meter_bw_double = 0
+  form.start_meter_color_double = 0
+  form.end_meter_color_double = 0
+  form.gross_meter_bw_double = 0
+  form.gross_meter_color_double = 0
   form.a3_meter_bw = 0
   form.a3_meter_color = 0
-  form.paper_deductions = [{ name: 'A3', bw: 0, color: 0 }]
+  form.paper_deductions = [{ name: 'A3', bw: 0, color: 0, bw_double: 0, color_double: 0 }]
   form.remarks = ''
 
   if (form.customer_id) {
@@ -1113,6 +1187,12 @@ function openEditModal(item: any) {
   form.end_meter_color = Number(item.counter_akhir_color || 0)
   form.gross_meter_bw = Number(item.gross_counter_bw || 0)
   form.gross_meter_color = Number(item.gross_counter_color || 0)
+  form.start_meter_bw_double = Number(item.counter_awal_bw_double || 0)
+  form.end_meter_bw_double = Number(item.counter_akhir_bw_double || 0)
+  form.start_meter_color_double = Number(item.counter_awal_color_double || 0)
+  form.end_meter_color_double = Number(item.counter_akhir_color_double || 0)
+  form.gross_meter_bw_double = Number(item.gross_counter_bw_double || 0)
+  form.gross_meter_color_double = Number(item.gross_counter_color_double || 0)
   form.a3_meter_bw = Number(item.a3_counter_bw || 0)
   form.a3_meter_color = Number(item.a3_counter_color || 0)
 
@@ -1176,8 +1256,14 @@ async function handleSubmit() {
       counter_akhir_bw: Number(form.end_meter_bw || 0),
       counter_awal_color: Number(form.start_meter_color || 0),
       counter_akhir_color: Number(form.end_meter_color || 0),
+      counter_awal_bw_double: Number(form.start_meter_bw_double || 0),
+      counter_akhir_bw_double: Number(form.end_meter_bw_double || form.gross_meter_bw_double || 0),
+      counter_awal_color_double: Number(form.start_meter_color_double || 0),
+      counter_akhir_color_double: Number(form.end_meter_color_double || form.gross_meter_color_double || 0),
       gross_counter_bw: isAtlasType ? Number(form.gross_meter_bw || 0) : 0,
       gross_counter_color: isAtlasType ? Number(form.gross_meter_color || 0) : 0,
+      gross_counter_bw_double: isAtlasType ? Number(form.gross_meter_bw_double || 0) : 0,
+      gross_counter_color_double: isAtlasType ? Number(form.gross_meter_color_double || 0) : 0,
       a3_counter_bw: isAtlasType ? totBW : 0,
       a3_counter_color: isAtlasType ? totCol : 0,
       paper_deductions: isAtlasType ? JSON.stringify(form.paper_deductions) : undefined,
@@ -1834,16 +1920,16 @@ function printAtlasSlip(item: any) {
           <td><strong>A4/Letter</strong></td>
           <td>${bwAkhir.toLocaleString('id-ID')}</td>
           <td>${colAkhir.toLocaleString('id-ID')}</td>
-          <td>0</td>
-          <td>0</td>
+          <td>${Number(item.counter_akhir_bw_double || item.gross_counter_bw_double || 0).toLocaleString('id-ID')}</td>
+          <td>${Number(item.counter_akhir_color_double || item.gross_counter_color_double || 0).toLocaleString('id-ID')}</td>
         </tr>
         ${deductions.map(d => `
         <tr>
           <td><strong>${d.name === 'A3' ? 'A3/Ledger' : d.name}</strong></td>
           <td>${Number(d.bw || 0).toLocaleString('id-ID')}</td>
           <td>${Number(d.color || 0).toLocaleString('id-ID')}</td>
-          <td>0</td>
-          <td>0</td>
+          <td>${Number(d.bw_double || 0).toLocaleString('id-ID')}</td>
+          <td>${Number(d.color_double || 0).toLocaleString('id-ID')}</td>
         </tr>`).join('')}
         <tr>
           <td>A5</td>
@@ -3027,28 +3113,53 @@ async function exportExcel() {
             <!-- BW Section -->
             <div class="counter-col">
               <div class="counter-col-title">BLACK & WHITE (BW)</div>
-              <div class="form-group">
-                <label class="form-label">Counter Awal BW</label>
-                <input
-                  v-model.number="form.start_meter_bw"
-                  type="number"
-                  min="0"
-                  class="form-input"
-                />
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group">
+                  <label class="form-label">Awal BW (1-Sided)</label>
+                  <input
+                    v-model.number="form.start_meter_bw"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Awal BW (2-Sided)</label>
+                  <input
+                    v-model.number="form.start_meter_bw_double"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                  />
+                </div>
               </div>
 
               <!-- KHUSUS ATLAS: Gross & Deduksi Kertas Multi-Ukuran -->
               <template v-if="form.customer_type === 'atlas'">
-                <div class="form-group">
-                  <label class="form-label">Counter Mesin Total (Gross BW)</label>
-                  <input
-                    v-model.number="form.gross_meter_bw"
-                    type="number"
-                    min="0"
-                    class="form-input"
-                    placeholder="Contoh: 16311"
-                    @input="onGrossOrDeductionChange"
-                  />
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <div class="form-group">
+                    <label class="form-label">Gross Total BW (1-Sided)</label>
+                    <input
+                      v-model.number="form.gross_meter_bw"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                      placeholder="1-Sided"
+                      @input="onGrossOrDeductionChange"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Gross Total BW (2-Sided)</label>
+                    <input
+                      v-model.number="form.gross_meter_bw_double"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                      placeholder="2-Sided"
+                      @input="onGrossOrDeductionChange"
+                    />
+                  </div>
                 </div>
 
                 <!-- Input Deduksi per Ukuran Kertas Dinamis -->
@@ -3060,7 +3171,7 @@ async function exportExcel() {
                 >
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
                     <label class="form-label" style="margin-bottom: 0;">
-                      Deduksi Ukuran {{ pd.name }} B&amp;W (-)
+                      Deduksi {{ pd.name }} B&amp;W (-)
                     </label>
                     <button
                       v-if="form.paper_deductions.length > 1"
@@ -3072,67 +3183,120 @@ async function exportExcel() {
                       &times; Hapus
                     </button>
                   </div>
-                  <input
-                    v-model.number="pd.bw"
-                    type="number"
-                    min="0"
-                    class="form-input"
-                    :placeholder="'Deduksi ' + pd.name + ' BW'"
-                    @input="onGrossOrDeductionChange"
-                  />
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <input
+                      v-model.number="pd.bw"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                      :placeholder="'1-Sided ' + pd.name"
+                      @input="onGrossOrDeductionChange"
+                    />
+                    <input
+                      v-model.number="pd.bw_double"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                      :placeholder="'2-Sided ' + pd.name"
+                      @input="onGrossOrDeductionChange"
+                    />
+                  </div>
                 </div>
 
                 <div v-if="form.paper_deductions && form.paper_deductions.length > 1" class="text-xs text-slate-500 mb-2 font-medium">
-                  Total Deduksi BW: <strong class="text-slate-800">{{ totalDeductionBW }}</strong>
+                  Total Deduksi BW: <strong class="text-slate-800">1-S: {{ totalDeductionBW }} | 2-S: {{ totalDeductionBWDouble }}</strong>
                 </div>
               </template>
 
-              <div class="form-group">
-                <label class="form-label">
-                  {{ form.customer_type === 'atlas' ? 'Counter Akhir / Last Meter BW' : 'Counter Akhir BW' }}
-                </label>
-                <input
-                  v-model.number="form.end_meter_bw"
-                  type="number"
-                  min="0"
-                  class="form-input"
-                  style="font-weight: 700; color: #1e3a8a;"
-                />
-                <small v-if="form.customer_type === 'atlas' && (form.gross_meter_bw > 0 || totalDeductionBW > 0)" class="text-muted" style="font-size: 11px;">
-                  = Total {{ form.gross_meter_bw }} - Deduksi ({{ totalDeductionBW }})
-                </small>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group">
+                  <label class="form-label">
+                    {{ form.customer_type === 'atlas' ? 'Akhir BW (1-S)' : 'Akhir BW (1-S)' }}
+                  </label>
+                  <input
+                    v-model.number="form.end_meter_bw"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    style="font-weight: 700; color: #1e3a8a;"
+                  />
+                  <small v-if="form.customer_type === 'atlas' && (form.gross_meter_bw > 0 || totalDeductionBW > 0)" class="text-muted" style="font-size: 10px;">
+                    = {{ form.gross_meter_bw }} - {{ totalDeductionBW }}
+                  </small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">
+                    {{ form.customer_type === 'atlas' ? 'Akhir BW (2-S)' : 'Akhir BW (2-S)' }}
+                  </label>
+                  <input
+                    v-model.number="form.end_meter_bw_double"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    style="font-weight: 700; color: #1e3a8a;"
+                  />
+                  <small v-if="form.customer_type === 'atlas' && (form.gross_meter_bw_double > 0 || totalDeductionBWDouble > 0)" class="text-muted" style="font-size: 10px;">
+                    = {{ form.gross_meter_bw_double }} - {{ totalDeductionBWDouble }}
+                  </small>
+                </div>
               </div>
+
               <div class="counter-calc-badge">
                 <span>Pemakaian Dasar BW:</span>
-                <strong>{{ calcBaseUsageBW.toLocaleString() }}</strong>
+                <strong>{{ calcBaseUsageBW.toLocaleString() }} (1-S) | {{ calcBaseUsageBWDouble.toLocaleString() }} (2-S)</strong>
               </div>
             </div>
 
             <!-- Color Section -->
             <div class="counter-col">
               <div class="counter-col-title color-title">COLOR (CL)</div>
-              <div class="form-group">
-                <label class="form-label">Counter Awal Color</label>
-                <input
-                  v-model.number="form.start_meter_color"
-                  type="number"
-                  min="0"
-                  class="form-input"
-                />
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group">
+                  <label class="form-label">Awal Color (1-Sided)</label>
+                  <input
+                    v-model.number="form.start_meter_color"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Awal Color (2-Sided)</label>
+                  <input
+                    v-model.number="form.start_meter_color_double"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                  />
+                </div>
               </div>
 
               <!-- KHUSUS ATLAS: Gross & Deduksi Kertas Multi-Ukuran -->
               <template v-if="form.customer_type === 'atlas'">
-                <div class="form-group">
-                  <label class="form-label">Counter Mesin Total (Gross Color)</label>
-                  <input
-                    v-model.number="form.gross_meter_color"
-                    type="number"
-                    min="0"
-                    class="form-input"
-                    placeholder="Contoh: 16458"
-                    @input="onGrossOrDeductionChange"
-                  />
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <div class="form-group">
+                    <label class="form-label">Gross Total Color (1-Sided)</label>
+                    <input
+                      v-model.number="form.gross_meter_color"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                      placeholder="1-Sided"
+                      @input="onGrossOrDeductionChange"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Gross Total Color (2-Sided)</label>
+                    <input
+                      v-model.number="form.gross_meter_color_double"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                      placeholder="2-Sided"
+                      @input="onGrossOrDeductionChange"
+                    />
+                  </div>
                 </div>
 
                 <!-- Input Deduksi per Ukuran Kertas Dinamis -->
@@ -3144,7 +3308,7 @@ async function exportExcel() {
                 >
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
                     <label class="form-label" style="margin-bottom: 0;">
-                      Deduksi Ukuran {{ pd.name }} Color (-)
+                      Deduksi {{ pd.name }} Color (-)
                     </label>
                     <button
                       v-if="form.paper_deductions.length > 1"
@@ -3156,39 +3320,67 @@ async function exportExcel() {
                       &times; Hapus
                     </button>
                   </div>
-                  <input
-                    v-model.number="pd.color"
-                    type="number"
-                    min="0"
-                    class="form-input"
-                    :placeholder="'Deduksi ' + pd.name + ' Color'"
-                    @input="onGrossOrDeductionChange"
-                  />
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <input
+                      v-model.number="pd.color"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                      :placeholder="'1-Sided ' + pd.name"
+                      @input="onGrossOrDeductionChange"
+                    />
+                    <input
+                      v-model.number="pd.color_double"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                      :placeholder="'2-Sided ' + pd.name"
+                      @input="onGrossOrDeductionChange"
+                    />
+                  </div>
                 </div>
 
                 <div v-if="form.paper_deductions && form.paper_deductions.length > 1" class="text-xs text-slate-500 mb-2 font-medium">
-                  Total Deduksi Color: <strong class="text-slate-800">{{ totalDeductionColor }}</strong>
+                  Total Deduksi Color: <strong class="text-slate-800">1-S: {{ totalDeductionColor }} | 2-S: {{ totalDeductionColorDouble }}</strong>
                 </div>
               </template>
 
-              <div class="form-group">
-                <label class="form-label">
-                  {{ form.customer_type === 'atlas' ? 'Counter Akhir / Last Meter Color' : 'Counter Akhir Color' }}
-                </label>
-                <input
-                  v-model.number="form.end_meter_color"
-                  type="number"
-                  min="0"
-                  class="form-input"
-                  style="font-weight: 700; color: #1e3a8a;"
-                />
-                <small v-if="form.customer_type === 'atlas' && (form.gross_meter_color > 0 || totalDeductionColor > 0)" class="text-muted" style="font-size: 11px;">
-                  = Total {{ form.gross_meter_color }} - Deduksi ({{ totalDeductionColor }})
-                </small>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="form-group">
+                  <label class="form-label">
+                    {{ form.customer_type === 'atlas' ? 'Akhir Color (1-S)' : 'Akhir Color (1-S)' }}
+                  </label>
+                  <input
+                    v-model.number="form.end_meter_color"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    style="font-weight: 700; color: #1e3a8a;"
+                  />
+                  <small v-if="form.customer_type === 'atlas' && (form.gross_meter_color > 0 || totalDeductionColor > 0)" class="text-muted" style="font-size: 10px;">
+                    = {{ form.gross_meter_color }} - {{ totalDeductionColor }}
+                  </small>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">
+                    {{ form.customer_type === 'atlas' ? 'Akhir Color (2-S)' : 'Akhir Color (2-S)' }}
+                  </label>
+                  <input
+                    v-model.number="form.end_meter_color_double"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    style="font-weight: 700; color: #1e3a8a;"
+                  />
+                  <small v-if="form.customer_type === 'atlas' && (form.gross_meter_color_double > 0 || totalDeductionColorDouble > 0)" class="text-muted" style="font-size: 10px;">
+                    = {{ form.gross_meter_color_double }} - {{ totalDeductionColorDouble }}
+                  </small>
+                </div>
               </div>
+
               <div class="counter-calc-badge color-calc-badge">
                 <span>Pemakaian Dasar Color:</span>
-                <strong>{{ calcBaseUsageColor.toLocaleString() }}</strong>
+                <strong>{{ calcBaseUsageColor.toLocaleString() }} (1-S) | {{ calcBaseUsageColorDouble.toLocaleString() }} (2-S)</strong>
               </div>
             </div>
           </div>
@@ -3223,7 +3415,7 @@ async function exportExcel() {
             </thead>
             <tbody>
               <tr>
-                <td><strong>BW</strong></td>
+                <td><strong>BW (1-Sided)</strong></td>
                 <td>{{ Number(form.start_meter_bw || 0).toLocaleString() }}</td>
                 <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_bw || 0).toLocaleString() }}</td>
                 <template v-if="form.customer_type === 'atlas'">
@@ -3237,8 +3429,23 @@ async function exportExcel() {
                 <td>{{ Number(form.end_meter_bw || 0).toLocaleString() }}</td>
                 <td class="cell-highlight">{{ calcBaseUsageBW.toLocaleString() }}</td>
               </tr>
+              <tr v-if="form.gross_meter_bw_double > 0 || form.end_meter_bw_double > 0 || totalDeductionBWDouble > 0 || form.start_meter_bw_double > 0">
+                <td><strong>BW (2-Sided)</strong></td>
+                <td>{{ Number(form.start_meter_bw_double || 0).toLocaleString() }}</td>
+                <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_bw_double || 0).toLocaleString() }}</td>
+                <template v-if="form.customer_type === 'atlas'">
+                  <td v-for="pd in form.paper_deductions" :key="'td-bw-dbl-' + pd.name">
+                    {{ Number(pd.bw_double || 0).toLocaleString() }}
+                  </td>
+                  <td v-if="form.paper_deductions && form.paper_deductions.length > 1" style="font-weight: 600;">
+                    {{ totalDeductionBWDouble.toLocaleString() }}
+                  </td>
+                </template>
+                <td>{{ Number(form.end_meter_bw_double || 0).toLocaleString() }}</td>
+                <td class="cell-highlight">{{ calcBaseUsageBWDouble.toLocaleString() }}</td>
+              </tr>
               <tr>
-                <td><strong>COLOR</strong></td>
+                <td><strong>COLOR (1-Sided)</strong></td>
                 <td>{{ Number(form.start_meter_color || 0).toLocaleString() }}</td>
                 <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_color || 0).toLocaleString() }}</td>
                 <template v-if="form.customer_type === 'atlas'">
@@ -3251,6 +3458,21 @@ async function exportExcel() {
                 </template>
                 <td>{{ Number(form.end_meter_color || 0).toLocaleString() }}</td>
                 <td class="cell-highlight">{{ calcBaseUsageColor.toLocaleString() }}</td>
+              </tr>
+              <tr v-if="form.gross_meter_color_double > 0 || form.end_meter_color_double > 0 || totalDeductionColorDouble > 0 || form.start_meter_color_double > 0">
+                <td><strong>COLOR (2-Sided)</strong></td>
+                <td>{{ Number(form.start_meter_color_double || 0).toLocaleString() }}</td>
+                <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_color_double || 0).toLocaleString() }}</td>
+                <template v-if="form.customer_type === 'atlas'">
+                  <td v-for="pd in form.paper_deductions" :key="'td-col-dbl-' + pd.name">
+                    {{ Number(pd.color_double || 0).toLocaleString() }}
+                  </td>
+                  <td v-if="form.paper_deductions && form.paper_deductions.length > 1" style="font-weight: 600;">
+                    {{ totalDeductionColorDouble.toLocaleString() }}
+                  </td>
+                </template>
+                <td>{{ Number(form.end_meter_color_double || 0).toLocaleString() }}</td>
+                <td class="cell-highlight">{{ calcBaseUsageColorDouble.toLocaleString() }}</td>
               </tr>
             </tbody>
           </table>
@@ -3528,15 +3750,15 @@ async function exportExcel() {
                     <td class="font-bold text-slate-900">A4/Letter</td>
                     <td class="text-right font-bold text-slate-900">{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}</td>
                     <td class="text-right font-bold text-blue-700">{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</td>
-                    <td class="text-right">0</td>
-                    <td class="text-right">0</td>
+                    <td class="text-right font-bold text-slate-900">{{ Number(detailItem.counter_akhir_bw_double || detailItem.gross_counter_bw_double || 0).toLocaleString('id-ID') }}</td>
+                    <td class="text-right font-bold text-blue-700">{{ Number(detailItem.counter_akhir_color_double || detailItem.gross_counter_color_double || 0).toLocaleString('id-ID') }}</td>
                   </tr>
                   <tr v-for="d in getItemDeductions(detailItem)" :key="'detail-table-' + d.name">
                     <td class="font-medium">{{ d.name === 'A3' ? 'A3/Ledger' : d.name }}</td>
                     <td class="text-right font-semibold">{{ Number(d.bw || 0).toLocaleString('id-ID') }}</td>
                     <td class="text-right font-semibold text-blue-700">{{ Number(d.color || 0).toLocaleString('id-ID') }}</td>
-                    <td class="text-right">0</td>
-                    <td class="text-right">0</td>
+                    <td class="text-right font-semibold text-slate-900">{{ Number(d.bw_double || 0).toLocaleString('id-ID') }}</td>
+                    <td class="text-right font-semibold text-blue-700">{{ Number(d.color_double || 0).toLocaleString('id-ID') }}</td>
                   </tr>
                   <tr>
                     <td>A5</td>

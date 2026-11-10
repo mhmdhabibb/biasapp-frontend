@@ -227,6 +227,7 @@ interface CopierMeterRow {
   color_label: string
   reading_id: string | null
   before: number
+  before_double: number
 }
 
 const normMeterMode = (m: any): 'bw' | 'color' =>
@@ -291,6 +292,32 @@ function prevMeterFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): numbe
   return mode === 'color' ? num(ci.start_meter_color) : num(ci.start_meter_bw)
 }
 
+function prevMeterDoubleFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): number {
+  const storeReadings: any[] =
+    (monthlyMeterReadings as any)?.value || (monthlyMeterReadings as any) || []
+  const sized = storeReadings.filter((r: any) =>
+    (!ci || String(r.contract_item_id || '') === String(ci.id)) &&
+    String(r.paper_size_id || '') === String(paperSizeId || '') &&
+    normMeterMode(r.color_mode) === mode,
+  )
+  if (sized.length > 0) {
+    const latest = sized.reduce((prev: any, curr: any) => {
+      const prevDate = new Date(prev.reading_date || prev.created_at).getTime()
+      const currDate = new Date(curr.reading_date || curr.created_at).getTime()
+      return prevDate > currDate ? prev : curr
+    })
+    return num(latest.end_meter_double) || num(latest.start_meter_double)
+  }
+  if (!ci) return 0
+  if (paperSizeId && Array.isArray((ci as any)?.rates)) {
+    const rate = ((ci as any).rates).find((r: any) => String(r.paper_size_id) === String(paperSizeId))
+    if (rate) {
+      return mode === 'color' ? num(rate.start_meter_color_double) : num(rate.start_meter_bw_double)
+    }
+  }
+  return mode === 'color' ? num(ci.start_meter_color_double) : num(ci.start_meter_bw_double)
+}
+
 const meterSections = computed(() => {
   const sections = new Map<string, { paper_size_id: string; paper_size_name: string; rows: CopierMeterRow[] }>()
   const ci = contractItemForUnit()
@@ -315,6 +342,7 @@ const meterSections = computed(() => {
       r.paper_size?.name || r.paper_size_name || (psId ? `Ukuran ${psId.slice(0, 8)}` : 'Tanpa ukuran'),
     )
     const before = num(r.start_meter) > 0 ? num(r.start_meter) : prevMeterFor(psId, mode, ci)
+    const beforeDouble = num(r.start_meter_double) > 0 ? num(r.start_meter_double) : prevMeterDoubleFor(psId, mode, ci)
     sec.rows.push({
       key: `${psId}|${mode}`,
       paper_size_id: psId,
@@ -324,6 +352,7 @@ const meterSections = computed(() => {
       color_label: mode === 'color' ? 'Colour' : 'B/W',
       reading_id: r.id ? String(r.id) : null,
       before,
+      before_double: beforeDouble,
     })
   }
 
@@ -346,6 +375,7 @@ const meterSections = computed(() => {
         color_label: mode === 'color' ? 'Colour' : 'B/W',
         reading_id: null,
         before: prevMeterFor(psId, mode, ci),
+        before_double: prevMeterDoubleFor(psId, mode, ci),
       })
     }
   }
@@ -363,6 +393,7 @@ const meterSections = computed(() => {
         color_label: 'B/W',
         reading_id: null,
         before: beforeMeter.value,
+        before_double: num((ci as any)?.start_meter_bw_double) || 0,
       },
     ]
     if (beforeMeterColor.value > 0 || num(unit.value?.current_meter_color) > 0 || num(job.value?.meter_reading_color_before) > 0) {
@@ -375,6 +406,7 @@ const meterSections = computed(() => {
         color_label: 'Colour',
         reading_id: null,
         before: beforeMeterColor.value,
+        before_double: num((ci as any)?.start_meter_color_double) || 0,
       })
     }
     sections.set('default', {
@@ -394,11 +426,13 @@ const meterSections = computed(() => {
 
 // Nilai After per baris (prefill: end meter tersimpan, else before).
 const sectionAfters = ref<Record<string, number | null>>({})
+const sectionAftersDouble = ref<Record<string, number | null>>({})
 
 function initSectionAfters() {
   const readings: any[] =
     job.value?.monthly_meter_readings || job.value?.monthlyMeterReadings || []
   const next: Record<string, number | null> = {}
+  const nextDouble: Record<string, number | null> = {}
   for (const sec of meterSections.value) {
     for (const row of sec.rows) {
       const linked = row.reading_id
@@ -408,9 +442,13 @@ function initSectionAfters() {
       const isColor = row.color_mode === 'color'
       const reportMeterAfter = isColor ? num(job.value?.meter_reading_color_after) : num(job.value?.meter_reading_after)
       next[row.key] = savedEnd > 0 ? savedEnd : (reportMeterAfter > 0 ? reportMeterAfter : row.before)
+
+      const savedEndDouble = num(linked?.end_meter_double)
+      nextDouble[row.key] = savedEndDouble > 0 ? savedEndDouble : (row.before_double > 0 ? row.before_double : null)
     }
   }
   sectionAfters.value = next
+  sectionAftersDouble.value = nextDouble
 }
 
 function filledAfter(row: CopierMeterRow): number | null {
@@ -536,7 +574,7 @@ async function saveForm() {
   const unitId = String(job.value?.unit_id || unit.value?.id || '')
 
   // Kumpulkan baris per ukuran yang diisi + validasi After >= Before.
-  const filled: Array<{ row: CopierMeterRow; after: number }> = []
+  const filled: Array<{ row: CopierMeterRow; after: number; after_double: number }> = []
   for (const sec of sections) {
     for (const row of sec.rows) {
       const after = filledAfter(row)
@@ -545,7 +583,15 @@ async function saveForm() {
         toast.warning(`${sec.paper_size_name} (${row.color_label}): After (${after}) must not be smaller than Before (${row.before}).`)
         return
       }
-      filled.push({ row, after })
+      const rawDouble = sectionAftersDouble.value[row.key]
+      let afterDouble = row.before_double || 0
+      if (rawDouble !== null && rawDouble !== undefined && String(rawDouble).trim() !== '') {
+        const v = Number(rawDouble)
+        if (Number.isFinite(v) && v >= 0) {
+          afterDouble = v
+        }
+      }
+      filled.push({ row, after, after_double: afterDouble })
     }
   }
   if (sections.length > 0 && filled.length === 0) {
@@ -573,6 +619,8 @@ async function saveForm() {
         await api.patch(`/monthly-meter-readings/${f.row.reading_id}`, {
           start_meter: f.row.before,
           end_meter: f.after,
+          start_meter_double: f.row.before_double,
+          end_meter_double: f.after_double,
         })
       } else if (f.row.paper_size_id && ci) {
         await api.post('/monthly-meter-readings/', {
@@ -584,6 +632,8 @@ async function saveForm() {
           color_mode: f.row.color_mode,
           start_meter: f.row.before,
           end_meter: f.after,
+          start_meter_double: f.row.before_double,
+          end_meter_double: f.after_double,
           reading_date: new Date().toISOString(),
           service_report_id: realServiceReportId.value,
         })
@@ -645,14 +695,22 @@ async function saveForm() {
       <template v-if="meterSections.length > 0">
         <div v-for="sec in meterSections" :key="sec.paper_size_id || 'general'" class="size-card">
           <div class="size-title">Paper Size: {{ sec.paper_size_name }}</div>
-          <div v-for="row in sec.rows" :key="row.key" class="meter-grid">
+          <div v-for="row in sec.rows" :key="row.key" class="meter-grid" style="margin-bottom: 12px;">
             <div class="form-group">
-              <label class="form-label">{{ row.color_label }} — Before (Read Only)</label>
+              <label class="form-label">{{ row.color_label }} — 1-Sided Before (Read Only)</label>
               <input type="number" :value="row.before" class="form-input" readonly disabled>
             </div>
             <div class="form-group">
-              <label class="form-label">{{ row.color_label }} — After <span class="text-danger">*</span></label>
+              <label class="form-label">{{ row.color_label }} — 1-Sided After <span class="text-danger">*</span></label>
               <input type="number" v-model.number="sectionAfters[row.key]" class="form-input" :min="row.before" placeholder="Enter meter after service">
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ row.color_label }} — 2-Sided Before (Read Only)</label>
+              <input type="number" :value="row.before_double" class="form-input" readonly disabled>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ row.color_label }} — 2-Sided After <span class="text-muted" style="font-size: 11px; font-weight: normal;">(Opsional)</span></label>
+              <input type="number" v-model.number="sectionAftersDouble[row.key]" class="form-input" placeholder="0 (Opsional)">
             </div>
           </div>
         </div>

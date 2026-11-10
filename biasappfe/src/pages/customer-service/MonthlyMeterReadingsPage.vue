@@ -71,6 +71,8 @@ const form = reactive({
   color_mode: 'bw',
   start_meter: 0,
   end_meter: 0,
+  start_meter_double: 0,
+  end_meter_double: 0,
   reading_date: new Date().toISOString().slice(0, 10),
 })
 
@@ -318,6 +320,8 @@ function openEdit(item: any) {
     color_mode: item.color_mode === 'color' ? 'color' : 'bw',
     start_meter: item.start_meter ?? 0,
     end_meter: item.end_meter ?? 0,
+    start_meter_double: item.start_meter_double ?? 0,
+    end_meter_double: item.end_meter_double ?? 0,
     reading_date: String(item.reading_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
   })
   showModal.value = true
@@ -353,6 +357,9 @@ async function handleSubmit() {
     start_meter: Number(form.start_meter),
     end_meter: Number(form.end_meter),
     total_usage: Math.max(0, Number(form.end_meter) - Number(form.start_meter)),
+    start_meter_double: Number(form.start_meter_double || 0),
+    end_meter_double: Number(form.end_meter_double || 0),
+    total_usage_double: Math.max(0, Number(form.end_meter_double || 0) - Number(form.start_meter_double || 0)),
     reading_date: form.reading_date
       ? new Date(`${form.reading_date}T00:00:00`).toISOString()
       : new Date().toISOString(),
@@ -606,8 +613,10 @@ function viewContract() {
               <tr>
                 <th style="padding: 12px;">Ukuran</th>
                 <th style="padding: 12px;">Mode</th>
-                <th style="padding: 12px; text-align: right;">Start</th>
-                <th style="padding: 12px; text-align: right;">End</th>
+                <th style="padding: 12px; text-align: right;">Start (1-S)</th>
+                <th style="padding: 12px; text-align: right;">End (1-S)</th>
+                <th style="padding: 12px; text-align: right;">Start (2-S)</th>
+                <th style="padding: 12px; text-align: right;">End (2-S)</th>
                 <th style="padding: 12px; text-align: right;">Usage</th>
                 <th style="padding: 12px;">Dicatat Oleh</th>
                 <th style="padding: 12px;"></th>
@@ -619,6 +628,8 @@ function viewContract() {
                 <td style="padding: 12px;">{{ modeLabel(r.color_mode) }}</td>
                 <td style="padding: 12px; text-align: right;">{{ Number(r.start_meter || 0).toLocaleString('id-ID') }}</td>
                 <td style="padding: 12px; text-align: right;">{{ Number(r.end_meter || 0).toLocaleString('id-ID') }}</td>
+                <td style="padding: 12px; text-align: right; color: var(--color-text-muted);">{{ Number(r.start_meter_double || 0).toLocaleString('id-ID') }}</td>
+                <td style="padding: 12px; text-align: right; color: var(--color-text-muted);">{{ Number(r.end_meter_double || 0).toLocaleString('id-ID') }}</td>
                 <td style="padding: 12px; text-align: right;">{{ Number(r.total_usage || 0).toLocaleString('id-ID') }}</td>
                 <td style="padding: 12px;">{{ recordedBy(r) }}</td>
                 <td style="padding: 12px; text-align: right; white-space: nowrap;">
@@ -691,6 +702,35 @@ function viewContract() {
               min="0"
               class="form-input"
               required
+              placeholder="0"
+              style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);"
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" style="font-weight: 500; font-size: 13px; margin-bottom: 4px; display: block;">
+              Start Meter 2-Sided <span style="color: var(--color-text-muted); font-weight: normal; font-size: 11px;">(Opsional)</span>
+            </label>
+            <input
+              v-model.number="form.start_meter_double"
+              type="number"
+              min="0"
+              class="form-input"
+              placeholder="0"
+              style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="font-weight: 500; font-size: 13px; margin-bottom: 4px; display: block;">
+              End Meter 2-Sided <span style="color: var(--color-text-muted); font-weight: normal; font-size: 11px;">(Opsional)</span>
+            </label>
+            <input
+              v-model.number="form.end_meter_double"
+              type="number"
+              min="0"
+              class="form-input"
               placeholder="0"
               style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm);"
             />

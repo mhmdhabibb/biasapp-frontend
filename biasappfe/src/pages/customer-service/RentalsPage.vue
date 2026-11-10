@@ -537,6 +537,8 @@ const rentalItems = ref<
     monthly_rent: number;
     start_meter_bw: number;
     start_meter_color: number;
+    start_meter_bw_double?: number;
+    start_meter_color_double?: number;
     free_quota_color: number;
     free_quota_bw: number;
     placement_location: string;
@@ -556,6 +558,8 @@ const rentalItems = ref<
       paper_size_id: string;
       start_meter_bw: number;
       start_meter_color: number;
+      start_meter_bw_double?: number;
+      start_meter_color_double?: number;
     }[];
     rates: {
       paper_size_id: string | null;
@@ -567,6 +571,8 @@ const rentalItems = ref<
       quota_applies_to: string;
       start_meter_bw?: number;
       start_meter_color?: number;
+      start_meter_bw_double?: number;
+      start_meter_color_double?: number;
     }[];
   }[]
 >([]);
@@ -791,6 +797,8 @@ function addRentalItem(mode?: "existing" | "unit" | "product") {
     monthly_rent: 0,
     start_meter_bw: 0,
     start_meter_color: 0,
+    start_meter_bw_double: 0,
+    start_meter_color_double: 0,
     free_quota_color: 0,
     free_quota_bw: 0,
     placement_location: "",
@@ -827,6 +835,8 @@ function addAdditionalPaperMeter(item: any) {
     paper_size_id: defaultSizeId,
     start_meter_bw: 0,
     start_meter_color: 0,
+    start_meter_bw_double: 0,
+    start_meter_color_double: 0,
   });
 }
 
@@ -847,6 +857,8 @@ function addItemRate(item: any) {
     free_quota_color: 0,
     start_meter_bw: 0,
     start_meter_color: 0,
+    start_meter_bw_double: 0,
+    start_meter_color_double: 0,
     quota_applies_to: "color",
   });
 }
@@ -1123,6 +1135,8 @@ async function openEdit(row: any) {
         paper_size_id: string;
         start_meter_bw: number;
         start_meter_color: number;
+        start_meter_bw_double: number;
+        start_meter_color_double: number;
       }[] = [];
       if (item.rates && Array.isArray(item.rates)) {
         for (const r of item.rates) {
@@ -1132,12 +1146,18 @@ async function openEdit(row: any) {
           const isA4 = pName === "A4";
           if (
             r.paper_size_id &&
-            (!isA4 || Number(r.start_meter_bw) > 0 || Number(r.start_meter_color) > 0)
+            (!isA4 ||
+              Number(r.start_meter_bw) > 0 ||
+              Number(r.start_meter_color) > 0 ||
+              Number(r.start_meter_bw_double) > 0 ||
+              Number(r.start_meter_color_double) > 0)
           ) {
             addMeters.push({
               paper_size_id: String(r.paper_size_id),
               start_meter_bw: Number(r.start_meter_bw) || 0,
               start_meter_color: Number(r.start_meter_color) || 0,
+              start_meter_bw_double: Number(r.start_meter_bw_double) || 0,
+              start_meter_color_double: Number(r.start_meter_color_double) || 0,
             });
           }
         }
@@ -1170,6 +1190,8 @@ async function openEdit(row: any) {
         monthly_rent: item.monthly_rent || 0,
         start_meter_bw: item.start_meter_bw || 0,
         start_meter_color: item.start_meter_color || 0,
+        start_meter_bw_double: item.start_meter_bw_double || 0,
+        start_meter_color_double: item.start_meter_color_double || 0,
         free_quota_color: item.free_quota_color || 0,
         free_quota_bw: item.free_quota_bw || 0,
         placement_location: item.placement_location || "",
@@ -1195,6 +1217,8 @@ async function openEdit(row: any) {
           free_quota_color: r.free_quota_color || 0,
           start_meter_bw: r.start_meter_bw || 0,
           start_meter_color: r.start_meter_color || 0,
+          start_meter_bw_double: r.start_meter_bw_double || 0,
+          start_meter_color_double: r.start_meter_color_double || 0,
           quota_applies_to: r.quota_applies_to || "color",
         })),
       };
@@ -1228,6 +1252,8 @@ async function openEdit(row: any) {
         monthly_rent: 0,
         start_meter_bw: 0,
         start_meter_color: 0,
+        start_meter_bw_double: 0,
+        start_meter_color_double: 0,
         free_quota_color: 0,
         free_quota_bw: 0,
         placement_location: "",
@@ -1563,6 +1589,14 @@ async function handleSubmit() {
               0,
               Math.round(Number(apm.start_meter_color) || 0),
             );
+            existingRate.start_meter_bw_double = Math.max(
+              0,
+              Math.round(Number(apm.start_meter_bw_double) || 0),
+            );
+            existingRate.start_meter_color_double = Math.max(
+              0,
+              Math.round(Number(apm.start_meter_color_double) || 0),
+            );
           } else {
             combinedRates.push({
               paper_size_id: String(apm.paper_size_id),
@@ -1578,6 +1612,14 @@ async function handleSubmit() {
               start_meter_color: Math.max(
                 0,
                 Math.round(Number(apm.start_meter_color) || 0),
+              ),
+              start_meter_bw_double: Math.max(
+                0,
+                Math.round(Number(apm.start_meter_bw_double) || 0),
+              ),
+              start_meter_color_double: Math.max(
+                0,
+                Math.round(Number(apm.start_meter_color_double) || 0),
               ),
               quota_applies_to: "color",
             });
@@ -1599,6 +1641,14 @@ async function handleSubmit() {
           0,
           Math.round(Number(item.start_meter_color) || 0),
         ),
+        start_meter_bw_double: Math.max(
+          0,
+          Math.round(Number(item.start_meter_bw_double) || 0),
+        ),
+        start_meter_color_double: Math.max(
+          0,
+          Math.round(Number(item.start_meter_color_double) || 0),
+        ),
         free_quota_color: Math.max(
           0,
           Math.round(Number(item.free_quota_color) || 0),
@@ -1616,7 +1666,9 @@ async function handleSubmit() {
               Number(r.free_quota_bw) ||
               Number(r.free_quota_color) ||
               Number(r.start_meter_bw) ||
-              Number(r.start_meter_color),
+              Number(r.start_meter_color) ||
+              Number(r.start_meter_bw_double) ||
+              Number(r.start_meter_color_double),
           )
           .map((r: any) => ({
             paper_size_id: r.paper_size_id ? String(r.paper_size_id) : null,
@@ -1644,6 +1696,14 @@ async function handleSubmit() {
             start_meter_color: Math.max(
               0,
               Math.round(Number(r.start_meter_color) || 0),
+            ),
+            start_meter_bw_double: Math.max(
+              0,
+              Math.round(Number(r.start_meter_bw_double) || 0),
+            ),
+            start_meter_color_double: Math.max(
+              0,
+              Math.round(Number(r.start_meter_color_double) || 0),
             ),
             quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
           })),
@@ -4138,7 +4198,7 @@ function isExpired(row: any): boolean {
           >
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem"
-                >Meter Awal BW (Mulai Rental) *</label
+                >Meter Awal 1-Sided BW (Mulai Rental) *</label
               >
               <input
                 v-model.number="item.start_meter_bw"
@@ -4151,7 +4211,7 @@ function isExpired(row: any): boolean {
             </div>
             <div class="form-group">
               <label class="form-label" style="font-size: 0.8rem"
-                >Meter Awal Warna (Mulai Rental) *</label
+                >Meter Awal 1-Sided Warna (Mulai Rental) *</label
               >
               <input
                 v-model.number="item.start_meter_color"
@@ -4160,6 +4220,30 @@ function isExpired(row: any): boolean {
                 min="0"
                 placeholder="0"
                 :required="item.is_copier"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem"
+                >Meter Awal Double Sided (2-Sided) BW</label
+              >
+              <input
+                v-model.number="item.start_meter_bw_double"
+                type="number"
+                class="form-input"
+                min="0"
+                placeholder="0"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label" style="font-size: 0.8rem"
+                >Meter Awal Double Sided (2-Sided) Warna</label
+              >
+              <input
+                v-model.number="item.start_meter_color_double"
+                type="number"
+                class="form-input"
+                min="0"
+                placeholder="0"
               />
             </div>
           </div>
@@ -4218,7 +4302,7 @@ function isExpired(row: any): boolean {
               :key="apmIdx"
               style="
                 display: grid;
-                grid-template-columns: 1.5fr 1fr 1fr auto;
+                grid-template-columns: 1.2fr 1fr 1fr 1fr 1fr auto;
                 gap: 0.5rem;
                 align-items: flex-end;
                 margin-bottom: 0.5rem;
@@ -4239,7 +4323,7 @@ function isExpired(row: any): boolean {
                 />
               </div>
               <div class="form-group" style="margin: 0">
-                <label class="form-label" style="font-size: 0.75rem">Meter Awal BW</label>
+                <label class="form-label" style="font-size: 0.75rem">1-Sided BW</label>
                 <input
                   v-model.number="apm.start_meter_bw"
                   type="number"
@@ -4250,9 +4334,31 @@ function isExpired(row: any): boolean {
                 />
               </div>
               <div class="form-group" style="margin: 0">
-                <label class="form-label" style="font-size: 0.75rem">Meter Awal Warna</label>
+                <label class="form-label" style="font-size: 0.75rem">1-Sided Warna</label>
                 <input
                   v-model.number="apm.start_meter_color"
+                  type="number"
+                  class="form-input"
+                  min="0"
+                  placeholder="0"
+                  style="font-size: 0.8rem"
+                />
+              </div>
+              <div class="form-group" style="margin: 0">
+                <label class="form-label" style="font-size: 0.75rem">2-Sided BW</label>
+                <input
+                  v-model.number="apm.start_meter_bw_double"
+                  type="number"
+                  class="form-input"
+                  min="0"
+                  placeholder="0"
+                  style="font-size: 0.8rem"
+                />
+              </div>
+              <div class="form-group" style="margin: 0">
+                <label class="form-label" style="font-size: 0.75rem">2-Sided Warna</label>
+                <input
+                  v-model.number="apm.start_meter_color_double"
                   type="number"
                   class="form-input"
                   min="0"
@@ -4399,6 +4505,28 @@ function isExpired(row: any): boolean {
                   <label class="form-label">Meter Awal Warna (opsional)</label>
                   <input
                     v-model.number="rate.start_meter_color"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="0"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Meter Awal Double Sided BW (opsional)</label>
+                  <input
+                    v-model.number="rate.start_meter_bw_double"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="0"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label">Meter Awal Double Sided Warna (opsional)</label>
+                  <input
+                    v-model.number="rate.start_meter_color_double"
                     type="number"
                     class="form-input"
                     min="0"
