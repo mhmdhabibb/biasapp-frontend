@@ -196,7 +196,9 @@ const kindOptions = [
   { value: 'external', label: 'Barang External (Input Manual)' },
 ]
 
-function openItemModal() {
+const isModalLoading = ref(false)
+
+async function openItemModal() {
   Object.assign(itemForm, {
     kind: 'unit',
     unit_id: null,
@@ -220,7 +222,14 @@ function openItemModal() {
   if (needsProducts) names.push('products')
   if (needsBrands) names.push('brands')
   if (needsUnitTypes) names.push('unitTypes')
-  if (names.length) void store.refreshOnly(names)
+  if (names.length) {
+    isModalLoading.value = true
+    try {
+      await store.refreshOnly(names)
+    } finally {
+      isModalLoading.value = false
+    }
+  }
 }
 
 function itemLabel(it: any): string {
@@ -615,6 +624,7 @@ async function handleConfirmPrint() {
 }
 
 onMounted(async () => {
+  store.ensureResourcesLoaded(route.path)
   await store.refreshOnly(['deliveryOrders', 'technicians', 'customers'])
   try {
     const res: any = await api.get(`/delivery-orders/${id}`)
@@ -819,21 +829,21 @@ onMounted(async () => {
 
       <div v-if="itemForm.kind === 'unit'" class="form-group mt-3">
         <label class="form-label">Pilih Unit / Product <span class="text-danger">*</span></label>
-        <CustomSelect v-model="itemForm.unit_id" :options="unitOptions" placeholder="-- Pilih Unit / Product --" />
+        <CustomSelect v-model="itemForm.unit_id" :options="unitOptions" placeholder="-- Pilih Unit / Product --" :searchable="true" :loading="isModalLoading" />
       </div>
       <div v-else-if="itemForm.kind === 'product'" class="form-group mt-3">
         <label class="form-label">Pilih Consumable / Sparepart <span class="text-danger">*</span></label>
-        <CustomSelect v-model="itemForm.product_id" :options="productOptions" placeholder="-- Pilih Consumable / Sparepart --" />
+        <CustomSelect v-model="itemForm.product_id" :options="productOptions" placeholder="-- Pilih Consumable / Sparepart --" :searchable="true" :loading="isModalLoading" />
       </div>
       <template v-if="itemForm.kind === 'external'">
         <div class="form-row mt-3">
           <div class="form-group">
             <label class="form-label">Brand</label>
-            <CustomSelect v-model="itemForm.brand_id" :options="brandOptions" placeholder="-- Brand --" />
+            <CustomSelect v-model="itemForm.brand_id" :options="brandOptions" placeholder="-- Brand --" :searchable="true" :loading="isModalLoading" />
           </div>
           <div class="form-group">
             <label class="form-label">Tipe Produk</label>
-            <CustomSelect v-model="itemForm.unit_type_id" :options="unitTypeOptions" placeholder="-- Tipe Produk --" />
+            <CustomSelect v-model="itemForm.unit_type_id" :options="unitTypeOptions" placeholder="-- Tipe Produk --" :searchable="true" :loading="isModalLoading" />
           </div>
         </div>
         <div class="form-row mt-3">

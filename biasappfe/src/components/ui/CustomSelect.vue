@@ -13,11 +13,13 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   searchable?: boolean
   disabled?: boolean
+  loading?: boolean
   id?: string
 }>(), {
   placeholder: 'Select option',
   searchable: true,
   disabled: false,
+  loading: false,
   id: '',
 })
 
@@ -192,8 +194,11 @@ watch(() => searchQuery.value, () => {
               <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </li>
-          <li v-if="filteredOptions.length === 0" class="custom-select__empty">
-            Not found
+          <li v-if="loading" class="custom-select__empty" style="color: var(--color-primary); font-weight: 500;">
+            Memuat data...
+          </li>
+          <li v-else-if="filteredOptions.length === 0" class="custom-select__empty">
+            Tidak ada data ditemukan
           </li>
           <li v-else-if="filteredOptions.length > visibleOptions.length" class="custom-select__empty">
             Menampilkan {{ visibleOptions.length }} dari {{ filteredOptions.length }} — ketik untuk memfilter

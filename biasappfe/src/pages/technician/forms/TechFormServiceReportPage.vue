@@ -16,7 +16,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { currentUser } = useAuth()
-const { serviceReports, products, findCustomer, findTechnician, refreshInBackground } = useMasterStore()
+const { serviceReports, products, findCustomer, findTechnician, refreshInBackground, ensureResourcesLoaded } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
@@ -48,13 +48,21 @@ const fileInputBefore = ref<HTMLInputElement | null>(null)
 const fileInputProgress = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
 
-const productOptions = computed(() =>
-  products.value
-    .filter((product: any) => product.is_sparepart)
-    .map((product: any) => ({ value: product.id, label: product.name })),
-)
+const productOptions = computed(() => {
+  const list = products.value || []
+  const spareparts = list.filter((product: any) => product.is_sparepart)
+  const base = spareparts.length > 0 ? spareparts : list
+  return [
+    ...base.map((product: any) => ({
+      value: String(product.id),
+      label: `${product.name} ${product.sku ? `(${product.sku})` : ''}`.trim(),
+    })),
+    { value: '__manual__', label: '➕ Tidak ada di database? Input manual...' },
+  ]
+})
 
 onMounted(async () => {
+  ensureResourcesLoaded(route.path)
   // If job is already available in memory, initialize form instantly (0ms loading!)
   if (job.value) {
     form.value = {
@@ -417,7 +425,14 @@ async function saveSignatures() {
                   <button type="button" class="btn btn-xs btn-outline remove-sparepart" :aria-label="`Remove sparepart ${index + 1}`" @click="removeSparepart(index)">Hapus</button>
                 </div>
                 <div class="sparepart-row">
-                  <CustomSelect v-if="sp.mode === 'db'" v-model="sp.product_id" class="form-select" :options="productOptions" placeholder="Select Component..." />
+                  <CustomSelect
+                    v-if="sp.mode === 'db'"
+                    v-model="sp.product_id"
+                    class="form-select"
+                    :options="productOptions"
+                    placeholder="Select Component..."
+                    @update:model-value="(val) => { if (val === '__manual__') { sp.mode = 'manual'; sp.product_id = '' } }"
+                  />
                   <input v-else v-model="sp.item_name" type="text" class="form-input" placeholder="Ketik nama sparepart / komponen..." />
                   <input v-model.number="sp.qty" type="number" class="form-input qty-input" min="1" placeholder="Qty">
                 </div>

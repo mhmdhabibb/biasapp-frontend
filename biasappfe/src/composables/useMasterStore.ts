@@ -109,15 +109,17 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/accounting/sparepart-requests": ["sparepartRequests", "purchaseOrders", "serviceReports", "technicians", "units", "customers", "products"],
 
   // Technician Operational Pages
-  "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests"],
+  "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "products", "sparepartRequests"],
   "/technician/call-services/:id/copier-report": ["serviceReports", "contractItems", "monthlyMeterReadings", "units", "customers", "technicians", "paperSizes", "paperTypes", "jobOrders"],
+  "/technician/call-services/:id/service-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests"],
   "/technician/call-services/:id/technical-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests"],
-  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers", "contractItems", "monthlyMeterReadings"],
-  "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers", "brands", "unitTypes"],
+  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers", "contractItems", "monthlyMeterReadings", "products", "sparepartRequests"],
+  "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers", "brands", "unitTypes", "products", "rents", "contractItems"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "technicians", "serviceReports"],
   "/technician/service-history": ["serviceReports", "technicians", "units", "customers"],
-  "/technician/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers"],
+  "/technician/standalone-service-history/:id": ["deliveryOrders", "jobOrders", "technicians", "customers", "units", "products", "brands", "unitTypes"],
+  "/technician/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers", "units", "products", "brands", "unitTypes"],
 
   // Master Data Pages
   "/master/users": ["users"],
@@ -389,16 +391,30 @@ export function useMasterStore() {
   }
 
   function getResourcesForPath(path: string): string[] {
-    let needed = PAGE_RESOURCE_MAP[path];
-    if (!needed || needed.length === 0) {
-      for (const [key, val] of Object.entries(PAGE_RESOURCE_MAP)) {
-        if (path.startsWith(key)) {
-          needed = val;
-          break;
+    if (!path) return [];
+    // 1. Direct exact match
+    if (PAGE_RESOURCE_MAP[path]) {
+      return PAGE_RESOURCE_MAP[path];
+    }
+    // 2. Pattern match for parameterized routes (e.g. :id)
+    for (const [key, val] of Object.entries(PAGE_RESOURCE_MAP)) {
+      if (key.includes(':')) {
+        const regexStr = '^' + key.replace(/:[a-zA-Z0-9_]+/g, '[^/]+') + '$';
+        if (new RegExp(regexStr).test(path)) {
+          return val;
         }
       }
     }
-    return needed || [];
+    // 3. Longest prefix match for subpaths (sorted by key length descending)
+    const sortedKeys = Object.keys(PAGE_RESOURCE_MAP)
+      .filter((k) => !k.includes(':'))
+      .sort((a, b) => b.length - a.length);
+    for (const key of sortedKeys) {
+      if (path.startsWith(key)) {
+        return PAGE_RESOURCE_MAP[key];
+      }
+    }
+    return [];
   }
 
   function ensureResourcesLoaded(path: string) {

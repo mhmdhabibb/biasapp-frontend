@@ -15,7 +15,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { currentUser } = useAuth()
-const { serviceReports, products, findCustomer, findTechnician, refreshInBackground } = useMasterStore()
+const { serviceReports, products, findCustomer, findTechnician, refreshInBackground, ensureResourcesLoaded } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
@@ -48,14 +48,21 @@ const fileInputBefore = ref<HTMLInputElement | null>(null)
 const fileInputProgress = ref<HTMLInputElement | null>(null)
 const fileInputAfter = ref<HTMLInputElement | null>(null)
 
-const productOptions = computed(() => [
-  ...products.value
-    .filter((product: any) => product.is_sparepart)
-    .map((product: any) => ({ value: product.id, label: product.name })),
-  { value: '__manual__', label: '➕ Tidak ada di database? Input manual...' }
-])
+const productOptions = computed(() => {
+  const list = products.value || []
+  const spareparts = list.filter((product: any) => product.is_sparepart)
+  const base = spareparts.length > 0 ? spareparts : list
+  return [
+    ...base.map((product: any) => ({
+      value: String(product.id),
+      label: `${product.name} ${product.sku ? `(${product.sku})` : ''}`.trim(),
+    })),
+    { value: '__manual__', label: '➕ Tidak ada di database? Input manual...' }
+  ]
+})
 
 onMounted(async () => {
+  ensureResourcesLoaded(route.path)
   // If job is already available in memory, initialize form instantly (0ms loading!)
   if (job.value) {
     form.value = {
