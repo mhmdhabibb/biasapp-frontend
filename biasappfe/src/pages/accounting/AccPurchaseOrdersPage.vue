@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
@@ -8,6 +8,7 @@ import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useResourcesStore } from '@/stores/resources.store'
+import { resources as apiResources } from '@/services/resource.service'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { useAuth } from '@/composables/useAuth'
@@ -99,7 +100,7 @@ async function triggerFetchRequest(id: string) {
   if (pendingFetches.has(`spr_${key}`)) return
   pendingFetches.add(`spr_${key}`)
   try {
-    const res = await resources.serviceSpareparts.get(id)
+    const res = await apiResources.serviceSpareparts.get(id)
     if (res?.data) {
       resolvedRequests[key] = res.data
       if (res.data.id) resolvedRequests[String(res.data.id).toLowerCase()] = res.data
@@ -124,7 +125,7 @@ async function triggerFetchRequest(id: string) {
 
   // Fallback 1: Try fetching as a Service Report
   try {
-    const resSr = await resources.serviceReports.get(id)
+    const resSr = await apiResources.serviceReports.get(id)
     if (resSr?.data) {
       const sr = resSr.data
       resolvedServiceReports[key] = sr
@@ -147,7 +148,7 @@ async function triggerFetchRequest(id: string) {
 
   // Fallback 2: Try fetching as a Customer
   try {
-    const resCust = await resources.customers.get(id)
+    const resCust = await apiResources.customers.get(id)
     if (resCust?.data) {
       resolvedCustomers[key] = resCust.data
       if (resCust.data.id) resolvedCustomers[String(resCust.data.id).toLowerCase()] = resCust.data
@@ -163,7 +164,7 @@ async function triggerFetchServiceReport(id: string) {
   if (pendingFetches.has(`sr_${key}`)) return
   pendingFetches.add(`sr_${key}`)
   try {
-    const res = await resources.serviceReports.get(id)
+    const res = await apiResources.serviceReports.get(id)
     if (res?.data) {
       resolvedServiceReports[key] = res.data
       if (res.data.id) resolvedServiceReports[String(res.data.id).toLowerCase()] = res.data
@@ -178,7 +179,7 @@ async function triggerFetchServiceReport(id: string) {
   } catch (err) {
     // Try serviceSpareparts if this was an SPR ID
     try {
-      const resSp = await resources.serviceSpareparts.get(id)
+      const resSp = await apiResources.serviceSpareparts.get(id)
       if (resSp?.data) {
         resolvedRequests[key] = resSp.data
         if (resSp.data.service_report) {
@@ -200,7 +201,7 @@ async function triggerFetchCustomer(id: string) {
   if (pendingFetches.has(`cust_${key}`)) return
   pendingFetches.add(`cust_${key}`)
   try {
-    const res = await resources.customers.get(id)
+    const res = await apiResources.customers.get(id)
     if (res?.data) {
       resolvedCustomers[key] = res.data
       if (res.data.id) resolvedCustomers[String(res.data.id).toLowerCase()] = res.data
@@ -643,6 +644,331 @@ async function printPO(po: any) {
   await printPurchaseOrder(enrichedPO, currentUser)
 }
 const printInvoice = printPO
+
+// --- EDIT REQUEST FORM (MRF) LOGIC ---
+interface MRFItem {
+  source_type: 'database' | 'manual'
+  product_id: string | null
+  item_name: string
+  qty: number
+  uom: string
+  unit_price: number
+  purpose: string
+}
+
+interface MRFStoreGroup {
+  store_name: string
+  virtual_account: string
+  items: MRFItem[]
+}
+
+const showEditModal = ref(false)
+const isSavingEdit = ref(false)
+const editingPO = ref<any>(null)
+
+const editForm = reactive({
+  po_id: '',
+  request_form_no: '',
+  order_date: new Date().toISOString().slice(0, 10),
+  installation_date: new Date().toISOString().slice(0, 10),
+  priority: 'Normal',
+  department: 'Technical / Service',
+  requester_name: '',
+  stores: [] as MRFStoreGroup[],
+  reason: '',
+  warehouse_status: 'Pengadaan Baru',
+  special_notes: '',
+})
+
+const availableProducts = computed(() => {
+  const prods = (store.products.value || store.products || []) as any[]
+  return [...prods].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+})
+
+const totalAllEditItems = computed(() => {
+  return (editForm.stores || []).reduce((sum, storeGroup) => {
+    return sum + (storeGroup.items || []).reduce((iSum, it) => {
+      return iSum + (Number(it.qty) || 0) * (Number(it.unit_price) || 0)
+    }, 0)
+  }, 0)
+})
+
+function addEditStoreGroup() {
+  const defaultPurpose = editForm.stores[0]?.items[0]?.purpose || ''
+  editForm.stores.push({
+    store_name: '',
+    virtual_account: '',
+    items: [
+      {
+        source_type: 'database',
+        product_id: null,
+        item_name: '',
+        qty: 1,
+        uom: 'Pcs',
+        unit_price: 0,
+        purpose: defaultPurpose,
+      },
+    ],
+  })
+}
+
+function removeEditStoreGroup(sIdx: number) {
+  if (editForm.stores.length > 1) {
+    editForm.stores.splice(sIdx, 1)
+  }
+}
+
+function addEditItemToStore(sIdx: number) {
+  const storeGroup = editForm.stores[sIdx]
+  if (!storeGroup) return
+  const defaultPurpose = storeGroup.items[0]?.purpose || editForm.stores[0]?.items[0]?.purpose || ''
+  storeGroup.items.push({
+    source_type: 'database',
+    product_id: null,
+    item_name: '',
+    qty: 1,
+    uom: 'Pcs',
+    unit_price: 0,
+    purpose: defaultPurpose,
+  })
+}
+
+function removeEditItemFromStore(sIdx: number, iIdx: number) {
+  const storeGroup = editForm.stores[sIdx]
+  if (storeGroup && storeGroup.items.length > 1) {
+    storeGroup.items.splice(iIdx, 1)
+  }
+}
+
+function onEditSourceTypeChange(item: MRFItem, type: 'database' | 'manual') {
+  item.source_type = type
+  if (type === 'manual') {
+    item.product_id = null
+  }
+}
+
+function onEditProductSelect(item: MRFItem, productId: any) {
+  item.product_id = productId || null
+  if (!productId) return
+  const prods = (store.products.value || store.products || []) as any[]
+  const prod = prods.find((p: any) => String(p.id) === String(productId))
+  if (prod) {
+    item.item_name = prod.name || ''
+    item.unit_price = Number(prod.price) || 0
+    item.uom = prod.uom?.name || (prod as any).unit || 'Pcs'
+  }
+}
+
+async function openEditModal(po: any) {
+  editingPO.value = po
+  editForm.po_id = String(po.id)
+  editForm.request_form_no = po.po_no || po.request_form_no || ''
+  editForm.order_date = po.order_date ? String(po.order_date).slice(0, 10) : new Date().toISOString().slice(0, 10)
+  editForm.installation_date = po.installation_date ? String(po.installation_date).slice(0, 10) : new Date().toISOString().slice(0, 10)
+  editForm.priority = po.priority || 'Normal'
+  editForm.department = po.department || 'Technical / Service'
+
+  const tech = getTechnicianName(po)
+  editForm.requester_name = tech || po.user?.name || 'Teknisi'
+  editForm.reason = getPOReason(po)
+  editForm.warehouse_status = po.warehouse_status || 'Pengadaan Baru'
+  editForm.special_notes = po.special_notes || ''
+
+  // Attempt to fetch fresh items if missing or not populated
+  let items = po.purchase_order_items || po.request_form_items || []
+  if ((!items || items.length === 0) && po.id) {
+    try {
+      const res = await apiResources.purchaseOrders.get(String(po.id))
+      const fullPO = res?.data as any
+      if (fullPO?.purchase_order_items || fullPO?.request_form_items) {
+        items = fullPO.purchase_order_items || fullPO.request_form_items
+      }
+    } catch (_) {}
+  }
+
+  const cust = resolvePOCustomer(po)
+  const unit = resolvePOUnit(po)
+  const sr = resolvePOServiceReport(po)
+  const defaultPurposeParts: string[] = []
+  if (unit) {
+    const sn = unit.serial_no || (unit as any).serial_number || ''
+    const model = unit.model || unit.name || ''
+    defaultPurposeParts.push(`${model}${sn ? ` (SN: ${sn})` : ''}`)
+  }
+  if (cust?.company_name || cust?.name) {
+    defaultPurposeParts.push(cust.company_name || cust.name)
+  }
+  if (sr?.report_no || (sr as any)?.service_report_no) {
+    defaultPurposeParts.push(`SR: ${sr.report_no || (sr as any).service_report_no}`)
+  }
+  const defaultPurpose = defaultPurposeParts.join(' - ') || 'Penggantian sparepart unit'
+
+  if (items && items.length > 0) {
+    const storeMap = new Map<string, any>()
+    for (const it of items) {
+      const sName = it.store_name || po.store_name || ''
+      const sVa = it.virtual_account || po.virtual_account || ''
+      const sKey = sName + '___' + sVa
+      if (!storeMap.has(sKey)) {
+        storeMap.set(sKey, {
+          store_name: sName,
+          virtual_account: sVa,
+          items: []
+        })
+      }
+      const prod = it.product || store.findProduct(it.product_id)
+      storeMap.get(sKey).items.push({
+        source_type: it.product_id ? 'database' : 'manual',
+        product_id: it.product_id || null,
+        item_name: it.item_name || prod?.name || '',
+        qty: it.qty || 1,
+        uom: it.uom || prod?.uom?.name || 'Pcs',
+        unit_price: it.unit_price || 0,
+        purpose: it.purpose || defaultPurpose,
+      })
+    }
+    editForm.stores = Array.from(storeMap.values())
+  } else {
+    editForm.stores = [
+      {
+        store_name: po.store_name || '',
+        virtual_account: po.virtual_account || '',
+        items: [
+          {
+            source_type: 'manual',
+            product_id: null,
+            item_name: po.reason ? `Sparepart (${po.reason})` : 'Sparepart',
+            qty: 1,
+            uom: 'Pcs',
+            unit_price: 0,
+            purpose: defaultPurpose,
+          }
+        ]
+      }
+    ]
+  }
+
+  showEditModal.value = true
+}
+
+function openEditModalFromDetail() {
+  if (detailPO.value) {
+    const target = detailPO.value
+    closeDetail()
+    openEditModal(target)
+  }
+}
+
+function closeEditModal() {
+  showEditModal.value = false
+  editingPO.value = null
+}
+
+async function handleSaveEdit() {
+  if (!editForm.po_id) return
+  if (!editForm.order_date) {
+    toast.warning('Tanggal Pengajuan harus diisi')
+    return
+  }
+  if (!editForm.installation_date) {
+    toast.warning('Tanggal Dibutuhkan harus diisi')
+    return
+  }
+  if (!editForm.reason.trim()) {
+    toast.warning('Alasan / justifikasi kebutuhan pengadaan harus diisi')
+    return
+  }
+
+  const purchaseOrderItems: any[] = []
+  const storeNamesSet = new Set<string>()
+  const vaSet = new Set<string>()
+
+  for (let sIdx = 0; sIdx < editForm.stores.length; sIdx++) {
+    const storeGroup = editForm.stores[sIdx]
+    const sName = (storeGroup.store_name || '').trim()
+    const sVa = (storeGroup.virtual_account || '').trim()
+
+    if (!sName) {
+      toast.warning(`Nama Toko / Supplier pada Toko #${sIdx + 1} harus diisi`)
+      return
+    }
+    storeNamesSet.add(sName)
+    if (sVa) vaSet.add(sVa)
+
+    if (!storeGroup.items || storeGroup.items.length === 0) {
+      toast.warning(`Toko #${sIdx + 1} (${sName}) harus memiliki minimal 1 barang`)
+      return
+    }
+
+    for (let iIdx = 0; iIdx < storeGroup.items.length; iIdx++) {
+      const it = storeGroup.items[iIdx]
+      if (it.source_type === 'database' && !it.product_id) {
+        toast.warning(`Pilih barang dari database pada Toko #${sIdx + 1}, Item #${iIdx + 1}`)
+        return
+      }
+      if (it.source_type === 'manual' && !it.item_name.trim()) {
+        toast.warning(`Nama barang manual pada Toko #${sIdx + 1}, Item #${iIdx + 1} harus diisi`)
+        return
+      }
+      const qty = Number(it.qty) || 0
+      if (qty < 1) {
+        toast.warning(`Volume (qty) pada Toko #${sIdx + 1}, Item #${iIdx + 1} minimal 1`)
+        return
+      }
+      const unitPrice = Number(it.unit_price) || 0
+      purchaseOrderItems.push({
+        item_name: it.item_name || 'Sparepart',
+        product_id: it.product_id || undefined,
+        qty,
+        uom: it.uom || 'Pcs',
+        unit_price: unitPrice,
+        total_price: qty * unitPrice,
+        purpose: it.purpose || undefined,
+        store_name: sName || undefined,
+        virtual_account: sVa || undefined,
+      })
+    }
+  }
+
+  const joinedStoreNames = Array.from(storeNamesSet).join(', ')
+  const joinedVAs = Array.from(vaSet).join(', ')
+
+  const payload = {
+    po_no: editForm.request_form_no || undefined,
+    request_form_no: editForm.request_form_no || undefined,
+    order_date: editForm.order_date ? `${editForm.order_date}T00:00:00+07:00` : new Date().toISOString(),
+    installation_date: `${editForm.installation_date}T00:00:00+07:00`,
+    priority: editForm.priority,
+    department: editForm.department,
+    reason: editForm.reason.trim(),
+    warehouse_status: editForm.warehouse_status,
+    special_notes: editForm.special_notes,
+    store_name: joinedStoreNames || undefined,
+    virtual_account: joinedVAs || undefined,
+    purchase_order_items: purchaseOrderItems,
+  }
+
+  isSavingEdit.value = true
+  try {
+    await resources.update('purchaseOrders', editForm.po_id, payload)
+    toast.success(`Request Form ${editForm.request_form_no || ''} berhasil diperbarui!`)
+    showEditModal.value = false
+    editingPO.value = null
+    await store.refreshInBackground()
+    if (detailPO.value && detailPO.value.id === editForm.po_id) {
+      try {
+        const refreshed = await apiResources.purchaseOrders.get(editForm.po_id)
+        if (refreshed?.data) {
+          detailPO.value = refreshed.data as any
+        }
+      } catch (_) {}
+    }
+  } catch (err) {
+    toast.error(toast.fromError(err, 'Failed to update request form'))
+  } finally {
+    isSavingEdit.value = false
+  }
+}
 </script>
 
 <template>
@@ -702,6 +1028,18 @@ const printInvoice = printPO
             <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
               <circle cx="12" cy="12" r="3" />
+            </svg>
+          </button>
+          <button
+            v-if="row.status !== 'cancelled' && row.status !== 'rejected' && row.status !== 'completed' && (can('purchase_order:update') || can('purchase_order:create'))"
+            class="action-btn action-btn--edit"
+            title="Edit Request Form"
+            @click="openEditModal(row)"
+            style="color: var(--color-warning, #f59e0b); width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
             </svg>
           </button>
           <button
@@ -910,6 +1248,14 @@ const printInvoice = printPO
           Batalkan Request Form
         </button>
         <button
+          v-if="detailPO && detailPO.status !== 'cancelled' && detailPO.status !== 'rejected' && detailPO.status !== 'completed' && (can('purchase_order:update') || can('purchase_order:create'))"
+          class="btn btn-outline"
+          style="color: var(--color-warning, #d97706); border-color: #fde68a;"
+          @click="openEditModalFromDetail"
+        >
+          Edit Request Form
+        </button>
+        <button
           v-if="detailPO && can('purchase_order:read')"
           class="btn btn-accent"
           @click="printPO(detailPO)"
@@ -929,6 +1275,311 @@ const printInvoice = printPO
       @confirm="confirmCancelPO"
       @close="showCancelConfirm = false"
     />
+
+    <!-- Edit Request Form Modal (Material Requisition Form) -->
+    <FormModal
+      :open="showEditModal"
+      :title="`Edit Request Form (${editForm.request_form_no || 'Form'})`"
+      max-width="720px"
+      :submit-label="isSavingEdit ? 'Menyimpan...' : 'Simpan Perubahan'"
+      @close="closeEditModal"
+      @submit="handleSaveEdit"
+    >
+      <div class="mrf-form-container">
+        <!-- Section A: Informasi Pemohon -->
+        <div class="mrf-section-header">A. INFORMASI PEMOHON</div>
+        <div class="mrf-grid">
+          <div class="form-group">
+            <label class="form-label">Nomor Form</label>
+            <input v-model="editForm.request_form_no" type="text" class="form-input" placeholder="e.g. Bi-MRF-001" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tanggal Pengajuan <span class="text-danger">*</span></label>
+            <input v-model="editForm.order_date" type="date" class="form-input" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nama Pemohon</label>
+            <input v-model="editForm.requester_name" type="text" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Divisi / Departemen</label>
+            <input v-model="editForm.department" type="text" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tanggal Dibutuhkan <span class="text-danger">*</span></label>
+            <input v-model="editForm.installation_date" type="date" class="form-input" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tingkat Prioritas</label>
+            <select v-model="editForm.priority" class="form-input">
+              <option value="Normal">Normal</option>
+              <option value="Mendesak">Mendesak</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Section B: Detail Barang yang Diminta -->
+        <div class="mrf-section-header" style="margin-top: 14px;">
+          B. DETAIL BARANG YANG DIMINTA
+        </div>
+
+        <!-- Loop Groups Per Toko -->
+        <div class="mrf-stores-list" style="display: flex; flex-direction: column; gap: 14px; margin-top: 8px;">
+          <div
+            v-for="(storeGroup, sIdx) in editForm.stores"
+            :key="sIdx"
+            class="mrf-store-card"
+            style="border: 1.5px solid #94a3b8; border-radius: 8px; background: #f8fafc; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);"
+          >
+            <!-- Header Toko -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; background: #1e4e79; color: #fff; border-radius: 4px; font-weight: bold; font-size: 11px;">
+                  {{ sIdx + 1 }}
+                </span>
+                <span style="font-weight: 700; font-size: 13px; color: #1e3a8a;">
+                  Toko / Supplier #{{ sIdx + 1 }}
+                </span>
+              </div>
+              <button
+                v-if="editForm.stores.length > 1"
+                type="button"
+                class="btn btn-xs"
+                @click="removeEditStoreGroup(sIdx)"
+                title="Hapus toko ini beserta barangnya"
+                style="color: #ef4444; border: 1px solid #fecaca; background: #fef2f2; padding: 3px 8px; font-size: 11px; border-radius: 4px; cursor: pointer;"
+              >
+                ✕ Hapus Toko
+              </button>
+            </div>
+
+            <!-- Field Toko & VA -->
+            <div class="mrf-grid" style="margin-bottom: 12px;">
+              <div class="form-group mb-0">
+                <label class="form-label">Nama Toko / Supplier <span class="text-danger">*</span></label>
+                <input
+                  v-model="storeGroup.store_name"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. Toko Berkah Batam / Tokopedia..."
+                  required
+                />
+              </div>
+              <div class="form-group mb-0">
+                <label class="form-label">Virtual Account / No. Rekening</label>
+                <input
+                  v-model="storeGroup.virtual_account"
+                  type="text"
+                  class="form-input"
+                  placeholder="No. Virtual Account atau rekening pembayaran..."
+                />
+              </div>
+            </div>
+
+            <!-- Header Daftar Barang Toko -->
+            <div style="font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
+              Daftar Barang dari Toko Ini ({{ storeGroup.items.length }} Item):
+            </div>
+
+            <!-- List Barang Toko Ini -->
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div
+                v-for="(item, iIdx) in storeGroup.items"
+                :key="iIdx"
+                class="mrf-item-card"
+                style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; background: #ffffff;"
+              >
+                <!-- Item Card Header: Item No & Mode Switcher -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-weight: 700; font-size: 12px; color: #1e3a8a;">
+                      Item #{{ iIdx + 1 }}
+                    </span>
+                    <!-- Switch Mode Tarik DB / Input Manual -->
+                    <div style="display: inline-flex; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; background: #f1f5f9;">
+                      <button
+                        type="button"
+                        @click="onEditSourceTypeChange(item, 'database')"
+                        :style="{
+                          padding: '3px 8px',
+                          fontSize: '11px',
+                          fontWeight: item.source_type === 'database' ? '700' : '400',
+                          background: item.source_type === 'database' ? '#1e4e79' : 'transparent',
+                          color: item.source_type === 'database' ? '#ffffff' : '#475569',
+                          border: 'none',
+                          cursor: 'pointer'
+                        }"
+                      >
+                        📦 Tarik dari Database
+                      </button>
+                      <button
+                        type="button"
+                        @click="onEditSourceTypeChange(item, 'manual')"
+                        :style="{
+                          padding: '3px 8px',
+                          fontSize: '11px',
+                          fontWeight: item.source_type === 'manual' ? '700' : '400',
+                          background: item.source_type === 'manual' ? '#1e4e79' : 'transparent',
+                          color: item.source_type === 'manual' ? '#ffffff' : '#475569',
+                          border: 'none',
+                          cursor: 'pointer'
+                        }"
+                      >
+                        ✏️ Input Manual
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    v-if="storeGroup.items.length > 1"
+                    type="button"
+                    class="btn btn-xs"
+                    @click="removeEditItemFromStore(sIdx, iIdx)"
+                    title="Hapus barang ini"
+                    style="color: #ef4444; border: 1px solid #fecaca; background: #fef2f2; padding: 2px 8px; font-size: 11px; border-radius: 4px; cursor: pointer;"
+                  >
+                    ✕ Hapus
+                  </button>
+                </div>
+
+                <!-- Form Fields Barang -->
+                <div class="mrf-grid">
+                  <!-- Mode Database: Select Product -->
+                  <div v-if="item.source_type === 'database'" class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Pilih Barang dari Database <span class="text-danger">*</span></label>
+                    <select
+                      :value="item.product_id"
+                      @change="onEditProductSelect(item, ($event.target as HTMLSelectElement).value)"
+                      class="form-input"
+                      required
+                    >
+                      <option value="">-- Pilih Sparepart / Barang --</option>
+                      <option
+                        v-for="p in availableProducts"
+                        :key="p.id"
+                        :value="p.id"
+                      >
+                        {{ p.name }} {{ p.sku ? `(${p.sku})` : '' }} {{ p.price ? `- Rp ${p.price.toLocaleString('id-ID')}` : '' }}
+                      </option>
+                    </select>
+                    <div v-if="item.item_name" style="font-size: 11px; color: #166534; margin-top: 3px;">
+                      ✓ Terpilih: <strong>{{ item.item_name }}</strong>
+                    </div>
+                  </div>
+
+                  <!-- Mode Manual: Input Text Free -->
+                  <div v-else class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Nama Barang &amp; Spesifikasi Teknis <span class="text-danger">*</span></label>
+                    <input
+                      v-model="item.item_name"
+                      type="text"
+                      class="form-input"
+                      placeholder="Ketik nama sparepart / spesifikasi teknis barang..."
+                      required
+                    />
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label">Volume (Qty) <span class="text-danger">*</span></label>
+                    <input v-model.number="item.qty" type="number" min="1" class="form-input" required />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Satuan</label>
+                    <input v-model="item.uom" type="text" class="form-input" placeholder="Pcs / Unit / Set" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Estimasi Harga Satuan (Rp)</label>
+                    <input v-model.number="item.unit_price" type="number" min="0" class="form-input" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Total Estimasi (Rp)</label>
+                    <input
+                      :value="((Number(item.qty) || 0) * (Number(item.unit_price) || 0)).toLocaleString('id-ID')"
+                      type="text"
+                      class="form-input"
+                      disabled
+                      style="background: #f8fafc; font-weight: bold;"
+                    />
+                  </div>
+                  <div class="form-group" style="grid-column: span 2;">
+                    <label class="form-label">Keperluan / Peruntukan</label>
+                    <input v-model="item.purpose" type="text" class="form-input" placeholder="e.g. Unit IR-2006 SN: 123 - Customer X" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tombol Tambah Barang dari Toko Ini -->
+            <div style="margin-top: 10px; display: flex; justify-content: flex-start;">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-primary"
+                @click="addEditItemToStore(sIdx)"
+                style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px;"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                + Tambah Barang dari Toko Ini
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tombol Tambah Toko Lain & Total Keseluruhan -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding: 12px; background: #f1f5f9; border-radius: 6px; border: 1.5px dashed #94a3b8;">
+          <button
+            type="button"
+            class="btn btn-sm btn-primary"
+            @click="addEditStoreGroup"
+            style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            + Tambah Toko Lain
+          </button>
+          <div style="text-align: right;">
+            <span style="font-size: 11px; color: #64748b; margin-right: 8px;">Total Estimasi Keseluruhan:</span>
+            <span style="font-size: 15px; font-weight: 800; color: #0f172a;">Rp {{ totalAllEditItems.toLocaleString('id-ID') }}</span>
+          </div>
+        </div>
+
+        <!-- Section C: Justifikasi / Alasan Kebutuhan Pengadaan -->
+        <div class="mrf-section-header" style="margin-top: 14px;">JUSTIFIKASI / ALASAN KEBUTUHAN PENGADAAN</div>
+        <div class="form-group" style="margin-top: 6px;">
+          <div class="text-muted text-xs" style="margin-bottom: 6px; font-style: italic;">
+            Tuliskan alasan pengadaan barang (misal: penggantian inventaris lama rusak, penambahan kebutuhan staf baru, operasional proyek, dll):
+          </div>
+          <textarea
+            v-model="editForm.reason"
+            class="form-input"
+            rows="3"
+            required
+            placeholder="Alasan pembuatan Request Form..."
+            style="width: 100%;"
+          ></textarea>
+        </div>
+
+        <!-- Section D: Verifikasi Internal -->
+        <div class="mrf-section-header" style="margin-top: 14px;">VERIFIKASI INTERNAL</div>
+        <div class="mrf-grid" style="margin-top: 6px;">
+          <div class="form-group">
+            <label class="form-label">Status Stok Gudang</label>
+            <select v-model="editForm.warehouse_status" class="form-input">
+              <option value="Pengadaan Baru">Pengadaan Baru</option>
+              <option value="Tersedia di Stok">Tersedia di Stok</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Catatan Khusus</label>
+            <input v-model="editForm.special_notes" type="text" class="form-input" placeholder="Catatan tambahan (opsional)" />
+          </div>
+        </div>
+      </div>
+    </FormModal>
   </div>
 </template>
 
@@ -1119,5 +1770,36 @@ const printInvoice = printPO
   line-height: 1.5;
   color: var(--color-text);
   white-space: pre-wrap;
+}
+
+/* Material Requisition Form Modal Styles */
+.mrf-form-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mrf-section-header {
+  background-color: #1e4e79;
+  color: #ffffff;
+  font-weight: bold;
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+}
+.mrf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+.text-danger {
+  color: var(--color-danger, #ef4444);
+}
+.text-xs {
+  font-size: 11px;
+}
+.font-semibold {
+  font-weight: 600;
 }
 </style>

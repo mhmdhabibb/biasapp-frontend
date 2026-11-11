@@ -132,6 +132,12 @@ function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })
 }
 
+function formatJobNo(job: any) {
+  if (!job) return '-'
+  const no = job.job_order_no || job.service_request?.request_no || '-'
+  return no.replace(/^JOV/, 'CPR')
+}
+
 // ── Photo handling ────────────────────────────────────────────────────────
 function triggerPhoto(type: 'before' | 'progress' | 'after', source: 'camera' | 'file' = 'file') {
   if (type === 'before') {
@@ -409,7 +415,7 @@ async function completeJob() {
       <div v-else class="maint-job-list">
         <div v-for="job in activeJobs" :key="job.id" class="maint-job-row" @click="openJob(job)">
           <div class="maint-job-main">
-            <div class="maint-job-no">{{ job.job_order_no }}</div>
+            <div class="maint-job-no">{{ formatJobNo(job) }}</div>
             <div class="maint-job-meta">
               <span>{{ getCustomerName(jobCustomerId(job)) }}</span>
               <span class="maint-dot">·</span>
@@ -439,7 +445,7 @@ async function completeJob() {
       <div class="maint-job-list">
         <div v-for="job in completedJobs" :key="job.id" class="maint-job-row maint-job-row--done" @click="openJob(job)">
           <div class="maint-job-main">
-            <div class="maint-job-no">{{ job.job_order_no }}</div>
+            <div class="maint-job-no">{{ formatJobNo(job) }}</div>
             <div class="maint-job-meta">
               <span>{{ getCustomerName(jobCustomerId(job)) }}</span>
               <span class="maint-dot">·</span>
@@ -459,7 +465,7 @@ async function completeJob() {
           <!-- Header -->
           <div class="mf-header">
             <div>
-              <div class="mf-header-no">{{ selectedJob.job_order_no }}</div>
+              <div class="mf-header-no">{{ formatJobNo(selectedJob) }}</div>
               <div class="mf-header-sub">Maintenance Form</div>
             </div>
             <button class="mf-close" @click="showForm = false">
@@ -477,7 +483,7 @@ async function completeJob() {
             <div class="mf-info-grid">
               <div class="mf-info-field">
                 <span class="mf-info-label">Maintenance Number</span>
-                <span class="mf-info-value mf-info-value--primary">{{ selectedJob.job_order_no }}</span>
+                <span class="mf-info-value mf-info-value--primary">{{ formatJobNo(selectedJob) }}</span>
               </div>
               <div class="mf-info-field">
                 <span class="mf-info-label">Scheduled Date</span>

@@ -48,7 +48,10 @@ export async function getJobOrderHtml(job: any, autoPrint: boolean = false): Pro
 
   const logoSrc = BIAS_LOGO_DATA_URL || biasLogoUrl;
 
-  const jobNo = fullJob.job_order_no || `JO-${fullJob.id || 'NEW'}`;
+  let jobNo = fullJob.job_order_no || `JO-${fullJob.id || 'NEW'}`;
+  if (fullJob.job_type === 'visit' || String(jobNo).startsWith('JOV') || fullJob.service_report?.service_type === 'copier') {
+    jobNo = fullJob.service_report?.report_no || jobNo.replace(/^JOV/, 'CPR');
+  }
   const jobType = (fullJob.job_type || 'service').toUpperCase();
   const status = (fullJob.status || 'PENDING').toUpperCase().replace(/_/g, ' ');
 
@@ -59,7 +62,13 @@ export async function getJobOrderHtml(job: any, autoPrint: boolean = false): Pro
     || '-';
 
   const custName = customer.company_name || customer.name || "-";
-  const custAddress = customer.address || fullJob.delivery_order?.delivery_address || "-";
+  const custAddress = fullJob.delivery_order?.delivery_address
+    || fullJob.delivery_order?.rental?.installation_address
+    || fullJob.delivery_order?.sale?.installation_address
+    || fullJob.rental?.installation_address
+    || fullJob.sale?.installation_address
+    || customer.address
+    || "-";
   const custPic = customer.pic_name || fullJob.delivery_order?.recipient_name || "-";
   const custPhone = customer.phone || fullJob.delivery_order?.recipient_phone || "-";
 

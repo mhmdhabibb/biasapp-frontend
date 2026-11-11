@@ -27,6 +27,8 @@ const {
   jobOrders,
   contractItems,
   deliveryOrders,
+  rents,
+  sales,
   findCustomer,
   findUnit,
   findProduct,
@@ -133,6 +135,77 @@ const isVisitJob = computed(() => {
 })
 const deliveryOrder = computed(() => (job.value as any)?.delivery_order || null)
 const doCustomer = computed(() => deliveryOrder.value?.customer || findCustomer(deliveryOrder.value?.customer_id || null) || null)
+
+const displayJobOrderNo = computed(() => {
+  const j: any = job.value
+  if (!j) return '-'
+  if (isVisitJob.value || String(j.job_order_no || '').startsWith('JOV') || (serviceReport.value as any)?.service_type === 'copier') {
+    return (serviceReport.value as any)?.report_no || (j.job_order_no ? j.job_order_no.replace(/^JOV/, 'CPR') : 'CPR')
+  }
+  return (j.job_order_no || j.service_request?.request_no || j.delivery_order?.do_number || j.survey?.survey_no || '-').replace(/^JOV/, 'CPR')
+})
+
+const resolvedDeliveryAddress = computed(() => {
+  const d: any = deliveryOrder.value
+  const j: any = job.value
+  const custId = String(customer.value?.id || doCustomer.value?.id || j?.customer_id || j?.service_request?.customer_id || '')
+  const uid = String(unit.value?.id || j?.unit_id || j?.service_request?.unit_id || '')
+
+  // 1. Direct from delivery order if set
+  if (d?.delivery_address && String(d.delivery_address).trim()) {
+    return String(d.delivery_address).trim()
+  }
+
+  // 2. From linked rental on DO
+  if (d?.rental?.installation_address && String(d.rental.installation_address).trim()) {
+    return String(d.rental.installation_address).trim()
+  }
+  if (d?.rental_id) {
+    const r = ((rents?.value || []) as any[]).find((rent: any) => String(rent.id) === String(d.rental_id))
+    if (r?.installation_address && String(r.installation_address).trim()) return String(r.installation_address).trim()
+  }
+
+  // 3. From linked sale on DO
+  if (d?.sale?.installation_address && String(d.sale.installation_address).trim()) {
+    return String(d.sale.installation_address).trim()
+  }
+  if (d?.sale_id) {
+    const s = ((sales?.value || []) as any[]).find((sale: any) => String(sale.id) === String(d.sale_id))
+    if (s?.installation_address && String(s.installation_address).trim()) return String(s.installation_address).trim()
+  }
+
+  // 4. Match rents by unit ID
+  if (uid) {
+    const r = ((rents?.value || []) as any[]).find((rent: any) =>
+      (rent.rental_items || []).some((ri: any) => String(ri.unit_id) === uid) ||
+      String(rent.unit_id) === uid
+    )
+    if (r?.installation_address && String(r.installation_address).trim()) return String(r.installation_address).trim()
+  }
+
+  // 5. Match sales by unit ID
+  if (uid) {
+    const s = ((sales?.value || []) as any[]).find((sale: any) =>
+      (sale.sale_items || []).some((si: any) => String(si.unit_id) === uid)
+    )
+    if (s?.installation_address && String(s.installation_address).trim()) return String(s.installation_address).trim()
+  }
+
+  // 6. Match rents by customer ID
+  if (custId) {
+    const r = ((rents?.value || []) as any[]).find((rent: any) => String(rent.customer_id) === custId && String(rent.installation_address || '').trim())
+    if (r?.installation_address && String(r.installation_address).trim()) return String(r.installation_address).trim()
+  }
+
+  // 7. Match sales by customer ID
+  if (custId) {
+    const s = ((sales?.value || []) as any[]).find((sale: any) => String(sale.customer_id) === custId && String(sale.installation_address || '').trim())
+    if (s?.installation_address && String(s.installation_address).trim()) return String(s.installation_address).trim()
+  }
+
+  // 8. Fallback to customer general address
+  return customer.value?.address || doCustomer.value?.address || '-'
+})
 const doItems = computed(() => deliveryOrder.value?.delivery_order_items || [])
 function doItemLabel(item: any): string {
   if (item?.unit_id) {
@@ -723,7 +796,7 @@ async function createStandalone() {
     let finalProjectName = pickName(d?.project_name, sr?.project_name, job.value?.service_request?.project_name)
     if (!finalProjectName && isDeliveryJob.value) {
       const summary = productSummary(d)
-      const addr = d?.delivery_address || sr?.customer?.address || ''
+      const addr = resolvedDeliveryAddress.value !== '-' ? resolvedDeliveryAddress.value : (d?.delivery_address || sr?.customer?.address || '')
       finalProjectName = addr ? `Pengantaran ${summary} ke ${addr}` : `Pengantaran ${summary}`
     }
 
@@ -733,7 +806,7 @@ async function createStandalone() {
         customer_id: custId,
         customer_category: d?.customer_category || sr?.customer_category || 'Corporate',
         project_name: finalProjectName,
-        delivery_address: d?.delivery_address || sr?.customer?.address || '',
+        delivery_address: resolvedDeliveryAddress.value !== '-' ? resolvedDeliveryAddress.value : (d?.delivery_address || sr?.customer?.address || ''),
         recipient_name: d?.recipient_name || sr?.customer?.pic_name || '',
         recipient_phone: d?.recipient_phone || sr?.customer?.phone || '',
         technician_id: techId,
@@ -1031,7 +1104,7 @@ function handleSurveyPhoto(e: Event) {
         <div class="info-list">
           <div class="info-item">
             <span class="info-label">Job Order No</span>
-            <span class="info-value font-bold">{{ job.job_order_no }}</span>
+            <span class="info-value font-bold">{{ displayJobOrderNo }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">DO Number</span>
@@ -1043,7 +1116,7 @@ function handleSurveyPhoto(e: Event) {
           </div>
           <div class="info-item">
             <span class="info-label">Delivery Address</span>
-            <span class="info-value">{{ deliveryOrder?.delivery_address || '-' }}</span>
+            <span class="info-value">{{ resolvedDeliveryAddress }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">Recipient & Contact</span>
@@ -1299,7 +1372,7 @@ function handleSurveyPhoto(e: Event) {
         <div class="info-list">
           <div class="info-item">
             <span class="info-label">Job Order No</span>
-            <span class="info-value font-bold">{{ job.job_order_no }}</span>
+            <span class="info-value font-bold">{{ displayJobOrderNo }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">Customer</span>
@@ -1307,7 +1380,7 @@ function handleSurveyPhoto(e: Event) {
           </div>
           <div class="info-item">
             <span class="info-label">Address</span>
-            <span class="info-value">{{ customer?.address || '-' }}</span>
+            <span class="info-value">{{ resolvedDeliveryAddress }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">PIC & Contact</span>
@@ -1578,7 +1651,7 @@ function handleSurveyPhoto(e: Event) {
               <div class="confirm-info-card">
                 <div class="confirm-info-row">
                   <span class="confirm-info-label">Job Order</span>
-                  <span class="confirm-info-value">{{ job?.job_order_no }}</span>
+                  <span class="confirm-info-value">{{ displayJobOrderNo }}</span>
                 </div>
                 <div class="confirm-info-row">
                   <span class="confirm-info-label">Customer</span>
@@ -1619,7 +1692,7 @@ function handleSurveyPhoto(e: Event) {
               <div class="confirm-info-card">
                 <div class="confirm-info-row">
                   <span class="confirm-info-label">Job Order</span>
-                  <span class="confirm-info-value">{{ job?.job_order_no }}</span>
+                  <span class="confirm-info-value">{{ displayJobOrderNo }}</span>
                 </div>
                 <div class="confirm-info-row">
                   <span class="confirm-info-label">Customer</span>

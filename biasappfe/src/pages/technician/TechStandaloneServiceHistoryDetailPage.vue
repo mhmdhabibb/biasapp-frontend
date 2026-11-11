@@ -654,7 +654,7 @@ onMounted(async () => {
         <div class="info-item"><span class="info-label">Customer</span><span class="info-value">{{ customer?.company_name || customer?.name || '-' }}</span></div>
         <div class="info-item"><span class="info-label">Tipe Customer</span><span class="info-value">{{ item.customer_category || customer?.category || '-' }}</span></div>
         <div class="info-item"><span class="info-label">Project Name</span><span class="info-value font-bold">{{ item.project_name || '-' }}</span></div>
-        <div class="info-item"><span class="info-label">Alamat</span><span class="info-value">{{ item.delivery_address || customer?.address || '-' }}</span></div>
+        <div class="info-item"><span class="info-label">Alamat</span><span class="info-value">{{ item.delivery_address || item.rental?.installation_address || item.sale?.installation_address || customer?.address || '-' }}</span></div>
         <div class="info-item"><span class="info-label">PIC & Kontak</span><span class="info-value">{{ item.recipient_name || customer?.pic_name || '-' }} ({{ item.recipient_phone || customer?.phone || '-' }})</span></div>
         <div class="info-item"><span class="info-label">Tanggal</span><span class="info-value">{{ item.delivery_date ? new Date(item.delivery_date).toLocaleDateString('en-GB') : '-' }}</span></div>
         <div class="info-item"><span class="info-label">Teknisi Bertugas</span><span class="info-value font-bold">{{ store.findTechnician(item.technician_id)?.user?.name || store.findTechnician(item.technician_id)?.name || item.technician_name || '-' }}</span></div>

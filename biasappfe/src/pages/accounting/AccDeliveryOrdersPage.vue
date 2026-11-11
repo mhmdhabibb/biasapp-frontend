@@ -45,6 +45,7 @@ const columns: TableColumn[] = [
   { key: 'do_number', label: 'DO Number' },
   { key: 'do_type', label: 'Type' },
   { key: 'delivery_date', label: 'Date' },
+  { key: 'po_no', label: 'PO No' },
   { key: 'purchase_order_id', label: 'PO Ref' },
   { key: 'status', label: 'Status' }
 ]
@@ -52,6 +53,11 @@ const columns: TableColumn[] = [
 function getPONo(id: number | null) {
   const po = store.purchaseOrders.value.find(p => p.id === id)
   return po ? po.po_no : '-'
+}
+
+function resolvePoNo(item: any) {
+  if (!item) return '-'
+  return item.po_no || item.purchase_order?.po_no || item.rental?.po_no || item.sale?.po_no || (item.purchase_order_id ? getPONo(item.purchase_order_id) : '') || '-'
 }
 
 function getReference(item: ProcurementDeliveryOrder) {
@@ -183,6 +189,9 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       <template #cell-delivery_date="{ value }">
         {{ (value && new Date(value).getFullYear() > 2000) ? new Date(value).toLocaleDateString() : '-' }}
       </template>
+      <template #cell-po_no="{ row }">
+        <span class="font-mono text-sm">{{ resolvePoNo(row) }}</span>
+      </template>
       <template #cell-purchase_order_id="{ value }">
         <span class="font-mono text-sm">{{ getPONo(value) }}</span>
       </template>
@@ -269,6 +278,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       <template v-if="detailItem">
         <div class="detail-grid">
           <div class="detail-field"><span>DO Number</span><strong>{{ detailItem.do_number }}</strong></div>
+          <div class="detail-field"><span>PO No</span><strong class="font-mono">{{ resolvePoNo(detailItem) }}</strong></div>
           <div class="detail-field"><span>Type</span><strong>{{ (detailItem.do_type || '-').toUpperCase() }}</strong></div>
           <div class="detail-field"><span>Date</span><strong>{{ detailItem.delivery_date ? new Date(detailItem.delivery_date).toLocaleDateString() : '-' }}</strong></div>
           <div class="detail-field"><span>{{ detailItem.rental_id ? 'Rental Reference' : 'PO Reference' }}</span><strong>{{ getReference(detailItem) }}</strong></div>

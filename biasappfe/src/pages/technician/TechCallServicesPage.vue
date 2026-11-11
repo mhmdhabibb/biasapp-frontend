@@ -69,7 +69,31 @@ function jobUnitId(job: any) {
 }
 
 function jobRefNo(job: any): string {
-  return job.survey?.survey_no || job.service_request?.request_no || job.delivery_order?.do_number || job.service_report?.report_no || job.job_order_no || '-'
+  const isVisit =
+    job.job_type === "visit" ||
+    job.taskType === "visit" ||
+    job.service_report?.service_type === "copier" ||
+    String(job.job_order_no || "").startsWith("JOV") ||
+    String(job.instructions || "").toLowerCase().includes("copier");
+
+  if (isVisit) {
+    if (job.service_report?.report_no) {
+      return job.service_report.report_no;
+    }
+    if (job.job_order_no) {
+      return job.job_order_no.replace(/^JOV/, "CPR");
+    }
+    return "CPR";
+  }
+
+  const raw =
+    job.survey?.survey_no ||
+    job.service_request?.request_no ||
+    job.delivery_order?.do_number ||
+    job.job_order_no ||
+    job.service_report?.report_no ||
+    "-";
+  return raw.replace(/^JOV/, "CPR");
 }
 
 function jobDate(job: any): string {

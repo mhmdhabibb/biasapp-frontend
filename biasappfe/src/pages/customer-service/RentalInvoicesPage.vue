@@ -452,6 +452,7 @@ function renderRentalInvoiceBody(item: any): string {
     meterDetails,
     poNo,
     ci,
+    rentalItem,
   } = assetInfo
 
   const baseRentalFee = item.base_rental_fee || item.basis_rental_fee || 0
@@ -523,6 +524,15 @@ function renderRentalInvoiceBody(item: any): string {
     )
     const hasExplicitPaperSize = hasConfiguredPaperSize || distinctSizes.size > 1
 
+    // 2-Sided meter readings dari item, contract item, atau rental item
+    const bwDblStart = Number(item.meter_start_bw_double || item.start_meter_bw_double || item.counter_awal_bw_double || ci?.start_meter_bw_double || rentalItem?.start_meter_bw_double || 0)
+    const bwDblEnd = Number(item.meter_end_bw_double || item.end_meter_bw_double || item.counter_akhir_bw_double || item.gross_counter_bw_double || (bwDblStart > 0 ? bwDblStart : 0))
+    const bwDblTotal = Math.max(0, bwDblEnd - bwDblStart)
+
+    const colDblStart = Number(item.meter_start_color_double || item.start_meter_color_double || item.counter_awal_color_double || ci?.start_meter_color_double || rentalItem?.start_meter_color_double || 0)
+    const colDblEnd = Number(item.meter_end_color_double || item.end_meter_color_double || item.counter_akhir_color_double || item.gross_counter_color_double || (colDblStart > 0 ? colDblStart : 0))
+    const colDblTotal = Math.max(0, colDblEnd - colDblStart)
+
     if (meterDetails.length > 0) {
       const byPaperSize = new Map<string, any[]>()
       for (const detail of meterDetails) {
@@ -568,6 +578,23 @@ function renderRentalInvoiceBody(item: any): string {
           meterBlocksHtml += renderMeterBlock(`Colour${sizeLabel}`, start, last, free, total, net)
           chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges Colour${sizeLabel}`, d.rate_per_page || 0, d.total_amount || 0)
         }
+
+        // Tampilkan 2-Sided meter jika ada detail 2-sided khusus (tanpa charge row karena tidak ada harga)
+        const dblDetails = details.filter((d: any) => /double|2-?sided|duplex/i.test(d.color_mode || ''))
+        for (const d of dblDetails) {
+          const start = d.start_meter_reading || 0
+          const last = d.last_meter_reading || 0
+          const total = d.total_copies ?? (last - start)
+          meterBlocksHtml += renderMeterBlock(`2-Sided${sizeLabel}`, start, last, 0, total, total)
+        }
+      }
+
+      // Tampilkan meter 2-sided tracking (tanpa biaya / charge row)
+      if (bwDblStart > 0 || bwDblEnd > 0 || bwDblTotal > 0) {
+        meterBlocksHtml += renderMeterBlock(`B/W (2-Sided)`, bwDblStart, bwDblEnd, 0, bwDblTotal, bwDblTotal)
+      }
+      if (colDblStart > 0 || colDblEnd > 0 || colDblTotal > 0) {
+        meterBlocksHtml += renderMeterBlock(`Colour (2-Sided)`, colDblStart, colDblEnd, 0, colDblTotal, colDblTotal)
       }
     } else {
       // Standar copier meter readings (persis foto invoice)
@@ -596,6 +623,14 @@ function renderRentalInvoiceBody(item: any): string {
         const colAmount = colBillable * colRate
         meterBlocksHtml += renderMeterBlock(`Colour${sizeSuffix}`, colStart, colEnd, colFree, colTotal, colNet)
         chargeRowsHtml += renderChargeRow(3, `Copies Charges Colour${sizeSuffix}`, colRate, colAmount)
+      }
+
+      // Tampilkan meter 2-sided tracking (tanpa biaya / charge row)
+      if (bwDblStart > 0 || bwDblEnd > 0 || bwDblTotal > 0) {
+        meterBlocksHtml += renderMeterBlock(`B/W (2-Sided)`, bwDblStart, bwDblEnd, 0, bwDblTotal, bwDblTotal)
+      }
+      if (colDblStart > 0 || colDblEnd > 0 || colDblTotal > 0) {
+        meterBlocksHtml += renderMeterBlock(`Colour (2-Sided)`, colDblStart, colDblEnd, 0, colDblTotal, colDblTotal)
       }
     }
   }
@@ -912,7 +947,7 @@ async function exportInvoicesToExcel(
 
   for (const item of sortedItems) {
     const assetInfo = resolveInvoiceAsset(item)
-    const { isCopier, assetCategory, brandModel, serialNo, custName, custAddress, picDisplay, poNo, signer, ci } = assetInfo
+    const { isCopier, assetCategory, brandModel, serialNo, custName, custAddress, picDisplay, poNo, signer, ci, rentalItem } = assetInfo
 
     const rows: StyledCell[][] = []
     const addRow = (r: StyledCell[] = []) => rows.push(r)
@@ -1140,6 +1175,22 @@ async function exportInvoicesToExcel(
           const col = pushMeterSection(`Colour${sizeSuffix}`, colorStart, colorEnd, colorFree)
           chargeRow(`Copies Charges Colour${sizeSuffix}`, colorRate, col.billable * colorRate)
         }
+      }
+
+      // 2-Sided meter readings dari item, contract item, atau rental item
+      const bwDblStart = Number(item.meter_start_bw_double || item.start_meter_bw_double || item.counter_awal_bw_double || ci?.start_meter_bw_double || rentalItem?.start_meter_bw_double || 0)
+      const bwDblEnd = Number(item.meter_end_bw_double || item.end_meter_bw_double || item.counter_akhir_bw_double || item.gross_counter_bw_double || (bwDblStart > 0 ? bwDblStart : 0))
+      const bwDblTotal = Math.max(0, bwDblEnd - bwDblStart)
+
+      const colDblStart = Number(item.meter_start_color_double || item.start_meter_color_double || item.counter_awal_color_double || ci?.start_meter_color_double || rentalItem?.start_meter_color_double || 0)
+      const colDblEnd = Number(item.meter_end_color_double || item.end_meter_color_double || item.counter_akhir_color_double || item.gross_counter_color_double || (colDblStart > 0 ? colDblStart : 0))
+      const colDblTotal = Math.max(0, colDblEnd - colDblStart)
+
+      if (bwDblStart > 0 || bwDblEnd > 0 || bwDblTotal > 0) {
+        pushMeterSection('B/W (2-Sided)', bwDblStart, bwDblEnd, 0, bwDblTotal)
+      }
+      if (colDblStart > 0 || colDblEnd > 0 || colDblTotal > 0) {
+        pushMeterSection('Colour (2-Sided)', colDblStart, colDblEnd, 0, colDblTotal)
       }
     }
 
@@ -1500,7 +1551,7 @@ async function buildAtlasGreatSheetsForInvoices(
           const bwDblGross = Number(r.gross_counter_bw_double || 0)
           const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross)
           const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
-          if (bwDblAkhir > 0 || bwDblGross > 0) {
+          if (bwDblAkhir > 0 || bwDblGross > 0 || bwDblAwal > 0) {
             addRow([
               { v: '2S', style: 'borderCenter' },
               { v: '↳ Black & White (2-Sided)', style: 'border' },
@@ -1518,7 +1569,7 @@ async function buildAtlasGreatSheetsForInvoices(
           const colDblGross = Number(r.gross_counter_color_double || 0)
           const colDblAkhir = Number(r.counter_akhir_color_double || colDblGross)
           const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
-          if (colDblAkhir > 0 || colDblGross > 0) {
+          if (colDblAkhir > 0 || colDblGross > 0 || colDblAwal > 0) {
             addRow([
               { v: '2S', style: 'borderCenter' },
               { v: '↳ Colour (2-Sided)', style: 'border' },
@@ -1620,7 +1671,7 @@ async function buildAtlasGreatSheetsForInvoices(
           const bwDblGross = Number(r.gross_counter_bw_double || 0)
           const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross)
           const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
-          if (bwDblAkhir > 0 || bwDblGross > 0) {
+          if (bwDblAkhir > 0 || bwDblGross > 0 || bwDblAwal > 0) {
             addRow([
               { v: '2S', style: 'borderCenter' },
               { v: '↳ Black & White (2-Sided)', style: 'border' },
@@ -1636,7 +1687,7 @@ async function buildAtlasGreatSheetsForInvoices(
           const colDblGross = Number(r.gross_counter_color_double || 0)
           const colDblAkhir = Number(r.counter_akhir_color_double || colDblGross)
           const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
-          if (colDblAkhir > 0 || colDblGross > 0) {
+          if (colDblAkhir > 0 || colDblGross > 0 || colDblAwal > 0) {
             addRow([
               { v: '2S', style: 'borderCenter' },
               { v: '↳ Colour (2-Sided)', style: 'border' },

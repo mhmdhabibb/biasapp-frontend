@@ -725,6 +725,20 @@ function getBrandName(id: string | null): string {
   return b ? b.name : "";
 }
 
+const brandOptions = computed(() =>
+  ((brands.value as any[]) || []).map((b: any) => ({
+    value: b.id,
+    label: b.name,
+  }))
+);
+
+const unitTypeOptions = computed(() =>
+  ((unitTypes.value as any[]) || []).map((t: any) => ({
+    value: t.id,
+    label: t.name,
+  }))
+);
+
 function isUnitPrinterOrCopier(
   typeId: string | null,
   isCopier = false,
@@ -1770,6 +1784,20 @@ async function handleSubmit() {
 
 function formatRupiah(val: number): string {
   return "Rp " + (val || 0).toLocaleString("id-ID");
+}
+
+function formatRupiahInput(val: any): string {
+  if (val === null || val === undefined || val === "") return "";
+  const num = Number(val);
+  return Number.isFinite(num) && num > 0 ? num.toLocaleString("id-ID") : "";
+}
+
+function onRentalFeeInput(item: any, event: Event) {
+  const target = event.target as HTMLInputElement;
+  const rawDigits = target.value.replace(/\D/g, "");
+  const num = rawDigits ? parseInt(rawDigits, 10) : 0;
+  item.monthly_rent = num;
+  target.value = num > 0 ? num.toLocaleString("id-ID") : "";
 }
 
 function formatExportAmount(value: unknown): string {
@@ -2974,7 +3002,7 @@ function isExpired(row: any): boolean {
                     display: block;
                     margin-bottom: 2px;
                   "
-                  >Starting Meter</span
+                  >Starting Meter (1-Sided)</span
                 >
                 <div style="font-size: 0.9em; font-weight: 500">
                   <span v-if="item.start_meter_bw > 0"
@@ -2988,6 +3016,46 @@ function isExpired(row: any): boolean {
                   <span v-if="item.start_meter_color > 0"
                     >Color:
                     {{ item.start_meter_color.toLocaleString("id-ID") }}</span
+                  >
+                </div>
+              </div>
+              <div
+                v-if="
+                  (item.start_meter_bw_double || 0) > 0 ||
+                  (item.start_meter_color_double || 0) > 0
+                "
+              >
+                <span
+                  style="
+                    font-size: 0.85em;
+                    color: var(--color-text-secondary);
+                    display: block;
+                    margin-bottom: 2px;
+                  "
+                  >Starting Meter (2-Sided)</span
+                >
+                <div style="font-size: 0.9em; font-weight: 500">
+                  <span v-if="(item.start_meter_bw_double || 0) > 0"
+                    >BW:
+                    {{
+                      (item.start_meter_bw_double || 0).toLocaleString("id-ID")
+                    }}</span
+                  >
+                  <span
+                    v-if="
+                      (item.start_meter_bw_double || 0) > 0 &&
+                      (item.start_meter_color_double || 0) > 0
+                    "
+                  >
+                    |
+                  </span>
+                  <span v-if="(item.start_meter_color_double || 0) > 0"
+                    >Color:
+                    {{
+                      (item.start_meter_color_double || 0).toLocaleString(
+                        "id-ID",
+                      )
+                    }}</span
                   >
                 </div>
               </div>
@@ -3015,6 +3083,63 @@ function isExpired(row: any): boolean {
                     {{ item.free_quota_color.toLocaleString("id-ID") }}</span
                   >
                 </div>
+              </div>
+            </div>
+
+            <div
+              v-if="
+                item.additional_paper_meters &&
+                item.additional_paper_meters.length > 0
+              "
+              style="
+                margin-top: 10px;
+                padding: 8px;
+                background: var(--color-surface);
+                border-radius: 6px;
+                border: 1px solid var(--color-border-light);
+              "
+            >
+              <span
+                style="
+                  font-size: 0.85em;
+                  font-weight: 600;
+                  color: var(--color-text-secondary);
+                  display: block;
+                  margin-bottom: 4px;
+                  text-transform: uppercase;
+                "
+                >Ukuran Kertas Tambahan (Meters)</span
+              >
+              <div
+                v-for="(apm, apmIdx) in item.additional_paper_meters"
+                :key="apmIdx"
+                style="font-size: 0.85em; margin-bottom: 4px"
+              >
+                <strong>{{ paperSizeName(apm.paper_size_id) }}:</strong>
+                <span
+                  v-if="
+                    (apm.start_meter_bw || 0) > 0 ||
+                    (apm.start_meter_color || 0) > 0
+                  "
+                >
+                  1-Sided (BW:
+                  {{ (apm.start_meter_bw || 0).toLocaleString("id-ID") }}, Color:
+                  {{ (apm.start_meter_color || 0).toLocaleString("id-ID") }})
+                </span>
+                <span
+                  v-if="
+                    (apm.start_meter_bw_double || 0) > 0 ||
+                    (apm.start_meter_color_double || 0) > 0
+                  "
+                >
+                  • 2-Sided (BW:
+                  {{
+                    (apm.start_meter_bw_double || 0).toLocaleString("id-ID")
+                  }}, Color:
+                  {{
+                    (apm.start_meter_color_double || 0).toLocaleString("id-ID")
+                  }})
+                </span>
               </div>
             </div>
 
@@ -3917,30 +4042,24 @@ function isExpired(row: any): boolean {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Brand</label>
-              <select
+              <CustomSelect
                 v-model="item.new_unit.brand_id"
-                class="form-input"
-                required
-              >
-                <option value="">-- Brand --</option>
-                <option v-for="b in brands as any" :key="b.id" :value="b.id">
-                  {{ b.name }}
-                </option>
-              </select>
+                :options="brandOptions"
+                placeholder="-- Brand --"
+                :searchable="true"
+                class="form-select"
+              />
             </div>
             <div class="form-group">
               <label class="form-label">Tipe Unit</label>
-              <select
+              <CustomSelect
                 v-model="item.new_unit.type_id"
-                class="form-input"
-                required
-                @change="onNewUnitTypeChange(item)"
-              >
-                <option value="">-- Tipe --</option>
-                <option v-for="t in unitTypes as any" :key="t.id" :value="t.id">
-                  {{ t.name }}
-                </option>
-              </select>
+                :options="unitTypeOptions"
+                placeholder="-- Tipe --"
+                :searchable="true"
+                class="form-select"
+                @update:modelValue="onNewUnitTypeChange(item)"
+              />
             </div>
           </div>
           <div
@@ -4140,10 +4259,11 @@ function isExpired(row: any): boolean {
           <div class="form-group">
             <label class="form-label">Rental Fee / Month (Rp)</label>
             <input
-              v-model.number="item.monthly_rent"
-              type="number"
+              :value="formatRupiahInput(item.monthly_rent)"
+              @input="onRentalFeeInput(item, $event)"
+              type="text"
               class="form-input"
-              min="0"
+              placeholder="Contoh: 2.000.000"
               required
             />
           </div>

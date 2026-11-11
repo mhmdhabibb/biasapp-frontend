@@ -90,6 +90,14 @@ function customerName(id: any): string {
   const c: any = findCustomer(id)
   return c ? (c.company_name || c.name || '-') : '-'
 }
+function rowAddress(row: any): string {
+  if (!row) return '-'
+  if (row.delivery_address && String(row.delivery_address).trim()) return String(row.delivery_address).trim()
+  if (row.rental?.installation_address && String(row.rental.installation_address).trim()) return String(row.rental.installation_address).trim()
+  if (row.sale?.installation_address && String(row.sale.installation_address).trim()) return String(row.sale.installation_address).trim()
+  const c: any = findCustomer(row.customer_id)
+  return c?.address || '-'
+}
 function techName(id: any): string {
   const t: any = findTechnician(id)
   return t ? (t.user?.name || t.name || '-') : '-'
@@ -338,7 +346,7 @@ async function saveAssign() {
               </td>
               <td>
                 <div class="font-bold">{{ customerName(row.customer_id) }}</div>
-                <div class="text-xs text-muted">{{ row.delivery_address || '-' }}</div>
+                <div class="text-xs text-muted">{{ rowAddress(row) }}</div>
               </td>
               <td class="td-nowrap">{{ row.delivery_date ? new Date(row.delivery_date).toLocaleDateString('en-GB') : '-' }}</td>
               <td>
@@ -445,9 +453,9 @@ async function saveAssign() {
           </div>
 
           <div class="m-sa-body">
-            <div class="m-row" v-if="row.delivery_address">
+            <div class="m-row" v-if="rowAddress(row) !== '-'">
               <span class="m-label">Address:</span>
-              <span class="m-val">{{ row.delivery_address }}</span>
+              <span class="m-val">{{ rowAddress(row) }}</span>
             </div>
             <div class="m-row">
               <span class="m-label">Date:</span>
@@ -590,7 +598,7 @@ async function saveAssign() {
           <div class="assign-info-box" v-if="assigningRow">
             <div><strong>DO:</strong> {{ assigningRow.do_number }}</div>
             <div><strong>Customer:</strong> {{ customerName(assigningRow.customer_id) }}</div>
-            <div v-if="assigningRow.delivery_address"><strong>Address:</strong> {{ assigningRow.delivery_address }}</div>
+            <div v-if="rowAddress(assigningRow) !== '-'"><strong>Address:</strong> {{ rowAddress(assigningRow) }}</div>
           </div>
 
           <div class="assign-form-grid">

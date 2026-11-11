@@ -115,7 +115,22 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
 
   const customer: any = masterStore.findCustomer(fullItem.customer_id) || {};
   const custName = customer.company_name || customer.name || "-";
-  const custAddress = customer.address || "-";
+  const rentsList = ((masterStore.rents?.value || masterStore.rents || []) as any[]);
+  const salesList = ((masterStore.sales?.value || masterStore.sales || []) as any[]);
+  const linkedRental = fullItem.rental || rentsList.find((r: any) => String(r.id) === String(fullItem.rental_id));
+  const linkedSale = fullItem.sale || salesList.find((s: any) => String(s.id) === String(fullItem.sale_id));
+
+  const poNo = fullItem.po_no 
+    || fullItem.purchase_order?.po_no 
+    || linkedRental?.po_no 
+    || linkedSale?.po_no 
+    || "-";
+
+  const custAddress = fullItem.delivery_address 
+    || linkedRental?.installation_address 
+    || linkedSale?.installation_address 
+    || customer.address 
+    || "-";
   const custPhone = customer.phone || "-";
   const pic = customer.pic_name || "-";
   const gender = customer.pic_gender;
@@ -322,7 +337,7 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
               <table class="meta-table">
                 <tr><td>Date</td><td>${dateStr}</td></tr>
                 <tr><td>DO No.</td><td>${fullItem.do_number || "-"}</td></tr>
-                <tr><td>PO No.</td><td>${fullItem.purchase_order?.po_no || "-"}</td></tr>
+                <tr><td>PO No.</td><td>${poNo}</td></tr>
                 <tr><td colspan="2" style="border-right: none; font-weight: bold; background: #f0f0f0;">${custName}</td></tr>
                 <tr><td colspan="2" style="border-right: none; border-bottom: 1px solid #0066cc;">${custAddress}</td></tr>
                 <tr><td>PIC</td><td>${picDisplay}</td></tr>

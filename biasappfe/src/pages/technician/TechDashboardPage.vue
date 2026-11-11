@@ -145,6 +145,42 @@ function getUnitName(unitId: string | null) {
 function goToDetail(id: number) {
   router.push(`/technician/call-services/${id}`);
 }
+
+function getDisplayJobNo(job: any): string {
+  if (!job) return "-";
+  const isVisit =
+    job.job_type === "visit" ||
+    job.taskType === "visit" ||
+    job.service_report?.service_type === "copier" ||
+    String(job.job_order_no || "").startsWith("JOV") ||
+    String(job.instructions || "").toLowerCase().includes("copier");
+
+  if (isVisit) {
+    if (job.service_report?.report_no) {
+      return job.service_report.report_no;
+    }
+    if (job.job_order_no) {
+      return job.job_order_no.replace(/^JOV/, "CPR");
+    }
+    return "CPR";
+  }
+
+  if (job.delivery_order?.do_number && (job.job_type === "delivery" || !job.job_order_no)) {
+    return job.delivery_order.do_number;
+  }
+
+  if (job.survey?.survey_no && (job.job_type === "survey" || !job.job_order_no)) {
+    return job.survey.survey_no;
+  }
+
+  return (
+    job.job_order_no ||
+    job.service_request?.request_no ||
+    job.delivery_order?.do_number ||
+    job.survey?.survey_no ||
+    "-"
+  ).replace(/^JOV/, "CPR");
+}
 </script>
 
 <template>
@@ -397,7 +433,7 @@ function goToDetail(id: number) {
           @click="goToDetail(job.id)"
         >
           <div class="job-card-header">
-            <span class="job-number">{{ job.job_order_no }}</span>
+            <span class="job-number">{{ getDisplayJobNo(job) }}</span>
             <span
               class="badge"
               :class="
