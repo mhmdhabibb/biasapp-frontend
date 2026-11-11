@@ -1324,34 +1324,40 @@ function openDetail(item: any) {
 }
 
 function printAtlasSlip(item: any) {
-  const printWindow = window.open('', '_blank', 'width=980,height=800')
-  if (!printWindow) {
-    toast.error('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak.')
-    return
-  }
+  try {
+    const printWindow = window.open('', '_blank', 'width=980,height=800')
+    if (!printWindow) {
+      toast.error('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak.')
+      return
+    }
 
-  const custName = getCustomerName(item.customer)
-  const unitModel = getUnitDisplayName(item)
-  const unitSN = getUnitSN(item)
-  const branchLoc = item.customer?.address || '20242 (Cab.Batam)'
-  const deductions = getItemDeductions(item)
-  const bwA3 = deductions.reduce((sum, d) => sum + d.bw, 0)
-  const colA3 = deductions.reduce((sum, d) => sum + d.color, 0)
-  const bwGross = Number(item.gross_counter_bw || (Number(item.counter_akhir_bw || 0) + bwA3))
-  const colGross = Number(item.gross_counter_color || (Number(item.counter_akhir_color || 0) + colA3))
-  const bwAkhir = Number(item.counter_akhir_bw || (bwGross - bwA3))
-  const colAkhir = Number(item.counter_akhir_color || (colGross - colA3))
-  const totalPages = bwGross + colGross
+    const c = item.customer || (customers.value || []).find((cust: any) => cust.id === item.customer_id)
+    const custName = (c ? getCustomerName(c) : '') || 'Atlas Copco'
+    const unitModel = getUnitDisplayName(item)
+    const unitSN = getUnitSN(item)
+    const branchLoc = c?.address || item.customer?.address || '20242 (Cab.Batam)'
+    const deductions = getItemDeductions(item) || []
+    const bwA3 = deductions.reduce((sum, d) => sum + Number(d.bw || 0), 0)
+    const colA3 = deductions.reduce((sum, d) => sum + Number(d.color || 0), 0)
+    const bwGross = Number(item.gross_counter_bw || (Number(item.counter_akhir_bw || 0) + bwA3))
+    const colGross = Number(item.gross_counter_color || (Number(item.counter_akhir_color || 0) + colA3))
+    const bwAkhir = Number(item.counter_akhir_bw || (bwGross - bwA3))
+    const colAkhir = Number(item.counter_akhir_color || (colGross - colA3))
+    const totalPages = bwGross + colGross
 
-  const bwAwal = Number(item.counter_awal_bw || 0)
-  const colAwal = Number(item.counter_awal_color || 0)
-  const bwPemakaian = Number(item.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
-  const colPemakaian = Number(item.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+    const bwAwal = Number.isFinite(Number(item.counter_awal_bw)) ? Number(item.counter_awal_bw) : 0
+    const colAwal = Number.isFinite(Number(item.counter_awal_color)) ? Number(item.counter_awal_color) : 0
+    const bwPemakaian = Number.isFinite(Number(item.pemakaian_bw_dasar)) ? Number(item.pemakaian_bw_dasar) : Math.max(0, bwAkhir - bwAwal)
+    const colPemakaian = Number.isFinite(Number(item.pemakaian_color_dasar)) ? Number(item.pemakaian_color_dasar) : Math.max(0, colAkhir - colAwal)
 
-  const printDateStr = item.period_date
-    ? new Date(item.period_date).toLocaleDateString('en-GB') + ' 00:00:00'
-    : '30/03/2023 00:00:00'
-  const signerName = currentUser.value?.name || currentUser.value?.username || 'Tim Accounting'
+    let printDateStr = '30/03/2023 00:00:00'
+    if (item.period_date) {
+      const d = new Date(item.period_date)
+      if (!isNaN(d.getTime())) {
+        printDateStr = d.toLocaleDateString('en-GB') + ' 00:00:00'
+      }
+    }
+    const signerName = currentUser.value?.name || currentUser.value?.username || 'Tim Accounting'
 
   const html = `<!DOCTYPE html>
 <html>
@@ -2010,45 +2016,74 @@ function printAtlasSlip(item: any) {
 </body>
 </html>`
 
-  printWindow.document.write(html)
-  printWindow.document.close()
+    printWindow.document.write(html)
+    printWindow.document.close()
+  } catch (err: any) {
+    console.error('Error printing Atlas slip:', err)
+    toast.error('Gagal mencetak slip Atlas: ' + (err?.message || 'Error'))
+  }
 }
 
 function printGreatSlip(item: any) {
-  const printWindow = window.open('', '_blank', 'width=980,height=800')
-  if (!printWindow) {
-    toast.error('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak.')
-    return
-  }
+  try {
+    const printWindow = window.open('', '_blank', 'width=980,height=800')
+    if (!printWindow) {
+      toast.error('Pop-up browser diblokir. Harap izinkan pop-up untuk mencetak.')
+      return
+    }
 
-  const custName = getCustomerName(item.customer)
-  const unitModel = getUnitDisplayName(item)
-  const unitSN = getUnitSN(item)
-  const periodStr = item.period_label || (item.period_date ? new Date(item.period_date).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' }) : '-')
+    const c = item.customer || (customers.value || []).find((cust: any) => cust.id === item.customer_id)
+    const custName = (c ? getCustomerName(c) : '') || 'PT Great Eastern'
+    const unitModel = getUnitDisplayName(item)
+    const unitSN = getUnitSN(item)
 
-  const bwAwal = Number(item.counter_awal_bw || 0)
-  const bwAkhir = Number(item.counter_akhir_bw || 0)
-  const bwPemakaian = Number(item.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+    let periodStr = item.period_label || '-'
+    if (periodStr === '-' && item.period_date) {
+      const d = new Date(item.period_date)
+      if (!isNaN(d.getTime())) {
+        periodStr = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+      }
+    }
 
-  const colAwal = Number(item.counter_awal_color || 0)
-  const colAkhir = Number(item.counter_akhir_color || 0)
-  const colPemakaian = Number(item.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+    const bwAwal = Number.isFinite(Number(item.counter_awal_bw)) ? Number(item.counter_awal_bw) : 0
+    const bwAkhir = Number.isFinite(Number(item.counter_akhir_bw)) ? Number(item.counter_akhir_bw) : 0
+    const bwPemakaian = Number.isFinite(Number(item.pemakaian_bw_dasar)) ? Number(item.pemakaian_bw_dasar) : Math.max(0, bwAkhir - bwAwal)
 
-  const pctBW = Number(item.percentage_bw || 88)
-  const pctCol = Number(item.percentage_color || 12)
-  const allocBW = Number(item.allocation_bw || (colPemakaian * (pctBW / 100)))
-  const allocCol = Number(item.allocation_color || (colPemakaian * (pctCol / 100)))
+    const colAwal = Number.isFinite(Number(item.counter_awal_color)) ? Number(item.counter_awal_color) : 0
+    const colAkhir = Number.isFinite(Number(item.counter_akhir_color)) ? Number(item.counter_akhir_color) : 0
+    const colPemakaian = Number.isFinite(Number(item.pemakaian_color_dasar)) ? Number(item.pemakaian_color_dasar) : Math.max(0, colAkhir - colAwal)
 
-  const totalBW = Number(item.total_bw || (bwPemakaian + allocBW))
-  const totalCol = Number(item.total_color || allocCol)
+    const pctBW = Number.isFinite(Number(item.percentage_bw)) ? Number(item.percentage_bw) : 88
+    const pctCol = Number.isFinite(Number(item.percentage_color)) ? Number(item.percentage_color) : 12
+    const allocBW = Number.isFinite(Number(item.allocation_bw)) ? Number(item.allocation_bw) : Math.round(colPemakaian * (pctBW / 100) * 100) / 100
+    const allocCol = Number.isFinite(Number(item.allocation_color)) ? Number(item.allocation_color) : Math.round(colPemakaian * (pctCol / 100) * 100) / 100
 
-  const printDateStr = item.period_date
-    ? new Date(item.period_date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-    : new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    const totalBW = Number.isFinite(Number(item.total_bw)) ? Number(item.total_bw) : Math.round((bwPemakaian + allocBW) * 100) / 100
+    const totalCol = Number.isFinite(Number(item.total_color)) ? Number(item.total_color) : allocCol
 
-  const signerName = currentUser.value?.name || currentUser.value?.username || 'Accounting / Admin'
+    const hasDouble = (Number(item.counter_akhir_bw_double || item.counter_awal_bw_double || item.gross_counter_bw_double) > 0) ||
+                      (Number(item.counter_akhir_color_double || item.counter_awal_color_double || item.gross_counter_color_double) > 0)
+    const bwDblAwal = Number(item.counter_awal_bw_double || 0)
+    const bwDblGross = Number(item.gross_counter_bw_double || 0)
+    const bwDblAkhir = Number(item.counter_akhir_bw_double || bwDblGross)
+    const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
 
-  const html = `<!DOCTYPE html>
+    const colDblAwal = Number(item.counter_awal_color_double || 0)
+    const colDblGross = Number(item.gross_counter_color_double || 0)
+    const colDblAkhir = Number(item.counter_akhir_color_double || colDblGross)
+    const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
+
+    let printDateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    if (item.period_date) {
+      const d = new Date(item.period_date)
+      if (!isNaN(d.getTime())) {
+        printDateStr = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+      }
+    }
+
+    const signerName = currentUser.value?.name || currentUser.value?.username || 'Accounting / Admin'
+
+    const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -2151,6 +2186,20 @@ function printGreatSlip(item: any) {
         <td>${colAkhir.toLocaleString('id-ID')}</td>
         <td style="font-weight: 700;">${colPemakaian.toLocaleString('id-ID')}</td>
       </tr>
+      ${hasDouble ? `
+      <tr style="background: #f8fafc; font-style: italic;">
+        <td>&nbsp;&nbsp;↳ Black &amp; White (2-Sided)</td>
+        <td>${bwDblAwal.toLocaleString('id-ID')}</td>
+        <td>${bwDblAkhir.toLocaleString('id-ID')}</td>
+        <td style="font-weight: 600;">${bwDblUsage.toLocaleString('id-ID')}</td>
+      </tr>
+      <tr style="background: #f8fafc; font-style: italic;">
+        <td>&nbsp;&nbsp;↳ Colour (2-Sided)</td>
+        <td>${colDblAwal.toLocaleString('id-ID')}</td>
+        <td>${colDblAkhir.toLocaleString('id-ID')}</td>
+        <td style="font-weight: 600;">${colDblUsage.toLocaleString('id-ID')}</td>
+      </tr>
+      ` : ''}
     </tbody>
   </table>
 
@@ -2174,6 +2223,12 @@ function printGreatSlip(item: any) {
       <span>TOTAL LEMBAR AKHIR COLOR (Color Murni):</span>
       <span style="color: #7c3aed;">${totalCol.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Lembar</span>
     </div>
+    ${hasDouble ? `
+    <div class="calc-row" style="font-size: 11px; color: #475569; margin-top: 8px; padding-top: 6px; border-top: 1px dotted #bbf7d0;">
+      <span>Pemakaian Cetak 2-Sided (Duplex Tracking):</span>
+      <span>BW: <strong>${bwDblUsage.toLocaleString('id-ID')}</strong> | Colour: <strong>${colDblUsage.toLocaleString('id-ID')}</strong> Lembar</span>
+    </div>
+    ` : ''}
   </div>
 
   <div class="signatures">
@@ -2201,8 +2256,12 @@ function printGreatSlip(item: any) {
 </body>
 </html>`
 
-  printWindow.document.write(html)
-  printWindow.document.close()
+    printWindow.document.write(html)
+    printWindow.document.close()
+  } catch (err: any) {
+    console.error('Error printing Great slip:', err)
+    toast.error('Gagal mencetak slip Great: ' + (err?.message || 'Error'))
+  }
 }
 
 function printSlip(item: any) {
@@ -2229,9 +2288,13 @@ function exportCSV() {
     'Periode',
     'Awal BW',
     'Akhir BW',
+    'Awal BW 2-Sided',
+    'Akhir BW 2-Sided',
     'Pemakaian Dasar BW',
     'Awal CL',
     'Akhir CL',
+    'Awal CL 2-Sided',
+    'Akhir CL 2-Sided',
     'Pemakaian Dasar CL',
     '% Alokasi BW',
     '% Alokasi CL',
@@ -2241,26 +2304,34 @@ function exportCSV() {
     'Catatan',
   ]
 
-  const rows = filteredReadings.value.map((r, i) => [
-    i + 1,
-    `"${getCustomerName(r.customer)}"`,
-    r.customer_type === 'standard' ? 'Standar' : `Alokasi (${r.percentage_bw}:${r.percentage_color})`,
-    `"${getUnitDisplayName(r)}"`,
-    `"${getUnitSN(r)}"`,
-    `"${r.period_label || ''}"`,
-    r.counter_awal_bw,
-    r.counter_akhir_bw,
-    r.pemakaian_bw_dasar,
-    r.counter_awal_color,
-    r.counter_akhir_color,
-    r.pemakaian_color_dasar,
-    r.percentage_bw,
-    r.percentage_color,
-    r.allocation_bw,
-    r.total_bw,
-    r.total_color,
-    `"${r.notes || ''}"`,
-  ])
+  const rows = filteredReadings.value.map((r, i) => {
+    const c = r.customer || (customers.value || []).find((cust: any) => cust.id === r.customer_id)
+    const cName = getCustomerName(c) || (r.customer_type === 'atlas' ? 'Atlas Copco' : 'PT Great Eastern')
+    return [
+      i + 1,
+      `"${cName}"`,
+      r.customer_type === 'standard' ? 'Standar' : `Alokasi (${r.percentage_bw}:${r.percentage_color})`,
+      `"${getUnitDisplayName(r)}"`,
+      `"${getUnitSN(r)}"`,
+      `"${r.period_label || ''}"`,
+      r.counter_awal_bw,
+      r.counter_akhir_bw,
+      r.counter_awal_bw_double || 0,
+      r.counter_akhir_bw_double || r.gross_counter_bw_double || 0,
+      r.pemakaian_bw_dasar,
+      r.counter_awal_color,
+      r.counter_akhir_color,
+      r.counter_awal_color_double || 0,
+      r.counter_akhir_color_double || r.gross_counter_color_double || 0,
+      r.pemakaian_color_dasar,
+      r.percentage_bw,
+      r.percentage_color,
+      r.allocation_bw,
+      r.total_bw,
+      r.total_color,
+      `"${r.notes || ''}"`,
+    ]
+  })
 
   const csvContent =
     'data:text/csv;charset=utf-8,\uFEFF' +
@@ -2290,7 +2361,10 @@ async function exportExcel() {
     const grouped = new Map<string, { customer: any; custName: string; readings: any[] }>()
     for (const r of filteredReadings.value) {
       const c = r.customer || (customers.value || []).find((cust: any) => cust.id === r.customer_id)
-      const cName = getCustomerName(c)
+      let cName = getCustomerName(c)
+      if (!cName || cName === '-') {
+        cName = (r.customer_type === 'atlas' || isAtlasTab) ? 'Atlas Copco' : 'PT Great Eastern'
+      }
       const cId = r.customer_id || c?.id || cName
       if (!grouped.has(cId)) {
         grouped.set(cId, { customer: c, custName: cName, readings: [] })
@@ -2301,7 +2375,12 @@ async function exportExcel() {
     const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
 
     for (const [, grp] of grouped) {
-      const sheetName = uniqueSheetName(grp.custName || (isAtlasTab ? 'Atlas Copco' : 'PT Great Eastern'), usedSheetNames)
+      const defaultTitle = isAtlasTab ? 'Atlas Copco' : 'PT Great Eastern'
+      let custTitle = grp.custName
+      if (!custTitle || custTitle === '-' || custTitle === 'Customer') {
+        custTitle = defaultTitle
+      }
+      const sheetName = uniqueSheetName(custTitle, usedSheetNames)
       const columnWidths = isAtlasTab
         ? [5.5, 24, 15, 16, 16, 16, 16, 26, 16, 18]
         : [5.5, 24, 16, 16, 16, 26, 16, 18]
@@ -2439,6 +2518,47 @@ async function exportExcel() {
             { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
           ])
 
+          const hasDouble = (Number(r.counter_akhir_bw_double || r.counter_awal_bw_double || r.gross_counter_bw_double) > 0) ||
+                            (Number(r.counter_akhir_color_double || r.counter_awal_color_double || r.gross_counter_color_double) > 0)
+          if (hasDouble) {
+            const bwDblAwal = Number(r.counter_awal_bw_double || 0)
+            const bwDblGross = Number(r.gross_counter_bw_double || 0)
+            const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross)
+            const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
+            if (bwDblAkhir > 0 || bwDblGross > 0) {
+              addRow([
+                { v: '2S', style: 'borderCenter' },
+                { v: '↳ Black & White (2-Sided)', style: 'border' },
+                { v: bwDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: bwDblGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: bwDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: '2-Sided Tracking', style: 'borderCenter' },
+                { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              ])
+            }
+            const colDblAwal = Number(r.counter_awal_color_double || 0)
+            const colDblGross = Number(r.gross_counter_color_double || 0)
+            const colDblAkhir = Number(r.counter_akhir_color_double || colDblGross)
+            const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
+            if (colDblAkhir > 0 || colDblGross > 0) {
+              addRow([
+                { v: '2S', style: 'borderCenter' },
+                { v: '↳ Colour (2-Sided)', style: 'border' },
+                { v: colDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: colDblGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: colDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: '2-Sided Tracking', style: 'borderCenter' },
+                { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              ])
+            }
+          }
+
           addRow([
             { v: 'SUBTOTAL LEMBAR', mergeAcross: 5, style: 'totalCell' },
             ...padEmpty(5),
@@ -2513,6 +2633,43 @@ async function exportExcel() {
             { v: allocCol, style: 'borderRight', numFmt: NUMFMT_COUNT },
             { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
           ])
+
+          const hasDouble = (Number(r.counter_akhir_bw_double || r.counter_awal_bw_double || r.gross_counter_bw_double) > 0) ||
+                            (Number(r.counter_akhir_color_double || r.counter_awal_color_double || r.gross_counter_color_double) > 0)
+          if (hasDouble) {
+            const bwDblAwal = Number(r.counter_awal_bw_double || 0)
+            const bwDblGross = Number(r.gross_counter_bw_double || 0)
+            const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross)
+            const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
+            if (bwDblAkhir > 0 || bwDblGross > 0) {
+              addRow([
+                { v: '2S', style: 'borderCenter' },
+                { v: '↳ Black & White (2-Sided)', style: 'border' },
+                { v: bwDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: bwDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: '2-Sided Tracking', style: 'borderCenter' },
+                { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              ])
+            }
+            const colDblAwal = Number(r.counter_awal_color_double || 0)
+            const colDblGross = Number(r.gross_counter_color_double || 0)
+            const colDblAkhir = Number(r.counter_akhir_color_double || colDblGross)
+            const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
+            if (colDblAkhir > 0 || colDblGross > 0) {
+              addRow([
+                { v: '2S', style: 'borderCenter' },
+                { v: '↳ Colour (2-Sided)', style: 'border' },
+                { v: colDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: colDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: '2-Sided Tracking', style: 'borderCenter' },
+                { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+                { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              ])
+            }
+          }
 
           addRow([
             { v: 'SUBTOTAL LEMBAR', mergeAcross: 3, style: 'totalCell' },
@@ -2750,6 +2907,9 @@ async function exportExcel() {
           <div class="text-xs">
             <span class="text-slate-500">Akhir:</span> <strong>{{ Number(item.counter_akhir_bw || 0).toLocaleString() }}</strong>
           </div>
+          <div v-if="Number(item.counter_akhir_bw_double || item.counter_awal_bw_double || item.gross_counter_bw_double) > 0" class="text-[10px] text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded border border-indigo-100 font-mono mt-0.5">
+            2-S: {{ Number(item.counter_awal_bw_double || 0).toLocaleString() }} → {{ Number(item.counter_akhir_bw_double || item.gross_counter_bw_double || 0).toLocaleString() }}
+          </div>
           <div v-if="activeTab === 'atlas' && (Number(item.gross_counter_bw) > 0 || Number(item.a3_counter_bw) > 0)" class="text-[10px] text-slate-500 mt-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 font-mono">
             Gross: {{ Number(item.gross_counter_bw || 0).toLocaleString() }} | {{ getDeductionSummary(item, 'bw') }}
           </div>
@@ -2761,6 +2921,9 @@ async function exportExcel() {
           </div>
           <div class="text-xs">
             <span class="text-slate-500">Akhir:</span> <strong>{{ Number(item.counter_akhir_color || 0).toLocaleString() }}</strong>
+          </div>
+          <div v-if="Number(item.counter_akhir_color_double || item.counter_awal_color_double || item.gross_counter_color_double) > 0" class="text-[10px] text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded border border-indigo-100 font-mono mt-0.5">
+            2-S: {{ Number(item.counter_awal_color_double || 0).toLocaleString() }} → {{ Number(item.counter_akhir_color_double || item.gross_counter_color_double || 0).toLocaleString() }}
           </div>
           <div v-if="activeTab === 'atlas' && (Number(item.gross_counter_color) > 0 || Number(item.a3_counter_color) > 0)" class="text-[10px] text-slate-500 mt-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 font-mono">
             Gross: {{ Number(item.gross_counter_color || 0).toLocaleString() }} | {{ getDeductionSummary(item, 'color') }}
@@ -3612,6 +3775,14 @@ async function exportExcel() {
                   <td class="text-right">{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}</td>
                   <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_bw_dasar || 0).toLocaleString('id-ID') }}</td>
                 </tr>
+                <tr v-if="Number(detailItem.counter_akhir_bw_double || detailItem.counter_awal_bw_double || detailItem.gross_counter_bw_double) > 0">
+                  <td class="text-indigo-800 font-medium">↳ BW (2-Sided)</td>
+                  <td class="text-right">{{ Number(detailItem.counter_awal_bw_double || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.gross_counter_bw_double || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)" class="text-right">-</td>
+                  <td class="text-right">{{ Number(detailItem.counter_akhir_bw_double || detailItem.gross_counter_bw_double || 0).toLocaleString('id-ID') }}</td>
+                  <td class="text-right font-medium text-indigo-700">{{ Math.max(0, Number(detailItem.counter_akhir_bw_double || detailItem.gross_counter_bw_double || 0) - Number(detailItem.counter_awal_bw_double || 0)).toLocaleString('id-ID') }}</td>
+                </tr>
                 <tr>
                   <td><strong>Color (CL)</strong></td>
                   <td class="text-right">{{ Number(detailItem.counter_awal_color || 0).toLocaleString('id-ID') }}</td>
@@ -3619,6 +3790,14 @@ async function exportExcel() {
                   <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.a3_counter_color || 0).toLocaleString('id-ID') }}</td>
                   <td class="text-right">{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</td>
                   <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }}</td>
+                </tr>
+                <tr v-if="Number(detailItem.counter_akhir_color_double || detailItem.counter_awal_color_double || detailItem.gross_counter_color_double) > 0">
+                  <td class="text-indigo-800 font-medium">↳ Color (2-Sided)</td>
+                  <td class="text-right">{{ Number(detailItem.counter_awal_color_double || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.gross_counter_color_double || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)" class="text-right">-</td>
+                  <td class="text-right">{{ Number(detailItem.counter_akhir_color_double || detailItem.gross_counter_color_double || 0).toLocaleString('id-ID') }}</td>
+                  <td class="text-right font-medium text-indigo-700">{{ Math.max(0, Number(detailItem.counter_akhir_color_double || detailItem.gross_counter_color_double || 0) - Number(detailItem.counter_awal_color_double || 0)).toLocaleString('id-ID') }}</td>
                 </tr>
               </tbody>
             </table>

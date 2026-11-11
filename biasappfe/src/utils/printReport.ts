@@ -6,6 +6,10 @@ interface ReportCtx {
   customer: any;
   u: any;
   brand: any;
+  brandName: string;
+  modelName: string;
+  serialNo: string;
+  unitDisplayName: string;
   tech: any;
   custName: string;
   custPhone: string;
@@ -50,8 +54,58 @@ function buildCtx(item: any): ReportCtx {
       is_computer: doi.is_computer,
     };
   }
+  if (!u.id || !u.model) {
+    const linkedUnit = item.job_order?.unit || item.job_order?.service_request?.unit || item.service_request?.unit;
+    if (linkedUnit) {
+      u = { ...linkedUnit, ...u };
+    }
+  }
 
-  const brand: any = masterStore.findBrand(u.brand_id) || (doi?.brand_id ? masterStore.findBrand(doi.brand_id) : null);
+  let brand: any = u.brand || masterStore.findBrand(u.brand_id) || (doi?.brand_id ? masterStore.findBrand(doi.brand_id) : null) || item.brand;
+  let brandName = (
+    brand?.name ||
+    u.brand_name ||
+    (typeof u.brand === 'string' ? u.brand : '') ||
+    item.brand_name ||
+    (typeof item.brand === 'string' ? item.brand : '') ||
+    ''
+  ).trim();
+
+  // Heuristic brand detection if empty or '-'
+  if (!brandName || brandName === '-') {
+    const hay = `${u.model || ''} ${u.name || ''} ${item.project_name || ''} ${item.machine_problem || ''}`;
+    if (/\b(epson|ecotank|workforce|stylus|surecolor)\b/i.test(hay)) brandName = 'Epson';
+    else if (/\b(canon|imagerunner|ir\s*\d+|ir-adv|pixma|maxify)\b/i.test(hay)) brandName = 'Canon';
+    else if (/\b(hp|laserjet|deskjet|pagewide|designjet|officejet)\b/i.test(hay)) brandName = 'HP';
+    else if (/\b(konica|minolta|bizhub)\b/i.test(hay)) brandName = 'Konica Minolta';
+    else if (/\b(fuji|xerox|docucentre|apeosport)\b/i.test(hay)) brandName = 'Fuji Xerox';
+    else if (/\b(kyocera|taskalfa|ecosys)\b/i.test(hay)) brandName = 'Kyocera';
+    else if (/\b(brother|dcp|mfc|hl)\b/i.test(hay)) brandName = 'Brother';
+    else if (/\b(ricoh|gestetner|aficio)\b/i.test(hay)) brandName = 'Ricoh';
+  }
+  if (!brand && brandName) {
+    brand = { name: brandName };
+  }
+
+  let modelName = (u.model || doi?.model || item.model || u.name || '').trim();
+  if (!modelName || modelName === '-') {
+    modelName = (u.name || doi?.name || item.unit_name || '').trim();
+  }
+
+  let unitDisplayName = modelName;
+  if (brandName && modelName) {
+    if (modelName.toLowerCase().includes(brandName.toLowerCase())) {
+      unitDisplayName = modelName;
+    } else {
+      unitDisplayName = `${brandName} ${modelName}`;
+    }
+  } else if (brandName) {
+    unitDisplayName = brandName;
+  } else if (!unitDisplayName) {
+    unitDisplayName = '-';
+  }
+
+  const serialNo = u.serial_no || u.serial_number || doi?.serial_no || item.serial_no || '-';
   const tech: any = masterStore.findTechnician(item.technician_id) || {};
 
   const contractItems: any[] =
@@ -71,6 +125,10 @@ function buildCtx(item: any): ReportCtx {
     customer,
     u,
     brand,
+    brandName,
+    modelName,
+    serialNo,
+    unitDisplayName,
     tech,
     custName: customer.company_name || customer.name || "-",
     custPhone: customer.phone || item.recipient_phone || "-",
@@ -82,7 +140,7 @@ function buildCtx(item: any): ReportCtx {
       : "-",
     contract:
       masterStore.findContractItem(item.contract_item_id) || contractByUnit,
-    isCopier: !!u.is_copier,
+    isCopier: !!u.is_copier || (u.model || '').toLowerCase().includes('copier') || (item.service_type || '').toLowerCase() === 'copier',
   };
 }
 
@@ -325,9 +383,9 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
       </table>
       <div class="section-title">PRODUCT DETAIL</div>
       <table class="data-table">
-        <tr><td class="label-col">Brand</td><td class="val-col"> ${ctx.brand?.name || "-"}</td></tr>
-        <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.u.model || "-"}</td></tr>
-        <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.u.serial_no || "-"}</td></tr>
+        <tr><td class="label-col">Brand</td><td class="val-col"> ${ctx.brandName || ctx.brand?.name || "-"}</td></tr>
+        <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.modelName || "-"}</td></tr>
+        <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.serialNo || "-"}</td></tr>
         <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || item.problem || "-"}</td></tr>
         <tr><td class="label-col" style="height: 50px;">Repair Action</td><td class="val-col">${item.repair_action || item.action || "-"}</td></tr>
         <tr>
@@ -387,10 +445,10 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
       </table>
        <div class="section-title">PRODUCT DETAIL</div>
       <table class="data-table">
-        <tr><td class="label-col">Brand</td><td class="val-col"> ${ctx.brand?.name || "-"}</td></tr>
+        <tr><td class="label-col">Brand</td><td class="val-col"> ${ctx.brandName || ctx.brand?.name || "-"}</td></tr>
         <tr><td class="label-col">Product Type</td><td class="val-col">  ${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td></tr>
-        <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.u.model || "-"}</td></tr>
-        <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.u.serial_no || "-"}</td></tr>
+        <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.modelName || "-"}</td></tr>
+        <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.serialNo || "-"}</td></tr>
         <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || item.problem || "-"}</td></tr>
        
         
@@ -449,7 +507,7 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
           <td style="text-align: center;"></td>
         </tr>
         <tr>
-          <td class="bg-black">PRODUCT/TYPE</td>
+          <td class="bg-black">BRAND / MODEL</td>
           <td class="bg-black">SERIAL NUMBER</td>
           <td colspan="2" rowspan="13" style="vertical-align: top;">
             <div class="text-center" style="border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 3px;">REMARKS</div>
@@ -457,8 +515,8 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
           </td>
         </tr>
         <tr>
-          <td class="text-center">${ctx.u.model || "-"}</td>
-          <td class="text-center">${ctx.u.serial_no || "-"}</td>
+          <td class="text-center">${ctx.unitDisplayName || ctx.modelName || "-"}</td>
+          <td class="text-center">${ctx.serialNo || "-"}</td>
         </tr>
         ${copierMeterBlockHtml(item, ctx)}
         <tr><td colspan="2" class="bg-black">CHANGE SPAREPART</td></tr>
@@ -520,19 +578,45 @@ function photoDokumentasiBody(items: any[]): string {
     const unitId = item.unit_id || (doi ? doi.unit_id : null);
     
     let u: any = masterStore.findUnit(unitId) || item.unit || {};
-    
-    let modelType = "-";
-    let serialNo = "-";
-    
-    if (u && u.id) {
-      const brand: any = masterStore.findBrand(u.brand_id);
-      modelType = [brand?.name, u.model].filter(Boolean).join(" ") || "-";
-      serialNo = u.serial_no || u.serial_number || "-";
-    } else if (doi && (doi.model || doi.serial_no)) {
-      const brand: any = masterStore.findBrand(doi.brand_id);
-      modelType = [brand?.name, doi.model].filter(Boolean).join(" ") || "-";
-      serialNo = doi.serial_no || "-";
+    if (!u.id && doi && (doi.model || doi.serial_no)) {
+      u = {
+        model: doi.model,
+        serial_no: doi.serial_no,
+        brand_id: doi.brand_id,
+        unit_type_id: doi.unit_type_id,
+        is_copier: doi.is_copier,
+        is_computer: doi.is_computer,
+      };
     }
+    
+    let bName = (
+      u.brand?.name ||
+      u.brand_name ||
+      (typeof u.brand === 'string' ? u.brand : '') ||
+      masterStore.findBrand(u.brand_id)?.name ||
+      (doi?.brand_id ? masterStore.findBrand(doi.brand_id)?.name : '') ||
+      ''
+    ).trim();
+
+    if (!bName) {
+      const hay = `${u.model || ''} ${u.name || ''} ${item.project_name || ''}`;
+      if (/\b(epson|ecotank|workforce|stylus|surecolor)\b/i.test(hay)) bName = 'Epson';
+      else if (/\b(canon|imagerunner|ir|ir-adv|pixma|maxify)\b/i.test(hay)) bName = 'Canon';
+      else if (/\b(hp|laserjet|deskjet|pagewide|designjet|officejet)\b/i.test(hay)) bName = 'HP';
+      else if (/\b(konica|minolta|bizhub)\b/i.test(hay)) bName = 'Konica Minolta';
+      else if (/\b(fuji|xerox|docucentre|apeosport)\b/i.test(hay)) bName = 'Fuji Xerox';
+      else if (/\b(kyocera|taskalfa|ecosys)\b/i.test(hay)) bName = 'Kyocera';
+      else if (/\b(brother|dcp|mfc|hl)\b/i.test(hay)) bName = 'Brother';
+    }
+
+    let mName = (u.model || doi?.model || u.name || item.model || '').trim();
+    let modelType = "-";
+    if (mName && bName && mName.toLowerCase().includes(bName.toLowerCase())) {
+      modelType = mName;
+    } else {
+      modelType = [bName, mName].filter(Boolean).join(" ") || "-";
+    }
+    const serialNo = u.serial_no || u.serial_number || doi?.serial_no || item.serial_no || "-";
 
     const projectName = item.project_name || "-";
     const repairAction = item.repair_action || item.action || "-";
@@ -758,7 +842,7 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
     container.innerHTML = html;
 
     const reportNo = (item.report_no || `SR-${item.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
-    const opt = {
+    const opt: any = {
       margin: [6, 6, 6, 6],
       filename: `Laporan_Servis_${reportNo}.pdf`,
       image: { type: "jpeg", quality: 0.98 },

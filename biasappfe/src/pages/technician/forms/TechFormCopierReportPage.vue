@@ -289,6 +289,12 @@ function prevMeterFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): numbe
     return num(latest.end_meter)
   }
   if (!ci) return 0
+  if (paperSizeId && Array.isArray((ci as any)?.rates)) {
+    const rate = ((ci as any).rates).find((r: any) => String(r.paper_size_id) === String(paperSizeId))
+    if (rate) {
+      return mode === 'color' ? num(rate.start_meter_color) : num(rate.start_meter_bw)
+    }
+  }
   return mode === 'color' ? num(ci.start_meter_color) : num(ci.start_meter_bw)
 }
 
@@ -306,16 +312,22 @@ function prevMeterDoubleFor(paperSizeId: string, mode: 'bw' | 'color', ci: any):
       const currDate = new Date(curr.reading_date || curr.created_at).getTime()
       return prevDate > currDate ? prev : curr
     })
-    return num(latest.end_meter_double) || num(latest.start_meter_double)
+    const endDbl = num(latest.end_meter_double) || num(latest.start_meter_double)
+    if (endDbl > 0) return endDbl
+    return num(latest.end_meter) || num(latest.start_meter)
   }
   if (!ci) return 0
   if (paperSizeId && Array.isArray((ci as any)?.rates)) {
     const rate = ((ci as any).rates).find((r: any) => String(r.paper_size_id) === String(paperSizeId))
     if (rate) {
-      return mode === 'color' ? num(rate.start_meter_color_double) : num(rate.start_meter_bw_double)
+      const dbl = mode === 'color' ? num(rate.start_meter_color_double) : num(rate.start_meter_bw_double)
+      if (dbl > 0) return dbl
+      return mode === 'color' ? num(rate.start_meter_color) : num(rate.start_meter_bw)
     }
   }
-  return mode === 'color' ? num(ci.start_meter_color_double) : num(ci.start_meter_bw_double)
+  const ciDbl = mode === 'color' ? num(ci.start_meter_color_double) : num(ci.start_meter_bw_double)
+  if (ciDbl > 0) return ciDbl
+  return mode === 'color' ? num(ci.start_meter_color) : num(ci.start_meter_bw)
 }
 
 const meterSections = computed(() => {
@@ -342,7 +354,7 @@ const meterSections = computed(() => {
       r.paper_size?.name || r.paper_size_name || (psId ? `Ukuran ${psId.slice(0, 8)}` : 'Tanpa ukuran'),
     )
     const before = num(r.start_meter) > 0 ? num(r.start_meter) : prevMeterFor(psId, mode, ci)
-    const beforeDouble = num(r.start_meter_double) > 0 ? num(r.start_meter_double) : prevMeterDoubleFor(psId, mode, ci)
+    const beforeDouble = num(r.start_meter_double) > 0 ? num(r.start_meter_double) : (num(r.start_meter) > 0 ? num(r.start_meter) : prevMeterDoubleFor(psId, mode, ci))
     sec.rows.push({
       key: `${psId}|${mode}`,
       paper_size_id: psId,
@@ -393,7 +405,7 @@ const meterSections = computed(() => {
         color_label: 'B/W',
         reading_id: null,
         before: beforeMeter.value,
-        before_double: num((ci as any)?.start_meter_bw_double) || 0,
+        before_double: num((ci as any)?.start_meter_bw_double) || beforeMeter.value || 0,
       },
     ]
     if (beforeMeterColor.value > 0 || num(unit.value?.current_meter_color) > 0 || num(job.value?.meter_reading_color_before) > 0) {
@@ -406,7 +418,7 @@ const meterSections = computed(() => {
         color_label: 'Colour',
         reading_id: null,
         before: beforeMeterColor.value,
-        before_double: num((ci as any)?.start_meter_color_double) || 0,
+        before_double: num((ci as any)?.start_meter_color_double) || beforeMeterColor.value || 0,
       })
     }
     sections.set('default', {

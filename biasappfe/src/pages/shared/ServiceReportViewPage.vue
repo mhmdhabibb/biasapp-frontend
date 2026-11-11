@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMasterStore } from '@/composables/useMasterStore'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { printServiceReport, getServiceReportFormHtml } from '@/utils/printReport'
 import { groupMeterReadingsBySize } from '@/utils/meterReading'
+import { api } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,8 +16,11 @@ const {
   contractItems,
   findCustomer,
   findUnit,
+  findBrand,
+  findUnitType,
   findProduct,
-  findTechnician
+  findTechnician,
+  ensureResourcesLoaded,
 } = useMasterStore()
 
 const reportId = String(route.params.id)
@@ -24,8 +28,24 @@ const reportId = String(route.params.id)
 // View mode: 'digital' or 'form' — default to the real print form
 const viewMode = ref<'digital' | 'form'>('form')
 
-// Try to find the service report directly
-const sr = computed(() => serviceReports.value.find(r => String(r.id) === reportId))
+const directSr = ref<any>(null)
+// Try to find the service report directly or from API
+const sr = computed(() => directSr.value || serviceReports.value.find(r => String(r.id) === reportId))
+
+onMounted(async () => {
+  await ensureResourcesLoaded('/shared/service-reports')
+  if (!sr.value) {
+    try {
+      const res: any = await api.get(`/service-reports/${reportId}`)
+      const data = res?.data?.data || res?.data || res
+      if (data && data.id) {
+        directSr.value = data
+      }
+    } catch (e) {
+      console.warn('Failed to load service report:', e)
+    }
+  }
+})
 
 function handlePrint() {
   if (sr.value) {
@@ -46,8 +66,48 @@ const jobOrder = computed(() => {
 })
 
 const customer = computed(() => findCustomer(sr.value?.customer_id || null))
-const unit = computed(() => findUnit(sr.value?.unit_id || null))
+const unit = computed(() => sr.value?.unit || (sr.value?.unit_id ? findUnit(sr.value.unit_id) : null))
 const technician = computed(() => findTechnician(sr.value?.technician_id || null))
+
+const unitBrand = computed(() => {
+  const u = unit.value
+  if (!u) return ''
+  const b = (
+    u.brand?.name ||
+    u.brand_name ||
+    (typeof u.brand === 'string' ? u.brand : '') ||
+    (u.brand_id ? findBrand(u.brand_id)?.name : '') ||
+    ''
+  ).trim()
+  if (b) return b
+  const hay = `${u.model || ''} ${u.name || ''} ${sr.value?.project_name || ''}`
+  if (/\b(epson|ecotank|workforce|stylus|surecolor)\b/i.test(hay)) return 'Epson'
+  if (/\b(canon|imagerunner|ir\s*\d+|ir-adv|pixma|maxify)\b/i.test(hay)) return 'Canon'
+  if (/\b(hp|laserjet|deskjet|pagewide|designjet|officejet)\b/i.test(hay)) return 'HP'
+  if (/\b(konica|minolta|bizhub)\b/i.test(hay)) return 'Konica Minolta'
+  if (/\b(fuji|xerox|docucentre|apeosport)\b/i.test(hay)) return 'Fuji Xerox'
+  if (/\b(kyocera|taskalfa|ecosys)\b/i.test(hay)) return 'Kyocera'
+  if (/\b(brother|dcp|mfc|hl)\b/i.test(hay)) return 'Brother'
+  return ''
+})
+
+const unitModel = computed(() => {
+  const u = unit.value
+  if (!u) return '-'
+  return (u.model || u.name || '-').trim()
+})
+
+const unitDisplayName = computed(() => {
+  const u = unit.value
+  if (!u) return '-'
+  const brand = unitBrand.value
+  const model = unitModel.value
+  if (brand && model && model !== '-') {
+    if (model.toLowerCase().includes(brand.toLowerCase())) return model
+    return `${brand} ${model}`
+  }
+  return model !== '-' ? model : (brand || '-')
+})
 
 const isCopier = computed(() => unit.value?.is_copier || unit.value?.model?.toLowerCase().includes('copier'))
 
@@ -204,8 +264,8 @@ function statusColor(s: string) {
           </div>
           <div class="overview-content">
             <span class="overview-label">Unit / Machine</span>
-            <span class="overview-value">{{ unit?.model || '-' }}</span>
-            <span class="overview-sub">SN: {{ unit?.serial_no || '-' }}</span>
+            <span class="overview-value">{{ unitDisplayName }}</span>
+            <span class="overview-sub">Brand: {{ unitBrand || '-' }} · Model: {{ unitModel }} · SN: {{ unit?.serial_no || unit?.serial_number || '-' }}</span>
           </div>
         </div>
         <div class="overview-card">

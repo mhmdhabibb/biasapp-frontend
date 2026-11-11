@@ -71,7 +71,7 @@ function isVisitJob(job: any): boolean {
 
 async function fetchJobOrders(silent = false) {
   try {
-    const res = await api.get<any>("/job-orders?page=1&limit=100", true, true);
+    const res = await api.get<any>("/job-orders/?page=1&limit=100", true, true);
     const rawList = extractArray(res);
 
     jobOrders.value = rawList.map((j: any) => {
@@ -157,7 +157,7 @@ async function fetchJobOrders(silent = false) {
 async function fetchServiceRequests() {
   try {
     const res = await api.get<any>(
-      "/service-requests?page=1&limit=100",
+      "/service-requests/?page=1&limit=100",
       true,
       true,
     );
@@ -170,7 +170,7 @@ async function fetchServiceRequests() {
 async function fetchDeliveryOrders() {
   try {
     const res = await api.get<any>(
-      "/delivery-orders?page=1&limit=100",
+      "/delivery-orders/?page=1&limit=100",
       true,
       true,
     );
@@ -189,6 +189,7 @@ const AUTO_RELOAD_INTERVAL_MS = 30000; // 30 seconds auto-refresh
 let autoReloadTimer: any = null;
 const isReloading = ref(false);
 
+let lastReloadTime = 0;
 async function reloadSilently() {
   if (
     isReloading.value ||
@@ -198,6 +199,10 @@ async function reloadSilently() {
   ) {
     return;
   }
+  const now = Date.now();
+  if (now - lastReloadTime < 15000) {
+    return; // 15-second throttle to prevent lag on window focus
+  }
   if (
     typeof document !== "undefined" &&
     document.visibilityState !== "visible"
@@ -205,6 +210,7 @@ async function reloadSilently() {
     return;
   }
   isReloading.value = true;
+  lastReloadTime = now;
   try {
     await loadAllData(true);
   } catch (e) {
@@ -227,9 +233,9 @@ async function loadAllData(silent = false) {
   try {
     // Fetch all datasets in parallel for instant, flicker-free rendering
     const results = await Promise.allSettled([
-      api.get<any>("/delivery-orders?page=1&limit=100", true, true),
-      api.get<any>("/job-orders?page=1&limit=100", true, true),
-      api.get<any>("/service-requests?page=1&limit=100", true, true),
+      api.get<any>("/delivery-orders/?page=1&limit=100", true, true),
+      api.get<any>("/job-orders/?page=1&limit=100", true, true),
+      api.get<any>("/service-requests/?page=1&limit=100", true, true),
       masterStore.refreshOnly(["serviceReports", "technicians"]),
     ]);
 
@@ -950,9 +956,9 @@ function jobDoType(job: any): string {
 
 function jobDeliveryDate(job: any): string {
   return (
+    job?.scheduled_date ||
     job?.delivery_order?.delivery_date ||
     job?.delivery_date ||
-    job?.scheduled_date ||
     ""
   );
 }
@@ -1219,9 +1225,10 @@ async function confirmAssign() {
           String(task.id),
     );
     if (existingJob) {
+      const scheduledIso = new Date(assignDeliveryDate.value).toISOString();
       const payload = {
         technician_id: techId,
-        scheduled_date: new Date(assignDeliveryDate.value).toISOString(),
+        scheduled_date: scheduledIso,
         status: "scheduled",
         assigner_signature: assignSignature.value,
         assigner_name: assignerName,
@@ -1232,6 +1239,13 @@ async function confirmAssign() {
           method: "PUT",
           data: payload,
         });
+        if (task.id) {
+          await apiRequest({
+            url: `/delivery-orders/${task.id}`,
+            method: "PUT",
+            data: { delivery_date: scheduledIso },
+          }).catch(() => {});
+        }
         invalidateCache();
         await loadAllData();
         toast.success("Delivery order successfully assigned to technician.");
@@ -1239,18 +1253,26 @@ async function confirmAssign() {
         toast.error(toast.fromError(error, "Failed to assign delivery order"));
       }
     } else {
+      const scheduledIso = new Date(assignDeliveryDate.value).toISOString();
       const payload = {
         job_order_no: doNumber || `DO-${Date.now().toString().slice(-6)}`,
         delivery_order_id: task.id,
         job_type: "delivery",
         technician_id: techId,
-        scheduled_date: new Date(assignDeliveryDate.value).toISOString(),
+        scheduled_date: scheduledIso,
         instructions: task.notes || `Delivery ${doNumber || ""}`.trim(),
         assigner_signature: assignSignature.value,
         assigner_name: assignerName,
       };
       try {
         await apiRequest({ url: `/job-orders`, method: "POST", data: payload });
+        if (task.id) {
+          await apiRequest({
+            url: `/delivery-orders/${task.id}`,
+            method: "PUT",
+            data: { delivery_date: scheduledIso },
+          }).catch(() => {});
+        }
         invalidateCache();
         await loadAllData();
         toast.success("Delivery order successfully assigned to technician.");
@@ -2381,13 +2403,13 @@ async function handleDeleteTech() {
                     <path d="M8 2v4M16 2v4M3 10h18" />
                   </svg>
                   <span v-if="isDeliveryJob(job)"
-                    >Delivery {{ formatFullDate(jobDeliveryDate(job)) }}</span
+                    >Delivery {{ formatDateTime(jobDeliveryDate(job)) }}</span
                   >
                   <span v-else-if="isVisitJob(job)"
-                    >Visit {{ formatFullDate(visitDateOf(job)) }}</span
+                    >Visit {{ formatDateTime(visitDateOf(job)) }}</span
                   >
                   <span v-else
-                    >Scheduled {{ formatFullDate(job.scheduled_date) }}</span
+                    >Scheduled {{ formatDateTime(job.scheduled_date) }}</span
                   >
                 </div>
               </div>
@@ -2423,14 +2445,14 @@ async function handleDeleteTech() {
           <span class="detail-hero-scheduled">
             <template v-if="isDeliveryJob(selectedJob)"
               >🚚 Delivery
-              {{ formatFullDate(jobDeliveryDate(selectedJob)) }}</template
+              {{ formatDateTime(jobDeliveryDate(selectedJob)) }}</template
             >
             <template v-else-if="isVisitJob(selectedJob)"
-              >🔧 Visit {{ formatFullDate(visitDateOf(selectedJob)) }}</template
+              >🔧 Visit {{ formatDateTime(visitDateOf(selectedJob)) }}</template
             >
             <template v-else
               >🗓 Scheduled
-              {{ formatFullDate(selectedJob.scheduled_date) }}</template
+              {{ formatDateTime(selectedJob.scheduled_date) }}</template
             >
           </span>
         </div>
@@ -2452,10 +2474,10 @@ async function handleDeleteTech() {
             }}</span>
             <span class="detail-value">{{
               isDeliveryJob(selectedJob)
-                ? formatFullDate(jobDeliveryDate(selectedJob))
+                ? formatDateTime(jobDeliveryDate(selectedJob))
                 : isVisitJob(selectedJob)
-                  ? formatFullDate(visitDateOf(selectedJob))
-                  : formatFullDate(selectedJob.scheduled_date)
+                  ? formatDateTime(visitDateOf(selectedJob))
+                  : formatDateTime(selectedJob.scheduled_date)
             }}</span>
           </div>
           <div class="detail-item">
@@ -2586,7 +2608,7 @@ async function handleDeleteTech() {
             <div class="detail-item">
               <span class="detail-label">Delivery Date</span>
               <span class="detail-value">{{
-                formatFullDate(selectedJob.delivery_order.delivery_date)
+                formatDateTime(selectedJob.delivery_order.delivery_date || selectedJob.scheduled_date)
               }}</span>
             </div>
             <div

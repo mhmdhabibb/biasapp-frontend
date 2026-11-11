@@ -4,9 +4,16 @@ import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
 import biasLogoUrl from "@/assets/bias-logo.png";
 import { api } from "@/services/api";
 
+function isValidSignature(val?: string): boolean {
+  if (!val || typeof val !== "string") return false;
+  const s = val.trim();
+  if (s === "signed" || s === "has_photo" || s === "-" || s.length < 15) return false;
+  return s.startsWith("data:image") || s.startsWith("http://") || s.startsWith("https://") || s.startsWith("/storage");
+}
+
 function trimSignature(dataUrl?: string): Promise<string> {
   if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image")) {
-    return Promise.resolve(dataUrl || "");
+    return Promise.resolve(dataUrl === "signed" ? "" : (dataUrl || ""));
   }
 
   return new Promise((resolve) => {
@@ -81,7 +88,15 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
   if (!item) return { html: "", fullItem: null };
 
   let fullItem = item;
-  if (item.id && (!item.assigner_signature && !item.technician_signature && !item.customer_signature)) {
+  const isSignatureIncomplete =
+    !fullItem.delivery_order_items ||
+    fullItem.assigner_signature === "signed" ||
+    fullItem.technician_signature === "signed" ||
+    fullItem.customer_signature === "signed" ||
+    fullItem.photo_before === "has_photo" ||
+    (!fullItem.assigner_signature && !fullItem.technician_signature && !fullItem.customer_signature);
+
+  if (item.id && isSignatureIncomplete) {
     try {
       const res: any = await api.get(`/delivery-orders/${item.id}`);
       fullItem = res.data?.data ?? res.data ?? item;
@@ -337,7 +352,7 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
             <div class="sig-box">
               <div class="sig-title">PT BIAS SURYA TEKNOLOGI</div>
               <div class="sig-space">
-                ${assignerSig ? `<img src="${assignerSig}" class="sig-img" alt="Signature" />` : ''}
+                ${isValidSignature(assignerSig) ? `<img src="${assignerSig}" class="sig-img" alt="Signature" />` : ''}
               </div>
               <div class="sig-line"></div>
               <div class="sig-name">${assignerName || '( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )'}</div>
@@ -345,7 +360,7 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
             <div class="sig-box">
               <div class="sig-title">Delivered By,</div>
               <div class="sig-space">
-                ${techSig ? `<img src="${techSig}" class="sig-img" alt="Signature" />` : ''}
+                ${isValidSignature(techSig) ? `<img src="${techSig}" class="sig-img" alt="Signature" />` : ''}
               </div>
               <div class="sig-line"></div>
               <div class="sig-name">${techName || '( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )'}</div>
@@ -353,7 +368,7 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
             <div class="sig-box">
               <div class="sig-title">Received By,</div>
               <div class="sig-space">
-                ${custSig ? `<img src="${custSig}" class="sig-img" alt="Signature" />` : ''}
+                ${isValidSignature(custSig) ? `<img src="${custSig}" class="sig-img" alt="Signature" />` : ''}
               </div>
               <div class="sig-line"></div>
               <div class="sig-name">${recipientName || '( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )'}</div>

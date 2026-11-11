@@ -706,6 +706,7 @@ const rentPaperTypeOptions = computed(() =>
 const rentQuotaAppliesToOptions = [
   { value: "color", label: "Warna (BW ditagih penuh)" },
   { value: "bw", label: "BW (Warna ditagih penuh)" },
+  { value: "both", label: "Keduanya (BW & Warna)" },
 ];
 
 function getTypeName(id: string | null): string {
@@ -898,11 +899,18 @@ function fmtRp(n: any): string {
 }
 
 function rateSummary(rate: any): string {
+  const bw = fmtRp(rate.rate_per_page_bw);
+  const color = fmtRp(rate.rate_per_page_color);
+  if (rate.quota_applies_to === "both") {
+    const freeBW = Number(rate.free_quota_bw) || 0;
+    const freeColor = Number(rate.free_quota_color) || 0;
+    if (!freeBW && !freeColor)
+      return `Tanpa free — semua ditagih penuh (BW ${bw}/lbr, Warna ${color}/lbr).`;
+    return `Free ${freeBW} lbr BW & ${freeColor} lbr Warna per bulan, selebihnya BW ${bw}/lbr, Warna ${color}/lbr.`;
+  }
   const isBW = rate.quota_applies_to === "bw";
   const free = Number(isBW ? rate.free_quota_bw : rate.free_quota_color) || 0;
   const mode = isBW ? "BW" : "Warna";
-  const bw = fmtRp(rate.rate_per_page_bw);
-  const color = fmtRp(rate.rate_per_page_color);
   if (!free)
     return `Tanpa free — semua ditagih penuh (BW ${bw}/lbr, Warna ${color}/lbr).`;
   return `Free ${free} lbr ${mode} per bulan, selebihnya BW ${bw}/lbr, Warna ${color}/lbr.`;
@@ -938,7 +946,7 @@ function onItemSelectChange(item: any) {
           rate_per_page_color: r.rate_per_page_color,
           free_quota_bw: r.free_quota_bw ?? 0,
           free_quota_color: r.free_quota_color ?? 0,
-          quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
+          quota_applies_to: r.quota_applies_to === "bw" ? "bw" : (r.quota_applies_to === "both" ? "both" : "color"),
         }));
       }
     }
@@ -1580,23 +1588,19 @@ async function handleSubmit() {
           const existingRate = combinedRates.find(
             (r: any) => String(r.paper_size_id) === String(apm.paper_size_id),
           );
+          const bwVal = Math.max(0, Math.round(Number(apm.start_meter_bw) || 0));
+          const colorVal = Math.max(0, Math.round(Number(apm.start_meter_color) || 0));
+          const bwDblVal = Number(apm.start_meter_bw_double) > 0
+            ? Math.round(Number(apm.start_meter_bw_double))
+            : bwVal;
+          const colorDblVal = Number(apm.start_meter_color_double) > 0
+            ? Math.round(Number(apm.start_meter_color_double))
+            : colorVal;
           if (existingRate) {
-            existingRate.start_meter_bw = Math.max(
-              0,
-              Math.round(Number(apm.start_meter_bw) || 0),
-            );
-            existingRate.start_meter_color = Math.max(
-              0,
-              Math.round(Number(apm.start_meter_color) || 0),
-            );
-            existingRate.start_meter_bw_double = Math.max(
-              0,
-              Math.round(Number(apm.start_meter_bw_double) || 0),
-            );
-            existingRate.start_meter_color_double = Math.max(
-              0,
-              Math.round(Number(apm.start_meter_color_double) || 0),
-            );
+            existingRate.start_meter_bw = bwVal;
+            existingRate.start_meter_color = colorVal;
+            existingRate.start_meter_bw_double = bwDblVal;
+            existingRate.start_meter_color_double = colorDblVal;
           } else {
             combinedRates.push({
               paper_size_id: String(apm.paper_size_id),
@@ -1605,27 +1609,24 @@ async function handleSubmit() {
               rate_per_page_color: 0,
               free_quota_bw: 0,
               free_quota_color: 0,
-              start_meter_bw: Math.max(
-                0,
-                Math.round(Number(apm.start_meter_bw) || 0),
-              ),
-              start_meter_color: Math.max(
-                0,
-                Math.round(Number(apm.start_meter_color) || 0),
-              ),
-              start_meter_bw_double: Math.max(
-                0,
-                Math.round(Number(apm.start_meter_bw_double) || 0),
-              ),
-              start_meter_color_double: Math.max(
-                0,
-                Math.round(Number(apm.start_meter_color_double) || 0),
-              ),
+              start_meter_bw: bwVal,
+              start_meter_color: colorVal,
+              start_meter_bw_double: bwDblVal,
+              start_meter_color_double: colorDblVal,
               quota_applies_to: "color",
             });
           }
         }
       }
+
+      const itemBw = Math.max(0, Math.round(Number(item.start_meter_bw) || 0));
+      const itemColor = Math.max(0, Math.round(Number(item.start_meter_color) || 0));
+      const itemBwDbl = Number(item.start_meter_bw_double) > 0
+        ? Math.round(Number(item.start_meter_bw_double))
+        : itemBw;
+      const itemColorDbl = Number(item.start_meter_color_double) > 0
+        ? Math.round(Number(item.start_meter_color_double))
+        : itemColor;
 
       return {
         id: item.id || undefined,
@@ -1633,22 +1634,10 @@ async function handleSubmit() {
         product_id: productId || null,
         qty: Math.max(1, Math.round(Number(item.qty) || 1)),
         monthly_rent: Math.max(0, Math.round(Number(item.monthly_rent) || 0)),
-        start_meter_bw: Math.max(
-          0,
-          Math.round(Number(item.start_meter_bw) || 0),
-        ),
-        start_meter_color: Math.max(
-          0,
-          Math.round(Number(item.start_meter_color) || 0),
-        ),
-        start_meter_bw_double: Math.max(
-          0,
-          Math.round(Number(item.start_meter_bw_double) || 0),
-        ),
-        start_meter_color_double: Math.max(
-          0,
-          Math.round(Number(item.start_meter_color_double) || 0),
-        ),
+        start_meter_bw: itemBw,
+        start_meter_color: itemColor,
+        start_meter_bw_double: itemBwDbl,
+        start_meter_color_double: itemColorDbl,
         free_quota_color: Math.max(
           0,
           Math.round(Number(item.free_quota_color) || 0),
@@ -1705,7 +1694,7 @@ async function handleSubmit() {
               0,
               Math.round(Number(r.start_meter_color_double) || 0),
             ),
-            quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
+            quota_applies_to: r.quota_applies_to === "bw" ? "bw" : (r.quota_applies_to === "both" ? "both" : "color"),
           })),
       };
     }),
@@ -4301,81 +4290,97 @@ function isExpired(row: any): boolean {
               v-for="(apm, apmIdx) in item.additional_paper_meters"
               :key="apmIdx"
               style="
-                display: grid;
-                grid-template-columns: 1.2fr 1fr 1fr 1fr 1fr auto;
-                gap: 0.5rem;
-                align-items: flex-end;
-                margin-bottom: 0.5rem;
                 background: #ffffff;
-                padding: 0.6rem 0.75rem;
-                border-radius: 6px;
+                padding: 0.75rem 0.85rem;
+                border-radius: 8px;
                 border: 1px solid var(--color-border-light, #e2e8f0);
+                margin-bottom: 0.75rem;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
               "
             >
-              <div class="form-group" style="margin: 0">
-                <label class="form-label" style="font-size: 0.75rem">Ukuran Kertas *</label>
-                <CustomSelect
-                  v-model="apm.paper_size_id"
-                  :options="rentPaperSizeOptions"
-                  placeholder="Pilih Ukuran (misal A3)"
-                  class="form-select"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div class="form-group" style="margin: 0">
-                <label class="form-label" style="font-size: 0.75rem">1-Sided BW</label>
-                <input
-                  v-model.number="apm.start_meter_bw"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="0"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div class="form-group" style="margin: 0">
-                <label class="form-label" style="font-size: 0.75rem">1-Sided Warna</label>
-                <input
-                  v-model.number="apm.start_meter_color"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="0"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div class="form-group" style="margin: 0">
-                <label class="form-label" style="font-size: 0.75rem">2-Sided BW</label>
-                <input
-                  v-model.number="apm.start_meter_bw_double"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="0"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div class="form-group" style="margin: 0">
-                <label class="form-label" style="font-size: 0.75rem">2-Sided Warna</label>
-                <input
-                  v-model.number="apm.start_meter_color_double"
-                  type="number"
-                  class="form-input"
-                  min="0"
-                  placeholder="0"
-                  style="font-size: 0.8rem"
-                />
-              </div>
-              <div>
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  gap: 1rem;
+                  margin-bottom: 0.6rem;
+                  padding-bottom: 0.5rem;
+                  border-bottom: 1px dashed var(--color-border-light, #e2e8f0);
+                "
+              >
+                <div style="flex: 1; max-width: 260px;">
+                  <label class="form-label" style="font-size: 0.75rem; font-weight: 600; margin-bottom: 4px;">Ukuran Kertas *</label>
+                  <CustomSelect
+                    v-model="apm.paper_size_id"
+                    :options="rentPaperSizeOptions"
+                    placeholder="Pilih Ukuran (misal A3)"
+                    class="form-select"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
                 <button
                   type="button"
                   @click="removeAdditionalPaperMeter(item, apmIdx)"
                   class="btn btn-sm"
-                  style="color: #ef4444; font-size: 0.85rem; padding: 0.35rem 0.6rem; border: 1px solid #fee2e2"
+                  style="color: #ef4444; font-size: 0.75rem; padding: 0.3rem 0.6rem; border: 1px solid #fee2e2; background: #fff5f5; border-radius: 6px;"
                   title="Hapus Ukuran"
                 >
-                  ✕
+                  ✕ Hapus Ukuran
                 </button>
+              </div>
+
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(4, minmax(0, 1fr));
+                  gap: 0.6rem;
+                "
+              >
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label" style="font-size: 0.75rem">1-Sided BW</label>
+                  <input
+                    v-model.number="apm.start_meter_bw"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="0"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label" style="font-size: 0.75rem">1-Sided Warna</label>
+                  <input
+                    v-model.number="apm.start_meter_color"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="0"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label" style="font-size: 0.75rem">2-Sided BW</label>
+                  <input
+                    v-model.number="apm.start_meter_bw_double"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="0"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
+                <div class="form-group" style="margin: 0">
+                  <label class="form-label" style="font-size: 0.75rem">2-Sided Warna</label>
+                  <input
+                    v-model.number="apm.start_meter_color_double"
+                    type="number"
+                    class="form-input"
+                    min="0"
+                    placeholder="0"
+                    style="font-size: 0.8rem"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -4487,50 +4492,6 @@ function isExpired(row: any): boolean {
                     class="form-input"
                     min="0"
                     placeholder="Masukkan tarif warna"
-                    style="font-size: 0.8rem"
-                  />
-                </div>
-                <div class="form-group" style="margin: 0">
-                  <label class="form-label">Meter Awal BW (opsional)</label>
-                  <input
-                    v-model.number="rate.start_meter_bw"
-                    type="number"
-                    class="form-input"
-                    min="0"
-                    placeholder="0"
-                    style="font-size: 0.8rem"
-                  />
-                </div>
-                <div class="form-group" style="margin: 0">
-                  <label class="form-label">Meter Awal Warna (opsional)</label>
-                  <input
-                    v-model.number="rate.start_meter_color"
-                    type="number"
-                    class="form-input"
-                    min="0"
-                    placeholder="0"
-                    style="font-size: 0.8rem"
-                  />
-                </div>
-                <div class="form-group" style="margin: 0">
-                  <label class="form-label">Meter Awal Double Sided BW (opsional)</label>
-                  <input
-                    v-model.number="rate.start_meter_bw_double"
-                    type="number"
-                    class="form-input"
-                    min="0"
-                    placeholder="0"
-                    style="font-size: 0.8rem"
-                  />
-                </div>
-                <div class="form-group" style="margin: 0">
-                  <label class="form-label">Meter Awal Double Sided Warna (opsional)</label>
-                  <input
-                    v-model.number="rate.start_meter_color_double"
-                    type="number"
-                    class="form-input"
-                    min="0"
-                    placeholder="0"
                     style="font-size: 0.8rem"
                   />
                 </div>

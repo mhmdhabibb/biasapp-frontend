@@ -239,8 +239,10 @@ const filteredData = computed(() => {
 })
 
 function resolveInvoiceAsset(item: any) {
-  const customer = findCustomer(item.customer_id)
-  const custName = customer?.company_name || customer?.name || '-'
+  const customer = item?.customer || findCustomer(item?.customer_id) || (customers.value || []).find((c: any) => String(c.id) === String(item?.customer_id))
+  let custName = customer?.company_name || customer?.name || item?.customer_name || item?.customerName || '-'
+  if (custName === '-' && item?.customer_type === 'atlas') custName = 'Atlas Copco'
+  if (custName === '-' && item?.customer_type === 'great') custName = 'PT Great Eastern'
   const custAddress = customer?.address || '-'
   const pic = customer?.pic_name || '-'
   const gender = customer?.pic_gender
@@ -250,7 +252,7 @@ function resolveInvoiceAsset(item: any) {
   const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
   const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
 
-  const rawDate = item.invoice_date || item.monthly_date || item.period_end
+  const rawDate = item?.invoice_date || item?.monthly_date || item?.period_end
   let dateStr = '-'
   if (rawDate) {
     const d = new Date(rawDate)
@@ -260,28 +262,36 @@ function resolveInvoiceAsset(item: any) {
     }
   }
 
-  const periodDate = item.period_start ? new Date(item.period_start) : (item.monthly_date ? new Date(item.monthly_date) : (item.invoice_date ? new Date(item.invoice_date) : new Date()))
+  const periodDate = item?.period_start ? new Date(item.period_start) : (item?.monthly_date ? new Date(item.monthly_date) : (item?.invoice_date ? new Date(item.invoice_date) : new Date()))
   let periodStr = '-'
   if (!isNaN(periodDate.getTime())) {
     periodStr = periodDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
   }
 
   // Contract Item
-  const ci = findContractItem(item.contract_item_id) ||
-    (contractItems.value as any[]).find((c: any) => String(c.id) === String(item.contract_item_id)) ||
-    (contractItems.value as any[]).find((c: any) => String(c.contract_id) === String(item.contract_id))
+  const ci = findContractItem(item?.contract_item_id) ||
+    (contractItems.value as any[]).find((c: any) => String(c.id) === String(item?.contract_item_id)) ||
+    (contractItems.value as any[]).find((c: any) => String(c.contract_id) === String(item?.contract_id))
 
   // Direct or Contract Unit
   let unit = ci?.unit_id ? findUnit(ci.unit_id) : (ci?.unit || null)
-  if (!unit && item.unit_id) {
+  if (!unit && item?.unit_id) {
     unit = findUnit(item.unit_id)
   }
-  if (!unit && item.unit) {
+  if (!unit && item?.unit) {
     unit = item.unit
   }
 
   // From meter details if available
-  const meterDetails: any[] = item.meter_details || []
+  let meterDetails: any[] = []
+  if (Array.isArray(item?.meter_details)) {
+    meterDetails = item.meter_details
+  } else if (typeof item?.meter_details === 'string') {
+    try {
+      const parsed = JSON.parse(item.meter_details)
+      if (Array.isArray(parsed)) meterDetails = parsed
+    } catch {}
+  }
   if (!unit && meterDetails.length > 0) {
     for (const md of meterDetails) {
       if (md.contract_item?.unit) {
@@ -1173,7 +1183,12 @@ async function exportInvoicesToExcel(
   }
 
   // Tambahkan Sheet Kalkulasi Pemakaian Meter untuk Atlas Copco & PT Great Eastern berdasarkan nama Customer
-  const customerCalcSheets = await buildAtlasGreatSheetsForInvoices(sortedItems, usedSheetNames)
+  let customerCalcSheets: any[] = []
+  try {
+    customerCalcSheets = await buildAtlasGreatSheetsForInvoices(sortedItems, usedSheetNames)
+  } catch (calcErr: any) {
+    console.warn('Could not build Atlas/Great calculation sheets for invoices:', calcErr)
+  }
 
   await downloadStyledExcel([...leadingSheets, ...sheets, ...customerCalcSheets], filename)
 }
@@ -1203,8 +1218,12 @@ async function buildAtlasGreatSheetsForInvoices(
 
   for (const item of sortedItems) {
     const assetInfo = resolveInvoiceAsset(item)
-    const custId = String(item.customer_id || assetInfo.customer?.id || '')
-    const custName = assetInfo.custName || 'Customer'
+    const custId = String(item.customer_id || assetInfo.customer?.id || 'cust_default')
+    let custName = assetInfo.custName || 'Customer'
+    if (custName === '-' || custName === 'Customer') {
+      if (item.customer_type === 'atlas') custName = 'Atlas Copco'
+      else if (item.customer_type === 'great') custName = 'PT Great Eastern'
+    }
     const lowerName = custName.toLowerCase()
 
     const targetUnitId = String(assetInfo.unit?.id || item.unit_id || '')
@@ -1215,15 +1234,16 @@ async function buildAtlasGreatSheetsForInvoices(
 
     // Cocokkan pencatatan yang KHUSUS untuk rental invoice yang dipilih & unitnya
     const matched = agReadings.find((r: any) => {
-      // 1. Direct match by rental_invoice_id
-      if (r.rental_invoice_id && String(r.rental_invoice_id) === String(item.id)) return true
+      // 1. Direct match by rental_invoice_id or id
+      if (r.rental_invoice_id && item.id && String(r.rental_invoice_id) === String(item.id)) return true
+      if (item.id && String(r.id) === String(item.id)) return true
 
       // 2. Match by customer_id AND unit_id
       const rCustId = String(r.customer_id || r.customer?.id || '')
       const rUnitId = String(r.unit_id || r.unit?.id || '')
       const rSerial = (r.unit?.serial_number || r.unit?.serial_no || '').toLowerCase().trim()
-      const sameCust = rCustId === custId
-      const sameUnit = (targetUnitId && rUnitId === targetUnitId) || (targetSerialNo && rSerial && targetSerialNo === rSerial)
+      const sameCust = rCustId && custId && rCustId === custId
+      const sameUnit = (targetUnitId && rUnitId && targetUnitId === rUnitId) || (targetSerialNo && rSerial && targetSerialNo === rSerial)
 
       if (!sameCust) return false
       if (!sameUnit) return false
@@ -1235,8 +1255,8 @@ async function buildAtlasGreatSheetsForInvoices(
       return true
     })
 
-    const isAtlas = lowerName.includes('atlas') || (matched && matched.customer_type === 'atlas')
-    const isGreat = !isAtlas && (lowerName.includes('great') || (matched && matched.customer_type === 'great'))
+    const isAtlas = item.customer_type === 'atlas' || lowerName.includes('atlas') || (matched && matched.customer_type === 'atlas')
+    const isGreat = !isAtlas && (item.customer_type === 'great' || lowerName.includes('great') || (matched && matched.customer_type === 'great'))
 
     if (!isAtlas && !isGreat && !matched) {
       continue
@@ -1320,7 +1340,12 @@ async function buildAtlasGreatSheetsForInvoices(
 
   for (const [, custData] of customerMap) {
     const isAtlas = custData.isAtlas
-    const sheetName = uniqueSheetName(custData.custName || (isAtlas ? 'Atlas Copco' : 'PT Great Eastern'), usedSheetNames)
+    const defaultTitle = isAtlas ? 'Atlas Copco' : 'PT Great Eastern'
+    let custTitle = custData.custName
+    if (!custTitle || custTitle === '-' || custTitle === 'Customer') {
+      custTitle = defaultTitle
+    }
+    const sheetName = uniqueSheetName(custTitle, usedSheetNames)
     const columnWidths = isAtlas
       ? [5.5, 24, 15, 16, 16, 16, 16, 26, 16, 18]
       : [5.5, 24, 16, 16, 16, 26, 16, 18]
@@ -1355,7 +1380,7 @@ async function buildAtlasGreatSheetsForInvoices(
 
     addRow([
       { v: 'Customer :', style: 'borderBold' },
-      { v: custData.custName, mergeAcross: halfMerge, style: 'borderBold' },
+      { v: custTitle, mergeAcross: halfMerge, style: 'borderBold' },
       ...padEmpty(halfMerge),
       { v: 'Billing Cycle :', style: 'borderBold' },
       { v: 'Setiap Tanggal 7 (Cut-Off Otomatis)', mergeAcross: remMerge, style: 'borderCenter' },
@@ -1468,6 +1493,47 @@ async function buildAtlasGreatSheetsForInvoices(
           { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
         ])
 
+        const hasDouble = (Number(r.counter_akhir_bw_double || r.counter_awal_bw_double || r.gross_counter_bw_double) > 0) ||
+                          (Number(r.counter_akhir_color_double || r.counter_awal_color_double || r.gross_counter_color_double) > 0)
+        if (hasDouble) {
+          const bwDblAwal = Number(r.counter_awal_bw_double || 0)
+          const bwDblGross = Number(r.gross_counter_bw_double || 0)
+          const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross)
+          const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
+          if (bwDblAkhir > 0 || bwDblGross > 0) {
+            addRow([
+              { v: '2S', style: 'borderCenter' },
+              { v: '↳ Black & White (2-Sided)', style: 'border' },
+              { v: bwDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: bwDblGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: bwDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: '2-Sided Tracking', style: 'borderCenter' },
+              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            ])
+          }
+          const colDblAwal = Number(r.counter_awal_color_double || 0)
+          const colDblGross = Number(r.gross_counter_color_double || 0)
+          const colDblAkhir = Number(r.counter_akhir_color_double || colDblGross)
+          const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
+          if (colDblAkhir > 0 || colDblGross > 0) {
+            addRow([
+              { v: '2S', style: 'borderCenter' },
+              { v: '↳ Colour (2-Sided)', style: 'border' },
+              { v: colDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: colDblGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: colDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: '2-Sided Tracking', style: 'borderCenter' },
+              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            ])
+          }
+        }
+
         addRow([
           { v: 'SUBTOTAL LEMBAR', mergeAcross: 5, style: 'totalCell' },
           ...padEmpty(5),
@@ -1547,6 +1613,43 @@ async function buildAtlasGreatSheetsForInvoices(
           { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
         ])
 
+        const hasDouble = (Number(r.counter_akhir_bw_double || r.counter_awal_bw_double || r.gross_counter_bw_double) > 0) ||
+                          (Number(r.counter_akhir_color_double || r.counter_awal_color_double || r.gross_counter_color_double) > 0)
+        if (hasDouble) {
+          const bwDblAwal = Number(r.counter_awal_bw_double || 0)
+          const bwDblGross = Number(r.gross_counter_bw_double || 0)
+          const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross)
+          const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
+          if (bwDblAkhir > 0 || bwDblGross > 0) {
+            addRow([
+              { v: '2S', style: 'borderCenter' },
+              { v: '↳ Black & White (2-Sided)', style: 'border' },
+              { v: bwDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: bwDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: '2-Sided Tracking', style: 'borderCenter' },
+              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            ])
+          }
+          const colDblAwal = Number(r.counter_awal_color_double || 0)
+          const colDblGross = Number(r.gross_counter_color_double || 0)
+          const colDblAkhir = Number(r.counter_akhir_color_double || colDblGross)
+          const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
+          if (colDblAkhir > 0 || colDblGross > 0) {
+            addRow([
+              { v: '2S', style: 'borderCenter' },
+              { v: '↳ Colour (2-Sided)', style: 'border' },
+              { v: colDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: colDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: '2-Sided Tracking', style: 'borderCenter' },
+              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
+              { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
+            ])
+          }
+        }
+
         addRow([
           { v: 'SUBTOTAL LEMBAR', mergeAcross: 3, style: 'totalCell' },
           ...padEmpty(3),
@@ -1597,7 +1700,7 @@ async function buildAtlasGreatSheetsForInvoices(
       ...padEmpty(sigRem),
     ])
     addRow([
-      { v: `( ${custData.custName} )`, mergeAcross: sigHalf, style: 'plainBoldCenter' },
+      { v: `( ${custTitle} )`, mergeAcross: sigHalf, style: 'plainBoldCenter' },
       ...padEmpty(sigHalf),
       { v: '( Admin Finance / Technical )', mergeAcross: sigRem, style: 'plainBoldCenter' },
       ...padEmpty(sigRem),
@@ -1621,14 +1724,31 @@ async function exportAtlasGreatInvoicesExcel() {
     }
 
     const usedSheetNames = new Set<string>()
-    const pseudoItems = agReadings.map((r: any) => ({
-      customer_id: r.customer_id,
-      customer: r.customer,
-      period_start: r.period_date,
-      monthly_date: r.period_date,
-      unit: r.unit,
-      unit_id: r.unit_id,
-    }))
+    const pseudoItems = agReadings.map((r: any) => {
+      let cust = r.customer || findCustomer(r.customer_id)
+      let custName = cust?.company_name || cust?.name || (r.customer_type === 'great' ? 'PT Great Eastern' : 'Atlas Copco')
+      if (!custName || custName === '-') {
+        custName = r.customer_type === 'great' ? 'PT Great Eastern' : 'Atlas Copco'
+      }
+      return {
+        id: r.id,
+        customer_type: r.customer_type || (custName.toLowerCase().includes('great') ? 'great' : 'atlas'),
+        customer_id: r.customer_id,
+        customer: cust || { company_name: custName, name: custName },
+        customer_name: custName,
+        period_start: r.period_date,
+        monthly_date: r.period_date,
+        unit: r.unit,
+        unit_id: r.unit_id,
+        counter_awal_bw: r.counter_awal_bw,
+        counter_akhir_bw: r.counter_akhir_bw,
+        pemakaian_bw: r.pemakaian_bw,
+        counter_awal_color: r.counter_awal_color,
+        counter_akhir_color: r.counter_akhir_color,
+        pemakaian_color: r.pemakaian_color,
+        meter_details: r.meter_details,
+      }
+    })
 
     const sheets = await buildAtlasGreatSheetsForInvoices(pseudoItems, usedSheetNames)
     if (sheets.length === 0) {
@@ -1646,43 +1766,55 @@ async function exportAtlasGreatInvoicesExcel() {
 }
 
 function exportMonthToPdf() {
-  const items = filteredData.value
-  if (items.length === 0) {
-    toast.warning('No rental invoice data to export to PDF!')
-    return
-  }
-  let periodLabel = 'Semua Periode'
-  if (monthFilter.value) {
-    const [y, m] = monthFilter.value.split('-')
-    const mName = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
-    periodLabel = mName
-  } else if (startDateFilter.value || endDateFilter.value) {
-    periodLabel = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
-  }
-  const html = renderRentalInvoicesPdf(items, `Rental Invoices - ${periodLabel}`)
-  const printWindow = window.open('', '_blank')
-  if (printWindow) {
-    printWindow.document.write(html)
-    printWindow.document.close()
+  try {
+    const items = filteredData.value
+    if (items.length === 0) {
+      toast.warning('No rental invoice data to export to PDF!')
+      return
+    }
+    let periodLabel = 'Semua Periode'
+    if (monthFilter.value) {
+      const [y, m] = monthFilter.value.split('-')
+      const mName = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+      periodLabel = mName
+    } else if (startDateFilter.value || endDateFilter.value) {
+      periodLabel = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
+    }
+    const html = renderRentalInvoicesPdf(items, `Rental Invoices - ${periodLabel}`)
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(html)
+      printWindow.document.close()
+    } else {
+      toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
+    }
+  } catch (err: any) {
+    toast.error('Gagal export PDF Rental Invoice: ' + (err?.message || 'Error'))
   }
 }
 
 function exportAnnualPdf() {
-  const year = normalizeExportYear(yearFilter.value)
-  if (year === null) {
-    toast.warning('Invalid year (1900–2100)!')
-    return
-  }
-  const items = filterApprovedPaid(filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS))
-  if (items.length === 0) {
-    toast.warning(`No approved & paid rental invoice data for year ${year}!`)
-    return
-  }
-  const html = renderRentalInvoicesPdf(items, `Rental Invoices Annual ${year}`)
-  const printWindow = window.open('', '_blank')
-  if (printWindow) {
-    printWindow.document.write(html)
-    printWindow.document.close()
+  try {
+    const year = normalizeExportYear(yearFilter.value)
+    if (year === null) {
+      toast.warning('Invalid year (1900–2100)!')
+      return
+    }
+    const items = filterApprovedPaid(filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS))
+    if (items.length === 0) {
+      toast.warning(`No approved & paid rental invoice data for year ${year}!`)
+      return
+    }
+    const html = renderRentalInvoicesPdf(items, `Rental Invoices Annual ${year}`)
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(html)
+      printWindow.document.close()
+    } else {
+      toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
+    }
+  } catch (err: any) {
+    toast.error('Gagal export PDF Tahunan: ' + (err?.message || 'Error'))
   }
 }
 
@@ -1971,13 +2103,17 @@ async function printReceiptAsync(item: any, approved: any) {
 }
 
 function exportSingleRentalInvoiceToPdf(item: any) {
-  const html = invoiceHtml(item)
-  const w = window.open('', '_blank')
-  if (w) {
-    w.document.write(html)
-    w.document.close()
-  } else {
-    toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
+  try {
+    const html = invoiceHtml(item)
+    const w = window.open('', '_blank')
+    if (w) {
+      w.document.write(html)
+      w.document.close()
+    } else {
+      toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
+    }
+  } catch (err: any) {
+    toast.error('Gagal membuat PDF invoice: ' + (err?.message || 'Error'))
   }
 }
 

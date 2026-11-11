@@ -287,7 +287,7 @@ function openEdit(item: any) {
       rate_per_page_color: r.rate_per_page_color,
       free_quota_bw: r.free_quota_bw ?? 0,
       free_quota_color: r.free_quota_color ?? 0,
-      quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : 'color'
+      quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : (r.quota_applies_to === 'both' ? 'both' : 'color')
     })) : [],
     specsData: item.specs ? (typeof item.specs === 'string' ? JSON.parse(item.specs || '{}') : item.specs) : { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
   })

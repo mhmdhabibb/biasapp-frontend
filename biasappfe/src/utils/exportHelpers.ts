@@ -332,7 +332,11 @@ export async function downloadStyledExcel(
       // sehingga beberapa merge dalam satu baris tetap tepat sasaran)
       row.forEach((cellDef, i) => {
         if (cellDef?.mergeAcross && cellDef.mergeAcross > 0) {
-          ws.mergeCells(rowIndex, i + 1, rowIndex, i + 1 + cellDef.mergeAcross)
+          try {
+            ws.mergeCells(rowIndex, i + 1, rowIndex, i + 1 + cellDef.mergeAcross)
+          } catch (mergeErr) {
+            console.warn(`[exportHelpers] mergeCells error at row ${rowIndex}, cols ${i + 1}-${i + 1 + cellDef.mergeAcross}:`, mergeErr)
+          }
         }
       })
     }

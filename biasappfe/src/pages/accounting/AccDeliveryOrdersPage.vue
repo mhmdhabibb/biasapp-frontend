@@ -265,7 +265,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       </template>
     </DataTable>
 
-    <FormModal :open="showDetail" :title="detailItem ? `Delivery Order ${detailItem.do_number}` : 'Delivery Order Detail'" max-width="640px" @close="showDetail = false">
+    <FormModal :open="showDetail" :title="detailItem ? `Delivery Order ${detailItem.do_number}` : 'Delivery Order Detail'" max-width="820px" @close="showDetail = false">
       <template v-if="detailItem">
         <div class="detail-grid">
           <div class="detail-field"><span>DO Number</span><strong>{{ detailItem.do_number }}</strong></div>
@@ -300,28 +300,28 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
         </section>
 
         <section class="detail-items" style="margin-top: 16px;">
-          <h4>Foto Dokumentasi</h4>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 8px;">
-            <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
-              <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sebelum (Photo Before)</div>
-              <div v-if="detailItem.photo_before">
-                <img :src="detailItem.photo_before" alt="Foto Sebelum" style="max-height: 180px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_before" />
+          <h4 style="margin-bottom: 8px;">Foto Dokumentasi</h4>
+          <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 8px;">
+            <div style="display: flex; flex-direction: column; text-align: center; background: var(--color-surface-sunken); padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+              <div style="font-size: 11.5px; font-weight: 600; margin-bottom: 8px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Foto Sebelum (Photo Before)</div>
+              <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 150px; background: rgba(0,0,0,0.02); border-radius: 6px; overflow: hidden;">
+                <img v-if="detailItem.photo_before && detailItem.photo_before !== 'has_photo'" :src="detailItem.photo_before" alt="Foto Sebelum" style="max-height: 160px; max-width: 100%; border-radius: 6px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_before" />
+                <div v-else class="text-muted" style="padding: 20px 0; font-size: 11px;">Tidak ada foto sebelum</div>
               </div>
-              <div v-else class="text-muted" style="padding: 24px 0; font-size: 12px;">Tidak ada foto sebelum</div>
             </div>
-            <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
-              <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Pengerjaan (Photo Progress)</div>
-              <div v-if="detailItem.photo_progress">
-                <img :src="detailItem.photo_progress" alt="Foto Pengerjaan" style="max-height: 180px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_progress" />
+            <div style="display: flex; flex-direction: column; text-align: center; background: var(--color-surface-sunken); padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+              <div style="font-size: 11.5px; font-weight: 600; margin-bottom: 8px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Foto Pengerjaan (Photo Progress)</div>
+              <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 150px; background: rgba(0,0,0,0.02); border-radius: 6px; overflow: hidden;">
+                <img v-if="detailItem.photo_progress && detailItem.photo_progress !== 'has_photo'" :src="detailItem.photo_progress" alt="Foto Pengerjaan" style="max-height: 160px; max-width: 100%; border-radius: 6px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_progress" />
+                <div v-else class="text-muted" style="padding: 20px 0; font-size: 11px;">Tidak ada foto pengerjaan</div>
               </div>
-              <div v-else class="text-muted" style="padding: 24px 0; font-size: 12px;">Tidak ada foto pengerjaan</div>
             </div>
-            <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
-              <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sesudah (Photo After)</div>
-              <div v-if="detailItem.photo_after">
-                <img :src="detailItem.photo_after" alt="Foto Sesudah" style="max-height: 180px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_after" />
+            <div style="display: flex; flex-direction: column; text-align: center; background: var(--color-surface-sunken); padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
+              <div style="font-size: 11.5px; font-weight: 600; margin-bottom: 8px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Foto Sesudah (Photo After)</div>
+              <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 150px; background: rgba(0,0,0,0.02); border-radius: 6px; overflow: hidden;">
+                <img v-if="detailItem.photo_after && detailItem.photo_after !== 'has_photo'" :src="detailItem.photo_after" alt="Foto Sesudah" style="max-height: 160px; max-width: 100%; border-radius: 6px; object-fit: contain; cursor: pointer;" @click="photoZoom = detailItem.photo_after" />
+                <div v-else class="text-muted" style="padding: 20px 0; font-size: 11px;">Tidak ada foto sesudah</div>
               </div>
-              <div v-else class="text-muted" style="padding: 24px 0; font-size: 12px;">Tidak ada foto sesudah</div>
             </div>
           </div>
         </section>

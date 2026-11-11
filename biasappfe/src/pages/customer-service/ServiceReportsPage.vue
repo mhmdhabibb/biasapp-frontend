@@ -42,6 +42,8 @@ const {
   findTechnician,
   findProduct,
   findUnit,
+  findBrand,
+  findUnitType,
   findServiceReport,
   formatUnitDisplayName,
   formatProductDisplayName,
@@ -797,7 +799,7 @@ function getSrUnitName(item: any): string {
   const u = item.unit || (item.unit_id ? findUnit(item.unit_id as any) : null)
   if (u) {
     const sn = u.serial_no || (u as any).serial_number || ''
-    return `${formatUnitDisplayName(u)}${sn ? ` (SN: ${sn})` : ''}`
+    return `${formatUnitDisplayName(u, { findBrand, findUnitType })}${sn ? ` (SN: ${sn})` : ''}`
   }
   return '-'
 }
@@ -805,6 +807,7 @@ function getSrUnitName(item: any): string {
 const columns: TableColumn[] = [
   { key: 'report_no', label: 'Report No.' },
   { key: 'customer_id', label: 'Customer' },
+  { key: 'unit_id', label: 'Unit / Machine' },
   { key: 'service_type', label: 'Service Type' },
   { key: 'technician_id', label: 'Technician' },
   { key: 'service_date', label: 'Visit Date' },
@@ -1179,6 +1182,9 @@ function printTable() {
         </div>
       </template>
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
+      <template #cell-unit_id="{ row }">
+        <span style="font-weight: 500;">{{ getSrUnitName(row) }}</span>
+      </template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
       <template #cell-service_type="{ value }">
         <span style="text-transform: capitalize; font-weight: 500;">{{ value || '-' }}</span>
@@ -1453,7 +1459,7 @@ function printTable() {
     </Teleport>
 
     <!-- DO Detail Modal -->
-    <FormModal :open="showDoDetail" :title="doDetailItem ? `Detail ${doDetailItem.do_number}` : 'Detail Delivery Order'" max-width="640px" @close="showDoDetail = false">
+    <FormModal :open="showDoDetail" :title="doDetailItem ? `Detail ${doDetailItem.do_number}` : 'Detail Delivery Order'" max-width="820px" @close="showDoDetail = false">
       <template v-if="doDetailItem">
         <div style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--color-border-light); padding-bottom: 8px; overflow-x: auto;">
           <button class="btn btn-sm" :class="doDetailTab === 'info' ? 'btn-primary' : 'btn-outline'" @click="doDetailTab = 'info'">DO Info</button>
@@ -1531,28 +1537,28 @@ function printTable() {
           </section>
 
           <section class="detail-items" style="margin-top: 24px;">
-            <h4>Foto Dokumentasi</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px;">
-              <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
-                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sebelum (Photo Before)</div>
-                <div v-if="doDetailItem?.photo_before">
-                  <img :src="doDetailItem.photo_before" alt="Foto Sebelum" style="max-height: 200px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="srPhotoZoom = doDetailItem.photo_before" />
+            <h4 style="margin-bottom: 8px;">Foto Dokumentasi</h4>
+            <div class="photo-doc-grid">
+              <div class="photo-doc-card">
+                <div class="photo-doc-title">Foto Sebelum (Photo Before)</div>
+                <div class="photo-doc-body">
+                  <img v-if="doDetailItem?.photo_before && doDetailItem.photo_before !== 'has_photo'" :src="doDetailItem.photo_before" alt="Foto Sebelum" class="photo-doc-img" @click="srPhotoZoom = doDetailItem.photo_before" />
+                  <div v-else class="text-muted photo-doc-empty">Tidak ada foto sebelum</div>
                 </div>
-                <div v-else class="text-muted" style="padding: 30px 0; font-size: 12px;">Tidak ada foto sebelum</div>
               </div>
-              <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
-                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Pengerjaan (Photo Progress)</div>
-                <div v-if="doDetailItem?.photo_progress">
-                  <img :src="doDetailItem.photo_progress" alt="Foto Pengerjaan" style="max-height: 200px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="srPhotoZoom = doDetailItem.photo_progress" />
+              <div class="photo-doc-card">
+                <div class="photo-doc-title">Foto Pengerjaan (Photo Progress)</div>
+                <div class="photo-doc-body">
+                  <img v-if="doDetailItem?.photo_progress && doDetailItem.photo_progress !== 'has_photo'" :src="doDetailItem.photo_progress" alt="Foto Pengerjaan" class="photo-doc-img" @click="srPhotoZoom = doDetailItem.photo_progress" />
+                  <div v-else class="text-muted photo-doc-empty">Tidak ada foto pengerjaan</div>
                 </div>
-                <div v-else class="text-muted" style="padding: 30px 0; font-size: 12px;">Tidak ada foto pengerjaan</div>
               </div>
-              <div style="text-align: center; background: var(--color-surface-sunken); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border-light);">
-                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--color-text-secondary);">Foto Sesudah (Photo After)</div>
-                <div v-if="doDetailItem?.photo_after">
-                  <img :src="doDetailItem.photo_after" alt="Foto Sesudah" style="max-height: 200px; max-width: 100%; border-radius: 8px; object-fit: contain; cursor: pointer;" @click="srPhotoZoom = doDetailItem.photo_after" />
+              <div class="photo-doc-card">
+                <div class="photo-doc-title">Foto Sesudah (Photo After)</div>
+                <div class="photo-doc-body">
+                  <img v-if="doDetailItem?.photo_after && doDetailItem.photo_after !== 'has_photo'" :src="doDetailItem.photo_after" alt="Foto Sesudah" class="photo-doc-img" @click="srPhotoZoom = doDetailItem.photo_after" />
+                  <div v-else class="text-muted photo-doc-empty">Tidak ada foto sesudah</div>
                 </div>
-                <div v-else class="text-muted" style="padding: 30px 0; font-size: 12px;">Tidak ada foto sesudah</div>
               </div>
             </div>
           </section>
@@ -2585,5 +2591,61 @@ function printTable() {
   height: 6px;
   border-radius: 50%;
   background: #ffffff;
+}
+.photo-doc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+.photo-doc-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface-sunken, #f8fafc);
+  padding: 10px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-border-light, #e2e8f0);
+}
+.photo-doc-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  text-align: center;
+  color: var(--color-text-secondary, #475569);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.photo-doc-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 6px;
+  min-height: 160px;
+  max-height: 180px;
+  overflow: hidden;
+}
+.photo-doc-img {
+  max-height: 160px;
+  max-width: 100%;
+  border-radius: 6px;
+  object-fit: contain;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.photo-doc-img:hover {
+  transform: scale(1.02);
+}
+.photo-doc-empty {
+  font-size: 11px;
+  padding: 20px 8px;
+  text-align: center;
+}
+@media (max-width: 640px) {
+  .photo-doc-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -381,13 +381,22 @@ function generateContractHTML(item: any): string {
           .map((r: any) => {
             const label = rateLabel(r);
             const isBW = r.quota_applies_to === "bw";
-            const free = Number(
-              isBW ? r.free_quota_bw : r.free_quota_color,
-            ) || 0;
-            const freeTxt =
-              free > 0
-                ? ` (termasuk ${free} lbr/bln cetak ${isBW ? "BW" : "warna"})`
-                : "";
+            const isBoth = r.quota_applies_to === "both";
+            let freeTxt = "";
+            if (isBoth) {
+              const fBW = Number(r.free_quota_bw) || 0;
+              const fColor = Number(r.free_quota_color) || 0;
+              if (fBW > 0 || fColor > 0) {
+                freeTxt = ` (termasuk free ${fBW} lbr BW & ${fColor} lbr warna/bln)`;
+              }
+            } else {
+              const free = Number(
+                isBW ? r.free_quota_bw : r.free_quota_color,
+              ) || 0;
+              if (free > 0) {
+                freeTxt = ` (termasuk ${free} lbr/bln cetak ${isBW ? "BW" : "warna"})`;
+              }
+            }
             const locTxt = r._unitLoc ? ` — ${r._unitLoc}` : "";
             return `<tr>
               <td class="col-dash">-</td>
@@ -1542,11 +1551,15 @@ function unitSerialNo(id: any, rowUnit?: any): string {
                 <span class="box-value"
                   >BW {{ formatRupiah(r.rate_per_page_bw || 0) }}/lbr •
                   Warna {{ formatRupiah(r.rate_per_page_color || 0) }}/lbr
-                  <span v-if="r.quota_applies_to === 'bw' && r.free_quota_bw"
+                  <span v-if="r.quota_applies_to === 'both'">
+                    <span v-if="r.free_quota_bw">• Free {{ r.free_quota_bw }} lbr BW/bln</span>
+                    <span v-if="r.free_quota_color">• Free {{ r.free_quota_color }} lbr Warna/bln</span>
+                  </span>
+                  <span v-else-if="r.quota_applies_to === 'bw' && r.free_quota_bw"
                     >• Free {{ r.free_quota_bw }} lbr BW/bln</span
                   >
                   <span
-                    v-if="r.quota_applies_to !== 'bw' && r.free_quota_color"
+                    v-else-if="r.quota_applies_to !== 'bw' && r.free_quota_color"
                     >• Free {{ r.free_quota_color }} lbr Warna/bln</span
                   ></span
                 >

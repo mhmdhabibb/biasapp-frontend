@@ -31,7 +31,7 @@ onMounted(() => {
   ensureResourcesLoaded(route.path)
 })
 
-useAutoRefresh(5000, ["jobOrders", "serviceReports", "technicians", "customers", "units"])
+useAutoRefresh(15000, ["jobOrders", "serviceReports", "technicians", "customers", "units"])
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))

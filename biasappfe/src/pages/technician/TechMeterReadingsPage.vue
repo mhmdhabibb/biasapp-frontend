@@ -174,6 +174,7 @@ const form = ref({
   paper_type_id: null as any,
   color_mode: "bw",
   end_meter: 0,
+  end_meter_double: 0,
   reading_date: new Date().toISOString().slice(0, 10),
 });
 
@@ -190,7 +191,7 @@ const contractSizes = computed(() => {
   const combos = sized.map((r) => ({
     paper_size_id: r.paper_size_id,
     paper_type_id: r.paper_type_id ?? null,
-    quota_applies_to: r.quota_applies_to === "bw" ? "bw" : "color",
+    quota_applies_to: r.quota_applies_to === "bw" ? "bw" : (r.quota_applies_to === "both" ? "both" : "color"),
     name:
       r.paper_size?.name ||
       paperSizes.value.find((p) => String(p.id) === String(r.paper_size_id))
@@ -208,7 +209,7 @@ const contractSizes = computed(() => {
     combos.push({
       paper_size_id: "",
       paper_type_id: g?.paper_type_id ?? null,
-      quota_applies_to: g?.quota_applies_to === "bw" ? "bw" : "color",
+      quota_applies_to: g?.quota_applies_to === "bw" ? "bw" : (g?.quota_applies_to === "both" ? "both" : "color"),
       name: "Tanpa ukuran (umum)",
       type_name: "",
     });
@@ -216,8 +217,8 @@ const contractSizes = computed(() => {
   return combos;
 });
 
-// Input per size x kind x mode: { [size|type|mode]: { end_meter } }
-const sizeInputs = ref<Record<string, { end_meter: number | null }>>({});
+// Input per size x kind x mode: { [size|type|mode]: { end_meter, end_meter_double } }
+const sizeInputs = ref<Record<string, { end_meter: number | null; end_meter_double: number | null }>>({});
 watch(
   () => form.value.contract_item_id,
   () => {
@@ -225,6 +226,7 @@ watch(
     form.value.paper_size_id = null;
     form.value.paper_type_id = null;
     form.value.end_meter = 0;
+    form.value.end_meter_double = 0;
   },
 );
 
@@ -258,9 +260,37 @@ function prevFor(paperSizeId: any, paperTypeId: any, mode: string): number {
   return latest.end_meter || 0;
 }
 
+function prevForDouble(paperSizeId: any, paperTypeId: any, mode: string): number {
+  if (!selectedContract.value) return 0;
+  const m = String(mode).toLowerCase();
+  const sized = (monthlyMeterReadings.value || []).filter(
+    (r) =>
+      r.contract_item_id === selectedContract.value?.id &&
+      String(r.paper_size_id) === String(paperSizeId) &&
+      sameType(r.paper_type_id, paperTypeId) &&
+      String(r.color_mode || "").toLowerCase() === m,
+  );
+  if (sized.length === 0) {
+    if (paperSizeId && Array.isArray((selectedContract.value as any)?.rates)) {
+      const rate = ((selectedContract.value as any).rates).find((r: any) => String(r.paper_size_id) === String(paperSizeId));
+      if (rate) {
+        return m === "color" ? Number(rate.start_meter_color_double || 0) : Number(rate.start_meter_bw_double || 0);
+      }
+    }
+    if (m === "color") return Number((selectedContract.value as any).start_meter_color_double || 0);
+    return Number((selectedContract.value as any).start_meter_bw_double || 0);
+  }
+  const latest = sized.reduce((prev, curr) =>
+    new Date(prev.created_at).getTime() > new Date(curr.created_at).getTime()
+      ? prev
+      : curr,
+  );
+  return Number(latest.end_meter_double || latest.start_meter_double || 0);
+}
+
 function rowInput(paperSizeId: any, paperTypeId: any, mode: string) {
   const key = comboKey(paperSizeId, paperTypeId, mode);
-  if (!sizeInputs.value[key]) sizeInputs.value[key] = { end_meter: null };
+  if (!sizeInputs.value[key]) sizeInputs.value[key] = { end_meter: null, end_meter_double: null };
   return sizeInputs.value[key]!;
 }
 // Previous meter is calculated PER paper size, because one contract/unit
@@ -285,6 +315,37 @@ const previousReading = computed(() => {
       : curr,
   );
   return latest.end_meter || 0;
+});
+
+const previousReadingDouble = computed(() => {
+  if (!selectedContract.value) return 0;
+  let readings = (monthlyMeterReadings.value || []).filter(
+    (r) => r.contract_item_id === selectedContract.value?.id,
+  );
+  if (form.value.paper_size_id) {
+    const sized = readings.filter(
+      (r) => String(r.paper_size_id) === String(form.value.paper_size_id),
+    );
+    if (sized.length > 0) readings = sized;
+    else {
+      const m = String(form.value.color_mode || "").toLowerCase();
+      return m === "color"
+        ? Number((selectedContract.value as any).start_meter_color_double || 0)
+        : Number((selectedContract.value as any).start_meter_bw_double || 0);
+    }
+  }
+  if (readings.length === 0) {
+    const m = String(form.value.color_mode || "").toLowerCase();
+    return m === "color"
+      ? Number((selectedContract.value as any).start_meter_color_double || 0)
+      : Number((selectedContract.value as any).start_meter_bw_double || 0);
+  }
+  const latest = readings.reduce((prev, curr) =>
+    new Date(prev.created_at).getTime() > new Date(curr.created_at).getTime()
+      ? prev
+      : curr,
+  );
+  return Number(latest.end_meter_double || latest.start_meter_double || 0);
 });
 
 function getReadingAuthor(reading: any): string {
@@ -363,19 +424,27 @@ async function submitReading() {
     for (const s of contractSizes.value) {
       for (const mode of ["bw", "color"]) {
         const row = rowInput(s.paper_size_id, s.paper_type_id, mode);
-        if (
-          row.end_meter === null ||
-          row.end_meter === undefined ||
-          String(row.end_meter) === ""
-        )
-          continue;
+        const has1S = row.end_meter !== null && row.end_meter !== undefined && String(row.end_meter).trim() !== "";
+        const has2S = row.end_meter_double !== null && row.end_meter_double !== undefined && String(row.end_meter_double).trim() !== "";
+
+        if (!has1S && !has2S) continue;
+
         const startMeter = prevFor(s.paper_size_id, s.paper_type_id, mode);
-        const endMeter = Number(row.end_meter);
-        if (endMeter < startMeter) {
+        const endMeter = has1S ? Number(row.end_meter) : startMeter;
+        if (has1S && endMeter < startMeter) {
           return toast.warning(
-            `Size ${s.name} (${mode.toUpperCase()}): Current Meter (${endMeter}) must not be smaller than Previous (${startMeter})!`,
+            `Size ${s.name} (${mode.toUpperCase()}): Current Meter 1-Sided (${endMeter}) must not be smaller than Previous (${startMeter})!`,
           );
         }
+
+        const startMeterDouble = prevForDouble(s.paper_size_id, s.paper_type_id, mode);
+        const endMeterDouble = has2S ? Number(row.end_meter_double) : (has1S ? startMeterDouble : 0);
+        if (has2S && endMeterDouble < startMeterDouble) {
+          return toast.warning(
+            `Size ${s.name} (${mode.toUpperCase()}): Current Meter 2-Sided (${endMeterDouble}) must not be smaller than Previous (${startMeterDouble})!`,
+          );
+        }
+
         payloads.push({
           user_id: currentUser.value?.id,
           contract_item_id: ci.id,
@@ -386,6 +455,9 @@ async function submitReading() {
           start_meter: startMeter,
           end_meter: endMeter,
           total_usage: Math.max(0, endMeter - startMeter),
+          start_meter_double: startMeterDouble,
+          end_meter_double: endMeterDouble,
+          total_usage_double: Math.max(0, endMeterDouble - startMeterDouble),
           reading_date: readingDate,
         });
       }
@@ -403,6 +475,7 @@ async function submitReading() {
       toast.success(`${payloads.length} Meter Readings saved successfully!`);
       sizeInputs.value = {};
       form.value.end_meter = 0;
+      form.value.end_meter_double = 0;
     } catch (err: any) {
       toast.error(err.message || "Failed to save meter reading");
     }
@@ -410,14 +483,20 @@ async function submitReading() {
   }
 
   // Single mode (contract without rates): legacy single-size form.
-  // Reuse `ci` from the top of submitReading().
-  // paper size optional: empty = flat reading without size breakdown
-
   const startMeter = previousReading.value || 0;
-  const endMeter = form.value.end_meter;
+  const endMeter = Number(form.value.end_meter || 0);
   if (endMeter < startMeter) {
     return toast.warning(
-      "Current Meter must not be smaller than the previous value!",
+      "Current Meter (1-Sided) must not be smaller than the previous value!",
+    );
+  }
+
+  const startMeterDouble = previousReadingDouble.value || 0;
+  const hasDoubleVal = form.value.end_meter_double !== null && form.value.end_meter_double !== undefined && String(form.value.end_meter_double).trim() !== "";
+  const endMeterDouble = hasDoubleVal ? Number(form.value.end_meter_double) : startMeterDouble;
+  if (hasDoubleVal && endMeterDouble < startMeterDouble) {
+    return toast.warning(
+      "Current Meter (2-Sided) must not be smaller than the previous value!",
     );
   }
 
@@ -435,12 +514,16 @@ async function submitReading() {
       start_meter: startMeter,
       end_meter: endMeter,
       total_usage: Math.max(0, endMeter - startMeter),
+      start_meter_double: startMeterDouble,
+      end_meter_double: endMeterDouble,
+      total_usage_double: Math.max(0, endMeterDouble - startMeterDouble),
       reading_date: readingDate,
     });
     await refreshInBackground();
     showAddModal.value = false;
     toast.success("Meter Reading saved successfully!");
     form.value.end_meter = 0;
+    form.value.end_meter_double = 0;
     form.value.paper_size_id = null;
   } catch (err: any) {
     toast.error(err.message || "Failed to save meter reading");
@@ -512,8 +595,8 @@ async function submitReading() {
               <th>Unit</th>
               <th>Serial Number</th>
               <th>Paper Size</th>
-              <th>Prev Meter</th>
-              <th>Curr Meter</th>
+              <th>1-Sided (Prev → Curr)</th>
+              <th>2-Sided (Prev → Curr)</th>
               <th>Total Usage</th>
               <th v-if="isAdminOrSuperadmin && techFilter === 'all'">Input By</th>
             </tr>
@@ -540,10 +623,30 @@ async function submitReading() {
                   <span v-if="reading.color_mode">({{ reading.color_mode.toUpperCase() }})</span>
                 </span>
               </td>
-              <td>{{ reading.start_meter }}</td>
-              <td><b>{{ reading.end_meter }}</b></td>
               <td>
-                <span class="usage-pill">+{{ reading.total_usage }}</span>
+                <div style="font-size: 13px;">
+                  <span class="text-muted" style="font-size: 11px;">Prev:</span> {{ Number(reading.start_meter || 0).toLocaleString('id-ID') }}
+                </div>
+                <div style="font-size: 13px;">
+                  <span class="text-muted" style="font-size: 11px;">Curr:</span> <b>{{ Number(reading.end_meter || 0).toLocaleString('id-ID') }}</b>
+                </div>
+              </td>
+              <td>
+                <template v-if="Number(reading.end_meter_double || reading.start_meter_double || 0) > 0">
+                  <div style="font-size: 13px; color: #1d4ed8;">
+                    <span class="text-muted" style="font-size: 11px;">Prev:</span> {{ Number(reading.start_meter_double || 0).toLocaleString('id-ID') }}
+                  </div>
+                  <div style="font-size: 13px; color: #1d4ed8;">
+                    <span class="text-muted" style="font-size: 11px;">Curr:</span> <b>{{ Number(reading.end_meter_double || 0).toLocaleString('id-ID') }}</b>
+                  </div>
+                </template>
+                <span v-else class="text-muted" style="font-size: 12px;">-</span>
+              </td>
+              <td>
+                <span class="usage-pill">+{{ Number(reading.total_usage || 0).toLocaleString('id-ID') }} (1-S)</span>
+                <span v-if="Number(reading.total_usage_double || 0) > 0" class="usage-pill" style="margin-top: 4px; display: inline-block; background: #e0e7ff; color: #3730a3;">
+                  +{{ Number(reading.total_usage_double || 0).toLocaleString('id-ID') }} (2-S)
+                </span>
               </td>
               <td v-if="isAdminOrSuperadmin && techFilter === 'all'">
                 <span class="text-sm text-muted">{{ getReadingAuthor(reading) }}</span>
@@ -596,16 +699,30 @@ async function submitReading() {
             </div>
             <div class="m-meter-box">
               <div class="m-meter-item">
-                <span class="m-label">Start:</span>
+                <span class="m-label">1-S Start:</span>
                 <span class="m-val font-semibold">{{ reading.start_meter }}</span>
               </div>
               <div class="m-meter-arrow">→</div>
               <div class="m-meter-item">
-                <span class="m-label">End:</span>
+                <span class="m-label">1-S End:</span>
                 <span class="m-val font-semibold">{{ reading.end_meter }}</span>
               </div>
               <div class="m-usage-badge">
                 +{{ reading.total_usage }}
+              </div>
+            </div>
+            <div v-if="Number(reading.end_meter_double || reading.start_meter_double || 0) > 0" class="m-meter-box" style="margin-top: 6px; background: #f0fdf4;">
+              <div class="m-meter-item">
+                <span class="m-label" style="color: #166534;">2-S Start:</span>
+                <span class="m-val font-semibold" style="color: #166534;">{{ reading.start_meter_double || 0 }}</span>
+              </div>
+              <div class="m-meter-arrow">→</div>
+              <div class="m-meter-item">
+                <span class="m-label" style="color: #166534;">2-S End:</span>
+                <span class="m-val font-semibold" style="color: #166534;">{{ reading.end_meter_double || 0 }}</span>
+              </div>
+              <div class="m-usage-badge" style="background: #16a34a;">
+                +{{ reading.total_usage_double || 0 }}
               </div>
             </div>
           </div>
@@ -685,8 +802,7 @@ async function submitReading() {
             class="meter-inputs"
           >
             <p class="text-sm text-muted mb-md">
-              This contract has {{ contractSizes.length }} paper size/kind
-              combos — fill BW + Color meter per combo:
+              Kontrak ini memiliki {{ contractSizes.length }} ukuran kertas — isi meter 1-Sided dan 2-Sided (BW & Colour):
             </p>
             <div
               v-for="s in contractSizes"
@@ -694,43 +810,76 @@ async function submitReading() {
               class="size-block"
             >
               <div class="size-title">
-                Size: <b>{{ s.name }}</b
+                Ukuran: <b>{{ s.name }}</b
                 ><span v-if="s.type_name"> / {{ s.type_name }}</span>
                 <span class="text-muted"
                   >(free:
-                  {{ s.quota_applies_to === "bw" ? "BW" : "Color" }})</span
+                  {{ s.quota_applies_to === "both" ? "BW & Color" : (s.quota_applies_to === "bw" ? "BW" : "Color") }})</span
                 >
               </div>
               <div
                 v-for="mode in ['bw', 'color']"
                 :key="mode"
-                class="flex gap-md"
-                style="margin-bottom: 0.5rem"
+                class="meter-mode-box mb-sm"
               >
-                <div class="form-group flex-1 mb-0">
-                  <label class="form-label text-muted"
-                    >Prev {{ mode.toUpperCase() }}</label
-                  >
-                  <input
-                    type="number"
-                    :value="prevFor(s.paper_size_id, s.paper_type_id, mode)"
-                    class="form-input"
-                    disabled
-                  />
+                <div class="mode-header font-semibold text-xs text-muted mb-xs">
+                  {{ mode === 'color' ? '🎨 Colour (Warna)' : '📄 B/W (Hitam Putih)' }}
                 </div>
-                <div class="form-group flex-1 mb-0">
-                  <label class="form-label"
-                    >Curr {{ mode.toUpperCase() }}</label
-                  >
-                  <input
-                    type="number"
-                    v-model.number="
-                      rowInput(s.paper_size_id, s.paper_type_id, mode).end_meter
-                    "
-                    class="form-input"
-                    :min="prevFor(s.paper_size_id, s.paper_type_id, mode)"
-                    placeholder="Empty = skip"
-                  />
+                <!-- 1-Sided Inputs -->
+                <div class="flex gap-md mb-xs">
+                  <div class="form-group flex-1 mb-0">
+                    <label class="form-label text-muted text-xs"
+                      >Prev 1-Sided</label
+                    >
+                    <input
+                      type="number"
+                      :value="prevFor(s.paper_size_id, s.paper_type_id, mode)"
+                      class="form-input form-input-sm"
+                      disabled
+                    />
+                  </div>
+                  <div class="form-group flex-1 mb-0">
+                    <label class="form-label text-xs"
+                      >Curr 1-Sided</label
+                    >
+                    <input
+                      type="number"
+                      v-model.number="
+                        rowInput(s.paper_size_id, s.paper_type_id, mode).end_meter
+                      "
+                      class="form-input form-input-sm"
+                      :min="prevFor(s.paper_size_id, s.paper_type_id, mode)"
+                      placeholder="Kosong = lewati"
+                    />
+                  </div>
+                </div>
+                <!-- 2-Sided Inputs -->
+                <div class="flex gap-md">
+                  <div class="form-group flex-1 mb-0">
+                    <label class="form-label text-muted text-xs"
+                      >Prev 2-Sided</label
+                    >
+                    <input
+                      type="number"
+                      :value="prevForDouble(s.paper_size_id, s.paper_type_id, mode)"
+                      class="form-input form-input-sm"
+                      disabled
+                    />
+                  </div>
+                  <div class="form-group flex-1 mb-0">
+                    <label class="form-label text-xs"
+                      >Curr 2-Sided (Opsional)</label
+                    >
+                    <input
+                      type="number"
+                      v-model.number="
+                        rowInput(s.paper_size_id, s.paper_type_id, mode).end_meter_double
+                      "
+                      class="form-input form-input-sm"
+                      :min="prevForDouble(s.paper_size_id, s.paper_type_id, mode)"
+                      placeholder="0 / Opsional"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -752,9 +901,10 @@ async function submitReading() {
               >
               <CustomSelect v-model="form.color_mode" class="form-select" :options="colorModeOptions" />
             </div>
-            <div class="flex gap-md">
+            <!-- 1-Sided Meter -->
+            <div class="flex gap-md mb-sm">
               <div class="form-group flex-1 mb-0">
-                <label class="form-label text-muted">Previous Meter</label>
+                <label class="form-label text-muted text-xs">Prev Meter (1-Sided)</label>
                 <input
                   type="number"
                   :value="previousReading"
@@ -763,13 +913,37 @@ async function submitReading() {
                 />
               </div>
               <div class="form-group flex-1 mb-0">
-                <label class="form-label"
-                  >Current Meter <span class="text-danger">*</span></label
+                <label class="form-label text-xs"
+                  >Curr Meter (1-Sided) <span class="text-danger">*</span></label
                 >
                 <input
                   type="number"
                   v-model.number="form.end_meter"
                   class="form-input"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <!-- 2-Sided Meter -->
+            <div class="flex gap-md">
+              <div class="form-group flex-1 mb-0">
+                <label class="form-label text-muted text-xs">Prev Meter (2-Sided)</label>
+                <input
+                  type="number"
+                  :value="previousReadingDouble"
+                  class="form-input"
+                  disabled
+                />
+              </div>
+              <div class="form-group flex-1 mb-0">
+                <label class="form-label text-xs"
+                  >Curr Meter (2-Sided)</label
+                >
+                <input
+                  type="number"
+                  v-model.number="form.end_meter_double"
+                  class="form-input"
+                  placeholder="0 (Opsional)"
                 />
               </div>
             </div>
@@ -804,15 +978,22 @@ async function submitReading() {
   align-items: center;
   justify-content: center;
   z-index: 100;
+  padding: 16px;
 }
 .modal {
   background: var(--color-surface);
-  width: 90%;
-  max-width: 500px;
+  width: 100%;
+  max-width: 580px;
+  max-height: 90vh;
   border-radius: var(--radius-lg);
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
+}
+.modal-body {
+  padding: var(--space-lg);
+  overflow-y: auto;
+  max-height: calc(90vh - 130px);
 }
 .modal-header {
   padding: var(--space-md) var(--space-lg);

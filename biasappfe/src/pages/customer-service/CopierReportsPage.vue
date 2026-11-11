@@ -31,6 +31,9 @@ const {
   units,
   findCustomer,
   findUnit,
+  findBrand,
+  findUnitType,
+  formatUnitDisplayName,
   findTechnician,
   refreshInBackground,
 } = useMasterStore()
@@ -61,7 +64,7 @@ const filteredCopierReports = computed(() => {
 const columns: TableColumn[] = [
   { key: 'report_no', label: 'Report No.' },
   { key: 'customer_id', label: 'Customer' },
-  { key: 'unit_id', label: 'Unit' },
+  { key: 'unit_id', label: 'Unit / Machine' },
   { key: 'technician_id', label: 'Technician' },
   { key: 'service_date', label: 'Visit Date' },
   { key: 'status', label: 'Status' },
@@ -72,9 +75,13 @@ function customerName(id: any): string {
   return c ? c.company_name || c.name || '-' : '-'
 }
 
-function unitName(id: any): string {
-  const u: any = findUnit(id as any)
-  return u ? `${u.model || '-'} (${u.serial_no || '-'})` : '-'
+function unitName(id: any, row?: any): string {
+  const u: any = row?.unit || (id ? findUnit(id as any) : null)
+  if (u) {
+    const sn = u.serial_no || (u as any).serial_number || ''
+    return `${formatUnitDisplayName(u, { findBrand, findUnitType })}${sn ? ` (SN: ${sn})` : ''}`
+  }
+  return '-'
 }
 
 function technicianName(id: any): string {
@@ -416,7 +423,7 @@ async function handleDelete() {
         </div>
       </template>
       <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
-      <template #cell-unit_id="{ value }">{{ unitName(value) }}</template>
+      <template #cell-unit_id="{ value, row }">{{ unitName(value, row) }}</template>
       <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
       <template #cell-service_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-status="{ value }">
@@ -490,7 +497,7 @@ async function handleDelete() {
         <div class="cr-head">
           <div>
             <div class="cr-no">{{ detailItem.report_no || '-' }}</div>
-            <div class="cr-sub">{{ customerName(detailItem.customer_id) }} · {{ unitName(detailItem.unit_id) }}</div>
+            <div class="cr-sub">{{ customerName(detailItem.customer_id) }} · {{ unitName(detailItem.unit_id, detailItem) }}</div>
           </div>
           <span :class="detailItem.status === 'completed' ? 'badge badge-success' : detailItem.status === 'pending' ? 'badge badge-warning' : 'badge badge-info'">
             {{ detailItem.status || '-' }}

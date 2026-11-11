@@ -86,10 +86,10 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units", "rents", "products", "brands", "unitTypes"],
   "/customer-service/sales": ["sales", "salesInvoices", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes"],
-  "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "purchaseOrders", "technicians", "units", "customers", "products"],
+  "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "purchaseOrders", "technicians", "units", "customers", "products", "brands", "unitTypes"],
   "/customer-service/contract-items": ["contractItems", "customers", "units", "brands", "unitTypes"],
-  "/customer-service/job-orders": ["jobOrders", "deliveryOrders", "serviceReports", "serviceRequests", "technicians", "units", "customers"],
-  "/customer-service/service-requests": ["serviceRequests", "customers", "units", "sales", "deliveryOrders", "jobOrders", "serviceReports", "contractItems", "rents", "products"],
+  "/customer-service/job-orders": ["jobOrders", "deliveryOrders", "serviceReports", "serviceRequests", "technicians", "units", "customers", "brands", "unitTypes"],
+  "/customer-service/service-requests": ["serviceRequests", "customers", "units", "sales", "deliveryOrders", "jobOrders", "serviceReports", "contractItems", "rents", "products", "brands", "unitTypes"],
   "/customer-service/monthly-meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "serviceReports", "brands", "unitTypes"],
   "/customer-service/payments": ["payments", "rentalInvoices", "salesInvoices", "customers"],
   "/customer-service/warranty-claims": ["warrantyClaims", "units", "customers", "warranties"],
@@ -99,9 +99,13 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/delivery": ["deliveryOrders", "purchaseOrders", "customers"],
   "/customer-service/call-service": ["serviceRequests", "jobOrders", "technicians", "customers", "units"],
   "/customer-service/monitoring-service": ["serviceRequests", "jobOrders", "serviceReports", "deliveryOrders", "technicians", "customers", "units", "products"],
-  "/customer-service/copier-reports": ["serviceReports", "contractItems", "units", "customers", "monthlyMeterReadings"],
-  "/customer-service/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers", "units"],
+  "/customer-service/copier-reports": ["serviceReports", "contractItems", "units", "customers", "monthlyMeterReadings", "brands", "unitTypes"],
+  "/customer-service/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers", "units", "brands", "unitTypes"],
   "/customer-service/surveys": ["customers", "units", "technicians"],
+
+  // Shared Report Routes
+  "/shared/service-reports": ["serviceReports", "jobOrders", "contractItems", "technicians", "units", "customers", "brands", "unitTypes", "products", "monthlyMeterReadings"],
+  "/shared/service-reports/:id": ["serviceReports", "jobOrders", "contractItems", "technicians", "units", "customers", "brands", "unitTypes", "products", "monthlyMeterReadings"],
 
   // Accounting Operational Pages
   "/accounting/purchase-orders": ["purchaseOrders", "suppliers", "products"],
@@ -110,10 +114,11 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
 
   // Technician Operational Pages
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "products", "sparepartRequests"],
-  "/technician/call-services/:id/copier-report": ["serviceReports", "contractItems", "monthlyMeterReadings", "units", "customers", "technicians", "paperSizes", "paperTypes", "jobOrders"],
-  "/technician/call-services/:id/service-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests"],
-  "/technician/call-services/:id/technical-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests"],
-  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers", "contractItems", "monthlyMeterReadings", "products", "sparepartRequests"],
+  "/technician/call-services/:id/copier-report": ["serviceReports", "contractItems", "monthlyMeterReadings", "units", "customers", "technicians", "paperSizes", "paperTypes", "jobOrders", "brands", "unitTypes"],
+  "/technician/call-services/:id/service-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests", "brands", "unitTypes"],
+  "/technician/call-services/:id/technical-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests", "brands", "unitTypes"],
+  "/technician/call-services/:id": ["jobOrders", "serviceReports", "deliveryOrders", "contractItems", "technicians", "units", "customers", "products", "brands", "unitTypes"],
+  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers", "contractItems", "monthlyMeterReadings", "products", "sparepartRequests", "brands", "unitTypes"],
   "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers", "brands", "unitTypes", "products", "rents", "contractItems"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "technicians", "serviceReports"],
