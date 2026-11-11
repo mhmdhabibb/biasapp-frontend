@@ -605,6 +605,17 @@ watch(
   },
 );
 
+watch(
+  () => form.customer_id,
+  (newCustId) => {
+    if (!newCustId) return;
+    const cust = findCustomer(newCustId);
+    if (cust?.address && !form.installation_address) {
+      form.installation_address = cust.address;
+    }
+  },
+);
+
 const calcSubtotal = computed(() => {
   let sub = 0;
   for (const item of rentalItems.value) {

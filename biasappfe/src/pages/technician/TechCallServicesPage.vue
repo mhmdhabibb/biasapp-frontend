@@ -97,13 +97,87 @@ function jobRefNo(job: any): string {
 }
 
 function jobDate(job: any): string {
-  return job.scheduled_date || job.delivery_order?.delivery_date || job.created_at || ''
+  if (!job) return ''
+  return (
+    job.scheduled_date ||
+    job.delivery_order?.delivery_date ||
+    job.survey?.scheduled_date ||
+    job.service_report?.service_date ||
+    job.created_at ||
+    ''
+  )
+}
+
+function getJobAddress(job: any): string {
+  if (!job) return ''
+  const d = job.delivery_order
+  return (
+    d?.rental?.installation_address ||
+    job.rental?.installation_address ||
+    d?.sale?.installation_address ||
+    job.sale?.installation_address ||
+    job.survey?.location_address ||
+    d?.delivery_address ||
+    job.survey?.customer?.address ||
+    job.service_report?.customer?.address ||
+    job.customer?.address ||
+    findCustomer(jobCustomerId(job))?.address ||
+    ''
+  )
+}
+
+function toLocalDateStr(dateVal: any): string {
+  if (!dateVal) return ''
+  const d = new Date(dateVal)
+  if (isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const todayStr = computed(() => {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+})
+
+const dateFilterTab = ref<'all' | 'today' | 'upcoming'>('all')
+
+function setDateFilterTab(tab: 'all' | 'today' | 'upcoming') {
+  dateFilterTab.value = tab
+  if (tab === 'today') {
+    filterDate.value = todayStr.value
+  } else if (tab === 'all') {
+    filterDate.value = ''
+  }
+}
+
+function onCustomDateChange() {
+  if (filterDate.value === todayStr.value) {
+    dateFilterTab.value = 'today'
+  } else if (!filterDate.value) {
+    dateFilterTab.value = 'all'
+  } else {
+    dateFilterTab.value = 'all'
+  }
 }
 
 const filteredJobs = computed(() => {
   return myJobs.value.filter(job => {
     if (filterStatus.value && job.status !== filterStatus.value) return false
-    if (filterDate.value && !(jobDate(job) || '').startsWith(filterDate.value)) return false
+    
+    // Timezone-safe date filtering
+    const jd = jobDate(job)
+    const jdLocal = toLocalDateStr(jd)
+    if (dateFilterTab.value === 'upcoming') {
+      if (jdLocal && jdLocal < todayStr.value) return false
+    } else if (filterDate.value) {
+      if (jdLocal !== filterDate.value) return false
+    }
+
     if (filterCustomer.value) {
       const cust = findCustomer(jobCustomerId(job))
       if (!cust || !(cust.company_name || '').toLowerCase().includes(filterCustomer.value.toLowerCase())) return false
@@ -113,7 +187,14 @@ const filteredJobs = computed(() => {
       if (!hay.includes(filterServiceNo.value.toLowerCase())) return false
     }
     return true
-  }).sort((a, b) => new Date(jobDate(b)).getTime() - new Date(jobDate(a)).getTime())
+  }).sort((a, b) => {
+    const timeA = new Date(jobDate(a)).getTime() || 0
+    const timeB = new Date(jobDate(b)).getTime() || 0
+    if (dateFilterTab.value === 'upcoming' || filterDate.value) {
+      return timeA - timeB
+    }
+    return timeB - timeA
+  })
 })
 
 function getCustomerName(id: number | null) {
@@ -146,7 +227,7 @@ const paginatedJobs = computed(() => {
   return filteredJobs.value.slice(start, start + perPage)
 })
 
-watch([filterStatus, filterDate, filterCustomer, filterServiceNo], () => {
+watch([filterStatus, filterDate, dateFilterTab, filterCustomer, filterServiceNo], () => {
   currentPage.value = 1
 })
 
@@ -369,8 +450,36 @@ async function handleDownloadRowJob(job: any) {
           <input v-model="filterCustomer" type="text" class="form-input" placeholder="Search customer...">
         </div>
         <div class="form-group mb-0">
-          <label class="form-label">Date</label>
-          <input v-model="filterDate" type="date" class="form-input">
+          <label class="form-label">Tanggal Jadwal</label>
+          <div class="date-filter-wrapper">
+            <input v-model="filterDate" type="date" class="form-input date-input-sm" @change="onCustomDateChange">
+            <div class="date-tab-buttons">
+              <button
+                type="button"
+                class="btn-date-tab"
+                :class="{ active: filterDate === todayStr }"
+                @click="setDateFilterTab('today')"
+              >
+                Hari Ini
+              </button>
+              <button
+                type="button"
+                class="btn-date-tab"
+                :class="{ active: dateFilterTab === 'upcoming' && !filterDate }"
+                @click="setDateFilterTab('upcoming')"
+              >
+                Mendatang
+              </button>
+              <button
+                type="button"
+                class="btn-date-tab"
+                :class="{ active: !filterDate && dateFilterTab === 'all' }"
+                @click="setDateFilterTab('all')"
+              >
+                Semua
+              </button>
+            </div>
+          </div>
         </div>
         <div class="form-group mb-0">
           <label class="form-label">Status</label>
@@ -386,9 +495,9 @@ async function handleDownloadRowJob(job: any) {
             <tr>
               <th>Service No</th>
               <th>Type</th>
-              <th>Customer</th>
+              <th>Customer & Alamat Instalasi</th>
               <th>Unit</th>
-              <th>Scheduled / Delivery</th>
+              <th>Jadwal / Scheduled Date</th>
               <th>Status</th>
               <th style="width: 195px; text-align: center;">Action</th>
             </tr>
@@ -401,9 +510,19 @@ async function handleDownloadRowJob(job: any) {
                   {{ isSurveyJob(job) ? 'SURVEY' : isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE' }}
                 </span>
               </td>
-              <td>{{ job.survey?.customer?.company_name || job.service_report?.customer?.company_name || job.service_request?.customer?.company_name || job.delivery_order?.customer?.company_name || getCustomerName(jobCustomerId(job)) }}</td>
+              <td>
+                <div class="font-semibold">{{ job.survey?.customer?.company_name || job.service_report?.customer?.company_name || job.service_request?.customer?.company_name || job.delivery_order?.customer?.company_name || getCustomerName(jobCustomerId(job)) }}</div>
+                <div v-if="getJobAddress(job)" class="job-installation-addr" title="Installation Address">
+                  📍 {{ getJobAddress(job) }}
+                </div>
+              </td>
               <td>{{ isSurveyJob(job) ? (job.survey?.recommended_model || job.survey?.unit?.model || 'Survey Lokasi') : isDeliveryJob(job) ? '-' : (job.service_report?.unit?.model || job.service_request?.unit?.model || getUnitName(jobUnitId(job))) }}</td>
-              <td>{{ jobDate(job) ? new Date(jobDate(job)).toLocaleString('en-GB') : '-' }}</td>
+              <td>
+                <span v-if="jobDate(job)" class="scheduled-date-cell">
+                  {{ new Date(jobDate(job)).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) }}
+                </span>
+                <span v-else class="text-muted">-</span>
+              </td>
               <td>
                 <span class="badge" :class="'badge-' + (job.status === 'in_progress' ? 'info' : job.status === 'pending' || job.status === 'assigned' ? 'warning' : job.status === 'completed' ? 'success' : 'secondary')">
                   {{ job.status.toUpperCase().replace('_', ' ') }}
@@ -472,13 +591,17 @@ async function handleDownloadRowJob(job: any) {
               <span class="m-label">Customer</span>
               <span class="m-val font-semibold">{{ getCustomerName(jobCustomerId(job)) }}</span>
             </div>
+            <div class="m-row" v-if="getJobAddress(job)">
+              <span class="m-label">Installation Address</span>
+              <span class="m-val text-muted">📍 {{ getJobAddress(job) }}</span>
+            </div>
             <div class="m-row" v-if="!isDeliveryJob(job)">
               <span class="m-label">Unit</span>
               <span class="m-val">{{ getUnitName(jobUnitId(job)) }}</span>
             </div>
             <div class="m-row">
-              <span class="m-label">Schedule</span>
-              <span class="m-val">{{ jobDate(job) ? new Date(jobDate(job)).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }) : '-' }}</span>
+              <span class="m-label">Scheduled Date</span>
+              <span class="m-val font-medium">{{ jobDate(job) ? new Date(jobDate(job)).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-' }}</span>
             </div>
           </div>
 
@@ -638,6 +761,58 @@ async function handleDownloadRowJob(job: any) {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--space-md);
   align-items: end;
+}
+
+.date-filter-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.date-tab-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-date-tab {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--color-border-light, #e2e8f0);
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-muted, #64748b);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.btn-date-tab:hover {
+  background: #f1f5f9;
+  color: var(--color-text, #0f172a);
+}
+
+.btn-date-tab.active {
+  background: var(--color-primary, #0066cc);
+  border-color: var(--color-primary, #0066cc);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.job-installation-addr {
+  font-size: 11.5px;
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.3;
+  margin-top: 3px;
+  max-width: 260px;
+  word-break: break-word;
+}
+
+.scheduled-date-cell {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text, #0f172a);
 }
 
 .action-buttons-group {

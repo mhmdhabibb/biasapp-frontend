@@ -312,6 +312,17 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => form.customer_id,
+  (newCustId) => {
+    if (!newCustId) return;
+    const cust = findCustomer(newCustId);
+    if (cust?.address && !form.installation_address) {
+      form.installation_address = cust.address;
+    }
+  },
+);
+
 onUnmounted(() => {
   if (salesTimer) clearInterval(salesTimer);
   window.removeEventListener("focus", silentRefresh);

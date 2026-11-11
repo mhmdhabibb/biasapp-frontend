@@ -92,9 +92,9 @@ function customerName(id: any): string {
 }
 function rowAddress(row: any): string {
   if (!row) return '-'
-  if (row.delivery_address && String(row.delivery_address).trim()) return String(row.delivery_address).trim()
   if (row.rental?.installation_address && String(row.rental.installation_address).trim()) return String(row.rental.installation_address).trim()
   if (row.sale?.installation_address && String(row.sale.installation_address).trim()) return String(row.sale.installation_address).trim()
+  if (row.delivery_address && String(row.delivery_address).trim()) return String(row.delivery_address).trim()
   const c: any = findCustomer(row.customer_id)
   return c?.address || '-'
 }
@@ -565,8 +565,8 @@ async function saveAssign() {
               <input v-model="editForm.recipient_phone" class="form-control" placeholder="No. HP" />
             </div>
             <div class="form-group full-width">
-              <label>Delivery Address</label>
-              <textarea v-model="editForm.delivery_address" class="form-control" rows="2" placeholder="Alamat lengkap"></textarea>
+              <label>Installation Address</label>
+              <textarea v-model="editForm.delivery_address" class="form-control" rows="2" placeholder="Alamat instalasi lengkap"></textarea>
             </div>
             <div class="form-group">
               <label>Technician</label>
@@ -598,7 +598,7 @@ async function saveAssign() {
           <div class="assign-info-box" v-if="assigningRow">
             <div><strong>DO:</strong> {{ assigningRow.do_number }}</div>
             <div><strong>Customer:</strong> {{ customerName(assigningRow.customer_id) }}</div>
-            <div v-if="rowAddress(assigningRow) !== '-'"><strong>Address:</strong> {{ rowAddress(assigningRow) }}</div>
+            <div v-if="rowAddress(assigningRow) !== '-'"><strong>Installation Address:</strong> {{ rowAddress(assigningRow) }}</div>
           </div>
 
           <div class="assign-form-grid">

@@ -126,9 +126,9 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
     || linkedSale?.po_no 
     || "-";
 
-  const custAddress = fullItem.delivery_address 
-    || linkedRental?.installation_address 
+  const custAddress = linkedRental?.installation_address 
     || linkedSale?.installation_address 
+    || fullItem.delivery_address 
     || customer.address 
     || "-";
   const custPhone = customer.phone || "-";

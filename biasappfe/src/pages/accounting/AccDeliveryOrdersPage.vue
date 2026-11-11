@@ -123,6 +123,11 @@ async function saveDeliveryOrder() {
   }
 }
 
+function resolveDOAddress(item: any): string {
+  if (!item) return '-'
+  return item.rental?.installation_address || item.sale?.installation_address || item.delivery_address || '-'
+}
+
 function openDelete(item: ProcurementDeliveryOrder) {
   deletingItem.value = item
   showDelete.value = true
@@ -285,7 +290,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
           <div class="detail-field"><span>Status</span><strong>{{ (detailItem.status || '-').toUpperCase() }}</strong></div>
           <div class="detail-field"><span>Recipient</span><strong>{{ detailItem.recipient_name || '-' }}</strong></div>
           <div class="detail-field"><span>Phone</span><strong>{{ detailItem.recipient_phone || '-' }}</strong></div>
-          <div class="detail-field detail-field--wide"><span>Delivery Address</span><strong>{{ detailItem.delivery_address || '-' }}</strong></div>
+          <div class="detail-field detail-field--wide"><span>Installation Address</span><strong>{{ resolveDOAddress(detailItem) }}</strong></div>
           <div class="detail-field detail-field--wide"><span>Notes</span><strong>{{ detailItem.notes || '-' }}</strong></div>
         </div>
         <section class="detail-items">
@@ -385,7 +390,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
         <input id="do-phone" v-model="editForm.recipient_phone" type="tel" class="form-input">
       </div>
       <div class="form-group">
-        <label class="form-label" for="do-address">Delivery Address</label>
+        <label class="form-label" for="do-address">Installation Address</label>
         <textarea id="do-address" v-model="editForm.delivery_address" class="form-textarea" rows="3"></textarea>
       </div>
       <div class="form-group">

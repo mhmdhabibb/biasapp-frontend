@@ -62,11 +62,11 @@ export async function getJobOrderHtml(job: any, autoPrint: boolean = false): Pro
     || '-';
 
   const custName = customer.company_name || customer.name || "-";
-  const custAddress = fullJob.delivery_order?.delivery_address
-    || fullJob.delivery_order?.rental?.installation_address
+  const custAddress = fullJob.delivery_order?.rental?.installation_address
     || fullJob.delivery_order?.sale?.installation_address
     || fullJob.rental?.installation_address
     || fullJob.sale?.installation_address
+    || fullJob.delivery_order?.delivery_address
     || customer.address
     || "-";
   const custPic = customer.pic_name || fullJob.delivery_order?.recipient_name || "-";

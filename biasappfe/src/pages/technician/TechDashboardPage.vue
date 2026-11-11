@@ -74,22 +74,68 @@ const myJobs = computed(() => {
   return jobOrders.value.filter((j) => j.technician_id === techId);
 });
 
-const isToday = (dateStr: string) => {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  const today = new Date();
+function getJobScheduledDate(job: any): string {
   return (
-    d.getDate() === today.getDate() &&
-    d.getMonth() === today.getMonth() &&
-    d.getFullYear() === today.getFullYear()
+    job?.scheduled_date ||
+    job?.delivery_order?.delivery_date ||
+    job?.survey?.scheduled_date ||
+    job?.service_report?.service_date ||
+    job?.created_at ||
+    ''
   );
+}
+
+function toLocalDateStr(d: string | Date | null | undefined): string {
+  if (!d) return '';
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+const todayStr = computed(() => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+});
+
+const isJobScheduledToday = (job: any) => {
+  const d = getJobScheduledDate(job);
+  return toLocalDateStr(d) === todayStr.value;
 };
 
-const getSlaHours = (createdStr: string) => {
-  if (!createdStr) return 0;
-  const created = new Date(createdStr).getTime();
-  const now = new Date().getTime();
-  return (now - created) / (1000 * 60 * 60);
+// Date filter tab: 'today' | 'upcoming' | 'all' | 'custom'
+const dateFilterTab = ref<'today' | 'upcoming' | 'all' | 'custom'>('today');
+const customFilterDate = ref('');
+
+const allActiveJobs = computed(() =>
+  myJobs.value.filter(
+    (j) => j.status !== 'completed' && j.status !== 'cancelled'
+  )
+);
+
+const jobsForToday = computed(() => {
+  return allActiveJobs.value.filter((j) => isJobScheduledToday(j));
+});
+
+const jobsUpcoming = computed(() => {
+  const tStr = todayStr.value;
+  return allActiveJobs.value.filter((j) => {
+    const jd = toLocalDateStr(getJobScheduledDate(j));
+    return jd > tStr;
+  });
+});
+
+const getSlaHours = (jobOrDate: any) => {
+  const targetStr = typeof jobOrDate === 'string' ? jobOrDate : (getJobScheduledDate(jobOrDate) || jobOrDate?.created_at);
+  if (!targetStr) return 0;
+  const target = new Date(targetStr).getTime();
+  const now = Date.now();
+  return (now - target) / (1000 * 60 * 60);
 };
 
 const newJobs = computed(
@@ -109,26 +155,55 @@ const completedToday = computed(
 );
 const slaBreached = computed(
   () =>
-    myJobs.value.filter(
-      (j) =>
-        j.status !== "completed" &&
-        j.status !== "cancelled" &&
-        getSlaHours(j.created_at) > 2,
-    ).length,
+    myJobs.value.filter((j) => {
+      if (j.status === 'completed' || j.status === 'cancelled') return false;
+      return getSlaHours(j) > 2;
+    }).length,
 );
 
-const activeJobs = computed(() =>
-  myJobs.value.filter(
-    (j) => j.status !== "completed" && j.status !== "cancelled",
-  ),
-);
+const activeJobs = computed(() => {
+  let list = allActiveJobs.value;
 
-const formatSla = (createdStr: string) => {
-  if (!createdStr) return "-";
-  const hours = getSlaHours(createdStr);
-  if (hours > 2) return `Breached (${hours.toFixed(1)}h)`;
+  if (dateFilterTab.value === 'today') {
+    list = list.filter((j) => isJobScheduledToday(j));
+  } else if (dateFilterTab.value === 'upcoming') {
+    const tStr = todayStr.value;
+    list = list.filter((j) => toLocalDateStr(getJobScheduledDate(j)) > tStr);
+  } else if (dateFilterTab.value === 'custom') {
+    if (customFilterDate.value) {
+      list = list.filter((j) => toLocalDateStr(getJobScheduledDate(j)) === customFilterDate.value);
+    }
+  }
+
+  // Sort by scheduled date ascending (nearest date first)
+  return [...list].sort((a, b) => {
+    const da = new Date(getJobScheduledDate(a) || 0).getTime();
+    const db = new Date(getJobScheduledDate(b) || 0).getTime();
+    return da - db;
+  });
+});
+
+const formatSla = (job: any) => {
+  const schedStr = getJobScheduledDate(job);
+  const targetTime = schedStr ? new Date(schedStr).getTime() : new Date(job?.created_at).getTime();
+  const now = Date.now();
+  if (targetTime > now) {
+    const diffHours = (targetTime - now) / (1000 * 60 * 60);
+    if (diffHours >= 24) {
+      return `Jadwal: H-${Math.ceil(diffHours / 24)} hari`;
+    }
+    return `Jadwal: ${diffHours.toFixed(1)} jam lagi`;
+  }
+  const hours = (now - targetTime) / (1000 * 60 * 60);
+  if (hours > 2) return `Lewat Jadwal (${hours.toFixed(1)}h)`;
   return `${hours.toFixed(1)}h / 2.0h`;
 };
+
+function formatJobScheduledDate(job: any): string {
+  const d = getJobScheduledDate(job);
+  if (!d) return '-';
+  return new Date(d).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+}
 
 const showModal = ref(false);
 
@@ -421,8 +496,45 @@ function getDisplayJobNo(job: any): string {
     <!-- Active Jobs Section -->
     <div class="jobs-section">
       <div class="section-header">
-        <h2 class="section-title">Active Jobs</h2>
-        <span class="badge badge-primary">{{ activeJobs.length }} Total</span>
+        <div>
+          <h2 class="section-title">Active Jobs</h2>
+          <span class="active-jobs-sub">Pekerjaan berdasarkan tanggal assign</span>
+        </div>
+        <div class="date-tabs-wrapper">
+          <div class="date-tabs">
+            <button
+              type="button"
+              class="date-tab-btn"
+              :class="{ active: dateFilterTab === 'today' }"
+              @click="dateFilterTab = 'today'"
+            >
+              Hari Ini ({{ jobsForToday.length }})
+            </button>
+            <button
+              type="button"
+              class="date-tab-btn"
+              :class="{ active: dateFilterTab === 'upcoming' }"
+              @click="dateFilterTab = 'upcoming'"
+            >
+              Mendatang ({{ jobsUpcoming.length }})
+            </button>
+            <button
+              type="button"
+              class="date-tab-btn"
+              :class="{ active: dateFilterTab === 'all' }"
+              @click="dateFilterTab = 'all'"
+            >
+              Semua ({{ allActiveJobs.length }})
+            </button>
+          </div>
+          <input
+            type="date"
+            class="custom-date-picker"
+            v-model="customFilterDate"
+            @change="dateFilterTab = 'custom'"
+            title="Pilih tanggal assign khusus"
+          />
+        </div>
       </div>
 
       <div class="jobs-list" v-if="activeJobs.length > 0">
@@ -478,6 +590,25 @@ function getDisplayJobNo(job: any): string {
                     null,
                 )
               }}</span>
+            </div>
+            <!-- Tanggal Assign / Jadwal Pekerjaan -->
+            <div class="detail-row scheduled-row">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              <span><strong>Tanggal Assign:</strong> {{ formatJobScheduledDate(job) }}</span>
             </div>
             <div class="detail-row">
               <svg
@@ -542,7 +673,7 @@ function getDisplayJobNo(job: any): string {
           <div class="job-card-footer">
             <div
               class="sla-indicator"
-              :class="{ breached: getSlaHours(job.created_at) > 2 }"
+              :class="{ breached: getSlaHours(job) > 2 }"
             >
               <svg
                 width="14"
@@ -557,7 +688,7 @@ function getDisplayJobNo(job: any): string {
                 <circle cx="12" cy="12" r="10"></circle>
                 <polyline points="12 6 12 12 16 14"></polyline>
               </svg>
-              <span>SLA: {{ formatSla(job.created_at) }}</span>
+              <span>SLA: {{ formatSla(job) }}</span>
             </div>
             <div class="action-arrow">
               <svg
@@ -578,9 +709,35 @@ function getDisplayJobNo(job: any): string {
       </div>
 
       <div v-else class="empty-state">
-        <div class="empty-icon">🎉</div>
-        <h3>All Caught Up!</h3>
-        <p>You have no active jobs at the moment.</p>
+        <div class="empty-icon">📅</div>
+        <h3 v-if="dateFilterTab === 'today'">Tidak Ada Pekerjaan Hari Ini</h3>
+        <h3 v-else-if="dateFilterTab === 'upcoming'">Tidak Ada Pekerjaan Mendatang</h3>
+        <h3 v-else-if="dateFilterTab === 'custom'">Tidak Ada Pekerjaan Pada Tanggal Ini</h3>
+        <h3 v-else>All Caught Up!</h3>
+        <p v-if="dateFilterTab === 'today'">
+          Tidak ada pekerjaan yang dijadwalkan untuk hari ini.
+        </p>
+        <p v-else-if="dateFilterTab === 'upcoming'">
+          Tidak ada pekerjaan dengan jadwal tanggal mendatang.
+        </p>
+        <p v-else-if="dateFilterTab === 'custom'">
+          Tidak ada pekerjaan yang di-assign untuk tanggal {{ customFilterDate }}.
+        </p>
+        <p v-else>
+          You have no active jobs at the moment.
+        </p>
+        <div style="display: flex; gap: 8px; justify-content: center; margin-top: 14px;" v-if="dateFilterTab !== 'all'">
+          <button
+            class="btn btn-sm btn-outline-primary"
+            @click="dateFilterTab = 'upcoming'"
+            v-if="dateFilterTab === 'today' && jobsUpcoming.length > 0"
+          >
+            Lihat Jadwal Mendatang ({{ jobsUpcoming.length }})
+          </button>
+          <button class="btn btn-sm btn-outline" @click="dateFilterTab = 'all'" v-if="allActiveJobs.length > 0">
+            Lihat Semua Pekerjaan ({{ allActiveJobs.length }})
+          </button>
+        </div>
       </div>
     </div>
     <!-- Create Job Modal -->
@@ -725,7 +882,69 @@ function getDisplayJobNo(job: any): string {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   padding: 0 4px;
+}
+
+.active-jobs-sub {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  display: block;
+  margin-top: 2px;
+}
+
+.date-tabs-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.date-tabs {
+  display: flex;
+  background: var(--color-surface-sunken, #f1f5f9);
+  padding: 3px;
+  border-radius: 8px;
+  gap: 2px;
+}
+
+.date-tab-btn {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.date-tab-btn.active {
+  background: var(--color-surface, #ffffff);
+  color: var(--color-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.custom-date-picker {
+  padding: 5px 8px;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text);
+  outline: none;
+}
+
+.scheduled-row {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+.scheduled-row svg {
+  color: var(--color-primary);
+  opacity: 1 !important;
 }
 
 .section-title {

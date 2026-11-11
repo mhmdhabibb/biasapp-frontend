@@ -1352,7 +1352,7 @@ function printTable() {
             </strong>
           </div>
           <div v-if="srDetailItem.delivery_address" class="detail-field detail-field--wide">
-            <span>Delivery Address</span>
+            <span>Installation Address</span>
             <strong>{{ srDetailItem.delivery_address }}</strong>
           </div>
           <div v-if="srDetailItem.machine_problem" class="detail-field detail-field--wide">
@@ -1505,7 +1505,7 @@ function printTable() {
             <strong>{{ doDetailItem.recipient_phone || '-' }}</strong>
           </div>
           <div v-if="doDetailItem.delivery_address" class="detail-field detail-field--wide">
-            <span>Delivery Address</span>
+            <span>Installation Address</span>
             <strong>{{ doDetailItem.delivery_address }}</strong>
           </div>
           <div v-if="doDetailItem.notes" class="detail-field detail-field--wide">

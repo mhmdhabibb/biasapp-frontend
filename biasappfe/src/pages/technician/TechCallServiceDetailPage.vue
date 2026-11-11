@@ -145,36 +145,44 @@ const displayJobOrderNo = computed(() => {
   return (j.job_order_no || j.service_request?.request_no || j.delivery_order?.do_number || j.survey?.survey_no || '-').replace(/^JOV/, 'CPR')
 })
 
+const resolvedScheduledDate = computed(() => {
+  const j: any = job.value
+  const d: any = deliveryOrder.value
+  const sr: any = serviceReport.value
+  return j?.scheduled_date || d?.delivery_date || sr?.service_date || j?.created_at || ''
+})
+
 const resolvedDeliveryAddress = computed(() => {
   const d: any = deliveryOrder.value
   const j: any = job.value
   const custId = String(customer.value?.id || doCustomer.value?.id || j?.customer_id || j?.service_request?.customer_id || '')
   const uid = String(unit.value?.id || j?.unit_id || j?.service_request?.unit_id || '')
 
-  // 1. Direct from delivery order if set
-  if (d?.delivery_address && String(d.delivery_address).trim()) {
-    return String(d.delivery_address).trim()
-  }
-
-  // 2. From linked rental on DO
+  // 1. From linked rental on DO or Job (Installation Address is primary)
   if (d?.rental?.installation_address && String(d.rental.installation_address).trim()) {
     return String(d.rental.installation_address).trim()
+  }
+  if (j?.rental?.installation_address && String(j.rental.installation_address).trim()) {
+    return String(j.rental.installation_address).trim()
   }
   if (d?.rental_id) {
     const r = ((rents?.value || []) as any[]).find((rent: any) => String(rent.id) === String(d.rental_id))
     if (r?.installation_address && String(r.installation_address).trim()) return String(r.installation_address).trim()
   }
 
-  // 3. From linked sale on DO
+  // 2. From linked sale on DO or Job
   if (d?.sale?.installation_address && String(d.sale.installation_address).trim()) {
     return String(d.sale.installation_address).trim()
+  }
+  if (j?.sale?.installation_address && String(j.sale.installation_address).trim()) {
+    return String(j.sale.installation_address).trim()
   }
   if (d?.sale_id) {
     const s = ((sales?.value || []) as any[]).find((sale: any) => String(sale.id) === String(d.sale_id))
     if (s?.installation_address && String(s.installation_address).trim()) return String(s.installation_address).trim()
   }
 
-  // 4. Match rents by unit ID
+  // 3. Match rents by unit ID
   if (uid) {
     const r = ((rents?.value || []) as any[]).find((rent: any) =>
       (rent.rental_items || []).some((ri: any) => String(ri.unit_id) === uid) ||
@@ -183,7 +191,7 @@ const resolvedDeliveryAddress = computed(() => {
     if (r?.installation_address && String(r.installation_address).trim()) return String(r.installation_address).trim()
   }
 
-  // 5. Match sales by unit ID
+  // 4. Match sales by unit ID
   if (uid) {
     const s = ((sales?.value || []) as any[]).find((sale: any) =>
       (sale.sale_items || []).some((si: any) => String(si.unit_id) === uid)
@@ -191,16 +199,21 @@ const resolvedDeliveryAddress = computed(() => {
     if (s?.installation_address && String(s.installation_address).trim()) return String(s.installation_address).trim()
   }
 
-  // 6. Match rents by customer ID
+  // 5. Match rents by customer ID
   if (custId) {
     const r = ((rents?.value || []) as any[]).find((rent: any) => String(rent.customer_id) === custId && String(rent.installation_address || '').trim())
     if (r?.installation_address && String(r.installation_address).trim()) return String(r.installation_address).trim()
   }
 
-  // 7. Match sales by customer ID
+  // 6. Match sales by customer ID
   if (custId) {
     const s = ((sales?.value || []) as any[]).find((sale: any) => String(sale.customer_id) === custId && String(sale.installation_address || '').trim())
     if (s?.installation_address && String(s.installation_address).trim()) return String(s.installation_address).trim()
+  }
+
+  // 7. Direct from delivery order if set
+  if (d?.delivery_address && String(d.delivery_address).trim()) {
+    return String(d.delivery_address).trim()
   }
 
   // 8. Fallback to customer general address
@@ -1115,7 +1128,7 @@ function handleSurveyPhoto(e: Event) {
             <span class="info-value">{{ doCustomer?.company_name || '-' }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">Delivery Address</span>
+            <span class="info-label">Installation Address</span>
             <span class="info-value">{{ resolvedDeliveryAddress }}</span>
           </div>
           <div class="info-item">
@@ -1123,8 +1136,8 @@ function handleSurveyPhoto(e: Event) {
             <span class="info-value">{{ deliveryOrder?.recipient_name || '-' }} ({{ deliveryOrder?.recipient_phone || '-' }})</span>
           </div>
           <div class="info-item">
-            <span class="info-label">Delivery Date</span>
-            <span class="info-value">{{ deliveryOrder?.delivery_date ? new Date(deliveryOrder.delivery_date).toLocaleString('en-GB') : '-' }}</span>
+            <span class="info-label">Scheduled / Delivery Date</span>
+            <span class="info-value">{{ resolvedScheduledDate ? new Date(resolvedScheduledDate).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-' }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">DO Status</span>
@@ -1379,12 +1392,16 @@ function handleSurveyPhoto(e: Event) {
             <span class="info-value">{{ customer?.company_name || '-' }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">Address</span>
+            <span class="info-label">Installation Address</span>
             <span class="info-value">{{ resolvedDeliveryAddress }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">PIC & Contact</span>
             <span class="info-value">{{ customer?.name || '-' }} ({{ customer?.phone || '-' }})</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Scheduled Date</span>
+            <span class="info-value font-bold">{{ resolvedScheduledDate ? new Date(resolvedScheduledDate).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-' }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">Unit</span>

@@ -965,6 +965,12 @@ function jobDeliveryDate(job: any): string {
 
 function getTaskAddress(task: any): string {
   return (
+    task?.rental?.installation_address ||
+    task?.sale?.installation_address ||
+    task?.delivery_order?.rental?.installation_address ||
+    task?.delivery_order?.sale?.installation_address ||
+    task?.installation_address ||
+    task?.delivery_order?.installation_address ||
     task?.delivery_order?.delivery_address ||
     task?.delivery_address ||
     task?.customer?.address ||
@@ -2629,7 +2635,7 @@ async function handleDeleteTech() {
               class="detail-item wide"
               v-if="getTaskAddress(selectedJob.delivery_order)"
             >
-              <span class="detail-label">Delivery Address</span>
+              <span class="detail-label">Installation Address</span>
               <span class="detail-value">{{
                 getTaskAddress(selectedJob.delivery_order)
               }}</span>
