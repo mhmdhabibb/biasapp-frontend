@@ -65,6 +65,7 @@ onMounted(async () => {
   ensureResourcesLoaded(route.path)
   // If job is already available in memory, initialize form instantly (0ms loading!)
   if (job.value) {
+    const initCust = findCustomer(job.value.customer_id) || job.value.customer
     form.value = {
       remarks: job.value.remarks || '',
       notes: job.value.notes || '',
@@ -76,9 +77,9 @@ onMounted(async () => {
         item_name: item.item_name || (item.product?.name || ''),
         qty: Number(item.qty) || 1,
       })),
-      customer_signature: job.value.customer_signature_technical || '',
+      customer_signature: job.value.customer_signature_technical || initCust?.signature || '',
       technician_signature: job.value.technician_signature_technical || '',
-      customer_name: job.value.customer_name_technical || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || '',
+      customer_name: job.value.customer_name_technical || initCust?.pic_name || initCust?.company_name || '',
       technician_name: job.value.technician_name_technical || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || '',
       photo_before: job.value.photo_before || '',
       photo_progress: job.value.photo_progress || '',
@@ -103,6 +104,7 @@ onMounted(async () => {
     }
     if (data && data.id) {
       reportRecord.value = data
+      const loadedCust = findCustomer(data.customer_id) || data.customer
       form.value = {
         remarks: data.remarks || form.value.remarks || '',
         notes: data.notes || form.value.notes || '',
@@ -114,13 +116,29 @@ onMounted(async () => {
           item_name: item.item_name || (item.product?.name || ''),
           qty: Number(item.qty) || 1,
         })),
-        customer_signature: data.customer_signature_technical || form.value.customer_signature || '',
+        customer_signature: data.customer_signature_technical || form.value.customer_signature || loadedCust?.signature || '',
         technician_signature: data.technician_signature_technical || form.value.technician_signature || '',
-        customer_name: data.customer_name_technical || form.value.customer_name || '',
+        customer_name: data.customer_name_technical || form.value.customer_name || loadedCust?.pic_name || loadedCust?.company_name || '',
         technician_name: data.technician_name_technical || form.value.technician_name || '',
         photo_before: data.photo_before || form.value.photo_before || '',
         photo_progress: data.photo_progress || form.value.photo_progress || '',
         photo_after: data.photo_after || form.value.photo_after || '',
+      }
+    }
+    // Auto-fetch customer profile signature if not yet set
+    const targetCustId = data?.customer_id || job.value?.customer_id
+    if (!form.value.customer_signature && targetCustId) {
+      try {
+        const cRes = await api.get<any>(`/customers/${targetCustId}`, false, true)
+        const cData = (cRes as any)?.data?.data || (cRes as any)?.data || cRes
+        if (cData?.signature) {
+          form.value.customer_signature = cData.signature
+        }
+        if (!form.value.customer_name && (cData?.pic_name || cData?.company_name)) {
+          form.value.customer_name = cData.pic_name || cData.company_name
+        }
+      } catch (e) {
+        console.warn('Could not auto-fetch customer profile signature:', e)
       }
     }
     if (!job.value) throw new Error('Service report not found')

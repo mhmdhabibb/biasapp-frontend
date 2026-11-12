@@ -514,9 +514,10 @@ onMounted(async () => {
     form.value.photo_before = job.value.photo_before || ''
     form.value.photo_progress = job.value.photo_progress || ''
     form.value.photo_after = job.value.photo_after || ''
-    form.value.customer_signature = job.value.customer_signature_copier || ''
+    const initCust = findCustomer(job.value.customer_id) || job.value.customer
+    form.value.customer_signature = job.value.customer_signature_copier || initCust?.signature || ''
     form.value.technician_signature = job.value.technician_signature_copier || ''
-    form.value.customer_name = job.value.customer_name_copier || findCustomer(job.value.customer_id)?.pic_name || job.value.customer?.pic_name || ''
+    form.value.customer_name = job.value.customer_name_copier || initCust?.pic_name || initCust?.company_name || ''
     form.value.technician_name = job.value.technician_name_copier || findTechnician(job.value.technician_id)?.name || job.value.technician?.name || currentUser.value?.name || ''
     initSectionAfters()
     isLoading.value = false
@@ -558,11 +559,28 @@ onMounted(async () => {
       form.value.photo_before = data.photo_before || form.value.photo_before || ''
       form.value.photo_progress = data.photo_progress || form.value.photo_progress || ''
       form.value.photo_after = data.photo_after || form.value.photo_after || ''
-      form.value.customer_signature = data.customer_signature_copier || ''
+      const loadedCust = findCustomer(data.customer_id) || data.customer
+      form.value.customer_signature = data.customer_signature_copier || form.value.customer_signature || loadedCust?.signature || ''
       form.value.technician_signature = data.technician_signature_copier || ''
-      form.value.customer_name = data.customer_name_copier || findCustomer(data.customer_id)?.pic_name || data.customer?.pic_name || ''
+      form.value.customer_name = data.customer_name_copier || form.value.customer_name || loadedCust?.pic_name || loadedCust?.company_name || ''
       form.value.technician_name = data.technician_name_copier || findTechnician(data.technician_id)?.name || data.technician?.name || currentUser.value?.name || ''
       initSectionAfters()
+    }
+    // Auto-fetch customer signature from profile if not yet populated
+    const targetCustId = data?.customer_id || job.value?.customer_id
+    if (!form.value.customer_signature && targetCustId) {
+      try {
+        const cRes = await api.get<any>(`/customers/${targetCustId}`, false, true)
+        const cData = (cRes as any)?.data?.data || (cRes as any)?.data || cRes
+        if (cData?.signature) {
+          form.value.customer_signature = cData.signature
+        }
+        if (!form.value.customer_name && (cData?.pic_name || cData?.company_name)) {
+          form.value.customer_name = cData.pic_name || cData.company_name
+        }
+      } catch (e) {
+        console.warn('Could not auto-fetch customer profile signature:', e)
+      }
     }
     if (!job.value) throw new Error('Service report not found')
     void refreshInBackground()
@@ -892,7 +910,8 @@ async function saveForm() {
               <div class="form-group">
                 <div class="flex justify-between items-center mb-xs">
                   <label class="form-label font-medium m-0">Customer Signature <span class="text-danger">*</span></label>
-                  <span class="text-xs text-muted">Tanda tangan digital</span>
+                  <span v-if="form.customer_signature" class="badge" style="background: #ecfdf5; color: #059669; font-size: 11px; padding: 2px 8px; border-radius: 4px;">✓ TTD Tersimpan Otomatis</span>
+                  <span v-else class="text-xs text-muted">Tanda tangan digital</span>
                 </div>
                 <div class="sig-pad-box">
                   <SignaturePad v-model="form.customer_signature" height="150px" />

@@ -7,6 +7,7 @@ import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import PageSkeleton from '@/components/ui/PageSkeleton.vue'
+import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
@@ -83,7 +84,7 @@ const countryCodes = [
   { name: 'France', code: '+33' },
   { name: 'Netherlands', code: '+31' },
 ]
-const form = reactive({ category: 'Corporate' as string, company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '' })
+const form = reactive({ category: 'Corporate' as string, company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '', signature: '' })
 const categoryOptions = [
   { value: 'Corporate', label: 'Corporate' },
   { value: 'Government', label: 'Government' },
@@ -93,7 +94,7 @@ const countryCodeOptions = countryCodes.map(c => ({ value: c.code, label: `${c.n
 function openAdd() {
   editingItem.value = null
   phoneCountryCode.value = '+62'
-  Object.assign(form, { category: 'Corporate', company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '' })
+  Object.assign(form, { category: 'Corporate', company_name: '', pic_name: '', pic_gender: 'L', pic_position: '', nip: '', phone: '', fax: '', email: '', address: '', signature: '' })
   showModal.value = true
 }
 
@@ -108,7 +109,7 @@ function openEdit(item: Customer) {
   const localPhone = matchingCode
     ? storedDigits.slice(matchingCode.code.length - 1)
     : storedDigits.replace(/^0+/, '')
-  Object.assign(form, { category: item.category || 'Corporate', company_name: item.company_name, pic_name: item.pic_name, pic_gender: item.pic_gender || 'L', pic_position: item.pic_position || '', nip: item.nip || '', phone: localPhone, fax: item.fax || '', email: item.email || '', address: item.address })
+  Object.assign(form, { category: item.category || 'Corporate', company_name: item.company_name, pic_name: item.pic_name, pic_gender: item.pic_gender || 'L', pic_position: item.pic_position || '', nip: item.nip || '', phone: localPhone, fax: item.fax || '', email: item.email || '', address: item.address, signature: (item as any)?.signature || '' })
   showModal.value = true
 }
 
@@ -374,6 +375,14 @@ function goToForm(item: any) {
       <template #toolbar>
         <ExcelImportButtons master-key="customer" @imported="fetchData" />
       </template>
+      <template #cell-company_name="{ row, value }">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-weight: 500;">{{ value }}</span>
+          <span v-if="(row as any).signature" class="badge" title="Tanda tangan customer sudah tersimpan di profil" style="background: #ecfdf5; color: #059669; font-size: 10px; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px;">
+            ✓ TTD
+          </span>
+        </div>
+      </template>
       <template #cell-category="{ value }">
         <span class="badge" :class="value === 'Government' ? 'badge-primary' : value === 'Corporate' ? 'badge-info' : 'badge-secondary'">
           {{ value || '-' }}
@@ -468,6 +477,16 @@ function goToForm(item: any) {
       <div class="form-group">
         <label for="cust-address" class="form-label">Address</label>
         <textarea id="cust-address" v-model="form.address" class="form-textarea" placeholder="Full address"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span>Tanda Tangan Customer (Cukup 1x untuk Semua Transaksi)</span>
+          <span v-if="form.signature" class="badge" style="background: #ecfdf5; color: #059669; font-size: 11px; padding: 2px 8px; border-radius: 4px;">✓ TTD Tersimpan</span>
+        </label>
+        <SignaturePad v-model="form.signature" height="150px" />
+        <div class="text-muted" style="font-size: 11px; margin-top: 4px;">
+          Tanda tangan ini akan otomatis terpasang di semua Service Report & Surat Jalan Pengantaran customer ini.
+        </div>
       </div>
     </FormModal>
     <ConfirmDialog

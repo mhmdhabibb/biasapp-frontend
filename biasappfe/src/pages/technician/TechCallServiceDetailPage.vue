@@ -317,14 +317,26 @@ function initDoForm(force = false) {
     time_out: d.time_out || doForm.value.time_out || '',
     is_tested: !!d.is_tested,
     is_completed: !!d.is_completed,
-    customer_signature: d.customer_signature || doForm.value.customer_signature || '',
-    technician_signature: d.technician_signature || doForm.value.technician_signature || '',
+    customer_signature: (d.customer_signature && d.customer_signature !== 'signed') ? d.customer_signature : (doForm.value.customer_signature || theCustomer?.signature || ''),
+    technician_signature: (d.technician_signature && d.technician_signature !== 'signed') ? d.technician_signature : (doForm.value.technician_signature || ''),
     customer_name: d.customer_name || d.recipient_name || theCustomer?.pic_name || theCustomer?.company_name || theCustomer?.name || '',
     technician_name: d.technician_name || currentUser.value?.name || '',
     customer_category: d.customer_category || theCustomer?.category || 'Corporate',
     photo_before: d.photo_before || doForm.value.photo_before || '',
     photo_progress: d.photo_progress || doForm.value.photo_progress || '',
     photo_after: d.photo_after || doForm.value.photo_after || '',
+  }
+  if (!doForm.value.customer_signature && (theCustomer?.id || d.customer_id)) {
+    const cid = theCustomer?.id || d.customer_id
+    api.get<any>(`/customers/${cid}`, false, true).then((res: any) => {
+      const cd = res?.data?.data || res?.data || res
+      if (cd?.signature && !doForm.value.customer_signature) {
+        doForm.value.customer_signature = cd.signature
+      }
+      if (!doForm.value.customer_name && (cd?.pic_name || cd?.company_name)) {
+        doForm.value.customer_name = cd.pic_name || cd.company_name
+      }
+    }).catch(() => {})
   }
   isDoFormInit.value = true
 }
