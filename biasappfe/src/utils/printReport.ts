@@ -1,4 +1,41 @@
 import { useMasterStore } from "@/composables/useMasterStore";
+import { api } from "@/services/api";
+
+export function isImageSrc(s: any): boolean {
+  if (!s || typeof s !== 'string') return false;
+  const str = s.trim();
+  if (str === 'signed' || str === 'has_photo' || str === '-') return false;
+  return str.startsWith('data:image/') || str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('blob:');
+}
+
+export function needsFullReportFetch(item: any): boolean {
+  if (!item || !item.id) return false;
+  return (
+    item.customer_signature === 'signed' ||
+    item.technician_signature === 'signed' ||
+    item.customer_signature_copier === 'signed' ||
+    item.technician_signature_copier === 'signed' ||
+    item.customer_signature_technical === 'signed' ||
+    item.technician_signature_technical === 'signed' ||
+    item.photo_before === 'has_photo' ||
+    item.photo_progress === 'has_photo' ||
+    item.photo_after === 'has_photo'
+  );
+}
+
+export async function fetchFullServiceReport(item: any): Promise<any> {
+  if (!item?.id || !needsFullReportFetch(item)) return item;
+  try {
+    const res: any = await api.get(`/service-reports/${item.id}`, true, false);
+    const data = res?.data?.data || res?.data || res;
+    if (data && data.id) {
+      return { ...item, ...data };
+    }
+  } catch (e) {
+    console.warn("Failed to fetch full service report:", e);
+  }
+  return item;
+}
 
 
 interface ReportCtx {
@@ -232,6 +269,29 @@ function testedCompleteTableHtml(item: any): string {
   `;
 }
 
+function formatMachineProblem(item: any): string {
+  const prob = (item.machine_problem || "").trim();
+  if (!prob || /scheduled.*(?:meter|rental|copier).*visit/i.test(prob)) {
+    if (/bulan\s+[a-z]+/i.test(prob)) {
+      return prob;
+    }
+    const rawDate = item.reading_period || item.service_date || item.created_at;
+    if (rawDate) {
+      const d = new Date(rawDate);
+      if (!isNaN(d.getTime())) {
+        const indoMonths = [
+          "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+          "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+        ];
+        const monthName = indoMonths[d.getMonth()] || d.toLocaleString("id-ID", { month: "long" });
+        return `Scheduled meter visit bulan ${monthName} ${d.getFullYear()}`;
+      }
+    }
+    return prob || "Scheduled meter visit";
+  }
+  return prob;
+}
+
 function numVal(v: any): number {
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
@@ -280,12 +340,29 @@ function copierMeterBlockHtml(item: any, ctx: ReportCtx): string {
   if (readings.length > 0) {
     let totalBefore = 0;
     let totalAfter = 0;
+    let hasAfter = false;
     for (const r of readings) {
-      totalBefore += Number(r.start_meter || 0);
-      totalAfter += Number(r.last_meter ?? r.end_meter ?? 0);
+      const start1 = Number(r.start_meter || 0);
+      const end1 = Number(r.last_meter ?? r.end_meter ?? 0);
+      const start2 = Number(r.start_meter_double || 0);
+      const end2 = Number(r.last_meter_double ?? r.end_meter_double ?? 0);
+
+      totalBefore += start1;
+      if (end1 > 0) {
+        totalAfter += end1;
+        hasAfter = true;
+      }
+
+      if (start2 > 0 || end2 > 0) {
+        totalBefore += start2;
+        if (end2 > 0) {
+          totalAfter += end2;
+          hasAfter = true;
+        }
+      }
     }
     before = totalBefore.toLocaleString("id-ID");
-    after = totalAfter.toLocaleString("id-ID");
+    after = hasAfter ? totalAfter.toLocaleString("id-ID") : "";
   } else {
     before = resolveMeterBefore(item, ctx);
     after = resolveMeterAfter(item);
@@ -312,11 +389,11 @@ function copierSignaturesHtml(item: any, ctx: ReportCtx): string {
       <tr>
         <td style="width: 50%; text-align: center; border-top: none;">
           TESTED YES / NO<br><br><br>
-          ${techSig ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br>"}
+          ${isImageSrc(techSig) ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br>"}
         </td>
         <td style="width: 50%; text-align: center; border-top: none;">
           COMPLETE YES / NO<br><br><br>
-          ${custSig ? '<img src="' + custSig + '" style="max-height: 50px;" />' : "<br><br>"}
+          ${isImageSrc(custSig) ? '<img src="' + custSig + '" style="max-height: 50px;" />' : "<br><br>"}
         </td>
       </tr>
       <tr>
@@ -343,12 +420,12 @@ function signatureBlockHtml(item: any, ctx: ReportCtx, type: 'technical' | 'hist
     <div class="signature-block">
       <div class="sig-side">
         <div>TECHNICIAN</div>
-        <div class="sig-line">${techSig ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
+        <div class="sig-line">${isImageSrc(techSig) ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
         <div class="sig-name">${techName}</div>
       </div>
       <div class="sig-side sig-customer">
         <div class="sig-cust">CUSTOMER<br>
-          ${custSig ? '<img src="' + custSig + '" style="max-height: 50px;" />' : ""}
+          ${isImageSrc(custSig) ? '<img src="' + custSig + '" style="max-height: 50px;" />' : ""}
           <div class="sig-name">${custName}</div>
         </div>
         <div class="sig-stamp">Signature & Company Stamp</div>
@@ -386,7 +463,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col">Brand</td><td class="val-col"> ${ctx.brandName || ctx.brand?.name || "-"}</td></tr>
         <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.modelName || "-"}</td></tr>
         <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.serialNo || "-"}</td></tr>
-        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || item.problem || "-"}</td></tr>
+        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${formatMachineProblem(item) || "-"}</td></tr>
         <tr><td class="label-col" style="height: 50px;">Repair Action</td><td class="val-col">${item.repair_action || item.action || "-"}</td></tr>
         <tr>
           <td class="label-col">Component Replacement</td>
@@ -449,7 +526,7 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col">Product Type</td><td class="val-col">  ${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td></tr>
         <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.modelName || "-"}</td></tr>
         <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.serialNo || "-"}</td></tr>
-        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${item.machine_problem || item.problem || "-"}</td></tr>
+        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${formatMachineProblem(item) || "-"}</td></tr>
        
         
         <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col"> ${item.remarks || item.notes || item.action || "-"}</td></tr>
@@ -525,7 +602,7 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
         </tr>
         <tr><td colspan="2" class="bg-black">MACHINE PROBLEM</td></tr>
         <tr>
-          <td colspan="2" style="height: 60px; vertical-align: top; font-weight: normal;">${item.machine_problem || ""}</td>
+          <td colspan="2" style="height: 60px; vertical-align: top; font-weight: normal;">${formatMachineProblem(item)}</td>
         </tr>
         <tr>
           <td colspan="2" style="height: 40px; vertical-align: top; font-weight: normal;">${item.repair_action || ""}</td>
@@ -540,22 +617,25 @@ function copierServiceReportBody(item: any, ctx: ReportCtx): string {
 }
 
 function servicePhotosBody(item: any): string {
-  if (!item.photo_before && !item.photo_progress && !item.photo_after) return "";
-  const count = [item.photo_before, item.photo_progress, item.photo_after].filter(Boolean).length;
+  const hasBefore = isImageSrc(item.photo_before);
+  const hasProgress = isImageSrc(item.photo_progress);
+  const hasAfter = isImageSrc(item.photo_after);
+  if (!hasBefore && !hasProgress && !hasAfter) return "";
+  const count = [hasBefore, hasProgress, hasAfter].filter(Boolean).length;
   const colWidth = count === 3 ? "31%" : count === 2 ? "48%" : "80%";
   return `
     <div class="container" style="border: none;">
       <div class="title-bar" style="font-size: 22px; margin-bottom: 20px;">SERVICE PHOTOS</div>
       <div style="display: flex; gap: 20px; justify-content: space-around; flex-wrap: wrap;">
-        ${item.photo_before ? `<div style="text-align: center; width: ${colWidth};">
+        ${hasBefore ? `<div style="text-align: center; width: ${colWidth};">
           <div style="font-weight: bold; margin-bottom: 10px;">1. FOTO PENGANTARAN / PROBLEM</div>
           <img src="${item.photo_before}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
         </div>` : ""}
-        ${item.photo_progress ? `<div style="text-align: center; width: ${colWidth};">
+        ${hasProgress ? `<div style="text-align: center; width: ${colWidth};">
           <div style="font-weight: bold; margin-bottom: 10px;">2. FOTO INSTAL / SERVICE</div>
           <img src="${item.photo_progress}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
         </div>` : ""}
-        ${item.photo_after ? `<div style="text-align: center; width: ${colWidth};">
+        ${hasAfter ? `<div style="text-align: center; width: ${colWidth};">
           <div style="font-weight: bold; margin-bottom: 10px;">3. FOTO SELESAI</div>
           <img src="${item.photo_after}" style="max-width: 100%; max-height: 400px; border: 1px solid #000;" />
         </div>` : ""}
@@ -621,15 +701,15 @@ function photoDokumentasiBody(items: any[]): string {
     const projectName = item.project_name || "-";
     const repairAction = item.repair_action || item.action || "-";
 
-    const photoBefore = item.photo_before
+    const photoBefore = isImageSrc(item.photo_before)
       ? `<img src="${item.photo_before}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
       : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
-    const photoProgress = item.photo_progress
+    const photoProgress = isImageSrc(item.photo_progress)
       ? `<img src="${item.photo_progress}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
       : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
-    const photoAfter = item.photo_after
+    const photoAfter = isImageSrc(item.photo_after)
       ? `<img src="${item.photo_after}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
       : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
@@ -698,12 +778,28 @@ function wrapDokumentasiDocument(body: string, autoPrint: boolean): string {
 }
 
 /** Print Photo Dokumentasi untuk satu atau banyak service report sekaligus */
-export function printPhotoDokumentasi(items: any | any[]) {
+export async function printPhotoDokumentasi(items: any | any[]) {
   const arr = Array.isArray(items) ? items : [items];
-  const body = photoDokumentasiBody(arr);
+  let win: Window | null = null;
+  const willFetch = arr.some((it) => it?.id && needsFullReportFetch(it));
+  if (willFetch) {
+    win = window.open("", "_blank");
+    if (win) {
+      win.document.write("<!DOCTYPE html><html><body style='font-family:sans-serif;padding:24px;color:#555;'>Memuat foto dokumentasi...</body></html>");
+    }
+  }
+
+  const fullItems = willFetch
+    ? await Promise.all(arr.map((it) => fetchFullServiceReport(it)))
+    : arr;
+
+  const body = photoDokumentasiBody(fullItems);
   const html = wrapDokumentasiDocument(body, true);
-  const win = window.open("", "_blank");
+  if (!win) {
+    win = window.open("", "_blank");
+  }
   if (win) {
+    win.document.open();
     win.document.write(html);
     win.document.close();
   }
@@ -793,29 +889,63 @@ function wrapDocument(pages: string[], autoPrint: boolean): string {
 }
 
 /** Print/PDF — all forms in one window, one page per form. */
-export function printServiceReport(item: any, type?: ReportType) {
-  const pages = getReportPages(item, type);
+export async function printServiceReport(item: any, type?: ReportType) {
+  let printWindow: Window | null = null;
+  const willFetch = item?.id && needsFullReportFetch(item);
+
+  if (willFetch) {
+    printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write("<!DOCTYPE html><html><body style='font-family:sans-serif;padding:24px;color:#555;'>Memuat data laporan...</body></html>");
+    }
+  }
+
+  const fullItem = willFetch ? await fetchFullServiceReport(item) : item;
+  const pages = getReportPages(fullItem, type);
   if (pages.length === 0) {
+    if (printWindow) printWindow.close();
     alert("This item does not have this type of report (e.g. not a copier).");
     return;
   }
   const html = wrapDocument(pages, true);
-  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    printWindow = window.open("", "_blank");
+  }
   if (printWindow) {
+    printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
   }
 }
 
-export function printMultipleServiceReports(items: any[], type?: ReportType) {
-  const allPages = items.flatMap((item) => getReportPages(item, type));
+export async function printMultipleServiceReports(items: any[], type?: ReportType) {
+  let printWindow: Window | null = null;
+  const willFetch = items.some((it) => it?.id && needsFullReportFetch(it));
+
+  if (willFetch) {
+    printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write("<!DOCTYPE html><html><body style='font-family:sans-serif;padding:24px;color:#555;'>Memuat data laporan...</body></html>");
+    }
+  }
+
+  const fullItems = willFetch
+    ? await Promise.all(items.map((it) => fetchFullServiceReport(it)))
+    : items;
+
+  const allPages = fullItems.flatMap((item) => getReportPages(item, type));
   if (allPages.length === 0) {
+    if (printWindow) printWindow.close();
     alert("No valid reports found for the selected type.");
     return;
   }
+
   const html = wrapDocument(allPages, true);
-  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    printWindow = window.open("", "_blank");
+  }
   if (printWindow) {
+    printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
   }
@@ -830,7 +960,11 @@ export function getServiceReportFormHtml(item: any, type?: ReportType): string {
 }
 
 export async function downloadServiceReportPdf(item: any, type?: ReportType): Promise<boolean> {
-  const pages = getReportPages(item, type);
+  const fullItem = (item?.id && needsFullReportFetch(item))
+    ? await fetchFullServiceReport(item)
+    : item;
+
+  const pages = getReportPages(fullItem, type);
   if (pages.length === 0) {
     alert("This item does not have this type of report (e.g. not a copier).");
     return false;
@@ -841,7 +975,7 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
     const container = document.createElement("div");
     container.innerHTML = html;
 
-    const reportNo = (item.report_no || `SR-${item.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
+    const reportNo = (fullItem.report_no || `SR-${fullItem.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
     const opt: any = {
       margin: [6, 6, 6, 6],
       filename: `Laporan_Servis_${reportNo}.pdf`,

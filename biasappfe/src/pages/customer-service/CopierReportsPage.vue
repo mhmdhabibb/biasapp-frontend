@@ -84,9 +84,10 @@ function unitName(id: any, row?: any): string {
   return '-'
 }
 
-function technicianName(id: any): string {
+function technicianName(id: any, row?: any): string {
   const t: any = findTechnician(id)
-  return t ? t.user?.name || t.name || '-' : '-'
+  if (t) return t.user?.name || t.name || '-'
+  return row?.technician_name_copier || row?.technician_name || '-'
 }
 
 function isRunningTransaction(item: any): boolean {
@@ -452,7 +453,7 @@ async function handleDelete() {
       </template>
       <template #cell-customer_id="{ value }">{{ customerName(value) }}</template>
       <template #cell-unit_id="{ value, row }">{{ unitName(value, row) }}</template>
-      <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
+      <template #cell-technician_id="{ value, row }">{{ technicianName(value, row) }}</template>
       <template #cell-service_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-status="{ value }">
         <span :class="value === 'completed' ? 'badge badge-success' : value === 'pending' ? 'badge badge-warning' : value === 'draft' ? 'badge badge-neutral' : 'badge badge-info'">
@@ -549,7 +550,7 @@ async function handleDelete() {
           </div>
           <div class="cr-stat">
             <span class="cr-label">Technician</span>
-            <span class="cr-value small">{{ technicianName(detailItem.technician_id) }}</span>
+            <span class="cr-value small">{{ technicianName(detailItem.technician_id, detailItem) }}</span>
           </div>
           <div class="cr-stat">
             <span class="cr-label">Visit Date</span>

@@ -33,17 +33,15 @@ const directSr = ref<any>(null)
 const sr = computed(() => directSr.value || serviceReports.value.find(r => String(r.id) === reportId))
 
 onMounted(async () => {
-  await ensureResourcesLoaded('/shared/service-reports')
-  if (!sr.value) {
-    try {
-      const res: any = await api.get(`/service-reports/${reportId}`)
-      const data = res?.data?.data || res?.data || res
-      if (data && data.id) {
-        directSr.value = data
-      }
-    } catch (e) {
-      console.warn('Failed to load service report:', e)
+  ensureResourcesLoaded('/shared/service-reports')
+  try {
+    const res: any = await api.get(`/service-reports/${reportId}`, true, false)
+    const data = res?.data?.data || res?.data || res
+    if (data && data.id) {
+      directSr.value = data
     }
+  } catch (e) {
+    console.warn('Failed to load service report:', e)
   }
 })
 
