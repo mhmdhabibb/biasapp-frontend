@@ -104,19 +104,49 @@ function formatDate(value: any): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-// Total keseluruhan: jumlah dari semua baris readings bila ada,
+function detailReadingRows(item: any): { key: string; paper: string; mode: string; start: number; end: number | null }[] {
+  const rows = detailReadings(item)
+  const out: { key: string; paper: string; mode: string; start: number; end: number | null }[] = []
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    const paper = r.paper_size?.name || '-'
+    const color = String(r.color_mode || '-').toUpperCase()
+    const end1 = r.last_meter ?? r.end_meter
+    out.push({
+      key: `${r.id || i}-1s`,
+      paper,
+      mode: `${color} (1-Sided)`,
+      start: Number(r.start_meter || 0),
+      end: end1 != null ? Number(end1) : null,
+    })
+    const start2 = Number(r.start_meter_double || 0)
+    const end2Raw = r.last_meter_double ?? r.end_meter_double
+    const end2 = end2Raw != null ? Number(end2Raw) : null
+    if (start2 > 0 || (end2 !== null && end2 > 0)) {
+      out.push({
+        key: `${r.id || i}-2s`,
+        paper,
+        mode: `${color} (2-Sided)`,
+        start: start2,
+        end: end2,
+      })
+    }
+  }
+  return out
+}
+
+// Total keseluruhan: jumlah dari semua baris readings (1-sided & 2-sided) bila ada,
 // fallback ke field tunggal legacy bila tidak ada readings.
 function detailTotals(item: any): { before: number | null; after: number | null; count: number } {
-  const rows = detailReadings(item)
+  const rows = detailReadingRows(item)
   if (rows.length > 0) {
     let b = 0
     let a: number | null = null
     for (const r of rows) {
-      b += Number(r.start_meter || 0)
-      const end = r.last_meter ?? r.end_meter
-      if (end != null) {
+      b += Number(r.start || 0)
+      if (r.end != null && r.end > 0) {
         if (a === null) a = 0
-        a += Number(end)
+        a += Number(r.end)
       }
     }
     return { before: b, after: a, count: rows.length }
@@ -168,11 +198,9 @@ function detailReadings(item: any): any[] {
   })
 }
 
-function readingUsage(r: any): string {
-  const s = Number(r.start_meter || 0)
-  const end = r.last_meter ?? r.end_meter
-  if (end == null || Number(end) === 0) return '-'
-  return (Number(end) - s).toLocaleString('id-ID')
+function rowUsage(r: { start: number; end: number | null }): string {
+  if (r.end == null || Number(r.end) === 0) return '-'
+  return (Number(r.end) - Number(r.start || 0)).toLocaleString('id-ID')
 }
 
 // ---- Detail (read-only) ----
@@ -541,18 +569,18 @@ async function handleDelete() {
           </div>
         </div>
 
-        <div v-if="detailReadings(detailItem).length > 0" class="cr-readings">
-          <div class="cr-section">Rincian Meter ({{ detailReadings(detailItem).length }})</div>
+        <div v-if="detailReadingRows(detailItem).length > 0" class="cr-readings">
+          <div class="cr-section">Rincian Meter ({{ detailReadingRows(detailItem).length }})</div>
           <table class="cr-table">
             <thead>
               <tr><th>Paper</th><th>Mode</th><th style="text-align: right;">Start → Last</th><th style="text-align: right;">Pakai</th></tr>
             </thead>
             <tbody>
-              <tr v-for="(r, idx) in detailReadings(detailItem)" :key="r.id || idx">
-                <td>{{ r.paper_size?.name || '-' }}</td>
-                <td>{{ String(r.color_mode || '-').toUpperCase() }}</td>
-                <td style="text-align: right; white-space: nowrap;">{{ Number(r.start_meter || 0).toLocaleString('id-ID') }} → {{ (r.last_meter ?? r.end_meter) && Number(r.last_meter ?? r.end_meter) > 0 ? Number(r.last_meter ?? r.end_meter).toLocaleString('id-ID') : '-' }}</td>
-                <td style="text-align: right;">{{ readingUsage(r) }}</td>
+              <tr v-for="r in detailReadingRows(detailItem)" :key="r.key">
+                <td>{{ r.paper }}</td>
+                <td>{{ r.mode }}</td>
+                <td style="text-align: right; white-space: nowrap;">{{ Number(r.start || 0).toLocaleString('id-ID') }} → {{ r.end && Number(r.end) > 0 ? Number(r.end).toLocaleString('id-ID') : '-' }}</td>
+                <td style="text-align: right;">{{ rowUsage(r) }}</td>
               </tr>
             </tbody>
           </table>

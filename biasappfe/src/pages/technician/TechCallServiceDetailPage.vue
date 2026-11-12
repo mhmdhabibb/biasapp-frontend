@@ -79,6 +79,9 @@ async function fetchFullServiceReport() {
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
 const isPreparingForm = ref(false)
 const servicePhotoZoom = ref<string | null>(null)
+function isRenderablePhoto(val: any): boolean {
+  return typeof val === 'string' && (val.startsWith('data:image') || val.startsWith('http://') || val.startsWith('https://') || val.startsWith('/'))
+}
 
 watchEffect(() => {
   if (userRole.value === 'technician' && job.value && myTechId.value && String(job.value.technician_id) !== String(myTechId.value)) {
@@ -585,8 +588,8 @@ onMounted(async () => {
   await Promise.all([
     fetchDemoMode(true),
     fetchDirectJob(),
-    fetchFullServiceReport(),
   ])
+  await fetchFullServiceReport()
 })
 
 // Re-fetch full data when store updates (e.g., after returning from form pages)
@@ -1535,18 +1538,18 @@ function handleSurveyPhoto(e: Event) {
           </div>
 
           <!-- Dokumentasi Foto Service (bila sudah ada foto tersimpan) -->
-          <div v-if="serviceReport?.photo_before || serviceReport?.photo_progress || serviceReport?.photo_after" class="mt-md p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md); border: 1px dashed var(--color-border);">
+          <div v-if="isRenderablePhoto(serviceReport?.photo_before) || isRenderablePhoto(serviceReport?.photo_progress) || isRenderablePhoto(serviceReport?.photo_after)" class="mt-md p-md" style="background: var(--color-surface-sunken); border-radius: var(--radius-md); border: 1px dashed var(--color-border);">
             <p class="font-bold mb-xs text-sm">Dokumentasi Foto Service Terlampir</p>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;">
-              <div v-if="serviceReport.photo_before" style="text-align: center;">
+              <div v-if="isRenderablePhoto(serviceReport?.photo_before)" style="text-align: center;">
                 <span class="text-xs text-muted mb-xs" style="display: block;">1. Foto Pengantaran / Problem</span>
                 <img :src="serviceReport.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_before" />
               </div>
-              <div v-if="serviceReport.photo_progress" style="text-align: center;">
+              <div v-if="isRenderablePhoto(serviceReport?.photo_progress)" style="text-align: center;">
                 <span class="text-xs text-muted mb-xs" style="display: block;">2. Foto Instal / Service</span>
                 <img :src="serviceReport.photo_progress" alt="2. Foto Instal / Service" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_progress" />
               </div>
-              <div v-if="serviceReport.photo_after" style="text-align: center;">
+              <div v-if="isRenderablePhoto(serviceReport?.photo_after)" style="text-align: center;">
                 <span class="text-xs text-muted mb-xs" style="display: block;">3. Foto Selesai</span>
                 <img :src="serviceReport.photo_after" alt="3. Foto Selesai" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_after" />
               </div>
@@ -1625,18 +1628,18 @@ function handleSurveyPhoto(e: Event) {
           </div>
 
           <!-- Dokumentasi Foto Service -->
-          <div class="form-group mt-md" v-if="serviceReport?.photo_before || serviceReport?.photo_progress || serviceReport?.photo_after" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-sunken);">
+          <div class="form-group mt-md" v-if="isRenderablePhoto(serviceReport?.photo_before) || isRenderablePhoto(serviceReport?.photo_progress) || isRenderablePhoto(serviceReport?.photo_after)" style="padding: 12px; border: 1px dashed var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-sunken);">
             <div class="text-sm font-bold mb-sm">Dokumentasi Foto Service</div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
-              <div v-if="serviceReport.photo_before" style="text-align: center;">
+              <div v-if="isRenderablePhoto(serviceReport?.photo_before)" style="text-align: center;">
                 <div class="text-xs text-muted mb-xs font-semibold">1. Foto Pengantaran / Problem</div>
                 <img :src="serviceReport.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_before" title="Klik untuk perbesar">
               </div>
-              <div v-if="serviceReport.photo_progress" style="text-align: center;">
+              <div v-if="isRenderablePhoto(serviceReport?.photo_progress)" style="text-align: center;">
                 <div class="text-xs text-muted mb-xs font-semibold">2. Foto Instal / Service</div>
                 <img :src="serviceReport.photo_progress" alt="2. Foto Instal / Service" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_progress" title="Klik untuk perbesar">
               </div>
-              <div v-if="serviceReport.photo_after" style="text-align: center;">
+              <div v-if="isRenderablePhoto(serviceReport?.photo_after)" style="text-align: center;">
                 <div class="text-xs text-muted mb-xs font-semibold">3. Foto Selesai</div>
                 <img :src="serviceReport.photo_after" alt="3. Foto Selesai" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_after" title="Klik untuk perbesar">
               </div>
