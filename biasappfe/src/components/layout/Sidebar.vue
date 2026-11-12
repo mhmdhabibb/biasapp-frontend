@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import FormModal from "@/components/ui/FormModal.vue";
+import DemoModePinModal from "@/components/ui/DemoModePinModal.vue";
 import { useAuth } from "@/composables/useAuth";
 import { useToast } from "@/composables/useToast";
 import { allMenuGroups, useNavigationMenu } from "@/composables/useNavigationMenu";
+import { useDemoMode } from "@/composables/useDemoMode";
+import { useIsSuperadmin } from "@/composables/useHardDelete";
 import { api } from "@/services/api";
 import { normalizeRole } from "@/router/role-access";
-import { reactive, ref, watch } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 
@@ -19,6 +22,20 @@ const { t } = useI18n();
 const { success: toastSuccess, error: toastError } = useToast();
 
 const { menuGroups, panelName, iconPaths } = useNavigationMenu();
+const isSuperadmin = useIsSuperadmin();
+const { isDemoMode, fetchDemoMode } = useDemoMode();
+const showDemoPinModal = ref(false);
+
+onMounted(() => {
+  if (isSuperadmin.value) {
+    fetchDemoMode(true);
+  }
+});
+
+function openDemoPinModal(e: Event) {
+  e.preventDefault();
+  showDemoPinModal.value = true;
+}
 
 const showPwdModal = ref(false);
 const pwdForm = reactive({
@@ -168,6 +185,21 @@ watch(
       </div>
     </nav>
 
+    <div v-if="isSuperadmin" class="sidebar-demo-box">
+      <button
+        type="button"
+        class="sidebar-demo-label"
+        style="width: 100%; background: none; border: none; padding: 0; text-align: left;"
+        title="Terkunci dengan PIN keamanan. Klik untuk mengaktifkan/menonaktifkan Demo Mode."
+        @click="openDemoPinModal"
+      >
+        <span>🔒 🧪 Demo Mode</span>
+        <span class="sidebar-demo-badge" :class="{ active: isDemoMode }">
+          {{ isDemoMode ? "ON" : "OFF" }}
+        </span>
+      </button>
+    </div>
+
     <div class="sidebar-footer">
       <div class="sidebar-user">
         <div class="sidebar-user-avatar">
@@ -219,6 +251,11 @@ watch(
       </button>
     </div>
   </aside>
+
+  <DemoModePinModal
+    :open="showDemoPinModal"
+    @close="showDemoPinModal = false"
+  />
 
   <FormModal
     :open="showPwdModal"
@@ -478,5 +515,37 @@ watch(
 .btn-logout:hover {
   background: var(--color-surface-sunken);
   color: var(--color-danger);
+}
+
+.sidebar-demo-box {
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--color-border-light);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.sidebar-demo-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text);
+  user-select: none;
+}
+
+.sidebar-demo-badge {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #e5e7eb;
+  color: #4b5563;
+}
+
+.sidebar-demo-badge.active {
+  background: #f59e0b;
+  color: #ffffff;
 }
 </style>

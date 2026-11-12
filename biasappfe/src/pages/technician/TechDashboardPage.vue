@@ -5,9 +5,21 @@ import { useAuth } from "@/composables/useAuth";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
+import { useDemoMode } from "@/composables/useDemoMode";
 import CreateJobModal from "./CreateJobModal.vue";
 import { useRouter, useRoute } from "vue-router";
-import { computed, ref, onMounted } from "vue";
+import { computed, ref, watch, onMounted } from "vue";
+
+// Helper: cek apakah tanggal adalah hari ini
+function isToday(dateStr: string | Date): boolean {
+  const d = new Date(dateStr);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
 
 const router = useRouter();
 const route = useRoute()
@@ -32,7 +44,13 @@ const {
 
 onMounted(() => {
   ensureResourcesLoaded(route.path)
+  fetchDemoMode(true)
 })
+
+const { isDemoMode, fetchDemoMode } = useDemoMode()
+watch(isDemoMode, (val) => {
+  dateFilterTab.value = val ? 'all' : 'today'
+}, { immediate: true })
 
 useAutoRefresh(10000, [
   "jobOrders",
@@ -495,6 +513,10 @@ function getDisplayJobNo(job: any): string {
 
     <!-- Active Jobs Section -->
     <div class="jobs-section">
+      <div v-if="isDemoMode" style="background: #fef3c7; border: 1.5px solid #f59e0b; color: #92400e; padding: 0.65rem 1rem; border-radius: 10px; margin-bottom: 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span>🧪</span>
+        <span><strong>Demo Mode Aktif:</strong> Semua pekerjaan ditampilkan dan dapat dikerjakan tanpa batasan tanggal assign.</span>
+      </div>
       <div class="section-header">
         <div>
           <h2 class="section-title">Active Jobs</h2>

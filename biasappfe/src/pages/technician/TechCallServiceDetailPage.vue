@@ -8,6 +8,7 @@ import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
+import { useDemoMode } from '@/composables/useDemoMode'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
@@ -101,8 +102,25 @@ const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].include
 const userRole = computed(() => normalizeRole(currentUser.value?.role))
 const isTechnician = computed(() => userRole.value === 'technician')
 const isSuperadminOrAdmin = computed(() => userRole.value === 'admin')
+const { isDemoMode, fetchDemoMode } = useDemoMode()
+
+const toLocalYmd = (raw: any) => {
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const isBlockedByScheduleDate = computed(() => {
+  if (isDemoMode.value) return false
+  if (!isTechnician.value) return false
+  const schedYmd = toLocalYmd(resolvedScheduledDate.value)
+  if (!schedYmd) return false
+  return schedYmd > toLocalYmd(new Date())
+})
+
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
+  if (isBlockedByScheduleDate.value) return false
   return userRole.value === 'technician' || userRole.value === 'admin'
 })
 const canManageSr = computed(() => isEditable.value && (can('service_report:update') || isTechnician.value || isSuperadminOrAdmin.value))
@@ -158,7 +176,16 @@ const resolvedDeliveryAddress = computed(() => {
   const custId = String(customer.value?.id || doCustomer.value?.id || j?.customer_id || j?.service_request?.customer_id || '')
   const uid = String(unit.value?.id || j?.unit_id || j?.service_request?.unit_id || '')
 
-  // 1. From linked rental on DO or Job (Installation Address is primary)
+  // 0. Direct from delivery order / item placement_location (most specific)
+  if (d?.delivery_address && String(d.delivery_address).trim()) {
+    return String(d.delivery_address).trim()
+  }
+  const doItemAddr = (d?.delivery_order_items || []).find((it: any) => String(it.delivery_address || '').trim())?.delivery_address
+  if (doItemAddr && String(doItemAddr).trim()) {
+    return String(doItemAddr).trim()
+  }
+
+  // 1. From linked rental on DO or Job (Installation Address)
   if (d?.rental?.installation_address && String(d.rental.installation_address).trim()) {
     return String(d.rental.installation_address).trim()
   }
@@ -556,6 +583,7 @@ const isAllFormsCompleted = computed(() => {
 onMounted(async () => {
   initDoForm(true)
   await Promise.all([
+    fetchDemoMode(true),
     fetchDirectJob(),
     fetchFullServiceReport(),
   ])
@@ -980,6 +1008,15 @@ function handleSurveyPhoto(e: Event) {
   <div class="tech-job-detail" v-if="job">
     <PageHeader :title="isSurveyJob ? 'Survey Job Detail' : isDeliveryJob ? 'Delivery Job Detail' : 'Call Service Detail'" :back-button="true" @back="router.back()" />
 
+    <div v-if="isDemoMode" style="background: #fef3c7; border: 1.5px solid #f59e0b; color: #92400e; padding: 0.65rem 1rem; border-radius: 10px; margin-bottom: 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span>🧪</span>
+      <span><strong>Demo Mode Aktif:</strong> Job dapat dikerjakan pada tanggal berapapun tanpa batasan tanggal assign.</span>
+    </div>
+    <div v-else-if="isBlockedByScheduleDate" style="background: #fee2e2; border: 1.5px solid #ef4444; color: #991b1b; padding: 0.75rem 1rem; border-radius: 10px; margin-bottom: 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span>⏳</span>
+      <span>Job ini dijadwalkan untuk tanggal <strong>{{ resolvedScheduledDate ? new Date(resolvedScheduledDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-' }}</strong>. Belum dapat dikerjakan sebelum tanggal assign (aktifkan Demo Mode di Superadmin jika ingin tes alur sekarang).</span>
+    </div>
+
     <!-- Survey Job View -->
     <div v-if="isSurveyJob" class="grid-2">
       <!-- Info Section (Survey Data) -->
@@ -1036,7 +1073,7 @@ function handleSurveyPhoto(e: Event) {
 
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
           <p class="mb-lg text-muted">Anda belum menerima job survey ini.</p>
-          <button class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptSurveyJob">
+          <button v-if="isEditable" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptSurveyJob">
             Terima Job Survey
           </button>
         </div>

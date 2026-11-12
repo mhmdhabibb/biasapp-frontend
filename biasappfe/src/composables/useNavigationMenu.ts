@@ -1,4 +1,5 @@
 import { useAuth } from "@/composables/useAuth";
+import { useIsSuperadmin } from "@/composables/useHardDelete";
 import { useModules } from "@/composables/useModules";
 import { canView, permissionKeysFor } from "@/router/permission-map";
 import {
@@ -219,6 +220,7 @@ export const allMenuGroups: MenuGroup[] = [
         route: "/master/permissions",
       },
       { label: "sidebar.modules", icon: "grid", route: "/master/modules" },
+      { label: "System Settings", icon: "settings", route: "/master/system-settings", superadminOnly: true } as any,
     ],
   },
   {
@@ -320,6 +322,7 @@ export function useNavigationMenu() {
   const router = useRouter();
   const { currentUser } = useAuth();
   const { modules } = useModules();
+  const isSuperadmin = useIsSuperadmin();
   const { t } = useI18n();
 
   const menuGroups = computed(() => {
@@ -375,7 +378,10 @@ export function useNavigationMenu() {
               if (mod && !mod.is_active) return false;
             }
 
-            // 5. Role-restricted items (technician menu): role decides, no permission checks
+            // 5. Superadmin-only items (e.g. System Settings)
+            if ((item as any).superadminOnly && !isSuperadmin.value) return false;
+
+            // 6. Role-restricted items (technician menu): role decides, no permission checks
             if (item.roles) return item.roles.includes(role);
 
             const permissions = currentUser.value?.permissions || [];

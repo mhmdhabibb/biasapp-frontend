@@ -125,7 +125,7 @@ async function saveDeliveryOrder() {
 
 function resolveDOAddress(item: any): string {
   if (!item) return '-'
-  return item.rental?.installation_address || item.sale?.installation_address || item.delivery_address || '-'
+  return item.delivery_address || item.rental?.installation_address || item.sale?.installation_address || '-'
 }
 
 function openDelete(item: ProcurementDeliveryOrder) {

@@ -965,14 +965,14 @@ function jobDeliveryDate(job: any): string {
 
 function getTaskAddress(task: any): string {
   return (
+    task?.delivery_order?.delivery_address ||
+    task?.delivery_address ||
+    task?.delivery_order?.installation_address ||
+    task?.installation_address ||
     task?.rental?.installation_address ||
     task?.sale?.installation_address ||
     task?.delivery_order?.rental?.installation_address ||
     task?.delivery_order?.sale?.installation_address ||
-    task?.installation_address ||
-    task?.delivery_order?.installation_address ||
-    task?.delivery_order?.delivery_address ||
-    task?.delivery_address ||
     task?.customer?.address ||
     task?.delivery_order?.customer?.address ||
     task?.service_report?.customer?.address ||

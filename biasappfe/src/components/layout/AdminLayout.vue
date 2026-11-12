@@ -73,6 +73,7 @@ const pageTitle = computed(() => {
     "/master/roles": "Roles",
     "/master/permissions": "Permissions",
     "/master/modules": "Modules",
+    "/master/system-settings": "System Settings",
     "/master/customers": "Customers",
     "/master/technicians": "Technicians",
     "/master/unit-types": "Unit Types",

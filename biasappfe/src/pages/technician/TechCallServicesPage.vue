@@ -112,12 +112,12 @@ function getJobAddress(job: any): string {
   if (!job) return ''
   const d = job.delivery_order
   return (
+    d?.delivery_address ||
+    job.survey?.location_address ||
     d?.rental?.installation_address ||
     job.rental?.installation_address ||
     d?.sale?.installation_address ||
     job.sale?.installation_address ||
-    job.survey?.location_address ||
-    d?.delivery_address ||
     job.survey?.customer?.address ||
     job.service_report?.customer?.address ||
     job.customer?.address ||
