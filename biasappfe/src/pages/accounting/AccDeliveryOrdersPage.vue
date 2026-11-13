@@ -6,17 +6,57 @@ import FormModal from '@/components/ui/FormModal.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
+import { useIsSuperadmin } from '@/composables/useHardDelete'
 import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import { resources as resourceApi } from '@/services/resource.service'
+import { api } from '@/services/api'
 import type { ProcurementDeliveryOrder, TableColumn } from '@/types'
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { printDeliveryOrder } from '@/utils/printDeliveryOrder'
 
 const toast = useToast()
 const { can } = usePermission()
+const isSuperadmin = useIsSuperadmin()
 const store = useMasterStore()
+const showDeleted = ref(false)
+const deletedDOs = ref<any[]>([])
+function extractArray(res: any): any[] {
+  if (!res) return [];
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res.data)) return res.data;
+  if (Array.isArray(res.data?.items)) return res.data.items;
+  if (Array.isArray(res.data?.data)) return res.data.data;
+  if (Array.isArray(res.items)) return res.items;
+  return [];
+}
+const displayedDOs = computed(() => (showDeleted.value ? deletedDOs.value : store.deliveryOrders.value))
+async function fetchDeletedDOs() {
+  try {
+    const res = await resourceApi.deliveryOrders.list({ include_deleted: true, limit: 1000 } as any)
+    deletedDOs.value = extractArray(res).filter((d: any) => d.deleted_at)
+  } catch (e) {
+    toast.error(toast.fromError(e, 'Failed to load deleted delivery orders'))
+  }
+}
+async function restoreDeliveryOrder(item: any) {
+  if (busyId.value !== null) return
+  busyId.value = item.id
+  try {
+    await api.post(`/delivery-orders/${item.id}/restore`, {})
+    await store.refreshInBackground()
+    await fetchDeletedDOs()
+    toast.success(`DO ${item.do_number} restored successfully.`)
+  } catch (e) {
+    toast.error(toast.fromError(e, 'Failed to restore delivery order'))
+  } finally {
+    busyId.value = null
+  }
+}
+watch(showDeleted, (val) => {
+  if (val) fetchDeletedDOs()
+})
 const resources = useResourcesStore()
 const route = useRoute()
 const { ensureResourcesLoaded } = store
@@ -187,7 +227,10 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       <span>Manage all Delivery Orders (Inbound and Outbound).</span>
     </div>
 
-    <DataTable :columns="columns" :data="store.deliveryOrders.value" permission="delivery_order" search-placeholder="Search delivery orders..." @row-click="openDetail">
+    <div v-if="isSuperadmin" style="margin-bottom: 8px;">
+      <label><input type="checkbox" v-model="showDeleted" /> Show deleted DOs</label>
+    </div>
+    <DataTable :columns="columns" :data="displayedDOs" permission="delivery_order" search-placeholder="Search delivery orders..." @row-click="openDetail">
       <template #cell-do_type="{ value }">
         <span class="badge badge-info">{{ (value || '').toUpperCase() }}</span>
       </template>
@@ -227,7 +270,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
             </svg>
           </button>
           <button
-            v-if="can('delivery_order:delete')"
+            v-if="can('delivery_order:delete') && !row.deleted_at"
             class="action-btn action-btn--delete"
             title="Delete"
             aria-label="Delete delivery order"
@@ -240,6 +283,16 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
               <path d="m19 6-1 14H6L5 6" />
               <path d="M10 11v5M14 11v5" />
             </svg>
+          </button>
+          <button
+            v-if="isSuperadmin && row.deleted_at"
+            class="action-btn"
+            title="Restore"
+            aria-label="Restore delivery order"
+            :disabled="busyId === row.id"
+            @click="restoreDeliveryOrder(row)"
+          >
+            Restore
           </button>
           <button
             class="action-btn action-btn--print"

@@ -1486,7 +1486,7 @@ function buildExportFileName(items: any[], extension: "pdf" | "xlsx"): string {
   const companyList = Array.from(companyNames);
   const companyName =
     companyList.length === 1
-      ? companyList[0]
+      ? companyList[0]!
       : companyList.length > 1
         ? "Multiple_Companies"
         : filterCustomer.value

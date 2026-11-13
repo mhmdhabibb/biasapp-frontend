@@ -102,7 +102,7 @@ async function fetchJobOrders(silent = false) {
             (d: any) => String(d.id) === String(doTargetId),
           );
         if (fullDo) {
-          doObj = { ...fullDo, ...doObj };
+          doObj = { ...fullDo, ...doObj, do_number: fullDo?.do_number || doObj?.do_number };
         }
       }
       const customer =
@@ -281,7 +281,7 @@ async function loadAllData(silent = false) {
             (d: any) => String(d.id) === String(doTargetId),
           );
         if (fullDo) {
-          doObj = { ...fullDo, ...doObj };
+          doObj = { ...fullDo, ...doObj, do_number: fullDo?.do_number || doObj?.do_number };
         }
       }
       const customer =
@@ -395,7 +395,7 @@ watch(
           if (fullDo) {
             return {
               ...j,
-              delivery_order: { ...fullDo, ...doObj },
+              delivery_order: { ...fullDo, ...doObj, do_number: fullDo?.do_number || doObj?.do_number },
             };
           }
         }
@@ -649,7 +649,7 @@ function getJobsForTech(techId: string | number): any[] {
             (d: any) => String(d.id) === String(doTargetId),
           );
         if (fullDo) {
-          doObj = { ...fullDo, ...doObj };
+          doObj = { ...fullDo, ...doObj, do_number: fullDo?.do_number || doObj?.do_number };
         }
       }
       return {

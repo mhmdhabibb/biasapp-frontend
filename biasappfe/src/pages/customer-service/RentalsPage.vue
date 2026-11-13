@@ -308,25 +308,32 @@ function hasActiveRentalDO(rental: any): boolean {
 
 function getRentalDONumber(rental: any): string {
   if (!rental) return "-";
-  if (rental.delivery_order && rental.delivery_order.status !== "cancelled") {
-    return rental.delivery_order.do_number || "-";
+  // Cross-check with the globally fetched DO list so the displayed number always
+  // matches the actual persisted record (avoids stale/wrong has-one relation).
+  if (rental.delivery_order && rental.delivery_order.status !== "cancelled" && !rental.delivery_order.deleted_at) {
+    const globalDO = ((deliveryOrders.value as any[]) || []).find(
+      (d: any) => String(d.id) === String(rental.delivery_order.id),
+    );
+    return (globalDO?.do_number || rental.delivery_order.do_number) || "-";
   }
   if (
     Array.isArray(rental.delivery_orders) &&
     rental.delivery_orders.length > 0
   ) {
-    const activeDO = rental.delivery_orders.find(
-      (d: any) => d && d.status !== "cancelled" && !d.deleted_at,
-    );
-    if (activeDO?.do_number) return activeDO.do_number;
+    const activeDOs = rental.delivery_orders
+      .filter((d: any) => d && d.status !== "cancelled" && !d.deleted_at)
+      .sort((a: any, b: any) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
+    if (activeDOs[0]?.do_number) return activeDOs[0].do_number;
   }
-  const found = ((deliveryOrders.value as any[]) || []).find(
-    (d: any) =>
-      String(d.rental_id) === String(rental.id) &&
-      d.status !== "cancelled" &&
-      !d.deleted_at,
-  );
-  return found?.do_number || "-";
+  const candidates = ((deliveryOrders.value as any[]) || [])
+    .filter(
+      (d: any) =>
+        String(d.rental_id) === String(rental.id) &&
+        d.status !== "cancelled" &&
+        !d.deleted_at,
+    )
+    .sort((a: any, b: any) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
+  return candidates[0]?.do_number || "-";
 }
 
 function openCreateRentalDOModal(rental: any) {
@@ -1843,7 +1850,7 @@ function buildExportFileName(items: any[], extension: "pdf" | "xlsx"): string {
   const companyList = Array.from(companyNames);
   const companyName =
     companyList.length === 1
-      ? companyList[0]
+      ? companyList[0]!
       : companyList.length > 1
         ? "Multiple_Companies"
         : filterCustomer.value
@@ -2181,7 +2188,7 @@ async function exportToPdf() {
     '<h2 style="margin:0 0 14px;text-align:center;">Rentals Report</h2>',
     "<table>",
     "<thead><tr>",
-    Object.keys(exportData[0])
+    Object.keys(exportData[0]!)
       .map((k) => `<th>${k}</th>`)
       .join(""),
     "</tr></thead>",
