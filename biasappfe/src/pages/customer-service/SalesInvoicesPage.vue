@@ -85,12 +85,21 @@ const columns: TableColumn[] = [
   { key: 'invoice_no', label: 'No. Invoice' },
   { key: 'customer_id', label: 'Customer' },
   { key: 'sale_id', label: 'Sale Ref.' },
+  { key: 'po_no', label: 'PO No' },
   { key: 'due_date', label: 'Due Date' },
   { key: 'subtotal', label: 'Subtotal' },
   { key: 'total', label: 'Total' },
   { key: 'status', label: 'Approval Status' },
   { key: 'payment_status', label: 'Status' },
 ]
+
+function getSalePoNo(row: any): string {
+  if (row?.po_no) return String(row.po_no).trim()
+  if (row?.sale?.po_no) return String(row.sale.po_no).trim()
+  const sale = findSale(row?.sale_id)
+  if (sale?.po_no) return String(sale.po_no).trim()
+  return '-'
+}
 
 function formatDate(value: any): string {
   if (!value) return '-'
@@ -1120,6 +1129,9 @@ async function printReceiptAsync(item: any, approved: any) {
     <DataTable :columns="columns" :data="filteredData" search-placeholder="Search sales invoices..." @edit="openEdit" @delete="openDelete">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-sale_id="{ value }">{{ saleRef(value) }}</template>
+      <template #cell-po_no="{ row }">
+        <span style="font-weight: 500;">{{ getSalePoNo(row) }}</span>
+      </template>
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>

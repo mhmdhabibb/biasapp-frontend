@@ -3381,7 +3381,10 @@ function isExpired(row: any): boolean {
           class="rental-invoice-row"
         >
           <div class="rental-invoice-info">
-            <strong>{{ invoice.invoice_no }}</strong>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <strong>{{ invoice.invoice_no }}</strong>
+              <span v-if="invoice.po_no || selectedRental?.po_no" class="badge badge-info" style="font-size: 11px;">PO: {{ invoice.po_no || selectedRental?.po_no }}</span>
+            </div>
             <span
               >{{
                 invoice.period_start

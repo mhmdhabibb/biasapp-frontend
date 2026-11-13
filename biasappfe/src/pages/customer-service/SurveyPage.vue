@@ -12,6 +12,9 @@ import { resources } from "@/services/resource.service";
 import { useRouter } from "vue-router";
 import type { TableColumn } from "@/types";
 
+// Module-level cache for instant zero-latency page transitions
+let cachedSurveys: any[] = [];
+
 const toast = useToast();
 const { can } = usePermission();
 const router = useRouter();
@@ -28,8 +31,9 @@ const columns: TableColumn[] = [
   { key: "_field_findings", label: "Hasil Lapangan" },
 ];
 
-const data = ref<any[]>([]);
-const isLoading = ref(false);
+const data = ref<any[]>(cachedSurveys);
+const isLoading = ref(cachedSurveys.length === 0);
+const isLoadingDetail = ref(false);
 const showModal = ref(false);
 const showConfirm = ref(false);
 const showDetailModal = ref(false);
@@ -111,7 +115,9 @@ const selectedUnitHasPrice = computed(() => {
 });
 
 async function fetchData() {
-  isLoading.value = true;
+  if (data.value.length === 0) {
+    isLoading.value = true;
+  }
   try {
     const res = await resources.surveys.list();
     const list = Array.isArray((res as any)?.data)
@@ -119,7 +125,7 @@ async function fetchData() {
       : Array.isArray(res)
         ? res
         : [];
-    data.value = (list as any[]).map((r: any) => {
+    const formatted = (list as any[]).map((r: any) => {
       const techName = r.technician?.user?.name || r.technician?.name;
       const hasFindings = !!(r.electrical_condition || r.access_condition || r.recommended_model || r.photo_location || r.technician_notes);
       return {
@@ -133,6 +139,8 @@ async function fetchData() {
         _hasFindings: hasFindings,
       };
     });
+    data.value = formatted;
+    cachedSurveys = formatted;
   } catch (e: any) {
     toast.error("Gagal memuat survey: " + (e?.message || "Error"));
   } finally {
@@ -176,9 +184,29 @@ function openEdit(item: any) {
   showModal.value = true;
 }
 
-function openDetail(item: any) {
-  selectedDetailItem.value = item;
+async function openDetail(item: any) {
+  selectedDetailItem.value = { ...item };
   showDetailModal.value = true;
+  if (item.id && (item.photo_location === 'has_photo' || item._hasFindings)) {
+    try {
+      isLoadingDetail.value = true;
+      const res = await resources.surveys.get(String(item.id));
+      const full = (res as any)?.data || res;
+      if (full && selectedDetailItem.value?.id === item.id) {
+        selectedDetailItem.value = {
+          ...selectedDetailItem.value,
+          ...full,
+          _customer: item._customer,
+          _technician: item._technician,
+          _scheduled_date: item._scheduled_date,
+        };
+      }
+    } catch (err) {
+      console.warn("Gagal memuat detail lengkap survey:", err);
+    } finally {
+      isLoadingDetail.value = false;
+    }
+  }
 }
 
 async function handleSubmit() {
@@ -282,9 +310,12 @@ function createSaleFromSurvey(item: any) {
   router.push(`/customer-service/sales?${q.toString()}`);
 }
 
-onMounted(async () => {
-  await ensureResourcesLoaded("/customer-service/surveys");
-  await fetchData();
+onMounted(() => {
+  // Run master resource sync and survey list concurrently for rapid render
+  void Promise.all([
+    ensureResourcesLoaded("/customer-service/surveys"),
+    fetchData(),
+  ]);
 });
 </script>
 
@@ -435,31 +466,22 @@ onMounted(async () => {
         <h4 class="font-bold mb-sm text-sm" style="color: var(--color-primary);">📋 Laporan Hasil Temuan Teknisi</h4>
         <div class="info-grid p-md" style="border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface);">
           <div class="mb-sm">
-            <span class="text-xs text-muted block">Kondisi Kelistrikan / Grounding:</span>
-            <span class="text-sm font-semibold">{{ selectedDetailItem.electrical_condition || 'Belum dilaporkan' }}</span>
-          </div>
-          <div class="mb-sm">
-            <span class="text-xs text-muted block">Akses Lokasi / Tangga / Lift:</span>
-            <span class="text-sm font-semibold">{{ selectedDetailItem.access_condition || 'Belum dilaporkan' }}</span>
-          </div>
-          <div class="mb-sm">
             <span class="text-xs text-muted block">Rekomendasi Tipe Unit / Mesin:</span>
             <span class="text-sm font-semibold">{{ selectedDetailItem.recommended_model || selectedDetailItem.unit?.model || 'Belum dilaporkan' }}</span>
-          </div>
-          <div class="mb-sm">
-            <span class="text-xs text-muted block">Estimasi Volume Cetak Bulanan:</span>
-            <span class="text-sm font-semibold">{{ selectedDetailItem.est_monthly_volume ? selectedDetailItem.est_monthly_volume.toLocaleString('id-ID') + ' lembar/bulan' : 'Belum dilaporkan' }}</span>
           </div>
           <div class="mb-sm">
             <span class="text-xs text-muted block">Catatan Tambahan Teknisi:</span>
             <p class="text-sm mt-1" style="white-space: pre-line;">{{ selectedDetailItem.technician_notes || '-' }}</p>
           </div>
-          <div v-if="selectedDetailItem.photo_location">
+          <div v-if="selectedDetailItem.photo_location && selectedDetailItem.photo_location !== 'has_photo'">
             <span class="text-xs text-muted block mb-1">Dokumentasi Foto Lokasi Survey:</span>
             <div style="cursor: pointer; max-width: 260px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border);" @click="zoomPhoto = selectedDetailItem.photo_location">
               <img :src="selectedDetailItem.photo_location" alt="Foto Lokasi" style="width: 100%; height: 160px; object-fit: cover;" />
               <div style="background: rgba(0,0,0,0.6); color: #fff; font-size: 11px; text-align: center; padding: 2px;">🔍 Klik untuk perbesar</div>
             </div>
+          </div>
+          <div v-else-if="selectedDetailItem.photo_location === 'has_photo' || isLoadingDetail" class="text-xs text-muted p-2" style="background: var(--color-surface-sunken); border-radius: 4px; display: inline-flex; align-items: center; gap: 6px;">
+            <span>⏳ Memuat foto survey...</span>
           </div>
         </div>
       </div>

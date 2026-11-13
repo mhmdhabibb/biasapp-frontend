@@ -87,7 +87,32 @@ export async function getJobOrderHtml(job: any, autoPrint: boolean = false): Pro
 
   const scheduledDate = formatDate(fullJob.scheduled_date || fullJob.delivery_order?.delivery_date || fullJob.created_at);
 
-  // Group or gather items if this is a delivery job or has spareparts
+  const isSurveyJob = (fullJob.job_type || '').toLowerCase() === 'survey' || !!fullJob.survey_id || !!fullJob.survey;
+  const hasUnit = (unitModel !== '-' || unitSn !== '-') && !isSurveyJob;
+  const unitCardHtml = hasUnit ? `
+          <!-- Unit / Mesin -->
+          <div class="unit-card">
+            <div class="box-header">🖨️ Unit Mesin / Perangkat</div>
+            <table class="info-table" style="width: 100%;">
+              <tr>
+                <td style="width: 15%;" class="td-label">Model Mesin</td>
+                <td style="width: 10px;" class="td-colon">:</td>
+                <td style="width: 34%;" class="td-val font-semibold">${unitModel}</td>
+                <td style="width: 15%;" class="td-label">Brand / Merk</td>
+                <td style="width: 10px;" class="td-colon">:</td>
+                <td class="td-val">${brandName}</td>
+              </tr>
+              <tr>
+                <td class="td-label">Serial Number</td>
+                <td class="td-colon">:</td>
+                <td class="td-val font-mono" style="font-weight: 700; color: #1e3a8a;">${unitSn}</td>
+                <td class="td-label">Kategori Unit</td>
+                <td class="td-colon">:</td>
+                <td class="td-val">${unit.is_copier ? 'Copier / Mesin Fotocopy' : (unit.is_computer ? 'Komputer / PC' : 'Unit Standalone / Printer')}</td>
+              </tr>
+            </table>
+          </div>
+  ` : '';
   const doItems = fullJob.delivery_order?.delivery_order_items || [];
   let itemsTableHtml = "";
   if (doItems.length > 0) {
@@ -432,28 +457,8 @@ export async function getJobOrderHtml(job: any, autoPrint: boolean = false): Pro
             </div>
           </div>
 
-          <!-- Unit / Mesin -->
-          <div class="unit-card">
-            <div class="box-header">🖨️ Unit Mesin / Perangkat</div>
-            <table class="info-table" style="width: 100%;">
-              <tr>
-                <td style="width: 15%;" class="td-label">Model Mesin</td>
-                <td style="width: 10px;" class="td-colon">:</td>
-                <td style="width: 34%;" class="td-val font-semibold">${unitModel}</td>
-                <td style="width: 15%;" class="td-label">Brand / Merk</td>
-                <td style="width: 10px;" class="td-colon">:</td>
-                <td class="td-val">${brandName}</td>
-              </tr>
-              <tr>
-                <td class="td-label">Serial Number</td>
-                <td class="td-colon">:</td>
-                <td class="td-val font-mono" style="font-weight: 700; color: #1e3a8a;">${unitSn}</td>
-                <td class="td-label">Kategori Unit</td>
-                <td class="td-colon">:</td>
-                <td class="td-val">${unit.is_copier ? 'Copier / Mesin Fotocopy' : (unit.is_computer ? 'Komputer / PC' : 'Unit Standalone / Printer')}</td>
-              </tr>
-            </table>
-          </div>
+          <!-- Unit / Mesin (disembunyikan otomatis jika job Survey / tidak ada unit) -->
+          ${unitCardHtml}
 
           <!-- Problem & Work Instructions -->
           <div class="problem-card">

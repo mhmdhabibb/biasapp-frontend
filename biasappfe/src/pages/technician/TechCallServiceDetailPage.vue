@@ -52,6 +52,7 @@ async function fetchDirectJob() {
   }
 }
 const serviceReportFromStore = computed(() => {
+  if (isSurveyJob.value) return null
   const directSr = directJobData.value?.service_report || directJobData.value?.ServiceReport
   if (directSr) return directSr
   return serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id))
@@ -80,7 +81,10 @@ const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || n
 const isPreparingForm = ref(false)
 const servicePhotoZoom = ref<string | null>(null)
 function isRenderablePhoto(val: any): boolean {
-  return typeof val === 'string' && (val.startsWith('data:image') || val.startsWith('http://') || val.startsWith('https://') || val.startsWith('/'))
+  if (typeof val !== 'string') return false
+  const s = val.trim()
+  if (!s || s === 'has_photo' || s === 'null' || s === 'undefined') return false
+  return s.startsWith('data:image') || s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')
 }
 
 watchEffect(() => {
@@ -589,7 +593,9 @@ onMounted(async () => {
     fetchDemoMode(true),
     fetchDirectJob(),
   ])
-  await fetchFullServiceReport()
+  if (!isSurveyJob.value) {
+    await fetchFullServiceReport()
+  }
 })
 
 // Re-fetch full data when store updates (e.g., after returning from form pages)
@@ -908,11 +914,7 @@ async function handleDeleteStandalone() {
 
 // --- Survey Job Handler State & Logic ---
 const surveyForm = ref({
-  result: 'matched',
-  electrical_condition: '',
-  access_condition: '',
   recommended_model: '',
-  est_monthly_volume: null as number | null,
   photo_location: '',
   technician_notes: '',
 })
@@ -922,11 +924,7 @@ watchEffect(() => {
   if (isSurveyJob.value && surveyData.value) {
     const s = surveyData.value
     surveyForm.value = {
-      result: s.result || 'matched',
-      electrical_condition: s.electrical_condition || '',
-      access_condition: s.access_condition || '',
       recommended_model: s.recommended_model || s.unit?.model || '',
-      est_monthly_volume: s.est_monthly_volume || null,
       photo_location: s.photo_location || '',
       technician_notes: s.technician_notes || '',
     }
@@ -944,21 +942,12 @@ async function acceptSurveyJob() {
 }
 
 async function completeSurveyJob() {
-  if (!surveyForm.value.result) {
-    toast.warning('Pilih hasil kelayakan survey (Cocok / Tidak Cocok)')
-    return
-  }
   isSavingSurvey.value = true
   try {
     const sid = surveyData.value?.id || job.value?.survey_id
     if (sid) {
       await api.put(`/surveys/${sid}`, {
-        result: surveyForm.value.result,
-        status: surveyForm.value.result === 'matched' ? 'matched' : 'cancelled',
-        electrical_condition: surveyForm.value.electrical_condition,
-        access_condition: surveyForm.value.access_condition,
         recommended_model: surveyForm.value.recommended_model,
-        est_monthly_volume: surveyForm.value.est_monthly_volume ? Number(surveyForm.value.est_monthly_volume) : 0,
         photo_location: surveyForm.value.photo_location,
         technician_notes: surveyForm.value.technician_notes,
       })
@@ -1083,47 +1072,8 @@ function handleSurveyPhoto(e: Event) {
 
         <div v-else>
           <div class="form-group mb-md">
-            <label class="form-label font-bold">Hasil Kelayakan Lokasi / Mesin <span class="text-danger">*</span></label>
-            <div style="display: flex; gap: 16px; margin-top: 6px;">
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="radio" v-model="surveyForm.result" value="matched" :disabled="job.status === 'completed'">
-                <span class="badge badge-success">Cocok / Layak (Matched)</span>
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="radio" v-model="surveyForm.result" value="not_matched" :disabled="job.status === 'completed'">
-                <span class="badge badge-danger">Tidak Cocok / Batal</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="form-group mb-md">
-            <label class="form-label font-bold">Kondisi Kelistrikan & Grounding</label>
-            <input v-model="surveyForm.electrical_condition" type="text" class="form-input" placeholder="cth: Stabil 220V, Perlu Stabilizer 3000VA, Grounding bagus" :disabled="job.status === 'completed'" />
-            <div style="display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
-              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.electrical_condition = 'Stabil 220V & Grounding Baik'" :disabled="job.status === 'completed'">+ Stabil 220V</button>
-              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.electrical_condition = 'Tegangan Fluktuatif (Perlu Stabilizer)'" :disabled="job.status === 'completed'">+ Butuh Stabilizer</button>
-              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.electrical_condition = 'Perlu Jalur Stop Kontak Khusus'" :disabled="job.status === 'completed'">+ Jalur Baru</button>
-            </div>
-          </div>
-
-          <div class="form-group mb-md">
-            <label class="form-label font-bold">Akses Lokasi & Angkut Mesin</label>
-            <input v-model="surveyForm.access_condition" type="text" class="form-input" placeholder="cth: Lantai 1 akses luas, Lantai 2 ada lift barang muat mesin" :disabled="job.status === 'completed'" />
-            <div style="display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
-              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.access_condition = 'Lantai 1 - Akses Mudah & Luas'" :disabled="job.status === 'completed'">+ Lantai 1</button>
-              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.access_condition = 'Lantai 2+ (Tersedia Lift Barang Muat Mesin)'" :disabled="job.status === 'completed'">+ Ada Lift Barang</button>
-              <button type="button" class="btn btn-xs btn-outline" @click="surveyForm.access_condition = 'Tangga Sempit / Perlu Tim Angkut Tambahan'" :disabled="job.status === 'completed'">+ Tangga Sempit</button>
-            </div>
-          </div>
-
-          <div class="form-group mb-md">
             <label class="form-label font-bold">Rekomendasi Tipe Unit / Mesin Yang Pas</label>
             <input v-model="surveyForm.recommended_model" type="text" class="form-input" placeholder="cth: Canon iR-ADV DX 4725i / Kyocera TaskAlfa 3212i" :disabled="job.status === 'completed'" />
-          </div>
-
-          <div class="form-group mb-md">
-            <label class="form-label font-bold">Estimasi Volume Cetak Customer (Per Bulan)</label>
-            <input v-model.number="surveyForm.est_monthly_volume" type="number" class="form-input" placeholder="cth: 5000 (lembar)" :disabled="job.status === 'completed'" />
           </div>
 
           <div class="form-group mb-md">
@@ -1430,7 +1380,7 @@ function handleSurveyPhoto(e: Event) {
       </div>
     </div>
 
-    <div class="grid-2" v-if="!isDeliveryJob">
+    <div v-else class="grid-2">
       <!-- Info Section -->
       <div class="card p-lg">
         <h2 class="card-title mb-md">Service Information</h2>
@@ -1543,15 +1493,15 @@ function handleSurveyPhoto(e: Event) {
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;">
               <div v-if="isRenderablePhoto(serviceReport?.photo_before)" style="text-align: center;">
                 <span class="text-xs text-muted mb-xs" style="display: block;">1. Foto Pengantaran / Problem</span>
-                <img :src="serviceReport.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_before" />
+                <img :src="serviceReport.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_before" @error="(e: any) => e.target.style.display = 'none'" />
               </div>
               <div v-if="isRenderablePhoto(serviceReport?.photo_progress)" style="text-align: center;">
                 <span class="text-xs text-muted mb-xs" style="display: block;">2. Foto Instal / Service</span>
-                <img :src="serviceReport.photo_progress" alt="2. Foto Instal / Service" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_progress" />
+                <img :src="serviceReport.photo_progress" alt="2. Foto Instal / Service" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_progress" @error="(e: any) => e.target.style.display = 'none'" />
               </div>
               <div v-if="isRenderablePhoto(serviceReport?.photo_after)" style="text-align: center;">
                 <span class="text-xs text-muted mb-xs" style="display: block;">3. Foto Selesai</span>
-                <img :src="serviceReport.photo_after" alt="3. Foto Selesai" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_after" />
+                <img :src="serviceReport.photo_after" alt="3. Foto Selesai" style="max-height: 100px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer;" @click="servicePhotoZoom = serviceReport.photo_after" @error="(e: any) => e.target.style.display = 'none'" />
               </div>
             </div>
           </div>
@@ -1633,15 +1583,15 @@ function handleSurveyPhoto(e: Event) {
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;">
               <div v-if="isRenderablePhoto(serviceReport?.photo_before)" style="text-align: center;">
                 <div class="text-xs text-muted mb-xs font-semibold">1. Foto Pengantaran / Problem</div>
-                <img :src="serviceReport.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_before" title="Klik untuk perbesar">
+                <img :src="serviceReport.photo_before" alt="1. Foto Pengantaran / Problem" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_before" @error="(e: any) => e.target.style.display = 'none'" title="Klik untuk perbesar">
               </div>
               <div v-if="isRenderablePhoto(serviceReport?.photo_progress)" style="text-align: center;">
                 <div class="text-xs text-muted mb-xs font-semibold">2. Foto Instal / Service</div>
-                <img :src="serviceReport.photo_progress" alt="2. Foto Instal / Service" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_progress" title="Klik untuk perbesar">
+                <img :src="serviceReport.photo_progress" alt="2. Foto Instal / Service" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_progress" @error="(e: any) => e.target.style.display = 'none'" title="Klik untuk perbesar">
               </div>
               <div v-if="isRenderablePhoto(serviceReport?.photo_after)" style="text-align: center;">
                 <div class="text-xs text-muted mb-xs font-semibold">3. Foto Selesai</div>
-                <img :src="serviceReport.photo_after" alt="3. Foto Selesai" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_after" title="Klik untuk perbesar">
+                <img :src="serviceReport.photo_after" alt="3. Foto Selesai" style="max-height: 140px; border-radius: 6px; object-fit: contain; width: 100%; border: 1px solid var(--color-border); cursor: pointer; background: var(--color-surface);" @click="servicePhotoZoom = serviceReport.photo_after" @error="(e: any) => e.target.style.display = 'none'" title="Klik untuk perbesar">
               </div>
             </div>
           </div>

@@ -378,6 +378,7 @@ export interface RentalInvoice {
   id: string | number;
   contract_item_id: string | number | null;
   invoice_no: string;
+  po_no?: string;
   customer_id: string | number | null;
   period_start: string;
   period_end: string;

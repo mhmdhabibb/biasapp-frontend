@@ -77,6 +77,7 @@ const columns: TableColumn[] = [
   { key: 'invoice_no', label: 'Invoice No' },
   { key: 'customer_id', label: 'Customer' },
   { key: 'contract_item_id', label: 'Contract' },
+  { key: 'po_no', label: 'PO No' },
   { key: 'period_start', label: 'Period Start' },
   { key: 'period_end', label: 'Period End' },
   { key: 'due_date', label: 'Due Date' },
@@ -84,6 +85,21 @@ const columns: TableColumn[] = [
   { key: 'status', label: 'Approval Status' },
   { key: 'payment_status', label: 'Status' },
 ]
+
+function getRentalPoNo(row: any): string {
+  if (row?.po_no) return String(row.po_no).trim()
+  if (row?.rental?.po_no) return String(row.rental.po_no).trim()
+  const rList = (rents?.value || (masterStore as any).rents || []) as any[]
+  if (row?.rental_id) {
+    const r = rList.find((x: any) => String(x.id) === String(row.rental_id))
+    if (r?.po_no) return String(r.po_no).trim()
+  }
+  if (row?.contract_id) {
+    const r = rList.find((x: any) => String(x.contract_id) === String(row.contract_id))
+    if (r?.po_no) return String(r.po_no).trim()
+  }
+  return '-'
+}
 
 function formatDate(value: any): string {
   if (!value) return '-'
@@ -310,7 +326,10 @@ function resolveInvoiceAsset(item: any) {
 
   // From Rental & Rental Items
   const rentsList = (rents?.value || (masterStore as any).rents || []) as any[]
-  const rental = item.rental || (item.rental_id ? rentsList.find((r: any) => String(r.id) === String(item.rental_id)) : null)
+  let rental = item.rental || (item.rental_id ? rentsList.find((r: any) => String(r.id) === String(item.rental_id)) : null)
+  if (!rental && item.contract_id) {
+    rental = rentsList.find((r: any) => String(r.contract_id) === String(item.contract_id)) || null
+  }
   let rentalItem: any = null
   let product: any = item.product || (item.product_id && findProduct ? findProduct(item.product_id) : null)
 
@@ -2285,6 +2304,9 @@ function printInvoice(item: any) {
       @delete="openDelete" :perPage="20">
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
+      <template #cell-po_no="{ row }">
+        <span style="font-weight: 500;">{{ getRentalPoNo(row) }}</span>
+      </template>
       <template #cell-period_start="{ value }">{{ formatDate(value) }}</template>
       <template #cell-period_end="{ value }">{{ formatDate(value) }}</template>
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
@@ -2470,6 +2492,10 @@ function printInvoice(item: any) {
           <div class="form-group">
             <label class="form-label">Contract</label>
             <div>{{ detailContract.value?.contract_no || '-' }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">PO No.</label>
+            <div style="font-weight: 500;">{{ getRentalPoNo(detailItem) }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Total Amount</label>
