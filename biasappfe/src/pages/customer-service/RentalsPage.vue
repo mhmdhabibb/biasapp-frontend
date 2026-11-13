@@ -7,9 +7,10 @@ import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAuth } from "@/composables/useAuth";
 import { useHardDelete } from "@/composables/useHardDelete";
 import { useMasterStore } from "@/composables/useMasterStore";
+import { api } from "@/services/api";
+import { useIsSuperadmin } from "@/composables/useHardDelete";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
-import { api } from "@/services/api";
 import { resources } from "@/services/resource.service";
 import { invalidateCache } from "@/utils/requestCache";
 import {
@@ -38,6 +39,7 @@ import { normalizeRole } from "@/router/role-access";
 
 const toast = useToast();
 const { can, isAdmin } = usePermission();
+const isSuperadmin = useIsSuperadmin();
 const { currentUser } = useAuth();
 const masterStore = useMasterStore();
 const {
@@ -403,6 +405,18 @@ async function submitCreateRentalDO() {
     toast.error(toast.fromError(err, "Gagal membuat Surat Jalan (DO)"));
   } finally {
     isSubmittingDO.value = false;
+  }
+}
+
+async function restoreRentalDO(rental: any) {
+  if (!rental?.id || !isSuperadmin.value) return;
+  try {
+    await api.post(`/rents/${rental.id}/restore-delivery-order`, {});
+    toast.success("DO restored successfully.");
+    await fetchRentals();
+    await refreshOnly(["deliveryOrders"]);
+  } catch (err: any) {
+    toast.error(toast.fromError(err, "Failed to restore DO"));
   }
 }
 
@@ -2533,6 +2547,15 @@ function isExpired(row: any): boolean {
               <circle cx="5.5" cy="18.5" r="2.5"></circle>
               <circle cx="18.5" cy="18.5" r="2.5"></circle>
             </svg>
+          </button>
+          <button
+            v-if="isSuperadmin && !hasActiveRentalDO(row)"
+            class="action-btn"
+            title="Restore DO"
+            @click.stop="restoreRentalDO(row)"
+            style="color: #16a34a; width: 32px; height: 32px"
+          >
+            Restore
           </button>
           <button
             v-if="can('rental:delete')"
