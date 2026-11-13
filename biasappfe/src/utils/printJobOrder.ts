@@ -87,8 +87,12 @@ export async function getJobOrderHtml(job: any, autoPrint: boolean = false): Pro
 
   const scheduledDate = formatDate(fullJob.scheduled_date || fullJob.delivery_order?.delivery_date || fullJob.created_at);
 
-  const isSurveyJob = (fullJob.job_type || '').toLowerCase() === 'survey' || !!fullJob.survey_id || !!fullJob.survey;
-  const hasUnit = (unitModel !== '-' || unitSn !== '-') && !isSurveyJob;
+  const isSurveyJob = (fullJob.job_type || '').toLowerCase() === 'survey'
+    || !!fullJob.survey_id
+    || !!fullJob.survey
+    || String(jobNo).startsWith('JOS')
+    || String(fullJob.job_order_no || '').startsWith('JOS');
+  const hasUnit = !isSurveyJob && (unitModel !== '-' || unitSn !== '-');
   const unitCardHtml = hasUnit ? `
           <!-- Unit / Mesin -->
           <div class="unit-card">

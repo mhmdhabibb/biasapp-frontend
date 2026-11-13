@@ -277,7 +277,6 @@ async function handleNextSurvey(item: any) {
     isLoading.value = true;
     await resources.surveys.update(String(item.id), { status: "matched", result: "matched" });
     toast.success("Survey disetujui. Mengarahkan ke form Sale...");
-    await fetchData();
     createSaleFromSurvey(item);
   } catch (e: any) {
     toast.error("Gagal memproses survey: " + (e?.message || "Error"));
@@ -302,7 +301,14 @@ async function cancelSurvey(item: any) {
   }
 }
 
+function openZoom(photo: string) {
+  if (photo && photo !== 'has_photo') {
+    zoomPhoto.value = photo;
+  }
+}
+
 function createSaleFromSurvey(item: any) {
+  showDetailModal.value = false;
   const q = new URLSearchParams();
   if (item.customer_id) q.set("customer_id", String(item.customer_id));
   if (item.unit_id) q.set("unit_id", String(item.unit_id));
@@ -475,9 +481,15 @@ onMounted(() => {
           </div>
           <div v-if="selectedDetailItem.photo_location && selectedDetailItem.photo_location !== 'has_photo'">
             <span class="text-xs text-muted block mb-1">Dokumentasi Foto Lokasi Survey:</span>
-            <div style="cursor: pointer; max-width: 260px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border);" @click="zoomPhoto = selectedDetailItem.photo_location">
-              <img :src="selectedDetailItem.photo_location" alt="Foto Lokasi" style="width: 100%; height: 160px; object-fit: cover;" />
-              <div style="background: rgba(0,0,0,0.6); color: #fff; font-size: 11px; text-align: center; padding: 2px;">🔍 Klik untuk perbesar</div>
+            <div
+              style="cursor: pointer; max-width: 260px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border); box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+              @click="openZoom(selectedDetailItem.photo_location)"
+              title="Klik untuk melihat foto ukuran penuh"
+            >
+              <img :src="selectedDetailItem.photo_location" alt="Foto Lokasi" style="width: 100%; height: 160px; object-fit: cover; display: block;" />
+              <div style="background: rgba(15, 23, 42, 0.75); color: #fff; font-size: 11px; text-align: center; padding: 5px 8px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <span>🔍</span> <span>Klik untuk perbesar</span>
+              </div>
             </div>
           </div>
           <div v-else-if="selectedDetailItem.photo_location === 'has_photo' || isLoadingDetail" class="text-xs text-muted p-2" style="background: var(--color-surface-sunken); border-radius: 4px; display: inline-flex; align-items: center; gap: 6px;">
@@ -493,12 +505,38 @@ onMounted(() => {
       </template>
     </FormModal>
 
-    <!-- Zoom Photo Modal -->
+    <!-- Zoom Photo Lightbox Modal -->
     <Teleport to="body">
-      <div v-if="zoomPhoto" class="confirm-overlay" @click="zoomPhoto = null" style="background: rgba(0, 0, 0, 0.8); z-index: 9999;">
-        <div style="position: relative; max-width: 90vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; background: var(--color-surface); padding: 12px; border-radius: 8px;" @click.stop>
-          <img :src="zoomPhoto" alt="Zoom Foto Survey" style="max-width: 85vw; max-height: 80vh; object-fit: contain; border-radius: 6px;" />
-          <button type="button" class="btn btn-outline btn-sm mt-sm" @click="zoomPhoto = null">✕ Tutup</button>
+      <div
+        v-if="zoomPhoto"
+        style="position: fixed; inset: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 999999; display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(2px);"
+        @click="zoomPhoto = null"
+      >
+        <div
+          style="position: relative; max-width: 90vw; max-height: 90vh; background: #ffffff; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);"
+          @click.stop
+        >
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+            <span style="font-weight: 700; font-size: 13px; color: #0f172a;">🔍 Dokumentasi Foto Survey</span>
+            <button
+              type="button"
+              class="btn btn-xs btn-outline"
+              style="padding: 2px 8px; font-weight: bold; font-size: 14px; cursor: pointer;"
+              @click="zoomPhoto = null"
+            >
+              ✕
+            </button>
+          </div>
+          <div style="padding: 12px; display: flex; align-items: center; justify-content: center; overflow: auto; max-height: calc(85vh - 90px); background: #0b0f19;">
+            <img
+              :src="zoomPhoto"
+              alt="Zoom Foto Survey"
+              style="max-width: 85vw; max-height: 75vh; object-fit: contain; border-radius: 6px;"
+            />
+          </div>
+          <div style="padding: 10px 16px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; background: #f8fafc;">
+            <button type="button" class="btn btn-primary btn-sm" @click="zoomPhoto = null">Tutup</button>
+          </div>
         </div>
       </div>
     </Teleport>

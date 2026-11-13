@@ -27,7 +27,6 @@ import * as XLSX from "xlsx";
 const toast = useToast();
 const { can, isAdmin } = usePermission();
 const { currentUser } = useAuth();
-const isLoading = ref(true);
 
 // Helper untuk mengubah YYYY-MM-DD menjadi format ISO 8601 lengkap (misal: 2026-10-09T00:00:00Z)
 function formatToISO8601(dateStr: string): string {
@@ -59,6 +58,8 @@ const {
   formatUnitDisplayName,
   formatProductDisplayName,
 } = useMasterStore();
+
+const isLoading = ref(((data.value as any[])?.length || 0) === 0 && !route.query.customer_id);
 
 const resources = useResourcesStore();
 
@@ -244,12 +245,16 @@ function silentRefresh() {
   void useMasterStore().refreshInBackground();
 }
 
-onMounted(async () => {
-  try {
-    await ensureResourcesLoaded(route.path);
-  } finally {
-    isLoading.value = false;
+onMounted(() => {
+  if (route.query.customer_id) {
+    applySurveyPrefill();
   }
+  void ensureResourcesLoaded(route.path).finally(() => {
+    isLoading.value = false;
+    if (route.query.customer_id) {
+      applySurveyPrefill();
+    }
+  });
   salesTimer = setInterval(silentRefresh, 30000);
   window.addEventListener("focus", silentRefresh);
   window.addEventListener("bias:data-mutated", silentRefresh);
@@ -281,6 +286,7 @@ function applySurveyPrefill() {
         _combined_id: `U_${qUnit}`,
         qty: 1,
         unit_price: initialPrice,
+        subtotal: initialPrice,
         is_computer: false,
         specs: {
           cpu: "",
@@ -294,6 +300,9 @@ function applySurveyPrefill() {
         description: "",
       },
     ];
+  } else if (qPrice > 0 && saleItems.value[0]) {
+    saleItems.value[0].unit_price = qPrice;
+    saleItems.value[0].subtotal = qPrice;
   }
 }
 
