@@ -31,7 +31,33 @@ function extractArray(res: any): any[] {
   if (Array.isArray(res.items)) return res.items;
   return [];
 }
-const displayedDOs = computed(() => (showDeleted.value ? deletedDOs.value : store.deliveryOrders.value))
+const selectedType = ref<string>('all')
+const baseDOs = computed(() => (showDeleted.value ? deletedDOs.value : store.deliveryOrders.value) || [])
+const typeFilterOptions = computed(() => {
+  const list = baseDOs.value
+  const knownTypes = ['sale', 'rental', 'service', 'inbound', 'outbound']
+  const seen = new Set<string>(knownTypes)
+  for (const item of list) {
+    const t = String((item as any)?.do_type || '').trim().toLowerCase()
+    if (t) seen.add(t)
+  }
+  return Array.from(seen)
+    .map((t) => {
+      const count = list.filter((item: any) => String(item?.do_type || '').trim().toLowerCase() === t).length
+      return {
+        value: t,
+        label: t.toUpperCase(),
+        count,
+      }
+    })
+    .filter((opt) => opt.count > 0 || ['sale', 'rental', 'service', 'inbound'].includes(opt.value))
+})
+const displayedDOs = computed(() => {
+  const list = baseDOs.value
+  if (!selectedType.value || selectedType.value === 'all') return list
+  const target = selectedType.value.toLowerCase()
+  return list.filter((d: any) => String(d?.do_type || '').trim().toLowerCase() === target)
+})
 async function fetchDeletedDOs() {
   try {
     const res = await resourceApi.deliveryOrders.list({ include_deleted: true, limit: 1000 } as any)
@@ -231,6 +257,31 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       <label><input type="checkbox" v-model="showDeleted" /> Show deleted DOs</label>
     </div>
     <DataTable :columns="columns" :data="displayedDOs" permission="delivery_order" search-placeholder="Search delivery orders..." @row-click="openDetail">
+      <template #toolbar>
+        <div style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">
+          <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Type:</label>
+          <select
+            v-model="selectedType"
+            class="form-select"
+            style="min-width: 165px; height: 36px; padding: 0 10px; font-size: 13px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface, #fff); color: var(--color-text); cursor: pointer;"
+          >
+            <option value="all">All Types ({{ baseDOs.length }})</option>
+            <option v-for="opt in typeFilterOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }} ({{ opt.count }})
+            </option>
+          </select>
+          <button
+            v-if="selectedType !== 'all'"
+            type="button"
+            class="btn btn-outline"
+            style="height: 36px; padding: 0 10px; font-size: 12px;"
+            title="Reset filter type"
+            @click="selectedType = 'all'"
+          >
+            Reset
+          </button>
+        </div>
+      </template>
       <template #cell-do_type="{ value }">
         <span class="badge badge-info">{{ (value || '').toUpperCase() }}</span>
       </template>
