@@ -48,12 +48,14 @@ const {
   products,
   brands,
   unitTypes,
+  uoms,
   payments,
   technicians,
   deliveryOrders,
   findCustomer,
   findUnit,
   findProduct,
+  findUom,
   refreshOnly,
   refreshInBackground,
   ensureResourcesLoaded,
@@ -282,6 +284,18 @@ const technicianOptions = computed(() => [
   })),
 ]);
 
+function matchesRentalDO(d: any, rental: any): boolean {
+  if (!d || !rental) return false;
+  if (d.rental_id && String(d.rental_id) === String(rental.id)) return true;
+  if (
+    rental.contract_id &&
+    d.contract_id &&
+    String(d.contract_id) === String(rental.contract_id)
+  )
+    return true;
+  return false;
+}
+
 function hasActiveRentalDO(rental: any): boolean {
   if (!rental) return false;
   if (
@@ -301,9 +315,7 @@ function hasActiveRentalDO(rental: any): boolean {
   }
   const found = ((deliveryOrders.value as any[]) || []).find(
     (d: any) =>
-      String(d.rental_id) === String(rental.id) &&
-      d.status !== "cancelled" &&
-      !d.deleted_at,
+      matchesRentalDO(d, rental) && d.status !== "cancelled" && !d.deleted_at,
   );
   return !!found;
 }
@@ -312,11 +324,15 @@ function getRentalDONumber(rental: any): string {
   if (!rental) return "-";
   // Cross-check with the globally fetched DO list so the displayed number always
   // matches the actual persisted record (avoids stale/wrong has-one relation).
-  if (rental.delivery_order && rental.delivery_order.status !== "cancelled" && !rental.delivery_order.deleted_at) {
+  if (
+    rental.delivery_order &&
+    rental.delivery_order.status !== "cancelled" &&
+    !rental.delivery_order.deleted_at
+  ) {
     const globalDO = ((deliveryOrders.value as any[]) || []).find(
       (d: any) => String(d.id) === String(rental.delivery_order.id),
     );
-    return (globalDO?.do_number || rental.delivery_order.do_number) || "-";
+    return globalDO?.do_number || rental.delivery_order.do_number || "-";
   }
   if (
     Array.isArray(rental.delivery_orders) &&
@@ -324,18 +340,62 @@ function getRentalDONumber(rental: any): string {
   ) {
     const activeDOs = rental.delivery_orders
       .filter((d: any) => d && d.status !== "cancelled" && !d.deleted_at)
-      .sort((a: any, b: any) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
+      .sort(
+        (a: any, b: any) =>
+          new Date(b?.created_at || 0).getTime() -
+          new Date(a?.created_at || 0).getTime(),
+      );
     if (activeDOs[0]?.do_number) return activeDOs[0].do_number;
   }
   const candidates = ((deliveryOrders.value as any[]) || [])
     .filter(
       (d: any) =>
-        String(d.rental_id) === String(rental.id) &&
-        d.status !== "cancelled" &&
-        !d.deleted_at,
+        matchesRentalDO(d, rental) && d.status !== "cancelled" && !d.deleted_at,
     )
-    .sort((a: any, b: any) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
+    .sort(
+      (a: any, b: any) =>
+        new Date(b?.created_at || 0).getTime() -
+        new Date(a?.created_at || 0).getTime(),
+    );
   return candidates[0]?.do_number || "-";
+}
+
+function getActiveRentalDO(rental: any): any {
+  if (!rental) return null;
+  if (
+    rental.delivery_order &&
+    rental.delivery_order.status !== "cancelled" &&
+    !rental.delivery_order.deleted_at
+  ) {
+    const globalDO = ((deliveryOrders.value as any[]) || []).find(
+      (d: any) => String(d.id) === String(rental.delivery_order.id),
+    );
+    return globalDO || rental.delivery_order;
+  }
+  if (
+    Array.isArray(rental.delivery_orders) &&
+    rental.delivery_orders.length > 0
+  ) {
+    const activeDOs = rental.delivery_orders
+      .filter((d: any) => d && d.status !== "cancelled" && !d.deleted_at)
+      .sort(
+        (a: any, b: any) =>
+          new Date(b?.created_at || 0).getTime() -
+          new Date(a?.created_at || 0).getTime(),
+      );
+    if (activeDOs[0]) return activeDOs[0];
+  }
+  const candidates = ((deliveryOrders.value as any[]) || [])
+    .filter(
+      (d: any) =>
+        matchesRentalDO(d, rental) && d.status !== "cancelled" && !d.deleted_at,
+    )
+    .sort(
+      (a: any, b: any) =>
+        new Date(b?.created_at || 0).getTime() -
+        new Date(a?.created_at || 0).getTime(),
+    );
+  return candidates[0] || null;
 }
 
 function openCreateRentalDOModal(rental: any) {
@@ -409,14 +469,69 @@ async function submitCreateRentalDO() {
 }
 
 async function restoreRentalDO(rental: any) {
-  if (!rental?.id || !isSuperadmin.value) return;
+  if (!rental?.id || (!isSuperadmin.value && !isAdmin.value)) return;
   try {
     await api.post(`/rents/${rental.id}/restore-delivery-order`, {});
-    toast.success("DO restored successfully.");
+    toast.success("Surat Jalan (DO) berhasil dipulihkan.");
+    invalidateCache("/rents");
+    invalidateCache("/delivery-orders");
     await fetchRentals();
     await refreshOnly(["deliveryOrders"]);
   } catch (err: any) {
-    toast.error(toast.fromError(err, "Failed to restore DO"));
+    toast.error(toast.fromError(err, "Gagal memulihkan Surat Jalan (DO)"));
+  }
+}
+
+const showEditDOModal = ref(false);
+const isSubmittingEditDO = ref(false);
+const editingDOData = reactive({
+  rentalId: "",
+  rentalNo: "",
+  customerName: "",
+  doId: "",
+  doNumber: "",
+});
+
+function openEditRentalDOModal(rental: any) {
+  const doObj = getActiveRentalDO(rental);
+  const cust = rental?.customer || findCustomer(rental?.customer_id);
+  editingDOData.rentalId = rental.id;
+  editingDOData.rentalNo = rental.rental_no || "";
+  editingDOData.customerName =
+    cust?.company_name || cust?.name || rental.company || "-";
+  editingDOData.doId = doObj ? String(doObj.id) : "";
+  editingDOData.doNumber = doObj?.do_number || "";
+  showEditDOModal.value = true;
+}
+
+async function submitEditRentalDO() {
+  if (!editingDOData.rentalId || isSubmittingEditDO.value) return;
+  const trimmed = editingDOData.doNumber.trim();
+  if (!trimmed) {
+    toast.error("Nomor DO tidak boleh kosong.");
+    return;
+  }
+  isSubmittingEditDO.value = true;
+  try {
+    if (editingDOData.doId) {
+      await resources.deliveryOrders.update(editingDOData.doId, {
+        do_number: trimmed,
+      });
+    } else {
+      await api.post(`/rents/${editingDOData.rentalId}/delivery-order`, {
+        do_number: trimmed,
+      });
+    }
+    toast.success(`Nomor DO berhasil disimpan: ${trimmed}`);
+    showEditDOModal.value = false;
+    invalidateCache("/rents");
+    invalidateCache("/delivery-orders");
+    await fetchRentals();
+    await refreshOnly(["deliveryOrders"]);
+  } catch (err: any) {
+    toast.error(toast.fromError(err, "Gagal menyimpan Nomor DO"));
+  } finally {
+    isSubmittingEditDO.value = false;
   }
 }
 
@@ -434,15 +549,15 @@ async function openRentalDetail(rental: any) {
 function meterDetailsOf(invoice: any): any[] {
   const arr = invoice?.meter_details || invoice?.meterDetails || [];
   return [...arr].sort((a: any, b: any) => {
-    const pA = a.paper_size?.name || '';
-    const pB = b.paper_size?.name || '';
+    const pA = a.paper_size?.name || "";
+    const pB = b.paper_size?.name || "";
     const aIsA4 = /a4/i.test(pA) || !pA;
     const bIsA4 = /a4/i.test(pB) || !pB;
     if (aIsA4 && !bIsA4) return -1;
     if (!aIsA4 && bIsA4) return 1;
     if (pA !== pB) return pA.localeCompare(pB);
-    const cA = a.color_mode || '';
-    const cB = b.color_mode || '';
+    const cA = a.color_mode || "";
+    const cB = b.color_mode || "";
     return cA.localeCompare(cB);
   });
 }
@@ -534,12 +649,14 @@ const rentalItems = ref<
   {
     id?: string;
     selected_item: string;
+    sn_search?: string;
     create_mode: "existing" | "unit" | "product";
     new_unit: {
       brand_id: string;
       type_id: string;
       model: string;
       serial_no: string;
+      uom_id: string | null;
       print_tech: string;
       is_copier: boolean;
       current_meter_bw: number;
@@ -704,7 +821,7 @@ const rentUnitOptions = computed(() => {
         const isCurrent = currentEditingUnitIds.has(String(u.id));
         return {
           value: "unit_" + u.id,
-          label: `[Unit/Mesin] ${formatUnitDisplayName(u)} — S/N: ${u.serial_no || "N/A"}${isCurrent ? " (Unit Saat Ini)" : ""}`,
+          label: `S/N: ${u.serial_no || "-"} — [Unit/Mesin] ${formatUnitDisplayName(u)}${isCurrent ? " (Unit Saat Ini)" : ""}`,
         };
       }),
     // 2. Unavailable units (attached to other rentals, broken, etc.)
@@ -712,7 +829,7 @@ const rentUnitOptions = computed(() => {
       .filter((u: any) => !currentEditingUnitIds.has(String(u.id)))
       .map((u: any) => ({
         value: "unit_" + u.id,
-        label: `[Unit/Mesin] ${formatUnitDisplayName(u)} — S/N: ${u.serial_no || "N/A"} — ${unitStatusOf(u)}`,
+        label: `S/N: ${u.serial_no || "-"} — [Unit/Mesin] ${formatUnitDisplayName(u)} — ${unitStatusOf(u)}`,
         disabled: true,
       })),
     // 3. Consumables / Spareparts (Products)
@@ -761,15 +878,95 @@ const brandOptions = computed(() =>
   ((brands.value as any[]) || []).map((b: any) => ({
     value: b.id,
     label: b.name,
-  }))
+  })),
 );
 
 const unitTypeOptions = computed(() =>
   ((unitTypes.value as any[]) || []).map((t: any) => ({
     value: t.id,
     label: t.name,
-  }))
+  })),
 );
+
+const fallbackUoms = [
+  { id: "406c66eb-ec63-4bd4-b214-4798ffc3de6b", name: "Unit" },
+  { id: "ceab4212-ddb6-4a57-9f03-edcb3c1dc52e", name: "Pcs" },
+  { id: "d6f93ac2-e0c2-4c31-8c7d-ce4ad9ceeaa4", name: "Botol" },
+];
+
+const uomOptions = computed(() => {
+  const list =
+    ((uoms.value as any[]) || []).length > 0
+      ? (uoms.value as any[])
+      : fallbackUoms;
+  return list.map((u: any) => ({
+    value: u.id,
+    label: u.name,
+  }));
+});
+
+const defaultUomId = computed(() => {
+  const list =
+    ((uoms.value as any[]) || []).length > 0
+      ? (uoms.value as any[])
+      : fallbackUoms;
+  const hit = list.find(
+    (u: any) => String(u.name || "").trim().toLowerCase() === "unit",
+  );
+  return hit ? String(hit.id) : (list[0]?.id ? String(list[0].id) : "");
+});
+
+function searchUnitBySn(item: any) {
+  const query = String(item.sn_search || "").trim().toUpperCase();
+  if (!query) {
+    toast.warning("Silakan ketik Serial Number (SN) yang ingin dicari.");
+    return;
+  }
+
+  const allUnits = (units.value as any[]) || [];
+
+  // 1. Cari exact match
+  let matched = allUnits.find(
+    (u: any) => String(u.serial_no || "").trim().toUpperCase() === query,
+  );
+
+  // 2. Jika tidak ada exact match, cari substring match
+  if (!matched) {
+    matched = allUnits.find(
+      (u: any) =>
+        String(u.serial_no || "").trim().toUpperCase().includes(query),
+    );
+  }
+
+  if (!matched) {
+    toast.error(`Unit dengan Serial Number "${query}" tidak ditemukan.`);
+    return;
+  }
+
+  const currentEditingUnitIds = new Set<string>();
+  if (editingRental.value) {
+    const rawItems =
+      editingRental.value.rental_items || editingRental.value.rentalItems || [];
+    rawItems.forEach((it: any) => {
+      if (it.unit_id) currentEditingUnitIds.add(String(it.unit_id));
+    });
+  }
+  const isCurrent = currentEditingUnitIds.has(String(matched.id));
+  const s = unitStatusOf(matched);
+
+  if (s !== "available" && s !== "" && !isCurrent) {
+    toast.warning(
+      `Unit "${matched.serial_no}" ditemukan (${formatUnitDisplayName(matched)}), tetapi statusnya "${s}".`,
+    );
+    return;
+  }
+
+  item.selected_item = `unit_${matched.id}`;
+  onItemSelectChange(item);
+  toast.success(
+    `Unit SN: ${matched.serial_no} (${formatUnitDisplayName(matched)}) berhasil dipilih!`,
+  );
+}
 
 function isUnitPrinterOrCopier(
   typeId: string | null,
@@ -820,12 +1017,14 @@ function addRentalItem(mode?: "existing" | "unit" | "product") {
   const defaultMode = mode || (form.is_new ? "existing" : "unit");
   rentalItems.value.push({
     selected_item: "",
+    sn_search: "",
     create_mode: defaultMode,
     new_unit: {
       brand_id: "",
       type_id: "",
       model: "",
       serial_no: "",
+      uom_id: defaultUomId.value,
       print_tech: "",
       is_copier: false,
       current_meter_bw: 0,
@@ -875,9 +1074,12 @@ function addAdditionalPaperMeter(item: any) {
     item.additional_paper_meters = [];
   }
   const a3 = ((paperSizes.value as any[]) || []).find(
-    (p: any) => String(p.name || "").trim().toUpperCase() === "A3",
+    (p: any) =>
+      String(p.name || "")
+        .trim()
+        .toUpperCase() === "A3",
   );
-  const defaultSizeId = a3 ? a3.id : (paperSizes.value?.[0]?.id || "");
+  const defaultSizeId = a3 ? a3.id : paperSizes.value?.[0]?.id || "";
   item.additional_paper_meters.push({
     paper_size_id: defaultSizeId,
     start_meter_bw: 0,
@@ -969,7 +1171,11 @@ function onItemSelectChange(item: any) {
       (target: any) => String(target.id) === String(unitId),
     );
     if (u) {
-      const typeName = getTypeName(u.type_id || (u as any).type?.id || (u as any).unit_type_id).toLowerCase().trim();
+      const typeName = getTypeName(
+        u.type_id || (u as any).type?.id || (u as any).unit_type_id,
+      )
+        .toLowerCase()
+        .trim();
       const isCopierType =
         typeName === "copier" ||
         typeName.includes("copier") ||
@@ -992,7 +1198,12 @@ function onItemSelectChange(item: any) {
           rate_per_page_color: r.rate_per_page_color,
           free_quota_bw: r.free_quota_bw ?? 0,
           free_quota_color: r.free_quota_color ?? 0,
-          quota_applies_to: r.quota_applies_to === "bw" ? "bw" : (r.quota_applies_to === "both" ? "both" : "color"),
+          quota_applies_to:
+            r.quota_applies_to === "bw"
+              ? "bw"
+              : r.quota_applies_to === "both"
+                ? "both"
+                : "color",
         }));
       }
     }
@@ -1023,6 +1234,9 @@ function onItemModeChange(item: any) {
     item.is_computer = false;
   } else if (item.create_mode === "unit") {
     item.selected_item = "";
+    if (!item.new_unit.uom_id && defaultUomId.value) {
+      item.new_unit.uom_id = defaultUomId.value;
+    }
     item.is_copier = !!item.new_unit.is_copier;
   } else if (item.create_mode === "product") {
     item.selected_item = "";
@@ -1065,6 +1279,7 @@ async function openAdd() {
     "products",
     "brands",
     "unitTypes",
+    "uoms",
     "technicians",
   ]);
   try {
@@ -1093,12 +1308,14 @@ async function openAdd() {
   rentalItems.value = [
     {
       selected_item: "",
+      sn_search: "",
       create_mode: "existing",
       new_unit: {
         brand_id: "",
         type_id: "",
         model: "",
         serial_no: "",
+        uom_id: defaultUomId.value,
         print_tech: "",
         is_copier: false,
         current_meter_bw: 0,
@@ -1140,7 +1357,15 @@ async function openAdd() {
 }
 
 async function openEdit(row: any) {
-  await refreshOnly(["customers", "units", "products"]);
+  await refreshOnly([
+    "customers",
+    "units",
+    "products",
+    "brands",
+    "unitTypes",
+    "uoms",
+    "technicians",
+  ]);
   let rentalData = row;
   try {
     const res = await api.get<{ data: any }>(`/rents/${row.id}`, false);
@@ -1194,9 +1419,9 @@ async function openEdit(row: any) {
       }[] = [];
       if (item.rates && Array.isArray(item.rates)) {
         for (const r of item.rates) {
-          const pName = ((paperSizes.value as any[]) || []).find(
-            (p: any) => String(p.id) === String(r.paper_size_id)
-          )?.name?.toUpperCase();
+          const pName = ((paperSizes.value as any[]) || [])
+            .find((p: any) => String(p.id) === String(r.paper_size_id))
+            ?.name?.toUpperCase();
           const isA4 = pName === "A4";
           if (
             r.paper_size_id &&
@@ -1220,12 +1445,14 @@ async function openEdit(row: any) {
       return {
         id: item.id,
         selected_item: selectedItem,
+        sn_search: "",
         create_mode: "existing",
         new_unit: {
           brand_id: "",
           type_id: "",
           model: "",
           serial_no: "",
+          uom_id: defaultUomId.value,
           print_tech: "",
           is_copier: false,
           current_meter_bw: 0,
@@ -1282,12 +1509,14 @@ async function openEdit(row: any) {
       {
         id: undefined,
         selected_item: "",
+        sn_search: "",
         create_mode: "existing",
         new_unit: {
           brand_id: "",
           type_id: "",
           model: "",
           serial_no: "",
+          uom_id: defaultUomId.value,
           print_tech: "",
           is_copier: false,
           current_meter_bw: 0,
@@ -1509,14 +1738,18 @@ async function handleSubmit() {
               item.new_unit.model,
               item.new_unit.is_copier,
             );
-            const tName = getTypeName(item.new_unit.type_id).toLowerCase().trim();
+            const tName = getTypeName(item.new_unit.type_id)
+              .toLowerCase()
+              .trim();
             const isCopierType =
               tName === "copier" ||
               tName.includes("copier") ||
               tName.includes("photocopy") ||
               tName.includes("fotocopy") ||
               tName.includes("fotokopi");
-            const isCopierVal = Boolean(item.new_unit.is_copier || item.is_copier || isCopierType);
+            const isCopierVal = Boolean(
+              item.new_unit.is_copier || item.is_copier || isCopierType,
+            );
 
             const res: any = await resources.units.create({
               name: computedName || item.new_unit.model || "Unit",
@@ -1525,6 +1758,7 @@ async function handleSubmit() {
               model: item.new_unit.model,
               serial_no: serialUpper,
               print_tech: techVal,
+              uom_id: item.new_unit.uom_id || defaultUomId.value || undefined,
               is_copier: isCopierVal,
               is_external: true,
               status: "available",
@@ -1557,7 +1791,9 @@ async function handleSubmit() {
           tName.includes("photocopy") ||
           tName.includes("fotocopy") ||
           tName.includes("fotokopi");
-        const isCopierVal = Boolean(item.new_unit.is_copier || item.is_copier || isCopierType);
+        const isCopierVal = Boolean(
+          item.new_unit.is_copier || item.is_copier || isCopierType,
+        );
         item.selected_item = "unit_" + newId;
         item.is_copier = isCopierVal;
       } else if (item.create_mode === "product") {
@@ -1634,14 +1870,22 @@ async function handleSubmit() {
           const existingRate = combinedRates.find(
             (r: any) => String(r.paper_size_id) === String(apm.paper_size_id),
           );
-          const bwVal = Math.max(0, Math.round(Number(apm.start_meter_bw) || 0));
-          const colorVal = Math.max(0, Math.round(Number(apm.start_meter_color) || 0));
-          const bwDblVal = Number(apm.start_meter_bw_double) > 0
-            ? Math.round(Number(apm.start_meter_bw_double))
-            : bwVal;
-          const colorDblVal = Number(apm.start_meter_color_double) > 0
-            ? Math.round(Number(apm.start_meter_color_double))
-            : colorVal;
+          const bwVal = Math.max(
+            0,
+            Math.round(Number(apm.start_meter_bw) || 0),
+          );
+          const colorVal = Math.max(
+            0,
+            Math.round(Number(apm.start_meter_color) || 0),
+          );
+          const bwDblVal =
+            Number(apm.start_meter_bw_double) > 0
+              ? Math.round(Number(apm.start_meter_bw_double))
+              : bwVal;
+          const colorDblVal =
+            Number(apm.start_meter_color_double) > 0
+              ? Math.round(Number(apm.start_meter_color_double))
+              : colorVal;
           if (existingRate) {
             existingRate.start_meter_bw = bwVal;
             existingRate.start_meter_color = colorVal;
@@ -1666,13 +1910,18 @@ async function handleSubmit() {
       }
 
       const itemBw = Math.max(0, Math.round(Number(item.start_meter_bw) || 0));
-      const itemColor = Math.max(0, Math.round(Number(item.start_meter_color) || 0));
-      const itemBwDbl = Number(item.start_meter_bw_double) > 0
-        ? Math.round(Number(item.start_meter_bw_double))
-        : itemBw;
-      const itemColorDbl = Number(item.start_meter_color_double) > 0
-        ? Math.round(Number(item.start_meter_color_double))
-        : itemColor;
+      const itemColor = Math.max(
+        0,
+        Math.round(Number(item.start_meter_color) || 0),
+      );
+      const itemBwDbl =
+        Number(item.start_meter_bw_double) > 0
+          ? Math.round(Number(item.start_meter_bw_double))
+          : itemBw;
+      const itemColorDbl =
+        Number(item.start_meter_color_double) > 0
+          ? Math.round(Number(item.start_meter_color_double))
+          : itemColor;
 
       return {
         id: item.id || undefined,
@@ -1740,7 +1989,12 @@ async function handleSubmit() {
               0,
               Math.round(Number(r.start_meter_color_double) || 0),
             ),
-            quota_applies_to: r.quota_applies_to === "bw" ? "bw" : (r.quota_applies_to === "both" ? "both" : "color"),
+            quota_applies_to:
+              r.quota_applies_to === "bw"
+                ? "bw"
+                : r.quota_applies_to === "both"
+                  ? "both"
+                  : "color",
           })),
       };
     }),
@@ -2098,6 +2352,9 @@ function hydrateRentalLookups() {
     "payments",
     "technicians",
     "deliveryOrders",
+    "brands",
+    "unitTypes",
+    "uoms",
   ]);
   void loadPaperLookups();
 }
@@ -2462,20 +2719,80 @@ function isExpired(row: any): boolean {
       </template>
       <template #cell-total="{ value }">{{ formatRupiah(value) }}</template>
       <template #cell-do_number="{ row }">
-        <span
+        <div
           v-if="hasActiveRentalDO(row)"
-          class="badge badge-info"
-          style="font-family: monospace; font-size: 0.78rem"
+          style="display: inline-flex; align-items: center; gap: 4px"
         >
-          {{ getRentalDONumber(row) }}
-        </span>
-        <span
-          v-else
-          class="text-muted"
-          style="font-size: 0.78rem; font-style: italic"
-        >
-          No DO
-        </span>
+          <span
+            class="badge badge-info"
+            style="font-family: monospace; font-size: 0.78rem"
+          >
+            {{ getRentalDONumber(row) }}
+          </span>
+          <button
+            v-if="can('rental:update') || isAdmin"
+            type="button"
+            class="action-btn"
+            title="Ubah Nomor Surat Jalan (DO)"
+            @click.stop="openEditRentalDOModal(row)"
+            style="
+              color: var(--color-primary, #2563eb);
+              padding: 2px;
+              width: 22px;
+              height: 22px;
+              border: none;
+              background: transparent;
+              cursor: pointer;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+            "
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
+              ></path>
+              <path
+                d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+              ></path>
+            </svg>
+          </button>
+        </div>
+        <div v-else style="display: inline-flex; align-items: center; gap: 6px">
+          <span
+            class="text-muted"
+            style="font-size: 0.78rem; font-style: italic"
+          >
+            No DO
+          </span>
+          <button
+            v-if="can('rental:update') || isAdmin"
+            type="button"
+            class="btn btn-xs btn-outline"
+            style="
+              font-size: 0.72rem;
+              padding: 1px 6px;
+              line-height: 1.2;
+              border-color: var(--color-primary, #2563eb);
+              color: var(--color-primary, #2563eb);
+              cursor: pointer;
+            "
+            title="Input Nomor Surat Jalan (DO) Fisik yang Sebenarnya untuk Rental Ini"
+            @click.stop="openEditRentalDOModal(row)"
+          >
+            + Set DO
+          </button>
+        </div>
       </template>
       <template #cell-status="{ value }">
         <span
@@ -2525,6 +2842,32 @@ function isExpired(row: any): boolean {
             </svg>
           </button>
           <button
+            v-if="hasActiveRentalDO(row) && (can('rental:update') || isAdmin)"
+            class="action-btn"
+            title="Ubah Nomor Surat Jalan (DO)"
+            @click.stop="openEditRentalDOModal(row)"
+            style="color: #2563eb; width: 32px; height: 32px"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
+              ></path>
+              <path
+                d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+              ></path>
+            </svg>
+          </button>
+          <button
             v-if="!hasActiveRentalDO(row) && can('rental:update')"
             class="action-btn action-btn--edit"
             title="Buat Surat Jalan (DO)"
@@ -2543,19 +2886,32 @@ function isExpired(row: any): boolean {
               stroke-linejoin="round"
             >
               <rect x="1" y="3" width="15" height="13"></rect>
-              <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+              <polygon points="16 8 20 8 23 11 23 16 16 16 8"></polygon>
               <circle cx="5.5" cy="18.5" r="2.5"></circle>
               <circle cx="18.5" cy="18.5" r="2.5"></circle>
             </svg>
           </button>
           <button
-            v-if="isSuperadmin && !hasActiveRentalDO(row)"
+            v-if="(isAdmin || isSuperadmin) && !hasActiveRentalDO(row)"
             class="action-btn"
-            title="Restore DO"
+            title="Pulihkan DO yang Pernah Dibuat (Restore)"
             @click.stop="restoreRentalDO(row)"
             style="color: #16a34a; width: 32px; height: 32px"
           >
-            Restore
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+            </svg>
           </button>
           <button
             v-if="can('rental:delete')"
@@ -3164,7 +3520,8 @@ function isExpired(row: any): boolean {
                   "
                 >
                   1-Sided (BW:
-                  {{ (apm.start_meter_bw || 0).toLocaleString("id-ID") }}, Color:
+                  {{ (apm.start_meter_bw || 0).toLocaleString("id-ID") }},
+                  Color:
                   {{ (apm.start_meter_color || 0).toLocaleString("id-ID") }})
                 </span>
                 <span
@@ -3331,6 +3688,32 @@ function isExpired(row: any): boolean {
       <template #footer>
         <button
           v-if="
+            (isAdmin || isSuperadmin) &&
+            detailRental &&
+            !hasActiveRentalDO(detailRental)
+          "
+          type="button"
+          class="btn btn-outline"
+          style="border-color: #16a34a; color: #16a34a"
+          @click="restoreRentalDO(detailRental)"
+        >
+          🔄 Pulihkan DO Lama
+        </button>
+        <button
+          v-if="
+            (isAdmin || can('rental:update')) &&
+            detailRental &&
+            !hasActiveRentalDO(detailRental)
+          "
+          type="button"
+          class="btn btn-outline"
+          style="border-color: #2563eb; color: #2563eb"
+          @click="openEditRentalDOModal(detailRental)"
+        >
+          ✏️ Input No. DO Fisik
+        </button>
+        <button
+          v-if="
             can('rental:update') &&
             detailRental &&
             !hasActiveRentalDO(detailRental)
@@ -3341,6 +3724,19 @@ function isExpired(row: any): boolean {
           @click="openCreateRentalDOModal(detailRental)"
         >
           🚚 Buat Surat Jalan (DO)
+        </button>
+        <button
+          v-if="
+            detailRental &&
+            hasActiveRentalDO(detailRental) &&
+            (can('rental:update') || isAdmin)
+          "
+          type="button"
+          class="btn btn-outline"
+          style="border-color: #2563eb; color: #2563eb"
+          @click="openEditRentalDOModal(detailRental)"
+        >
+          ✏️ Ubah No. DO: {{ getRentalDONumber(detailRental) }}
         </button>
         <button
           v-else-if="detailRental && hasActiveRentalDO(detailRental)"
@@ -3411,9 +3807,14 @@ function isExpired(row: any): boolean {
           class="rental-invoice-row"
         >
           <div class="rental-invoice-info">
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px">
               <strong>{{ invoice.invoice_no }}</strong>
-              <span v-if="invoice.po_no || selectedRental?.po_no" class="badge badge-info" style="font-size: 11px;">PO: {{ invoice.po_no || selectedRental?.po_no }}</span>
+              <span
+                v-if="invoice.po_no || selectedRental?.po_no"
+                class="badge badge-info"
+                style="font-size: 11px"
+                >PO: {{ invoice.po_no || selectedRental?.po_no }}</span
+              >
             </div>
             <span
               >{{
@@ -3961,13 +4362,25 @@ function isExpired(row: any): boolean {
       </div>
 
       <div class="form-group" style="margin-bottom: var(--space-md)">
-        <label class="form-label" style="font-weight: 600; margin-bottom: 8px">Tipe Transaksi Rental</label>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px">
+        <label class="form-label" style="font-weight: 600; margin-bottom: 8px"
+          >Tipe Transaksi Rental</label
+        >
+        <div
+          style="
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px;
+          "
+        >
           <div
             @click="form.is_new = true"
             :style="{
-              border: form.is_new ? '2px solid var(--color-primary)' : '1px solid var(--color-border-light)',
-              backgroundColor: form.is_new ? 'var(--color-primary-light, #eff6ff)' : '#fff',
+              border: form.is_new
+                ? '2px solid var(--color-primary)'
+                : '1px solid var(--color-border-light)',
+              backgroundColor: form.is_new
+                ? 'var(--color-primary-light, #eff6ff)'
+                : '#fff',
               padding: '12px 16px',
               borderRadius: '8px',
               cursor: 'pointer',
@@ -3977,11 +4390,30 @@ function isExpired(row: any): boolean {
               transition: 'all 0.2s ease',
             }"
           >
-            <input type="radio" :checked="form.is_new" style="margin-top: 3px; cursor: pointer" />
+            <input
+              type="radio"
+              :checked="form.is_new"
+              style="margin-top: 3px; cursor: pointer"
+            />
             <div>
-              <div style="font-weight: 600; font-size: 0.9rem; color: var(--color-text-main)">Rental Baru</div>
-              <div style="font-size: 0.78rem; color: var(--color-text-muted); margin-top: 2px">
-                Unit disiapkan dari inventaris gudang dan akan dikirim ke customer.
+              <div
+                style="
+                  font-weight: 600;
+                  font-size: 0.9rem;
+                  color: var(--color-text-main);
+                "
+              >
+                Rental Baru
+              </div>
+              <div
+                style="
+                  font-size: 0.78rem;
+                  color: var(--color-text-muted);
+                  margin-top: 2px;
+                "
+              >
+                Unit disiapkan dari inventaris gudang dan akan dikirim ke
+                customer.
               </div>
             </div>
           </div>
@@ -3989,8 +4421,12 @@ function isExpired(row: any): boolean {
           <div
             @click="form.is_new = false"
             :style="{
-              border: !form.is_new ? '2px solid var(--color-primary)' : '1px solid var(--color-border-light)',
-              backgroundColor: !form.is_new ? 'var(--color-primary-light, #eff6ff)' : '#fff',
+              border: !form.is_new
+                ? '2px solid var(--color-primary)'
+                : '1px solid var(--color-border-light)',
+              backgroundColor: !form.is_new
+                ? 'var(--color-primary-light, #eff6ff)'
+                : '#fff',
               padding: '12px 16px',
               borderRadius: '8px',
               cursor: 'pointer',
@@ -4000,11 +4436,30 @@ function isExpired(row: any): boolean {
               transition: 'all 0.2s ease',
             }"
           >
-            <input type="radio" :checked="!form.is_new" style="margin-top: 3px; cursor: pointer" />
+            <input
+              type="radio"
+              :checked="!form.is_new"
+              style="margin-top: 3px; cursor: pointer"
+            />
             <div>
-              <div style="font-weight: 600; font-size: 0.9rem; color: var(--color-text-main)">Transaksi Sudah Berjalan</div>
-              <div style="font-size: 0.78rem; color: var(--color-text-muted); margin-top: 2px">
-                Unit sudah terpasang di lokasi customer (migrasi kontrak lama / belum masuk sistem).
+              <div
+                style="
+                  font-weight: 600;
+                  font-size: 0.9rem;
+                  color: var(--color-text-main);
+                "
+              >
+                Transaksi Sudah Berjalan
+              </div>
+              <div
+                style="
+                  font-size: 0.78rem;
+                  color: var(--color-text-muted);
+                  margin-top: 2px;
+                "
+              >
+                Unit sudah terpasang di lokasi customer (migrasi kontrak lama /
+                belum masuk sistem).
               </div>
             </div>
           </div>
@@ -4065,6 +4520,48 @@ function isExpired(row: any): boolean {
           <label class="form-label"
             >Select Item (Unit / Mesin or Consumable / Sparepart)</label
           >
+
+          <!-- Pencarian Cepat via Serial Number (SN) -->
+          <div style="display: flex; gap: 8px; margin-bottom: 8px">
+            <input
+              v-model="item.sn_search"
+              type="text"
+              class="form-input"
+              placeholder="Ketik / Scan Serial Number (SN) lalu klik Cari..."
+              @keydown.enter.prevent="searchUnitBySn(item)"
+              style="text-transform: uppercase"
+            />
+            <button
+              type="button"
+              class="btn btn-primary"
+              @click="searchUnitBySn(item)"
+              style="
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                white-space: nowrap;
+                padding: 0 16px;
+                font-weight: 500;
+              "
+              title="Cari unit berdasarkan Serial Number"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <span>Cari SN</span>
+            </button>
+          </div>
+
           <CustomSelect
             v-model="item.selected_item"
             :options="rentUnitOptions"
@@ -4155,6 +4652,16 @@ function isExpired(row: any): boolean {
               />
             </div>
           </div>
+          <div class="form-group" style="margin-bottom: var(--space-sm); width: 100%;">
+            <label class="form-label">Satuan (UOM)</label>
+            <CustomSelect
+              v-model="item.new_unit.uom_id"
+              :options="uomOptions"
+              placeholder="-- Pilih Satuan (UOM) --"
+              :searchable="true"
+              class="form-select"
+            />
+          </div>
           <div class="form-group" style="margin-bottom: var(--space-md)">
             <label
               style="
@@ -4170,7 +4677,10 @@ function isExpired(row: any): boolean {
                 type="checkbox"
                 @change="syncNewUnitMeter(item)"
               />
-              <span>Mesin Fotokopi / Copier (perlu meter awal &amp; tarif per lembar)</span>
+              <span
+                >Mesin Fotokopi / Copier (perlu meter awal &amp; tarif per
+                lembar)</span
+              >
             </label>
           </div>
         </div>
@@ -4255,7 +4765,11 @@ function isExpired(row: any): boolean {
         </div>
 
         <div
-          v-if="item.create_mode === 'existing' && item.selected_item && !item.selected_item.startsWith('prod_')"
+          v-if="
+            item.create_mode === 'existing' &&
+            item.selected_item &&
+            !item.selected_item.startsWith('prod_')
+          "
           style="
             display: flex;
             flex-direction: row;
@@ -4283,13 +4797,15 @@ function isExpired(row: any): boolean {
               font-weight: var(--font-weight-bold);
             "
           >
-            Item ini adalah Mesin Fotokopi (Perlu Input Meter Awal &amp; Tarif Cetak)
+            Item ini adalah Mesin Fotokopi (Perlu Input Meter Awal &amp; Tarif
+            Cetak)
           </label>
         </div>
 
         <div class="form-group" style="margin-bottom: var(--space-md)">
           <label class="form-label" style="font-size: 0.8rem"
-            >Alamat Pengantaran / Penempatan Mesin (opsional &mdash; kosongkan jika mengikuti alamat pemasangan di atas)</label
+            >Alamat Pengantaran / Penempatan Mesin (opsional &mdash; kosongkan
+            jika mengikuti alamat pemasangan di atas)</label
           >
           <textarea
             v-model="item.placement_location"
@@ -4308,16 +4824,6 @@ function isExpired(row: any): boolean {
               type="text"
               class="form-input"
               placeholder="Contoh: 2.000.000"
-              required
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Item Qty</label>
-            <input
-              v-model.number="item.qty"
-              type="number"
-              class="form-input"
-              min="1"
               required
             />
           </div>
@@ -4425,7 +4931,8 @@ function isExpired(row: any): boolean {
                   Meter Awal Ukuran Kertas Tambahan (A3, Folio, Legal, dll)
                 </label>
                 <div class="text-muted" style="font-size: 0.75rem">
-                  Diperlukan bila mesin fotokopi mencatat counter terpisah (misal counter A3 untuk deduksi Atlas Copco).
+                  Diperlukan bila mesin fotokopi mencatat counter terpisah
+                  (misal counter A3 untuk deduksi Atlas Copco).
                 </div>
               </div>
               <button
@@ -4439,7 +4946,10 @@ function isExpired(row: any): boolean {
             </div>
 
             <div
-              v-if="!item.additional_paper_meters || item.additional_paper_meters.length === 0"
+              v-if="
+                !item.additional_paper_meters ||
+                item.additional_paper_meters.length === 0
+              "
               style="
                 font-size: 0.75rem;
                 color: #94a3b8;
@@ -4447,7 +4957,8 @@ function isExpired(row: any): boolean {
                 margin-bottom: 0.5rem;
               "
             >
-              Belum ada ukuran tambahan. Klik "+ Tambah Ukuran Kertas" jika mesin menghitung A3/ukuran lain secara terpisah.
+              Belum ada ukuran tambahan. Klik "+ Tambah Ukuran Kertas" jika
+              mesin menghitung A3/ukuran lain secara terpisah.
             </div>
 
             <div
@@ -4473,8 +4984,16 @@ function isExpired(row: any): boolean {
                   border-bottom: 1px dashed var(--color-border-light, #e2e8f0);
                 "
               >
-                <div style="flex: 1; max-width: 260px;">
-                  <label class="form-label" style="font-size: 0.75rem; font-weight: 600; margin-bottom: 4px;">Ukuran Kertas *</label>
+                <div style="flex: 1; max-width: 260px">
+                  <label
+                    class="form-label"
+                    style="
+                      font-size: 0.75rem;
+                      font-weight: 600;
+                      margin-bottom: 4px;
+                    "
+                    >Ukuran Kertas *</label
+                  >
                   <CustomSelect
                     v-model="apm.paper_size_id"
                     :options="rentPaperSizeOptions"
@@ -4487,7 +5006,14 @@ function isExpired(row: any): boolean {
                   type="button"
                   @click="removeAdditionalPaperMeter(item, apmIdx)"
                   class="btn btn-sm"
-                  style="color: #ef4444; font-size: 0.75rem; padding: 0.3rem 0.6rem; border: 1px solid #fee2e2; background: #fff5f5; border-radius: 6px;"
+                  style="
+                    color: #ef4444;
+                    font-size: 0.75rem;
+                    padding: 0.3rem 0.6rem;
+                    border: 1px solid #fee2e2;
+                    background: #fff5f5;
+                    border-radius: 6px;
+                  "
                   title="Hapus Ukuran"
                 >
                   ✕ Hapus Ukuran
@@ -4502,7 +5028,9 @@ function isExpired(row: any): boolean {
                 "
               >
                 <div class="form-group" style="margin: 0">
-                  <label class="form-label" style="font-size: 0.75rem">1-Sided BW</label>
+                  <label class="form-label" style="font-size: 0.75rem"
+                    >1-Sided BW</label
+                  >
                   <input
                     v-model.number="apm.start_meter_bw"
                     type="number"
@@ -4513,7 +5041,9 @@ function isExpired(row: any): boolean {
                   />
                 </div>
                 <div class="form-group" style="margin: 0">
-                  <label class="form-label" style="font-size: 0.75rem">1-Sided Warna</label>
+                  <label class="form-label" style="font-size: 0.75rem"
+                    >1-Sided Warna</label
+                  >
                   <input
                     v-model.number="apm.start_meter_color"
                     type="number"
@@ -4524,7 +5054,9 @@ function isExpired(row: any): boolean {
                   />
                 </div>
                 <div class="form-group" style="margin: 0">
-                  <label class="form-label" style="font-size: 0.75rem">2-Sided BW</label>
+                  <label class="form-label" style="font-size: 0.75rem"
+                    >2-Sided BW</label
+                  >
                   <input
                     v-model.number="apm.start_meter_bw_double"
                     type="number"
@@ -4535,7 +5067,9 @@ function isExpired(row: any): boolean {
                   />
                 </div>
                 <div class="form-group" style="margin: 0">
-                  <label class="form-label" style="font-size: 0.75rem">2-Sided Warna</label>
+                  <label class="form-label" style="font-size: 0.75rem"
+                    >2-Sided Warna</label
+                  >
                   <input
                     v-model.number="apm.start_meter_color_double"
                     type="number"
@@ -5038,6 +5572,67 @@ function isExpired(row: any): boolean {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+    </FormModal>
+
+    <!-- Modal Ubah Nomor Surat Jalan (DO) -->
+    <FormModal
+      :open="showEditDOModal"
+      title="Ubah Nomor Surat Jalan (DO)"
+      max-width="480px"
+      submit-label="Simpan Nomor DO"
+      :is-loading="isSubmittingEditDO"
+      @close="showEditDOModal = false"
+      @submit="submitEditRentalDO"
+    >
+      <div style="display: flex; flex-direction: column; gap: 1rem">
+        <div
+          style="
+            background: var(--color-surface-sunken, #f8fafc);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            border: 1px solid var(--color-border-light, #e2e8f0);
+          "
+        >
+          <div
+            style="
+              font-weight: 600;
+              color: var(--color-primary);
+              margin-bottom: 4px;
+            "
+          >
+            {{ editingDOData.rentalNo }} — {{ editingDOData.customerName }}
+          </div>
+          <div style="color: var(--color-text-muted)">
+            Ubah nomor Surat Jalan (DO) agar sesuai dengan nomor dokumen fisik
+            sebenarnya yang pernah dicetak/dibuat.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" style="font-weight: 600"
+            >Nomor DO yang Sebenarnya <span class="text-danger">*</span></label
+          >
+          <input
+            v-model="editingDOData.doNumber"
+            type="text"
+            class="form-input"
+            required
+            placeholder="Contoh: Bi/DO/0125/XI-2026"
+            style="font-family: monospace"
+          />
+          <small
+            style="
+              color: var(--color-text-muted);
+              font-size: 0.78rem;
+              margin-top: 4px;
+              display: block;
+            "
+          >
+            Pastikan format penomoran sesuai arsip/cetak fisik Surat Jalan Anda.
+          </small>
         </div>
       </div>
     </FormModal>

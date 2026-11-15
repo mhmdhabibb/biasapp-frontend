@@ -46,6 +46,19 @@ async function fetchDirectJob() {
     const data = res?.data?.data || res?.data || res
     if (data && data.id) {
       directJobData.value = data
+      const doId = data.delivery_order_id || data.delivery_order?.id
+      if (doId) {
+        try {
+          const doRes: any = await api.get(`/delivery-orders/${doId}`)
+          const doData = doRes?.data?.data || doRes?.data || doRes
+          if (doData && doData.id) {
+            directJobData.value.delivery_order = doData
+          }
+        } catch (e) {
+          console.warn('Failed to fetch delivery order directly:', e)
+        }
+      }
+      initDoForm(true)
     }
   } catch (e) {
     console.warn('Failed to fetch job directly:', e)
@@ -158,7 +171,15 @@ const isVisitJob = computed(() => {
     String(sr?.service_type || '').toLowerCase() === 'copier'
   )
 })
-const deliveryOrder = computed(() => (job.value as any)?.delivery_order || null)
+const deliveryOrder = computed(() => {
+  const d = (job.value as any)?.delivery_order
+  if (d && (d.id || d.do_number)) return d
+  const doId = (job.value as any)?.delivery_order_id
+  if (doId) {
+    return ((deliveryOrders.value || []) as any[]).find((x: any) => String(x.id) === String(doId)) || null
+  }
+  return null
+})
 const doCustomer = computed(() => deliveryOrder.value?.customer || findCustomer(deliveryOrder.value?.customer_id || null) || null)
 
 const displayJobOrderNo = computed(() => {
@@ -471,20 +492,59 @@ async function executeAcceptDeliveryJob() {
   }
 }
 
-async function saveDeliveryForm(silent = false) {
+async function saveDeliveryForm(silent = false, setDraft = true) {
   if (!deliveryOrder.value) return false
   isSavingDoForm.value = true
   try {
-    await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { ...doForm.value })
+    const payload: any = {
+      ...doForm.value,
+    }
+    if (setDraft) {
+      payload.status = 'draft'
+    }
+    if (!payload.customer_category) {
+      delete payload.customer_category
+    }
+
+    const promises: Promise<any>[] = [
+      api.patch(`/delivery-orders/${deliveryOrder.value.id}`, payload),
+    ]
+    if (setDraft && job.value?.id) {
+      promises.push(api.patch(`/job-orders/${job.value.id}`, { status: 'draft' }))
+    }
+    await Promise.all(promises)
+
     await fetchDirectJob()
-    void refreshOnly(['deliveryOrders'])
-    if (!silent) toast.success('Service history saved.')
+    void refreshOnly(['deliveryOrders', 'jobOrders'])
+    if (!silent) toast.success('Pekerjaan berhasil disimpan sebagai draft.')
     return true
   } catch (err: any) {
-    toast.error(err.message || 'Failed to save service history')
+    toast.error(err.message || 'Gagal menyimpan draft pekerjaan')
     return false
   } finally {
     isSavingDoForm.value = false
+  }
+}
+
+const isSavingSrDraft = ref(false)
+async function saveServiceJobDraft() {
+  if (!job.value?.id) return
+  isSavingSrDraft.value = true
+  try {
+    const promises: Promise<any>[] = [
+      api.patch(`/job-orders/${job.value.id}`, { status: 'draft' }),
+    ]
+    if (serviceReport.value?.id) {
+      promises.push(api.patch(`/service-reports/${serviceReport.value.id}`, { status: 'draft' }))
+    }
+    await Promise.all(promises)
+    await fetchDirectJob()
+    void refreshOnly(['jobOrders', 'serviceReports'])
+    toast.success('Pekerjaan berhasil disimpan sebagai draft.')
+  } catch (err: any) {
+    toast.error(err.message || 'Gagal menyimpan draft')
+  } finally {
+    isSavingSrDraft.value = false
   }
 }
 
@@ -503,7 +563,7 @@ async function executeCompleteDeliveryJob() {
   try {
     const timeOut = nowHM()
     doForm.value.time_out = timeOut
-    const ok = await saveDeliveryForm(true)
+    const ok = await saveDeliveryForm(true, false)
     if (!ok) return
     await api.patch(`/delivery-orders/${deliveryOrder.value.id}`, { status: 'delivered', time_out: timeOut })
     await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
@@ -588,11 +648,11 @@ const isAllFormsCompleted = computed(() => {
 })
 
 onMounted(async () => {
-  initDoForm(true)
   await Promise.all([
     fetchDemoMode(true),
     fetchDirectJob(),
   ])
+  initDoForm(true)
   if (!isSurveyJob.value) {
     await fetchFullServiceReport()
   }
@@ -1045,7 +1105,7 @@ function handleSurveyPhoto(e: Event) {
           </div>
           <div class="info-item">
             <span class="info-label">Status Job</span>
-            <span class="badge" :class="job.status === 'completed' ? 'badge-success' : job.status === 'in_progress' ? 'badge-info' : 'badge-warning'">
+            <span class="badge" :class="job.status === 'completed' ? 'badge-success' : job.status === 'in_progress' ? 'badge-info' : job.status === 'draft' ? 'badge-secondary' : 'badge-warning'">
               {{ job.status.toUpperCase().replace('_', ' ') }}
             </span>
           </div>
@@ -1143,13 +1203,13 @@ function handleSurveyPhoto(e: Event) {
           </div>
           <div class="info-item">
             <span class="info-label">DO Status</span>
-            <span class="badge" :class="'badge-' + (deliveryOrder?.status === 'delivered' ? 'success' : deliveryOrder?.status === 'in_transit' ? 'info' : 'warning')">
+            <span class="badge" :class="'badge-' + (deliveryOrder?.status === 'delivered' ? 'success' : deliveryOrder?.status === 'in_transit' ? 'info' : deliveryOrder?.status === 'draft' ? 'secondary' : 'warning')">
               {{ String(deliveryOrder?.status || '-').toUpperCase().replace('_', ' ') }}
             </span>
           </div>
           <div class="info-item">
             <span class="info-label">Job Status</span>
-            <span class="badge" :class="'badge-' + (job.status === 'completed' ? 'success' : job.status === 'in_progress' ? 'info' : 'warning')">
+            <span class="badge" :class="'badge-' + (job.status === 'completed' ? 'success' : job.status === 'in_progress' ? 'info' : job.status === 'draft' ? 'secondary' : 'warning')">
               {{ job.status.toUpperCase().replace('_', ' ') }}
             </span>
           </div>
@@ -1164,11 +1224,11 @@ function handleSurveyPhoto(e: Event) {
           <div v-if="doItems.length > 0">
             <div v-for="(it, idx) in doItems" :key="idx" class="text-sm p-md mb-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
               <span>{{ idx + 1 }}. {{ doItemLabel(it) }}</span>
-              <button v-if="it.unit_id && job.status === 'in_progress'" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.7rem;" @click="openEditSn(it)">Edit SN</button>
+              <button v-if="it.unit_id && (job.status === 'in_progress' || job.status === 'draft')" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.7rem;" @click="openEditSn(it)">Edit SN</button>
             </div>
           </div>
           <p v-else class="text-sm text-muted">No items.</p>
-          <div class="mt-md" v-if="job.status === 'in_progress'">
+          <div class="mt-md" v-if="job.status === 'in_progress' || job.status === 'draft'">
             <button class="btn btn-outline btn-sm w-full" @click="showAddUnitModal = true">
               ➕ Tambah / Daftarkan Unit Baru
             </button>
@@ -1194,7 +1254,7 @@ function handleSurveyPhoto(e: Event) {
           </button>
         </div>
 
-        <div v-else-if="job.status === 'in_progress'">
+        <div v-else-if="job.status === 'in_progress' || job.status === 'draft'">
           <div class="form-group">
             <label class="form-label">Problem</label>
             <textarea v-model="doForm.problem" class="form-textarea" rows="3" placeholder="Describe the problem..." :disabled="!isEditable"></textarea>
@@ -1413,7 +1473,7 @@ function handleSurveyPhoto(e: Event) {
             <span class="info-label">Serial Number</span>
             <span class="info-value">
               {{ unit?.serial_no || '-' }}
-              <button v-if="unit?.id && job.status === 'in_progress'" class="btn btn-outline btn-sm" style="margin-left: 8px; padding: 2px 8px; font-size: 0.7rem;" @click="openEditSn(unit)">Edit</button>
+              <button v-if="unit?.id && (job.status === 'in_progress' || job.status === 'draft')" class="btn btn-outline btn-sm" style="margin-left: 8px; padding: 2px 8px; font-size: 0.7rem;" @click="openEditSn(unit)">Edit</button>
             </span>
           </div>
           <div class="info-item">
@@ -1422,7 +1482,7 @@ function handleSurveyPhoto(e: Event) {
           </div>
           <div class="info-item">
             <span class="info-label">Status</span>
-            <span class="badge" :class="'badge-' + (job.status === 'completed' ? 'success' : job.status === 'in_progress' ? 'info' : 'warning')">
+            <span class="badge" :class="'badge-' + (job.status === 'completed' ? 'success' : job.status === 'in_progress' ? 'info' : job.status === 'draft' ? 'secondary' : 'warning')">
               {{ job.status.toUpperCase().replace('_', ' ') }}
             </span>
           </div>
@@ -1451,7 +1511,7 @@ function handleSurveyPhoto(e: Event) {
           </button>
         </div>
 
-        <div v-else-if="job.status === 'in_progress'">
+        <div v-else-if="job.status === 'in_progress' || job.status === 'draft'">
           <div v-if="!serviceReport" class="mb-lg p-md text-center text-muted" style="background: var(--color-surface-sunken); border-radius: var(--radius-md);">
             <p class="text-sm mb-sm">Inspection form is not available yet.</p>
             <button v-if="canManageSr" class="btn btn-outline" :disabled="isPreparingForm" @click="acceptJob">
@@ -1548,9 +1608,14 @@ function handleSurveyPhoto(e: Event) {
             <button v-if="isEditable" class="btn btn-outline w-full mb-md" style="padding: var(--space-md); font-size: 16px; border-color: var(--color-primary); color: var(--color-primary);" :disabled="isCreatingStandalone" @click="createStandalone">
               {{ isCreatingStandalone ? 'Membuat form...' : '➕ Tambah Unit Bermasalah (Stand Alone)' }}
             </button>
-            <button v-if="canManageSr" class="btn btn-primary w-full" :disabled="!isAllFormsCompleted" style="padding: var(--space-md); font-size: 16px;" @click="completeJob">
-              {{ isAllFormsCompleted ? '✅ Complete Service' : '🔒 Complete Forms First' }}
-            </button>
+            <div class="responsive-flex">
+              <button v-if="canManageSr" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingSrDraft" @click="saveServiceJobDraft">
+                {{ isSavingSrDraft ? 'Saving...' : 'Save Draft' }}
+              </button>
+              <button v-if="canManageSr" class="btn btn-primary" :disabled="!isAllFormsCompleted" style="flex: 2; padding: var(--space-md); font-size: 16px;" @click="completeJob">
+                {{ isAllFormsCompleted ? '✅ Complete Service' : '🔒 Complete Forms First' }}
+              </button>
+            </div>
           </div>
         </div>
 

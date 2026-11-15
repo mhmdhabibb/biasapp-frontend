@@ -167,9 +167,35 @@ const siStatusOptions = [
 const startDateFilter = ref('')
 const endDateFilter = ref('')
 const monthFilter = ref('')
+const customerFilter = ref('')
+const paymentStatusFilter = ref('')
+const approvalStatusFilter = ref('')
 const yearFilter = ref(new Date().getFullYear())
 // Lock so double-clicking Export Excel does not produce 2 files.
 const isExporting = ref(false)
+
+const customerFilterOptions = computed(() => [
+  { value: '', label: 'All Customers' },
+  ...(customers.value as any[]).map((c: any) => ({
+    value: String(c.id),
+    label: c.company_name || c.name || '-',
+  })),
+])
+
+const paymentStatusOptions = [
+  { value: '', label: 'All Status' },
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'partially_paid', label: 'Partially Paid' },
+  { value: 'overdue', label: 'Overdue' },
+]
+
+const approvalStatusOptions = [
+  { value: '', label: 'All Approval' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'rejected', label: 'Rejected' },
+]
 
 function onMonthFilterChange() {
   if (!monthFilter.value) return
@@ -189,10 +215,30 @@ function resetFilters() {
   startDateFilter.value = ''
   endDateFilter.value = ''
   monthFilter.value = ''
+  customerFilter.value = ''
+  paymentStatusFilter.value = ''
+  approvalStatusFilter.value = ''
 }
 
 const filteredData = computed(() => {
   let items = data.value
+  if (customerFilter.value) {
+    items = items.filter(d => String(d.customer_id) === customerFilter.value)
+  }
+  if (paymentStatusFilter.value) {
+    const target = paymentStatusFilter.value.toLowerCase()
+    items = items.filter(d => String(d.payment_status || 'unpaid').toLowerCase() === target)
+  }
+  if (approvalStatusFilter.value) {
+    const target = approvalStatusFilter.value.toLowerCase()
+    items = items.filter(d => {
+      const s = String(d.status || '').toLowerCase()
+      if (target === 'pending') {
+        return s === 'pending' || s === '' || s === 'unpaid'
+      }
+      return s === target
+    })
+  }
   if (startDateFilter.value) {
     items = items.filter(d => {
       const itemDate = d.created_at || d.due_date || d.invoice_date || d.date
@@ -360,10 +406,10 @@ function renderSalesInvoiceBody(item: any): string {
   const custAddress = customer?.address || '-'
   const custPhone = customer?.phone || '-'
   const pic = customer?.pic_name || '-'
-  const gender = customer?.pic_gender
+  const rawGender = String(customer?.pic_gender || '').trim().toUpperCase()
   let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
+  if (rawGender === 'L' || rawGender === 'M' || rawGender === 'MALE' || rawGender === 'LAKI-LAKI' || rawGender === 'PRIA') prefix = 'Bapak '
+  if (rawGender === 'P' || rawGender === 'F' || rawGender === 'FEMALE' || rawGender === 'PEREMPUAN' || rawGender === 'WANITA') prefix = 'Ibu '
   const picDisplay = pic !== '-' ? prefix + pic : '-'
   const signer = signerName(item)
 
@@ -1101,20 +1147,36 @@ async function printReceiptAsync(item: any, approved: any) {
           <label class="filter-label">Year</label>
           <input v-model.number="yearFilter" type="number" min="1900" max="9999" class="form-input filter-input">
         </div>
-        <button v-if="startDateFilter || endDateFilter || monthFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
+        <div class="filter-item">
+          <label class="filter-label">Customer</label>
+          <CustomSelect
+            v-model="customerFilter"
+            :options="customerFilterOptions"
+            class="form-select filter-input"
+          />
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Status</label>
+          <CustomSelect
+            v-model="paymentStatusFilter"
+            :options="paymentStatusOptions"
+            class="form-select filter-input"
+          />
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Approval Status</label>
+          <CustomSelect
+            v-model="approvalStatusFilter"
+            :options="approvalStatusOptions"
+            class="form-select filter-input"
+          />
+        </div>
+        <button v-if="startDateFilter || endDateFilter || monthFilter || customerFilter || paymentStatusFilter || approvalStatusFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
           Reset Filter
         </button>
       </div>
 
       <div class="export-actions">
-        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportMonthToPdf" title="Export PDF (Filtered)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-          Export PDF
-        </button>
-        <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel" :disabled="isExporting" title="Export Excel (Filtered)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
-          Export Excel
-        </button>
         <button v-if="can('sales_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf" title="Export Annual (PDF)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
           Annual PDF

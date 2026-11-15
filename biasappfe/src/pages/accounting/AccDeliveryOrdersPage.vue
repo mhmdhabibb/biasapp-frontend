@@ -17,8 +17,9 @@ import { useRoute } from 'vue-router'
 import { printDeliveryOrder } from '@/utils/printDeliveryOrder'
 
 const toast = useToast()
-const { can } = usePermission()
+const { can, isAdmin } = usePermission()
 const isSuperadmin = useIsSuperadmin()
+const canRestore = computed(() => isSuperadmin.value || isAdmin.value)
 const store = useMasterStore()
 const showDeleted = ref(false)
 const deletedDOs = ref<any[]>([])
@@ -100,6 +101,7 @@ const showDetail = ref(false)
 const showEdit = ref(false)
 const showDelete = ref(false)
 const editForm = reactive({
+  do_number: '',
   delivery_date: '',
   recipient_name: '',
   recipient_phone: '',
@@ -159,6 +161,7 @@ async function openDetail(item: ProcurementDeliveryOrder) {
 function openEdit(item: ProcurementDeliveryOrder) {
   editingItem.value = item
   Object.assign(editForm, {
+    do_number: item.do_number || '',
     delivery_date: item.delivery_date ? new Date(item.delivery_date).toISOString().slice(0, 10) : '',
     recipient_name: item.recipient_name || '',
     recipient_phone: item.recipient_phone || '',
@@ -173,6 +176,7 @@ async function saveDeliveryOrder() {
   busyId.value = editingItem.value.id
   try {
     await resources.update('deliveryOrders', String(editingItem.value.id), {
+      do_number: editForm.do_number ? editForm.do_number.trim() : undefined,
       delivery_date: editForm.delivery_date ? `${editForm.delivery_date}T00:00:00Z` : undefined,
       recipient_name: editForm.recipient_name,
       recipient_phone: editForm.recipient_phone,
@@ -181,7 +185,7 @@ async function saveDeliveryOrder() {
     })
     await store.refreshInBackground()
     showEdit.value = false
-    toast.success(`DO ${editingItem.value.do_number} updated successfully.`)
+    toast.success(`DO ${editForm.do_number || editingItem.value.do_number} updated successfully.`)
   } catch (err) {
     toast.error(toast.fromError(err, 'Failed to update delivery order'))
   } finally {
@@ -253,7 +257,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
       <span>Manage all Delivery Orders (Inbound and Outbound).</span>
     </div>
 
-    <div v-if="isSuperadmin" style="margin-bottom: 8px;">
+    <div v-if="canRestore" style="margin-bottom: 8px;">
       <label><input type="checkbox" v-model="showDeleted" /> Show deleted DOs</label>
     </div>
     <DataTable :columns="columns" :data="displayedDOs" permission="delivery_order" search-placeholder="Search delivery orders..." @row-click="openDetail">
@@ -336,7 +340,7 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
             </svg>
           </button>
           <button
-            v-if="isSuperadmin && row.deleted_at"
+            v-if="canRestore && row.deleted_at"
             class="action-btn"
             title="Restore"
             aria-label="Restore delivery order"
@@ -481,6 +485,11 @@ function handleReceiveDO(doItem: ProcurementDeliveryOrder) {
     </FormModal>
 
     <FormModal :open="showEdit" :title="editingItem ? `Update ${editingItem.do_number}` : 'Update Delivery Order'" max-width="560px" @close="showEdit = false" @submit="saveDeliveryOrder">
+      <div class="form-group">
+        <label class="form-label" for="do-number">Nomor Surat Jalan (DO Number) *</label>
+        <input id="do-number" v-model="editForm.do_number" type="text" class="form-input" placeholder="Contoh: Bi/DO/0125/XI-2026" required style="font-family: monospace;">
+        <small style="font-size: 11px; color: var(--color-text-muted); display: block; margin-top: 4px;">Ubah nomor DO untuk mencocokkan dengan nomor dokumen fisik sebenarnya.</small>
+      </div>
       <div class="form-group">
         <label class="form-label" for="do-delivery-date">Delivery Date</label>
         <input id="do-delivery-date" v-model="editForm.delivery_date" type="date" class="form-input">

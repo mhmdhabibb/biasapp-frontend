@@ -211,6 +211,7 @@ const filterStatusOptions = [
   { value: 'pending', label: 'Pending' },
   { value: 'assigned', label: 'Assigned' },
   { value: 'in_progress', label: 'In Progress' },
+  { value: 'draft', label: 'Draft' },
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' },
 ]

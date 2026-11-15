@@ -1,28 +1,49 @@
 <script setup lang="ts">
 // @ts-nocheck
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import CustomSelect from '@/components/ui/CustomSelect.vue'
-import DataTable from '@/components/ui/DataTable.vue'
-import FormModal from '@/components/ui/FormModal.vue'
-import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
-import PageHeader from '@/components/ui/PageHeader.vue'
-import { useMasterStore } from '@/composables/useMasterStore'
-import { useAuth } from '@/composables/useAuth'
-import { useHardDelete } from '@/composables/useHardDelete'
-import { usePermission } from '@/composables/usePermission'
-import { useToast } from '@/composables/useToast'
-import { api } from '@/services/api'
-import { resources } from '@/services/resource.service'
-import type { RentalInvoice, TableColumn } from '@/types'
-import { buildRecapSheet, downloadStyledExcel, filterApprovedPaid, filterByYear, normalizeExportYear, NUMFMT_COUNT, NUMFMT_RP, NUMFMT_RP_RATE, RENTAL_INVOICE_YEAR_FIELDS, uniqueSheetName, type RecapRow, type StyledCell } from '@/utils/exportHelpers'
-import { BIAS_LOGO_DATA_URL } from '@/utils/logoData'
-import { printPaymentSlip, printPaymentStruk, paymentMethodOf, buildPaymentTimestamp, buildPaymentVerifyUrl, generatePaymentQrDataUrl } from '@/utils/paymentReceipt'
-import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import CustomSelect from "@/components/ui/CustomSelect.vue";
+import DataTable from "@/components/ui/DataTable.vue";
+import FormModal from "@/components/ui/FormModal.vue";
+import HardDeleteDialog from "@/components/ui/HardDeleteDialog.vue";
+import PageHeader from "@/components/ui/PageHeader.vue";
+import { useMasterStore } from "@/composables/useMasterStore";
+import { useAuth } from "@/composables/useAuth";
+import { useHardDelete } from "@/composables/useHardDelete";
+import { usePermission } from "@/composables/usePermission";
+import { useToast } from "@/composables/useToast";
+import { api } from "@/services/api";
+import { resources } from "@/services/resource.service";
+import type { RentalInvoice, TableColumn } from "@/types";
+import {
+  buildRecapSheet,
+  downloadStyledExcel,
+  filterApprovedPaid,
+  filterByYear,
+  normalizeExportYear,
+  NUMFMT_COUNT,
+  NUMFMT_RP,
+  NUMFMT_RP_RATE,
+  RENTAL_INVOICE_YEAR_FIELDS,
+  uniqueSheetName,
+  type RecapRow,
+  type StyledCell,
+} from "@/utils/exportHelpers";
+import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import {
+  printPaymentSlip,
+  printPaymentStruk,
+  paymentMethodOf,
+  buildPaymentTimestamp,
+  buildPaymentVerifyUrl,
+  generatePaymentQrDataUrl,
+} from "@/utils/paymentReceipt";
+import { resolvePrintTech, isCopierOrPrinter } from "@/utils/format";
+import { computed, reactive, ref, onMounted, onUnmounted } from "vue";
+import { useRoute } from "vue-router";
 
-const toast = useToast()
-const route = useRoute()
-const masterStore = useMasterStore()
+const toast = useToast();
+const route = useRoute();
+const masterStore = useMasterStore();
 const {
   rentalInvoices: data,
   contractItems,
@@ -31,10 +52,12 @@ const {
   units,
   products,
   rents,
+  uoms,
   findContractItem,
   findCustomer,
   findUnit,
   findProduct,
+  findUom,
   findBrand,
   findUnitType,
   refresh,
@@ -42,396 +65,771 @@ const {
   ensureResourcesLoaded,
   formatUnitDisplayName,
   formatProductDisplayName,
-} = masterStore
+} = masterStore;
 
-const isLoading = ref(false)
-let rentalInvTimer: any = null
-let lastSilentRefresh = 0
+const isLoading = ref(false);
+let rentalInvTimer: any = null;
+let lastSilentRefresh = 0;
 
 function silentRefresh() {
-  if (document.visibilityState === 'visible' && Date.now() - lastSilentRefresh > 15000) {
-    lastSilentRefresh = Date.now()
-    void refreshInBackground()
+  if (
+    document.visibilityState === "visible" &&
+    Date.now() - lastSilentRefresh > 15000
+  ) {
+    lastSilentRefresh = Date.now();
+    void refreshInBackground();
   }
 }
 
 onMounted(async () => {
-  isLoading.value = true
-  await ensureResourcesLoaded(route.path)
-  isLoading.value = false
-  rentalInvTimer = setInterval(silentRefresh, 30000)
-  window.addEventListener('focus', silentRefresh)
-  window.addEventListener('bias:data-mutated', silentRefresh)
-})
+  isLoading.value = true;
+  await ensureResourcesLoaded(route.path);
+  isLoading.value = false;
+  rentalInvTimer = setInterval(silentRefresh, 30000);
+  window.addEventListener("focus", silentRefresh);
+  window.addEventListener("bias:data-mutated", silentRefresh);
+});
 
 onUnmounted(() => {
-  if (rentalInvTimer) clearInterval(rentalInvTimer)
-  window.removeEventListener('focus', silentRefresh)
-  window.removeEventListener('bias:data-mutated', silentRefresh)
-})
+  if (rentalInvTimer) clearInterval(rentalInvTimer);
+  window.removeEventListener("focus", silentRefresh);
+  window.removeEventListener("bias:data-mutated", silentRefresh);
+});
 
-const { can } = usePermission()
-const { currentUser } = useAuth()
+const { can } = usePermission();
+const { currentUser } = useAuth();
 
 const columns: TableColumn[] = [
-  { key: 'invoice_no', label: 'Invoice No' },
-  { key: 'customer_id', label: 'Customer' },
-  { key: 'contract_item_id', label: 'Contract' },
-  { key: 'po_no', label: 'PO No' },
-  { key: 'period_start', label: 'Period Start' },
-  { key: 'period_end', label: 'Period End' },
-  { key: 'due_date', label: 'Due Date' },
-  { key: 'total_pay', label: 'Total' },
-  { key: 'status', label: 'Approval Status' },
-  { key: 'payment_status', label: 'Status' },
-]
+  { key: "invoice_no", label: "Invoice No" },
+  { key: "customer_id", label: "Customer" },
+  { key: "contract_item_id", label: "Contract" },
+  { key: "po_no", label: "PO No" },
+  { key: "period_start", label: "Period Start" },
+  { key: "period_end", label: "Period End" },
+  { key: "due_date", label: "Due Date" },
+  { key: "total_pay", label: "Total" },
+  { key: "status", label: "Approval Status" },
+  { key: "payment_status", label: "Status" },
+];
 
 function getRentalPoNo(row: any): string {
-  if (row?.po_no) return String(row.po_no).trim()
-  if (row?.rental?.po_no) return String(row.rental.po_no).trim()
-  const rList = (rents?.value || (masterStore as any).rents || []) as any[]
+  if (row?.po_no) return String(row.po_no).trim();
+  if (row?.rental?.po_no) return String(row.rental.po_no).trim();
+  const rList = (rents?.value || (masterStore as any).rents || []) as any[];
   if (row?.rental_id) {
-    const r = rList.find((x: any) => String(x.id) === String(row.rental_id))
-    if (r?.po_no) return String(r.po_no).trim()
+    const r = rList.find((x: any) => String(x.id) === String(row.rental_id));
+    if (r?.po_no) return String(r.po_no).trim();
   }
   if (row?.contract_id) {
-    const r = rList.find((x: any) => String(x.contract_id) === String(row.contract_id))
-    if (r?.po_no) return String(r.po_no).trim()
+    const r = rList.find(
+      (x: any) => String(x.contract_id) === String(row.contract_id),
+    );
+    if (r?.po_no) return String(r.po_no).trim();
   }
-  return '-'
+  return "-";
 }
 
 function formatDate(value: any): string {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (isNaN(d.getTime())) return String(value).slice(0, 10)
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  if (!value) return "-";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function approvalStatus(status: string): string {
-  if (status === 'pending_meter_reading') return 'pending_meter_reading'
-  if (status === 'approved') return 'approved'
-  if (status === 'rejected') return 'rejected'
-  return 'pending'
+  if (status === "pending_meter_reading") return "pending_meter_reading";
+  if (status === "approved") return "approved";
+  if (status === "rejected") return "rejected";
+  return "pending";
 }
 
 function meterReadingStatusLabel(status: string): string {
-  if (status === 'pending_meter_reading') return 'Awaiting Meter Reading'
-  return approvalStatusLabel(status)
+  if (status === "pending_meter_reading") return "Awaiting Meter Reading";
+  return approvalStatusLabel(status);
 }
 
 function approvalStatusLabel(status: string): string {
-  if (status === 'approved') return 'Approved'
-  if (status === 'rejected') return 'Rejected'
-  if (status === 'pending_meter_reading') return 'Awaiting Meter Reading'
-  return 'Unpaid'
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  if (status === "pending_meter_reading") return "Awaiting Meter Reading";
+  return "Unpaid";
 }
 
 function isPaymentBlocked(item: any): boolean {
-  return item?.status === 'pending_meter_reading'
+  return item?.status === "pending_meter_reading";
 }
 
 function isCopierUnit(unit: any): boolean {
-  if (!unit) return false
-  if (unit.is_computer === true || unit.is_computer === 1) return false
-  const modelStr = `${unit.model || ''} ${unit.name || ''}`.toLowerCase()
-  return unit.is_copier === true || unit.is_copier === 1 ||
-    modelStr.includes('copier') ||
-    modelStr.includes('fotocopy') ||
-    modelStr.includes('fotokopi') ||
-    modelStr.includes('bizhub') ||
-    modelStr.includes('am-c') ||
-    modelStr.includes('imagerunner') ||
-    modelStr.includes('workforce')
+  if (!unit) return false;
+  if (unit.is_computer === true || unit.is_computer === 1) return false;
+  const modelStr = `${unit.model || ""} ${unit.name || ""}`.toLowerCase();
+  return (
+    unit.is_copier === true ||
+    unit.is_copier === 1 ||
+    modelStr.includes("copier") ||
+    modelStr.includes("fotocopy") ||
+    modelStr.includes("fotokopi") ||
+    modelStr.includes("bizhub") ||
+    modelStr.includes("am-c") ||
+    modelStr.includes("imagerunner") ||
+    modelStr.includes("workforce")
+  );
 }
 
 function invoicePayments(item: any) {
-  return payments.value.filter((p: any) => String(p.rental_invoice_id) === String(item.id))
+  return payments.value.filter(
+    (p: any) => String(p.rental_invoice_id) === String(item.id),
+  );
 }
 
-const showDetail = ref(false)
-const detailItem = ref<any>(null)
-const detailPayments = computed(() => detailItem.value ? invoicePayments(detailItem.value) : [])
+const showDetail = ref(false);
+const detailItem = ref<any>(null);
+const detailPayments = computed(() =>
+  detailItem.value ? invoicePayments(detailItem.value) : [],
+);
 
-const detailCustomer = computed(() => detailItem.value ? findCustomer(detailItem.value.customer_id) : null)
-const detailContract = computed(() => detailItem.value ? findContractItem(detailItem.value.contract_item_id) : null)
-const detailUnit = computed(() => detailContract.value ? findUnit(detailContract.value.unit_id) : null)
+const detailCustomer = computed(() =>
+  detailItem.value ? findCustomer(detailItem.value.customer_id) : null,
+);
+const detailContract = computed(() =>
+  detailItem.value ? findContractItem(detailItem.value.contract_item_id) : null,
+);
+const detailUnit = computed(() =>
+  detailContract.value ? findUnit(detailContract.value.unit_id) : null,
+);
 
-const isLoadingDetail = ref(false)
+const isLoadingDetail = ref(false);
 
 async function openDetail(item: any) {
-  isLoadingDetail.value = true
+  isLoadingDetail.value = true;
   try {
-    const response = await api.get<{ data: any }>(`/rental-invoices/${item.id}`, false)
-    detailItem.value = response.data
+    const response = await api.get<{ data: any }>(
+      `/rental-invoices/${item.id}`,
+      false,
+    );
+    detailItem.value = response.data;
   } catch (error) {
-    console.warn('Failed to load full detail, using list data:', error)
-    detailItem.value = item
+    console.warn("Failed to load full detail, using list data:", error);
+    detailItem.value = item;
   } finally {
-    isLoadingDetail.value = false
-    showDetail.value = true
+    isLoadingDetail.value = false;
+    showDetail.value = true;
   }
 }
 
-const showModal = ref(false)
-const showConfirm = ref(false)
-const editingItem = ref<RentalInvoice | null>(null)
-const deletingItem = ref<RentalInvoice | null>(null)
+const showModal = ref(false);
+const showConfirm = ref(false);
+const editingItem = ref<RentalInvoice | null>(null);
+const deletingItem = ref<RentalInvoice | null>(null);
 
 const hardDelete = useHardDelete(
   (id, cascade) => resources.rentalInvoices.hardRemove(id, cascade),
   () => useMasterStore().refreshInBackground(),
-  'rental_invoice:delete',
-)
+  "rental_invoice:delete",
+);
 
 function openDelete(item: RentalInvoice) {
-  deletingItem.value = item
-  showConfirm.value = true
+  deletingItem.value = item;
+  showConfirm.value = true;
 }
 
 async function handleDelete() {
   if (deletingItem.value) {
     try {
-      await resources.rentalInvoices.remove(String(deletingItem.value.id))
-      await useMasterStore().refreshInBackground()
-      toast.success('Invoice deleted successfully!')
+      await resources.rentalInvoices.remove(String(deletingItem.value.id));
+      await useMasterStore().refreshInBackground();
+      toast.success("Invoice deleted successfully!");
     } catch (error: any) {
-      toast.error('Failed to delete invoice: ' + (error?.message || 'Error'))
+      toast.error("Failed to delete invoice: " + (error?.message || "Error"));
     }
   }
-  showConfirm.value = false
+  showConfirm.value = false;
 }
 
 // Date Range & Month Filters
-const startDateFilter = ref('')
-const endDateFilter = ref('')
-const monthFilter = ref('')
-const customerFilter = ref('')
-const yearFilter = ref(new Date().getFullYear())
+const startDateFilter = ref("");
+const endDateFilter = ref("");
+const monthFilter = ref("");
+const customerFilter = ref("");
+const paymentStatusFilter = ref("");
+const approvalStatusFilter = ref("");
+const yearFilter = ref(new Date().getFullYear());
 // Lock so double-clicking Export Excel does not produce 2 files.
-const isExporting = ref(false)
+const isExporting = ref(false);
+
+const paymentStatusOptions = [
+  { value: "", label: "All Status" },
+  { value: "unpaid", label: "Unpaid" },
+  { value: "paid", label: "Paid" },
+  { value: "partially_paid", label: "Partially Paid" },
+  { value: "overdue", label: "Overdue" },
+];
+
+const approvalStatusOptions = [
+  { value: "", label: "All Approval" },
+  { value: "pending", label: "Pending" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "pending_meter_reading", label: "Awaiting Meter Reading" },
+];
 
 function onMonthFilterChange() {
-  if (!monthFilter.value) return
-  const [yearStr, monthStr] = monthFilter.value.split('-')
-  const year = parseInt(yearStr)
-  const month = parseInt(monthStr)
+  if (!monthFilter.value) return;
+  const [yearStr, monthStr] = monthFilter.value.split("-");
+  const year = parseInt(yearStr);
+  const month = parseInt(monthStr);
 
-  const firstDay = `${yearStr}-${monthStr.padStart(2, '0')}-01`
-  const lastDayNum = new Date(year, month, 0).getDate()
-  const lastDay = `${yearStr}-${monthStr.padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
+  const firstDay = `${yearStr}-${monthStr.padStart(2, "0")}-01`;
+  const lastDayNum = new Date(year, month, 0).getDate();
+  const lastDay = `${yearStr}-${monthStr.padStart(2, "0")}-${String(lastDayNum).padStart(2, "0")}`;
 
-  startDateFilter.value = firstDay
-  endDateFilter.value = lastDay
+  startDateFilter.value = firstDay;
+  endDateFilter.value = lastDay;
 }
 
 function resetFilters() {
-  startDateFilter.value = ''
-  endDateFilter.value = ''
-  monthFilter.value = ''
-  customerFilter.value = ''
+  startDateFilter.value = "";
+  endDateFilter.value = "";
+  monthFilter.value = "";
+  customerFilter.value = "";
+  paymentStatusFilter.value = "";
+  approvalStatusFilter.value = "";
 }
 
 const filteredData = computed(() => {
-  let items = data.value
+  let items = data.value;
   if (customerFilter.value) {
-    items = items.filter((d: any) => String(d.customer_id) === customerFilter.value)
+    items = items.filter(
+      (d: any) => String(d.customer_id) === customerFilter.value,
+    );
+  }
+  if (paymentStatusFilter.value) {
+    const target = paymentStatusFilter.value.toLowerCase();
+    items = items.filter(
+      (d: any) => String(d.payment_status || "unpaid").toLowerCase() === target,
+    );
+  }
+  if (approvalStatusFilter.value) {
+    const target = approvalStatusFilter.value.toLowerCase();
+    items = items.filter((d: any) => {
+      const s = String(d.status || "").toLowerCase();
+      if (target === "pending") {
+        return s === "pending" || s === "" || s === "unpaid";
+      }
+      return s === target;
+    });
   }
   if (startDateFilter.value) {
     items = items.filter((d: any) => {
-      const itemDate = d.monthly_date || d.period_start || d.created_at
-      if (!itemDate) return false
-      return String(itemDate).slice(0, 10) >= startDateFilter.value
-    })
+      const itemDate = d.monthly_date || d.period_start || d.created_at;
+      if (!itemDate) return false;
+      return String(itemDate).slice(0, 10) >= startDateFilter.value;
+    });
   }
   if (endDateFilter.value) {
     items = items.filter((d: any) => {
-      const itemDate = d.monthly_date || d.period_start || d.created_at
-      if (!itemDate) return false
-      return String(itemDate).slice(0, 10) <= endDateFilter.value
-    })
+      const itemDate = d.monthly_date || d.period_start || d.created_at;
+      if (!itemDate) return false;
+      return String(itemDate).slice(0, 10) <= endDateFilter.value;
+    });
   }
-  return items
-})
+  return items;
+});
 
 function resolveInvoiceAsset(item: any) {
-  const customer = item?.customer || findCustomer(item?.customer_id) || (customers.value || []).find((c: any) => String(c.id) === String(item?.customer_id))
-  let custName = customer?.company_name || customer?.name || item?.customer_name || item?.customerName || '-'
-  if (custName === '-' && item?.customer_type === 'atlas') custName = 'Atlas Copco'
-  if (custName === '-' && item?.customer_type === 'great') custName = 'PT Great Eastern'
-  const custAddress = customer?.address || '-'
-  const pic = customer?.pic_name || '-'
-  const gender = customer?.pic_gender
-  let prefix = 'Bapak/Ibu '
-  if (gender === 'L') prefix = 'Bapak '
-  if (gender === 'P') prefix = 'Ibu '
-  const picDisplay = pic !== '-' ? prefix + pic : 'Finance'
-  const signer = item?.user?.name || item?.user?.username || currentUser.value?.name || currentUser.value?.username || '-'
+  // Always lookup full customer from store first (or fallback) to ensure pic_gender and address are complete
+  const storeCustomer =
+    (item?.customer_id ? findCustomer(item.customer_id) : null) ||
+    (customers.value || []).find(
+      (c: any) => String(c.id) === String(item?.customer_id),
+    );
+  const customer = storeCustomer || item?.customer;
 
-  const rawDate = item?.invoice_date || item?.monthly_date || item?.period_end
-  let dateStr = '-'
+  let custName =
+    customer?.company_name ||
+    customer?.name ||
+    item?.customer?.company_name ||
+    item?.customer_name ||
+    item?.customerName ||
+    "-";
+  if (custName === "-" && item?.customer_type === "atlas")
+    custName = "Atlas Copco";
+  if (custName === "-" && item?.customer_type === "great")
+    custName = "PT Great Eastern";
+
+  const custAddress =
+    customer?.address && customer.address !== "-"
+      ? customer.address
+      : (item?.customer?.address || "-");
+
+  const pic = (customer?.pic_name || item?.customer?.pic_name || "").trim();
+  const rawGender = String(customer?.pic_gender || item?.customer?.pic_gender || "").trim().toUpperCase();
+
+  let prefix = "Bapak/Ibu ";
+  if (rawGender === "L" || rawGender === "M" || rawGender === "MALE" || rawGender === "LAKI-LAKI" || rawGender === "PRIA") {
+    prefix = "Bapak ";
+  } else if (rawGender === "P" || rawGender === "F" || rawGender === "FEMALE" || rawGender === "PEREMPUAN" || rawGender === "WANITA") {
+    prefix = "Ibu ";
+  }
+
+  const picDisplay = pic && pic !== "-" ? prefix + pic : "Finance";
+  const signer =
+    item?.user?.name ||
+    item?.user?.username ||
+    currentUser.value?.name ||
+    currentUser.value?.username ||
+    "-";
+
+  const rawDate = item?.invoice_date || item?.monthly_date || item?.period_end;
+  let dateStr = "-";
   if (rawDate) {
-    const d = new Date(rawDate)
+    const d = new Date(rawDate);
     if (!isNaN(d.getTime())) {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      dateStr = `${d.getDate()}-${months[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`
+      const months = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+      ];
+      dateStr = `${d.getDate()}-${months[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`;
     }
   }
 
-  const periodDate = item?.period_start ? new Date(item.period_start) : (item?.monthly_date ? new Date(item.monthly_date) : (item?.invoice_date ? new Date(item.invoice_date) : new Date()))
-  let periodStr = '-'
+  const periodDate = item?.period_start
+    ? new Date(item.period_start)
+    : item?.monthly_date
+      ? new Date(item.monthly_date)
+      : item?.invoice_date
+        ? new Date(item.invoice_date)
+        : new Date();
+  let periodStr = "-";
   if (!isNaN(periodDate.getTime())) {
-    periodStr = periodDate.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+    periodStr = periodDate.toLocaleDateString("id-ID", {
+      month: "long",
+      year: "numeric",
+    });
   }
 
-  // Contract Item
-  const ci = findContractItem(item?.contract_item_id) ||
-    (contractItems.value as any[]).find((c: any) => String(c.id) === String(item?.contract_item_id)) ||
-    (contractItems.value as any[]).find((c: any) => String(c.contract_id) === String(item?.contract_id))
+  // 1. Resolve Rental & Rental Items
+  const rentsList = (rents?.value || (masterStore as any).rents || []) as any[];
+  const targetRentalId = item?.rental_id || item?.rental?.id;
+  let fullRental = targetRentalId
+    ? rentsList.find((r: any) => String(r.id) === String(targetRentalId))
+    : null;
+  if (!fullRental && item?.contract_id) {
+    fullRental =
+      rentsList.find(
+        (r: any) => String(r.contract_id) === String(item.contract_id),
+      ) || null;
+  }
+  if (!fullRental && item?.customer_id) {
+    const custRents = rentsList.filter(
+      (r: any) => String(r.customer_id) === String(item.customer_id),
+    );
+    if (custRents.length === 1) {
+      fullRental = custRents[0];
+    } else if (custRents.length > 1) {
+      const fee = Number(item.base_rental_fee || item.basis_rental_fee || 0);
+      const matched = custRents.find((r: any) => {
+        const rFee = (r.rental_items || []).reduce(
+          (sum: number, it: any) =>
+            sum + Number(it.monthly_rent || 0) * Number(it.qty || 1),
+          0,
+        );
+        return rFee === fee;
+      });
+      fullRental = matched || custRents[0];
+    }
+  }
+  let rental = fullRental || item?.rental || null;
+  let rentalItem: any = null;
+  if (rental) {
+    const rawItems = rental.rental_items || rental.rentalItems || [];
+    if (Array.isArray(rawItems) && rawItems.length > 0) {
+      rentalItem = rawItems[0];
+    }
+  }
 
-  // Direct or Contract Unit
-  let unit = ci?.unit_id ? findUnit(ci.unit_id) : (ci?.unit || null)
+  // 2. Contract Item
+  const ci =
+    findContractItem(item?.contract_item_id) ||
+    (contractItems.value as any[]).find(
+      (c: any) => String(c.id) === String(item?.contract_item_id),
+    ) ||
+    (contractItems.value as any[]).find(
+      (c: any) => String(c.contract_id) === String(item?.contract_id),
+    );
+
+  // 3. Resolve Unit
+  let unit: any = null;
+  if (rentalItem?.unit_id) {
+    unit = findUnit(rentalItem.unit_id) || rentalItem.unit;
+  } else if (rentalItem?.unit) {
+    unit = rentalItem.unit;
+  }
+  if (!unit && ci?.unit_id) {
+    unit = findUnit(ci.unit_id) || ci.unit;
+  } else if (!unit && ci?.unit) {
+    unit = ci.unit;
+  }
   if (!unit && item?.unit_id) {
-    unit = findUnit(item.unit_id)
+    unit = findUnit(item.unit_id);
   }
   if (!unit && item?.unit) {
-    unit = item.unit
+    unit = item.unit;
   }
 
   // From meter details if available
-  let meterDetails: any[] = []
+  let meterDetails: any[] = [];
   if (Array.isArray(item?.meter_details)) {
-    meterDetails = item.meter_details
-  } else if (typeof item?.meter_details === 'string') {
+    meterDetails = item.meter_details;
+  } else if (typeof item?.meter_details === "string") {
     try {
-      const parsed = JSON.parse(item.meter_details)
-      if (Array.isArray(parsed)) meterDetails = parsed
+      const parsed = JSON.parse(item.meter_details);
+      if (Array.isArray(parsed)) meterDetails = parsed;
     } catch {}
   }
   if (!unit && meterDetails.length > 0) {
     for (const md of meterDetails) {
       if (md.contract_item?.unit) {
-        unit = md.contract_item.unit
-        break
+        unit = md.contract_item.unit;
+        break;
       }
       if (md.contract_item_id) {
-        const mdCi = findContractItem(md.contract_item_id)
+        const mdCi = findContractItem(md.contract_item_id);
         if (mdCi?.unit_id) {
-          unit = findUnit(mdCi.unit_id)
-          if (unit) break
+          unit = findUnit(mdCi.unit_id);
+          if (unit) break;
         }
       }
     }
   }
 
-  // From Rental & Rental Items
-  const rentsList = (rents?.value || (masterStore as any).rents || []) as any[]
-  let rental = item.rental || (item.rental_id ? rentsList.find((r: any) => String(r.id) === String(item.rental_id)) : null)
-  if (!rental && item.contract_id) {
-    rental = rentsList.find((r: any) => String(r.contract_id) === String(item.contract_id)) || null
-  }
-  let rentalItem: any = null
-  let product: any = item.product || (item.product_id && findProduct ? findProduct(item.product_id) : null)
-
-  if (rental) {
-    const rawItems = rental.rental_items || rental.rentalItems || []
-    if (Array.isArray(rawItems) && rawItems.length > 0) {
-      rentalItem = rawItems[0]
-      if (!unit && rentalItem.unit_id) {
-        unit = findUnit(rentalItem.unit_id)
-      }
-      if (!unit && rentalItem.unit) {
-        unit = rentalItem.unit
-      }
-      if (!product && rentalItem.product_id && findProduct) {
-        product = findProduct(rentalItem.product_id)
-      }
-      if (!product && rentalItem.product) {
-        product = rentalItem.product
-      }
+  // Fallback: If still no unit and customer has units in store
+  if (!unit && item?.customer_id && masterStore.getUnitsByCustomer) {
+    const custUnits = masterStore.getUnitsByCustomer(item.customer_id);
+    if (custUnits && custUnits.length > 0) {
+      unit = custUnits[0];
     }
+  }
+
+  // 4. Resolve Product
+  let product: any = null;
+  if (rentalItem?.product_id) {
+    product = findProduct
+      ? findProduct(rentalItem.product_id) || rentalItem.product
+      : rentalItem.product;
+  } else if (rentalItem?.product) {
+    product = rentalItem.product;
+  }
+  if (!product && ci?.product_id) {
+    product = findProduct
+      ? findProduct(ci.product_id) || ci.product
+      : ci.product;
+  } else if (!product && ci?.product) {
+    product = ci.product;
+  }
+  if (!product && item?.product_id && findProduct) {
+    product = findProduct(item.product_id);
+  }
+  if (!product && item?.product) {
+    product = item.product;
   }
 
   // Determine if copier
-  let isCopier = false
+  let isCopier = false;
   if (meterDetails.length > 0) {
-    isCopier = true
+    isCopier = true;
   } else if (unit) {
-    isCopier = isCopierUnit(unit)
+    isCopier = isCopierUnit(unit);
   } else if (item.meter_start || item.meter_end || ci?.start_meter_bw) {
-    isCopier = true
+    isCopier = true;
   }
 
   // Serial Number
-  let serialNo = ''
-  if (item.serial_no || item.sn) {
-    serialNo = String(item.serial_no || item.sn).trim()
+  let serialNo = "";
+  if (item?.serial_no || item?.sn) {
+    serialNo = String(item.serial_no || item.sn).trim();
   } else if (unit?.serial_no) {
-    serialNo = String(unit.serial_no).trim()
+    serialNo = String(unit.serial_no).trim();
   } else if (rentalItem?.unit?.serial_no) {
-    serialNo = String(rentalItem.unit.serial_no).trim()
+    serialNo = String(rentalItem.unit.serial_no).trim();
   } else if (ci?.unit?.serial_no) {
-    serialNo = String(ci.unit.serial_no).trim()
+    serialNo = String(ci.unit.serial_no).trim();
   } else if (ci?.serial_no) {
-    serialNo = String(ci.serial_no).trim()
+    serialNo = String(ci.serial_no).trim();
   } else if (rentalItem?.specs) {
     try {
-      const parsed = typeof rentalItem.specs === 'string' ? JSON.parse(rentalItem.specs) : rentalItem.specs
-      serialNo = parsed.serial_no || parsed.sn || ''
+      const parsed =
+        typeof rentalItem.specs === "string"
+          ? JSON.parse(rentalItem.specs)
+          : rentalItem.specs;
+      serialNo = parsed.serial_no || parsed.sn || "";
     } catch {
-      const match = String(rentalItem.specs).match(/(?:s\/n|sn|serial)\s*[:=]\s*([^\s,;]+)/i)
-      if (match) serialNo = match[1]
+      const match = String(rentalItem.specs).match(
+        /(?:s\/n|sn|serial)\s*[:=]\s*([^\s,;]+)/i,
+      );
+      if (match) serialNo = match[1];
     }
   } else if (ci?.specs) {
     try {
-      const parsed = typeof ci.specs === 'string' ? JSON.parse(ci.specs) : ci.specs
-      serialNo = parsed.serial_no || parsed.sn || ''
+      const parsed =
+        typeof ci.specs === "string" ? JSON.parse(ci.specs) : ci.specs;
+      serialNo = parsed.serial_no || parsed.sn || "";
     } catch {
-      const match = String(ci.specs).match(/(?:s\/n|sn|serial)\s*[:=]\s*([^\s,;]+)/i)
-      if (match) serialNo = match[1]
+      const match = String(ci.specs).match(
+        /(?:s\/n|sn|serial)\s*[:=]\s*([^\s,;]+)/i,
+      );
+      if (match) serialNo = match[1];
     }
   }
   if (!serialNo && product?.sku) {
-    serialNo = product.sku
+    serialNo = product.sku;
   }
   if (!serialNo && product?.serial_no) {
-    serialNo = product.serial_no
+    serialNo = product.serial_no;
   }
 
-  // Brand and Model description
-  let brandModel = ''
-  let assetCategory = isCopier ? 'Mesin Fotocopy' : 'Unit'
+  // Brand and Model description (Nama Produk / Unit)
+  let brandModel = "";
+  let assetCategory = isCopier ? "Mesin Fotocopy" : "Unit";
 
   if (unit) {
-    const brand = unit.brand?.name || (findBrand ? findBrand(unit.brand_id)?.name : '') || ''
-    const model = unit.model || unit.name || ''
-    brandModel = [brand, model].filter(Boolean).join(' ')
+    if (formatUnitDisplayName) {
+      const formatted = formatUnitDisplayName(unit, {
+        findBrand,
+        findUnitType,
+      });
+      if (formatted && formatted !== "-") {
+        brandModel = formatted;
+      }
+    }
+    if (!brandModel) {
+      const brand =
+        unit.brand?.name ||
+        (findBrand ? findBrand(unit.brand_id)?.name : "") ||
+        "";
+      const type =
+        unit.type?.name ||
+        (findUnitType ? findUnitType(unit.type_id)?.name : "") ||
+        "";
+      const model = unit.model || unit.name || "";
+      brandModel = [brand, type, model].filter(Boolean).join(" ");
+    }
     if (!isCopier) {
-      if (unit.is_computer || /computer|komputer|laptop|pc/i.test(model)) {
-        assetCategory = 'Komputer'
+      if (unit.is_computer || /computer|komputer|laptop|pc/i.test(brandModel)) {
+        assetCategory = "Komputer";
       } else if (unit.type?.name) {
-        assetCategory = unit.type.name
+        assetCategory = unit.type.name;
       } else {
-        assetCategory = 'Unit'
+        assetCategory = "Unit";
       }
     }
   } else if (product) {
-    brandModel = product.name || ''
+    if (formatProductDisplayName) {
+      const formatted = formatProductDisplayName(product, { findBrand });
+      if (formatted && formatted !== "-") {
+        brandModel = formatted;
+      }
+    }
+    if (!brandModel) {
+      brandModel = product.name || "";
+    }
     if (!isCopier) {
-      assetCategory = product.is_computer ? 'Komputer' : (product.category?.name || 'Unit')
+      assetCategory = product.is_computer
+        ? "Komputer"
+        : product.category?.name || "Unit";
     }
   } else if (ci?.description) {
-    brandModel = ci.description
+    brandModel = ci.description;
+  } else if (rentalItem?.description) {
+    brandModel = rentalItem.description;
   } else {
-    brandModel = isCopier ? 'Mesin Fotocopy' : 'Product / Unit Rental'
+    brandModel = isCopier ? "Mesin Fotocopy" : "Product / Unit Rental";
   }
 
-  if (!isCopier && /copier|fotocopy|fotokopi|bizhub|am-c|imagerunner|workforce/i.test(brandModel)) {
-    isCopier = true
-    assetCategory = 'Mesin Fotocopy'
+  if (
+    !isCopier &&
+    /copier|fotocopy|fotokopi|bizhub|am-c|imagerunner|workforce/i.test(
+      brandModel,
+    )
+  ) {
+    isCopier = true;
+    assetCategory = "Mesin Fotocopy";
   }
 
-  const poNo = (item.po_no || item.rental?.po_no || rental?.po_no || '').trim()
+  // Quantity and Satuan (UOM)
+  const quantity =
+    Number(
+      rentalItem?.qty || rentalItem?.quantity || ci?.qty || ci?.quantity || 1,
+    ) || 1;
+  let uomName = "Unit";
+  if (unit) {
+    if (unit.uom?.name) {
+      uomName = unit.uom.name;
+    } else if (unit.uom_id && findUom) {
+      const u = findUom(unit.uom_id);
+      if (u?.name) uomName = u.name;
+    } else if (unit.uom_name) {
+      uomName = unit.uom_name;
+    }
+  } else if (product) {
+    if (product.uom?.name) {
+      uomName = product.uom.name;
+    } else if (product.uom_id && findUom) {
+      const u = findUom(product.uom_id);
+      if (u?.name) uomName = u.name;
+    } else if (product.uom_name) {
+      uomName = product.uom_name;
+    }
+  } else if (rentalItem?.uom?.name || rentalItem?.uom_name) {
+    uomName = rentalItem.uom?.name || rentalItem.uom_name;
+  } else if (ci?.uom?.name || ci?.uom_name) {
+    uomName = ci.uom?.name || ci.uom_name;
+  }
+
+  // Placement Location (Ruangan / Lokasi Penempatan)
+  let placementLocation = (
+    ci?.placement_location ||
+    rentalItem?.placement_location ||
+    item?.contract_item?.placement_location ||
+    item?.rental_item?.placement_location ||
+    item?.rental?.placement_location ||
+    rental?.placement_location ||
+    item?.placement_location ||
+    ""
+  ).trim();
+  if (!placementLocation && meterDetails.length > 0) {
+    for (const md of meterDetails) {
+      if (md.contract_item?.placement_location) {
+        placementLocation = String(md.contract_item.placement_location).trim();
+        if (placementLocation) break;
+      }
+    }
+  }
+
+  // Brand Name & Model Name
+  let brandName = "";
+  if (unit) {
+    brandName =
+      unit.brand?.name ||
+      (findBrand ? findBrand(unit.brand_id)?.name : "") ||
+      "";
+  } else if (product) {
+    brandName =
+      product.brand?.name ||
+      (findBrand ? findBrand(product.brand_id)?.name : "") ||
+      "";
+  }
+  if (!brandName && unit) {
+    const hay = `${unit.model || ""} ${unit.name || ""}`;
+    if (/epson/i.test(hay)) brandName = "Epson";
+    else if (/canon/i.test(hay)) brandName = "Canon";
+    else if (/brother/i.test(hay)) brandName = "Brother";
+    else if (/hp|hewlett/i.test(hay)) brandName = "HP";
+    else if (/fuji\s*xerox|xerox/i.test(hay)) brandName = "Fuji Xerox";
+    else if (/konica|bizhub/i.test(hay)) brandName = "Konica Minolta";
+    else if (/kyocera|taskalfa/i.test(hay)) brandName = "Kyocera";
+    else if (/asus/i.test(hay)) brandName = "Asus";
+  }
+
+  let modelName = "";
+  if (unit) {
+    modelName = (unit.model || unit.name || "").trim();
+  } else if (product) {
+    modelName = (product.name || "").trim();
+  } else if (ci?.description) {
+    modelName = ci.description.trim();
+  } else if (rentalItem?.description) {
+    modelName = rentalItem.description.trim();
+  }
+
+  if (brandName && modelName) {
+    const bRegex = new RegExp(`^${brandName}\\b[\\s-_]*`, "i");
+    modelName = modelName.replace(bRegex, "").trim();
+  }
+
+  // Type & Technology (e.g. Colour Inject, Mono Laser, Laptop)
+  let typeDisplay = "";
+  const rawType = (
+    unit?.type?.name ||
+    (findUnitType ? findUnitType(unit?.type_id)?.name : "") ||
+    ""
+  ).trim();
+
+  const tech = (
+    unit?.print_tech ||
+    (unit && resolvePrintTech ? resolvePrintTech(unit) : "") ||
+    ""
+  ).trim();
+
+  const isColorUnit = Boolean(
+    (unit?.current_meter_color && unit.current_meter_color > 0) ||
+    (unit?.free_quota_color && unit.free_quota_color > 0) ||
+    (ci?.start_meter_color && ci.start_meter_color > 0) ||
+    (ci?.free_quota_color && ci.free_quota_color > 0) ||
+    (item?.meter_start_color && item.meter_start_color > 0) ||
+    (item?.meter_end_color && item.meter_end_color > 0) ||
+    (Array.isArray(item?.meter_details) &&
+      item.meter_details.some(
+        (md: any) =>
+          String(md.color_mode || "").toLowerCase() === "color" ||
+          Number(md.rate_per_page_color || 0) > 0 ||
+          Number(md.free_quota_color || 0) > 0,
+      )) ||
+    /colour|color|c878|c579|c529|c5710|c5210/i.test(
+      `${unit?.name || ""} ${unit?.model || ""}`,
+    ),
+  );
+
+  if (rawType && /colour|color/i.test(rawType)) {
+    typeDisplay = rawType;
+  } else if (tech) {
+    const prefix = isColorUnit ? "Colour" : "Mono";
+    typeDisplay = `${prefix} ${tech}`;
+  } else if (rawType) {
+    typeDisplay = rawType;
+  } else if (isCopier) {
+    typeDisplay = isColorUnit ? "Colour Copier" : "Copier Machine";
+  } else if (product?.category?.name) {
+    typeDisplay = product.category.name;
+  } else {
+    typeDisplay = assetCategory || "Unit";
+  }
+
+  // Line 1: Rental Charges [Ruangan/Location] [Brand] [Model]
+  const brandModelPart = [brandName, modelName].filter(Boolean).join(" ").trim();
+  const line1Parts = ["Rental Charges"];
+  if (placementLocation) {
+    line1Parts.push(placementLocation);
+  }
+  if (brandModelPart) {
+    line1Parts.push(brandModelPart);
+  } else if (assetCategory) {
+    line1Parts.push(assetCategory);
+  }
+  const rentalChargesLine1 = line1Parts.join(" ");
+
+  // Line 2: [Type/Tech] ([SerialNo]) [Quantity] [UOM]
+  const line2Parts: string[] = [];
+  if (typeDisplay) line2Parts.push(typeDisplay);
+  if (serialNo) line2Parts.push(`(${serialNo})`);
+  line2Parts.push(`${quantity} ${uomName}`);
+  const rentalChargesLine2 = line2Parts.join(" ");
+
+  const poNo = (item.po_no || item.rental?.po_no || rental?.po_no || "").trim();
 
   return {
     customer,
@@ -450,13 +848,21 @@ function resolveInvoiceAsset(item: any) {
     serialNo,
     assetCategory,
     brandModel,
+    quantity,
+    uomName,
     meterDetails,
     poNo,
-  }
+    placementLocation,
+    brandName,
+    modelName,
+    typeDisplay,
+    rentalChargesLine1,
+    rentalChargesLine2,
+  };
 }
 
 function renderRentalInvoiceBody(item: any): string {
-  const assetInfo = resolveInvoiceAsset(item)
+  const assetInfo = resolveInvoiceAsset(item);
   const {
     custName,
     custAddress,
@@ -464,23 +870,40 @@ function renderRentalInvoiceBody(item: any): string {
     signer,
     dateStr,
     periodStr,
+    unit,
     isCopier,
     serialNo,
     assetCategory,
     brandModel,
+    quantity,
+    uomName,
     meterDetails,
     poNo,
     ci,
     rentalItem,
-  } = assetInfo
+    rentalChargesLine1,
+    rentalChargesLine2,
+  } = assetInfo;
 
-  const baseRentalFee = item.base_rental_fee || item.basis_rental_fee || 0
+  const baseRentalFee = item.base_rental_fee || item.basis_rental_fee || 0;
 
-  const fmtVal = (n: number) => n === 0 ? '-' : n.toLocaleString('id-ID')
-  const fmtPcs = (n: number) => n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : n === 0 ? '-' : n.toLocaleString('id-ID')
+  const fmtVal = (n: number) => (n === 0 ? "-" : n.toLocaleString("id-ID"));
+  const fmtPcs = (n: number) =>
+    n < 0
+      ? `(${Math.abs(n).toLocaleString("id-ID")})`
+      : n === 0
+        ? "-"
+        : n.toLocaleString("id-ID");
 
-  function renderMeterBlock(label: string, start: number, last: number, free: number, total: number, net: number): string {
-    const hasFree = free > 0
+  function renderMeterBlock(
+    label: string,
+    start: number,
+    last: number,
+    free: number,
+    total: number,
+    net: number,
+  ): string {
+    const hasFree = free > 0;
     return `
       <div style="margin-top: 10px; width: 310px;">
         <div style="font-weight: 700; font-size: 11px; margin-bottom: 2px;">${label}</div>
@@ -500,7 +923,9 @@ function renderRentalInvoiceBody(item: any): string {
             <td style="border: none; padding: 1px 6px; text-align: right; font-weight: 700; width: 85px;">${fmtPcs(total)}</td>
             <td style="border: none; padding: 1px 0 1px 4px; width: 24px; text-align: left;"></td>
           </tr>
-          ${hasFree ? `
+          ${
+            hasFree
+              ? `
           <tr>
             <td style="border: none; padding: 1px 0; text-align: left;">Free Copies</td>
             <td style="border: none; border-bottom: 1.5px solid #111; padding: 1px 6px; text-align: right; width: 85px;">${fmtVal(free)}</td>
@@ -510,160 +935,316 @@ function renderRentalInvoiceBody(item: any): string {
             <td style="border: none; padding: 1px 0; text-align: left;">Total Copies</td>
             <td style="border: none; padding: 1px 6px; text-align: right; font-weight: 700; width: 85px;">${fmtPcs(net)}</td>
             <td style="border: none; padding: 1px 0 1px 4px; width: 24px; text-align: left;"></td>
-          </tr>` : ''}
+          </tr>`
+              : ""
+          }
         </table>
-      </div>`
+      </div>`;
   }
 
-  function renderChargeRow(num: number, label: string, rate: number, amount: number): string {
+  function renderChargeRow(
+    num: number,
+    label: string,
+    rate: number,
+    amount: number,
+  ): string {
     return `
       <tr>
         <td class="no-col">${num}</td>
         <td colspan="3" style="padding: 6px 10px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <span>${label}</span>
-            <span style="padding-right: 20px;">(x)&nbsp;&nbsp;Rp&nbsp;&nbsp;${rate.toLocaleString('id-ID')}</span>
+            <span style="padding-right: 20px;">(x)&nbsp;&nbsp;Rp&nbsp;&nbsp;${rate.toLocaleString("id-ID")}</span>
           </div>
         </td>
         <td class="rp-col">Rp</td>
-        <td class="val-col">${amount > 0 ? amount.toLocaleString('id-ID') : '-'}</td>
-      </tr>`
+        <td class="val-col">${amount > 0 ? amount.toLocaleString("id-ID") : "-"}</td>
+      </tr>`;
   }
 
-  let meterBlocksHtml = ''
-  let chargeRowsHtml = ''
+  let meterBlocksHtml = "";
+  let chargeRowsHtml = "";
 
   if (isCopier) {
-    const contractRates = ci?.rates || rentalItem?.rates || item.contract_item?.rates || item.rental?.rental_items?.[0]?.rates || []
-    const hasConfiguredPaperSize = Array.isArray(contractRates) && contractRates.length > 0 && contractRates.some((r: any) => Boolean(r.paper_size_id && String(r.paper_size_id).trim() !== ''))
+    const contractRates =
+      ci?.rates ||
+      rentalItem?.rates ||
+      item.contract_item?.rates ||
+      item.rental?.rental_items?.[0]?.rates ||
+      [];
+    const hasConfiguredPaperSize =
+      Array.isArray(contractRates) &&
+      contractRates.length > 0 &&
+      contractRates.some((r: any) =>
+        Boolean(r.paper_size_id && String(r.paper_size_id).trim() !== ""),
+      );
     const distinctSizes = new Set(
       meterDetails
-        .map((d: any) => d.paper_size?.name || d.paper_size_name || '')
-        .filter((s: string) => Boolean(s.trim()))
-    )
-    const hasExplicitPaperSize = hasConfiguredPaperSize || distinctSizes.size > 1
+        .map((d: any) => d.paper_size?.name || d.paper_size_name || "")
+        .filter((s: string) => Boolean(s.trim())),
+    );
+    const hasExplicitPaperSize =
+      hasConfiguredPaperSize || distinctSizes.size > 1;
 
     // 2-Sided meter readings dari item, contract item, atau rental item
-    const bwDblStart = Number(item.meter_start_bw_double || item.start_meter_bw_double || item.counter_awal_bw_double || ci?.start_meter_bw_double || rentalItem?.start_meter_bw_double || 0)
-    const bwDblEnd = Number(item.meter_end_bw_double || item.end_meter_bw_double || item.counter_akhir_bw_double || item.gross_counter_bw_double || (bwDblStart > 0 ? bwDblStart : 0))
-    const bwDblTotal = Math.max(0, bwDblEnd - bwDblStart)
+    const bwDblStart = Number(
+      item.meter_start_bw_double ||
+        item.start_meter_bw_double ||
+        item.counter_awal_bw_double ||
+        ci?.start_meter_bw_double ||
+        rentalItem?.start_meter_bw_double ||
+        0,
+    );
+    const bwDblEnd = Number(
+      item.meter_end_bw_double ||
+        item.end_meter_bw_double ||
+        item.counter_akhir_bw_double ||
+        item.gross_counter_bw_double ||
+        (bwDblStart > 0 ? bwDblStart : 0),
+    );
+    const bwDblTotal = Math.max(0, bwDblEnd - bwDblStart);
 
-    const colDblStart = Number(item.meter_start_color_double || item.start_meter_color_double || item.counter_awal_color_double || ci?.start_meter_color_double || rentalItem?.start_meter_color_double || 0)
-    const colDblEnd = Number(item.meter_end_color_double || item.end_meter_color_double || item.counter_akhir_color_double || item.gross_counter_color_double || (colDblStart > 0 ? colDblStart : 0))
-    const colDblTotal = Math.max(0, colDblEnd - colDblStart)
+    const colDblStart = Number(
+      item.meter_start_color_double ||
+        item.start_meter_color_double ||
+        item.counter_awal_color_double ||
+        ci?.start_meter_color_double ||
+        rentalItem?.start_meter_color_double ||
+        0,
+    );
+    const colDblEnd = Number(
+      item.meter_end_color_double ||
+        item.end_meter_color_double ||
+        item.counter_akhir_color_double ||
+        item.gross_counter_color_double ||
+        (colDblStart > 0 ? colDblStart : 0),
+    );
+    const colDblTotal = Math.max(0, colDblEnd - colDblStart);
 
     if (meterDetails.length > 0) {
-      const byPaperSize = new Map<string, any[]>()
+      const byPaperSize = new Map<string, any[]>();
       for (const detail of meterDetails) {
-        const psName = hasExplicitPaperSize ? (detail.paper_size?.name || '') : ''
-        const ptName = detail.paper_type?.name || ''
-        const key = ptName ? (psName ? `${psName}/${ptName}` : ptName) : psName
-        if (!byPaperSize.has(key)) byPaperSize.set(key, [])
-        byPaperSize.get(key)!.push(detail)
+        const psName = hasExplicitPaperSize
+          ? detail.paper_size?.name || ""
+          : "";
+        const ptName = detail.paper_type?.name || "";
+        const key = ptName ? (psName ? `${psName}/${ptName}` : ptName) : psName;
+        if (!byPaperSize.has(key)) byPaperSize.set(key, []);
+        byPaperSize.get(key)!.push(detail);
       }
 
       // Urutkan agar A4 tampil pertama, lalu ukuran kertas lainnya
-      const sortedPaperSizes = Array.from(byPaperSize.entries()).sort(([a], [b]) => {
-        const aIsA4 = /a4/i.test(a) || !a
-        const bIsA4 = /a4/i.test(b) || !b
-        if (aIsA4 && !bIsA4) return -1
-        if (!aIsA4 && bIsA4) return 1
-        return a.localeCompare(b)
-      })
+      const sortedPaperSizes = Array.from(byPaperSize.entries()).sort(
+        ([a], [b]) => {
+          const aIsA4 = /a4/i.test(a) || !a;
+          const bIsA4 = /a4/i.test(b) || !b;
+          if (aIsA4 && !bIsA4) return -1;
+          if (!aIsA4 && bIsA4) return 1;
+          return a.localeCompare(b);
+        },
+      );
 
-      let rowIdx = 2
+      let rowIdx = 2;
       for (const [paperSize, details] of sortedPaperSizes) {
-        const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
-        const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
+        const bwDetails = details.filter((d: any) =>
+          /bw|mono|b\/w/i.test(d.color_mode || ""),
+        );
+        const colorDetails = details.filter((d: any) =>
+          /colou?r/i.test(d.color_mode || ""),
+        );
         // Jika tidak ada ukuran kertasnya kosongin aja
-        const sizeLabel = (paperSize && paperSize.trim() && hasExplicitPaperSize) ? ` ${paperSize.trim()}` : ''
+        const sizeLabel =
+          paperSize && paperSize.trim() && hasExplicitPaperSize
+            ? ` ${paperSize.trim()}`
+            : "";
 
         for (const d of bwDetails) {
-          const start = d.start_meter_reading || 0
-          const last = d.last_meter_reading || 0
-          const total = d.total_copies ?? (last - start)
-          const free = d.free_quota ?? 0
-          const net = total - free
-          meterBlocksHtml += renderMeterBlock(`B/W${sizeLabel}`, start, last, free, total, net)
-          chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges B/W${sizeLabel}`, d.rate_per_page || 0, d.total_amount || 0)
+          const start = d.start_meter_reading || 0;
+          const last = d.last_meter_reading || 0;
+          const total = d.total_copies ?? last - start;
+          const free = d.free_quota ?? 0;
+          const net = total - free;
+          meterBlocksHtml += renderMeterBlock(
+            `B/W${sizeLabel}`,
+            start,
+            last,
+            free,
+            total,
+            net,
+          );
+          chargeRowsHtml += renderChargeRow(
+            rowIdx++,
+            `Copies Charges B/W${sizeLabel}`,
+            d.rate_per_page || 0,
+            d.total_amount || 0,
+          );
         }
 
         for (const d of colorDetails) {
-          const start = d.start_meter_reading || 0
-          const last = d.last_meter_reading || 0
-          const total = d.total_copies ?? (last - start)
-          const free = d.free_quota ?? 0
-          const net = total - free
-          meterBlocksHtml += renderMeterBlock(`Colour${sizeLabel}`, start, last, free, total, net)
-          chargeRowsHtml += renderChargeRow(rowIdx++, `Copies Charges Colour${sizeLabel}`, d.rate_per_page || 0, d.total_amount || 0)
+          const start = d.start_meter_reading || 0;
+          const last = d.last_meter_reading || 0;
+          const total = d.total_copies ?? last - start;
+          const free = d.free_quota ?? 0;
+          const net = total - free;
+          meterBlocksHtml += renderMeterBlock(
+            `Colour${sizeLabel}`,
+            start,
+            last,
+            free,
+            total,
+            net,
+          );
+          chargeRowsHtml += renderChargeRow(
+            rowIdx++,
+            `Copies Charges Colour${sizeLabel}`,
+            d.rate_per_page || 0,
+            d.total_amount || 0,
+          );
         }
 
         // Tampilkan 2-Sided meter jika ada detail 2-sided khusus (tanpa charge row karena tidak ada harga)
-        const dblDetails = details.filter((d: any) => /double|2-?sided|duplex/i.test(d.color_mode || ''))
+        const dblDetails = details.filter((d: any) =>
+          /double|2-?sided|duplex/i.test(d.color_mode || ""),
+        );
         for (const d of dblDetails) {
-          const start = d.start_meter_reading || 0
-          const last = d.last_meter_reading || 0
-          const total = d.total_copies ?? (last - start)
-          meterBlocksHtml += renderMeterBlock(`2-Sided${sizeLabel}`, start, last, 0, total, total)
+          const start = d.start_meter_reading || 0;
+          const last = d.last_meter_reading || 0;
+          const total = d.total_copies ?? last - start;
+          meterBlocksHtml += renderMeterBlock(
+            `2-Sided${sizeLabel}`,
+            start,
+            last,
+            0,
+            total,
+            total,
+          );
         }
       }
 
       // Tampilkan meter 2-sided tracking (tanpa biaya / charge row)
       if (bwDblStart > 0 || bwDblEnd > 0 || bwDblTotal > 0) {
-        meterBlocksHtml += renderMeterBlock(`B/W (2-Sided)`, bwDblStart, bwDblEnd, 0, bwDblTotal, bwDblTotal)
+        meterBlocksHtml += renderMeterBlock(
+          `B/W (2-Sided)`,
+          bwDblStart,
+          bwDblEnd,
+          0,
+          bwDblTotal,
+          bwDblTotal,
+        );
       }
       if (colDblStart > 0 || colDblEnd > 0 || colDblTotal > 0) {
-        meterBlocksHtml += renderMeterBlock(`Colour (2-Sided)`, colDblStart, colDblEnd, 0, colDblTotal, colDblTotal)
+        meterBlocksHtml += renderMeterBlock(
+          `Colour (2-Sided)`,
+          colDblStart,
+          colDblEnd,
+          0,
+          colDblTotal,
+          colDblTotal,
+        );
       }
     } else {
       // Standar copier meter readings (persis foto invoice)
-      const bwStart = Number(item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0)
-      const bwEnd = Number(item.meter_end || item.meter_end_bw || bwStart)
-      const bwFree = Number(item.free_copies ?? ci?.free_copy_quota ?? 0)
-      const bwRate = Number(item.rate_per_page || 150)
-      const bwTotal = Math.max(0, bwEnd - bwStart)
-      const bwNet = bwTotal - bwFree
-      const bwBillable = Math.max(0, bwNet)
-      const bwAmount = bwBillable * bwRate
+      const bwStart = Number(
+        item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0,
+      );
+      const bwEnd = Number(item.meter_end || item.meter_end_bw || bwStart);
+      const bwFree = Number(item.free_copies ?? ci?.free_copy_quota ?? 0);
+      const bwRate = Number(item.rate_per_page || 150);
+      const bwTotal = Math.max(0, bwEnd - bwStart);
+      const bwNet = bwTotal - bwFree;
+      const bwBillable = Math.max(0, bwNet);
+      const bwAmount = bwBillable * bwRate;
       // Tanpa ukuran kertas jika tidak dikonfigurasi (kosongin aja)
-      const sizeSuffix = ''
+      const sizeSuffix = "";
 
-      meterBlocksHtml += renderMeterBlock(`B/W${sizeSuffix}`, bwStart, bwEnd, bwFree, bwTotal, bwNet)
-      chargeRowsHtml += renderChargeRow(2, `Copies Charges B/W${sizeSuffix}`, bwRate, bwAmount)
+      meterBlocksHtml += renderMeterBlock(
+        `B/W${sizeSuffix}`,
+        bwStart,
+        bwEnd,
+        bwFree,
+        bwTotal,
+        bwNet,
+      );
+      chargeRowsHtml += renderChargeRow(
+        2,
+        `Copies Charges B/W${sizeSuffix}`,
+        bwRate,
+        bwAmount,
+      );
 
-      const colStart = Number(ci?.start_meter_color || item.meter_start_colour || item.meter_start_color || 0)
-      const colEnd = Number(item.meter_end_colour || item.meter_end_color || colStart)
-      const colFree = Number(ci?.free_quota_color || 0)
-      const colRate = Number(ci?.rate_per_page_color || 1000)
+      const colStart = Number(
+        ci?.start_meter_color ||
+          item.meter_start_colour ||
+          item.meter_start_color ||
+          0,
+      );
+      const colEnd = Number(
+        item.meter_end_colour || item.meter_end_color || colStart,
+      );
+      const colFree = Number(ci?.free_quota_color || 0);
+      const colRate = Number(ci?.rate_per_page_color || 1000);
       if (colStart > 0 || colFree > 0 || colEnd > colStart) {
-        const colTotal = Math.max(0, colEnd - colStart)
-        const colNet = colTotal - colFree
-        const colBillable = Math.max(0, colNet)
-        const colAmount = colBillable * colRate
-        meterBlocksHtml += renderMeterBlock(`Colour${sizeSuffix}`, colStart, colEnd, colFree, colTotal, colNet)
-        chargeRowsHtml += renderChargeRow(3, `Copies Charges Colour${sizeSuffix}`, colRate, colAmount)
+        const colTotal = Math.max(0, colEnd - colStart);
+        const colNet = colTotal - colFree;
+        const colBillable = Math.max(0, colNet);
+        const colAmount = colBillable * colRate;
+        meterBlocksHtml += renderMeterBlock(
+          `Colour${sizeSuffix}`,
+          colStart,
+          colEnd,
+          colFree,
+          colTotal,
+          colNet,
+        );
+        chargeRowsHtml += renderChargeRow(
+          3,
+          `Copies Charges Colour${sizeSuffix}`,
+          colRate,
+          colAmount,
+        );
       }
 
       // Tampilkan meter 2-sided tracking (tanpa biaya / charge row)
       if (bwDblStart > 0 || bwDblEnd > 0 || bwDblTotal > 0) {
-        meterBlocksHtml += renderMeterBlock(`B/W (2-Sided)`, bwDblStart, bwDblEnd, 0, bwDblTotal, bwDblTotal)
+        meterBlocksHtml += renderMeterBlock(
+          `B/W (2-Sided)`,
+          bwDblStart,
+          bwDblEnd,
+          0,
+          bwDblTotal,
+          bwDblTotal,
+        );
       }
       if (colDblStart > 0 || colDblEnd > 0 || colDblTotal > 0) {
-        meterBlocksHtml += renderMeterBlock(`Colour (2-Sided)`, colDblStart, colDblEnd, 0, colDblTotal, colDblTotal)
+        meterBlocksHtml += renderMeterBlock(
+          `Colour (2-Sided)`,
+          colDblStart,
+          colDblEnd,
+          0,
+          colDblTotal,
+          colDblTotal,
+        );
       }
     }
   }
 
-  const totalNum = item.subtotal || baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0)
-  const taxNum = item.tax || 0
-  const totalPayNum = item.total_pay || (totalNum + taxNum)
-  const total = totalNum === 0 ? '-' : totalNum.toLocaleString('id-ID')
-  const totalPay = totalPayNum === 0 ? '-' : totalPayNum.toLocaleString('id-ID')
+  const totalNum =
+    item.subtotal ||
+    baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0);
+  const taxNum = item.tax || 0;
+  const totalPayNum = item.total_pay || totalNum + taxNum;
+  const total = totalNum === 0 ? "-" : totalNum.toLocaleString("id-ID");
+  const totalPay =
+    totalPayNum === 0 ? "-" : totalPayNum.toLocaleString("id-ID");
 
-  const dppVal = taxNum > 0 ? totalNum.toLocaleString('id-ID') : ''
-  const taxVal = taxNum > 0 ? taxNum.toLocaleString('id-ID') : ''
+  const dppVal = taxNum > 0 ? totalNum.toLocaleString("id-ID") : "";
+  const taxVal = taxNum > 0 ? taxNum.toLocaleString("id-ID") : "";
 
-  const snDisplay = serialNo ? `S/N : ${serialNo}` : 'S/N : -'
+  const snDisplay = serialNo
+    ? `S/N : ${serialNo}`
+    : unit || isCopier
+      ? "S/N : -"
+      : "";
 
   return `
 <div class="inv-container">
@@ -688,13 +1269,13 @@ function renderRentalInvoiceBody(item: any): string {
       <table class="right-table">
         <tr>
           <td class="lbl">Inv No. :</td>
-          <td class="val">${item.invoice_no || '-'}</td>
+          <td class="val">${item.invoice_no || "-"}</td>
         </tr>
         <tr>
           <td class="lbl">Date :</td>
           <td class="val">${dateStr}</td>
         </tr>
-        ${poNo ? `<tr><td class="lbl">PO No. :</td><td class="val" style="font-weight: 700;">${poNo}</td></tr>` : ''}
+        ${poNo ? `<tr><td class="lbl">PO No. :</td><td class="val" style="font-weight: 700;">${poNo}</td></tr>` : ""}
         <tr>
           <td colspan="2" class="kepada-lbl">Kepada Yth.</td>
         </tr>
@@ -722,7 +1303,7 @@ function renderRentalInvoiceBody(item: any): string {
         <th class="no-col">No</th>
         <th colspan="3">Description</th>
         <th class="rp-col">Rp</th>
-        <th style="text-align:right; width:110px;">${baseRentalFee.toLocaleString('id-ID')}</th>
+        <th style="text-align:right; width:110px;">${baseRentalFee.toLocaleString("id-ID")}</th>
       </tr>
     </thead>
     <tbody>
@@ -730,8 +1311,8 @@ function renderRentalInvoiceBody(item: any): string {
       <tr>
         <td class="no-col">1</td>
         <td colspan="3" style="vertical-align: top;">
-          <div style="font-weight: 700; font-size: 11px; margin-bottom: 3px;">Rental Charges ${assetCategory} ${custName}</div>
-          <div style="font-weight: 700; font-size: 11px; margin-bottom: 6px;">${brandModel} ${snDisplay} 1 Unit</div>
+          <div style="font-weight: 700; font-size: 11px; margin-bottom: 3px;">${rentalChargesLine1}</div>
+          <div style="font-weight: 700; font-size: 11px; margin-bottom: 6px;">${rentalChargesLine2}</div>
           ${meterBlocksHtml}
         </td>
         <td class="rp-col"></td>
@@ -748,12 +1329,12 @@ function renderRentalInvoiceBody(item: any): string {
       </tr>
       <tr class="total-row">
         <td colspan="4" class="total-lbl">D.P.P</td>
-        <td class="rp-col">${taxNum > 0 ? 'Rp' : ''}</td>
+        <td class="rp-col">${taxNum > 0 ? "Rp" : ""}</td>
         <td class="val-col">${dppVal}</td>
       </tr>
       <tr class="total-row">
         <td colspan="4" class="total-lbl">PPN</td>
-        <td class="rp-col">${taxNum > 0 ? 'Rp' : ''}</td>
+        <td class="rp-col">${taxNum > 0 ? "Rp" : ""}</td>
         <td class="val-col">${taxVal}</td>
       </tr>
       <tr class="total-row grand">
@@ -789,11 +1370,15 @@ function renderRentalInvoiceBody(item: any): string {
       </div>
     </div>
   </div>
-</div>`
+</div>`;
 }
 
 function renderRentalInvoicesPdf(items: any[], title: string): string {
-  const bodyContent = items.map(item => `<div class="inv-page">${renderRentalInvoiceBody(item)}</div>`).join('')
+  const bodyContent = items
+    .map(
+      (item) => `<div class="inv-page">${renderRentalInvoiceBody(item)}</div>`,
+    )
+    .join("");
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -922,456 +1507,794 @@ function renderRentalInvoicesPdf(items: any[], title: string): string {
   ${bodyContent}
   <script>window.onload=function(){setTimeout(function(){window.print()},400)}<\/script>
 </body>
-</html>`
+</html>`;
 }
 
 async function exportMonthToExcel() {
-  if (isExporting.value) return
-  const items = filteredData.value
+  if (isExporting.value) return;
+  const items = filteredData.value;
   if (items.length === 0) {
-    toast.warning('No rental invoice data to export!')
-    return
+    toast.warning("No rental invoice data to export!");
+    return;
   }
 
-  let periodLabel = 'All_Periods'
+  let periodLabel = "All_Periods";
   if (monthFilter.value) {
-    periodLabel = monthFilter.value
+    periodLabel = monthFilter.value;
   } else if (startDateFilter.value || endDateFilter.value) {
-    periodLabel = `${startDateFilter.value || 'Start'}_to_${endDateFilter.value || 'End'}`
+    periodLabel = `${startDateFilter.value || "Start"}_to_${endDateFilter.value || "End"}`;
   }
 
-  isExporting.value = true
+  isExporting.value = true;
   try {
-    await exportInvoicesToExcel(items, `RentalInvoice_${periodLabel}`, [])
-    toast.success('Excel report downloaded successfully')
+    await exportInvoicesToExcel(items, `RentalInvoice_${periodLabel}`, []);
+    toast.success("Excel report downloaded successfully");
   } finally {
-    isExporting.value = false
+    isExporting.value = false;
   }
 }
 
 async function exportInvoicesToExcel(
   items: any[],
   filename: string,
-  leadingSheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = [],
+  leadingSheets: Array<{
+    name: string;
+    columnWidths: number[];
+    rows: StyledCell[][];
+  }> = [],
 ) {
   const sortedItems = [...items].sort((a, b) => {
-    const da = a.period_start || a.monthly_date || a.invoice_date || ''
-    const db = b.period_start || b.monthly_date || b.invoice_date || ''
-    return String(da).localeCompare(String(db))
-  })
+    const da = a.period_start || a.monthly_date || a.invoice_date || "";
+    const db = b.period_start || b.monthly_date || b.invoice_date || "";
+    return String(da).localeCompare(String(db));
+  });
 
-  const sheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
-  const usedSheetNames = new Set<string>()
-  const columnWidths = [4.2, 39.2, 7.8, 13, 31.2]
+  const sheets: Array<{
+    name: string;
+    columnWidths: number[];
+    rows: StyledCell[][];
+  }> = [];
+  const usedSheetNames = new Set<string>();
+  const columnWidths = [4.2, 39.2, 7.8, 13, 31.2];
 
   for (const item of sortedItems) {
-    const assetInfo = resolveInvoiceAsset(item)
-    const { isCopier, assetCategory, brandModel, serialNo, custName, custAddress, picDisplay, poNo, signer, ci, rentalItem } = assetInfo
+    const assetInfo = resolveInvoiceAsset(item);
+    const {
+      unit,
+      isCopier,
+      assetCategory,
+      brandModel,
+      serialNo,
+      custName,
+      custAddress,
+      picDisplay,
+      poNo,
+      signer,
+      ci,
+      rentalItem,
+      quantity,
+      uomName,
+    } = assetInfo;
 
-    const rows: StyledCell[][] = []
-    const addRow = (r: StyledCell[] = []) => rows.push(r)
-    let rawSheetName = (item.invoice_no || `Inv_${item.id || 'draft'}`).replace(/[:\\/?*[\]]/g, '_').slice(0, 31)
-    let sheetName = rawSheetName
-    let counter = 1
+    const rows: StyledCell[][] = [];
+    const addRow = (r: StyledCell[] = []) => rows.push(r);
+    let rawSheetName = (item.invoice_no || `Inv_${item.id || "draft"}`)
+      .replace(/[:\\/?*[\]]/g, "_")
+      .slice(0, 31);
+    let sheetName = rawSheetName;
+    let counter = 1;
     while (usedSheetNames.has(sheetName)) {
-      sheetName = `${rawSheetName.slice(0, 28)}_${counter++}`
+      sheetName = `${rawSheetName.slice(0, 28)}_${counter++}`;
     }
-    usedSheetNames.add(sheetName)
+    usedSheetNames.add(sheetName);
 
-    const dateVal = item.invoice_date || item.monthly_date || item.period_end || ''
-    const dateLabel = dateVal ? formatDate(dateVal) : '-'
+    const dateVal =
+      item.invoice_date || item.monthly_date || item.period_end || "";
+    const dateLabel = dateVal ? formatDate(dateVal) : "-";
 
-    let periodLabel = '-'
+    let periodLabel = "-";
     if (item.period_start && item.period_end) {
-      periodLabel = `${formatDate(item.period_start)} - ${formatDate(item.period_end)}`
+      periodLabel = `${formatDate(item.period_start)} - ${formatDate(item.period_end)}`;
     } else if (item.monthly_date) {
-      const d = new Date(item.monthly_date)
+      const d = new Date(item.monthly_date);
       if (!isNaN(d.getTime())) {
-        periodLabel = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+        periodLabel = d.toLocaleDateString("id-ID", {
+          month: "long",
+          year: "numeric",
+        });
       }
     } else if (item.period_start) {
-      const d = new Date(item.period_start)
+      const d = new Date(item.period_start);
       if (!isNaN(d.getTime())) {
-        periodLabel = d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+        periodLabel = d.toLocaleDateString("id-ID", {
+          month: "long",
+          year: "numeric",
+        });
       }
     }
-    const baseRentalFee = Number(item.base_rental_fee || item.rental_rate || item.basis_rental_fee || ci?.monthly_fee || 0)
+    const baseRentalFee = Number(
+      item.base_rental_fee ||
+        item.rental_rate ||
+        item.basis_rental_fee ||
+        ci?.monthly_fee ||
+        0,
+    );
 
     // Row 1: Company name + Inv No.
     addRow([
-      { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBold' }, {},
+      { v: "PT. BiAS SURYA TEKNOLOGI", mergeAcross: 1, style: "borderBold" },
       {},
-      { v: 'Inv No. :', style: 'borderBoldRight' },
-      { v: item.invoice_no || '-', style: 'border' },
-    ])
+      {},
+      { v: "Inv No. :", style: "borderBoldRight" },
+      { v: item.invoice_no || "-", style: "border" },
+    ]);
     // Row 2: Address line 1 + Date
     addRow([
-      { v: 'Ruko Purimas Blok A No.47 Kota Batam', mergeAcross: 1, style: 'borderCenter' }, {},
+      {
+        v: "Ruko Purimas Blok A No.47 Kota Batam",
+        mergeAcross: 1,
+        style: "borderCenter",
+      },
       {},
-      { v: 'Date :', style: 'borderBoldRight' },
-      { v: dateLabel, style: 'border' },
-    ])
+      {},
+      { v: "Date :", style: "borderBoldRight" },
+      { v: dateLabel, style: "border" },
+    ]);
     // Row 3: Address line 2 + PO No / Kepada Yth.
     if (poNo) {
       addRow([
-        { v: 'Kepulauan Riau - Indonesia', mergeAcross: 1, style: 'borderCenter' }, {},
+        {
+          v: "Kepulauan Riau - Indonesia",
+          mergeAcross: 1,
+          style: "borderCenter",
+        },
         {},
-        { v: 'PO No. :', style: 'borderBoldRight' },
-        { v: poNo, style: 'border' },
-      ])
+        {},
+        { v: "PO No. :", style: "borderBoldRight" },
+        { v: poNo, style: "border" },
+      ]);
       addRow([
-        { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
+        { v: "Telp : +62 811 7045 657", mergeAcross: 1, style: "borderCenter" },
         {},
-        { v: 'Kepada Yth.', mergeAcross: 1, style: 'borderBold' }, {},
-      ])
+        {},
+        { v: "Kepada Yth.", mergeAcross: 1, style: "borderBold" },
+        {},
+      ]);
       addRow([
-        { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {
+          v: "Email : admin@biasbst.com",
+          mergeAcross: 1,
+          style: "borderCenter",
+        },
         {},
-        { v: custName || '-', mergeAcross: 1, style: 'borderBold' }, {},
-      ])
+        {},
+        { v: custName || "-", mergeAcross: 1, style: "borderBold" },
+        {},
+      ]);
       addRow([
-        { v: 'www.biassuryateknologi.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {
+          v: "www.biassuryateknologi.com",
+          mergeAcross: 1,
+          style: "borderCenter",
+        },
         {},
-        { v: custAddress, mergeAcross: 1, style: 'border' }, {},
-      ])
+        {},
+        { v: custAddress, mergeAcross: 1, style: "border" },
+        {},
+      ]);
       addRow([
-        { style: 'border' }, { style: 'border' },
+        { style: "border" },
+        { style: "border" },
         {},
-        { v: 'Up', style: 'borderBold' },
-        { v: picDisplay, style: 'borderBoldCenter' },
-      ])
+        { v: "Up", style: "borderBold" },
+        { v: picDisplay, style: "borderBoldCenter" },
+      ]);
     } else {
       addRow([
-        { v: 'Kepulauan Riau - Indonesia', mergeAcross: 1, style: 'borderCenter' }, {},
+        {
+          v: "Kepulauan Riau - Indonesia",
+          mergeAcross: 1,
+          style: "borderCenter",
+        },
         {},
-        { v: 'Kepada Yth.', mergeAcross: 1, style: 'borderBold' }, {},
-      ])
+        {},
+        { v: "Kepada Yth.", mergeAcross: 1, style: "borderBold" },
+        {},
+      ]);
       addRow([
-        { v: 'Telp : +62 811 7045 657', mergeAcross: 1, style: 'borderCenter' }, {},
+        { v: "Telp : +62 811 7045 657", mergeAcross: 1, style: "borderCenter" },
         {},
-        { v: custName || '-', mergeAcross: 1, style: 'borderBold' }, {},
-      ])
+        {},
+        { v: custName || "-", mergeAcross: 1, style: "borderBold" },
+        {},
+      ]);
       addRow([
-        { v: 'Email : admin@biasbst.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {
+          v: "Email : admin@biasbst.com",
+          mergeAcross: 1,
+          style: "borderCenter",
+        },
         {},
-        { v: custAddress, mergeAcross: 1, style: 'border' }, {},
-      ])
+        {},
+        { v: custAddress, mergeAcross: 1, style: "border" },
+        {},
+      ]);
       addRow([
-        { v: 'www.biassuryateknologi.com', mergeAcross: 1, style: 'borderCenter' }, {},
+        {
+          v: "www.biassuryateknologi.com",
+          mergeAcross: 1,
+          style: "borderCenter",
+        },
         {},
-        { v: 'Up', style: 'borderBold' },
-        { v: picDisplay, style: 'borderBoldCenter' },
-      ])
+        {},
+        { v: "Up", style: "borderBold" },
+        { v: picDisplay, style: "borderBoldCenter" },
+      ]);
     }
     // Spacer
     addRow([
-      { style: 'border' }, { style: 'border' },
+      { style: "border" },
+      { style: "border" },
       {},
-      { style: 'border' }, { style: 'border' },
-    ])
+      { style: "border" },
+      { style: "border" },
+    ]);
 
     // Title + Period
-    addRow([{ v: 'INVOICE', mergeAcross: 4, style: 'titleCell' }])
-    addRow([{ v: 'Periode : ' + periodLabel, mergeAcross: 1, style: 'borderBold' }, {}])
+    addRow([{ v: "INVOICE", mergeAcross: 4, style: "titleCell" }]);
+    addRow([
+      { v: "Periode : " + periodLabel, mergeAcross: 1, style: "borderBold" },
+      {},
+    ]);
 
     // Table Header
     addRow([
-      { v: 'No', style: 'borderBoldCenter' },
-      { v: 'Description', style: 'borderBold' },
-      { style: 'border' },
-      { style: 'border' },
-      { v: baseRentalFee, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-    ])
+      { v: "No", style: "borderBoldCenter" },
+      { v: "Description", style: "borderBold" },
+      { style: "border" },
+      { style: "border" },
+      { v: baseRentalFee, style: "borderBoldRight", numFmt: NUMFMT_RP },
+    ]);
 
-    const snDisplay = serialNo ? `S/N : ${serialNo}` : 'S/N : -'
     addRow([
-      { v: 1, style: 'borderCenter' },
-      { v: `Rental Charges ${assetCategory} ${custName}`, style: 'borderBold' },
-      {}, {},
-      { style: 'border' },
-    ])
+      { v: 1, style: "borderCenter" },
+      { v: assetInfo.rentalChargesLine1, style: "borderBold" },
+      {},
+      {},
+      { style: "border" },
+    ]);
     addRow([
       {},
-      { v: `${brandModel} ${snDisplay} 1 Unit`, style: 'borderBold' },
-      {}, {},
-      { style: 'border' },
-    ])
+      {
+        v: assetInfo.rentalChargesLine2,
+        style: "borderBold",
+      },
+      {},
+      {},
+      { style: "border" },
+    ]);
 
-    let rowNum = 2
+    let rowNum = 2;
     if (isCopier) {
-      const contractRates = ci?.rates || rentalItem?.rates || item.contract_item?.rates || item.rental?.rental_items?.[0]?.rates || []
-      const hasConfiguredPaperSize = Array.isArray(contractRates) && contractRates.length > 0 && contractRates.some((r: any) => Boolean(r.paper_size_id && String(r.paper_size_id).trim() !== ''))
+      const contractRates =
+        ci?.rates ||
+        rentalItem?.rates ||
+        item.contract_item?.rates ||
+        item.rental?.rental_items?.[0]?.rates ||
+        [];
+      const hasConfiguredPaperSize =
+        Array.isArray(contractRates) &&
+        contractRates.length > 0 &&
+        contractRates.some((r: any) =>
+          Boolean(r.paper_size_id && String(r.paper_size_id).trim() !== ""),
+        );
       const distinctSizes = new Set(
         (item.meter_details || [])
-          .map((d: any) => d.paper_size?.name || d.paper_size_name || '')
-          .filter((s: string) => Boolean(s.trim()))
-      )
-      const hasExplicitPaperSize = hasConfiguredPaperSize || distinctSizes.size > 1
+          .map((d: any) => d.paper_size?.name || d.paper_size_name || "")
+          .filter((s: string) => Boolean(s.trim())),
+      );
+      const hasExplicitPaperSize =
+        hasConfiguredPaperSize || distinctSizes.size > 1;
 
       // Format Excel persis foto invoice: Start, Last (-), Total Copies (dan Free Copies HANYA jika free > 0)
-      const pushMeterSection = (sectionLabel: string, start: number, last: number, free: number, explicitTotal?: number) => {
-        const total = explicitTotal !== undefined ? explicitTotal : (last - start)
-        const net = total - free
-        const billable = Math.max(0, net)
-        addRow([{ style: 'border' }, { v: sectionLabel, style: 'borderBold' }, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-        addRow([{}, { v: 'Start Meter Reading', style: 'border' }, { v: start, style: 'borderRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
-        addRow([{}, { v: 'Last Meter Reading', style: 'border' }, { v: last, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
-        addRow([{}, { v: 'Total Copies', style: 'border' }, { v: total, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+      const pushMeterSection = (
+        sectionLabel: string,
+        start: number,
+        last: number,
+        free: number,
+        explicitTotal?: number,
+      ) => {
+        const total =
+          explicitTotal !== undefined ? explicitTotal : last - start;
+        const net = total - free;
+        const billable = Math.max(0, net);
+        addRow([
+          { style: "border" },
+          { v: sectionLabel, style: "borderBold" },
+          { style: "border" },
+          { style: "border" },
+          { style: "border" },
+        ]);
+        addRow([
+          {},
+          { v: "Start Meter Reading", style: "border" },
+          { v: start, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { style: "border" },
+          { style: "border" },
+        ]);
+        addRow([
+          {},
+          { v: "Last Meter Reading", style: "border" },
+          { v: last, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: "(-)", style: "borderCenter" },
+          { style: "border" },
+        ]);
+        addRow([
+          {},
+          { v: "Total Copies", style: "border" },
+          { v: total, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+          { style: "border" },
+          { style: "border" },
+        ]);
         if (free > 0) {
-          addRow([{}, { v: 'Free Copies', style: 'border' }, { v: free, style: 'borderRight', numFmt: NUMFMT_COUNT }, { v: '(-)', style: 'borderCenter' }, { style: 'border' }])
-          addRow([{}, { v: 'Total Copies', style: 'border' }, { v: net, style: 'borderBoldRight', numFmt: NUMFMT_COUNT }, { style: 'border' }, { style: 'border' }])
+          addRow([
+            {},
+            { v: "Free Copies", style: "border" },
+            { v: free, style: "borderRight", numFmt: NUMFMT_COUNT },
+            { v: "(-)", style: "borderCenter" },
+            { style: "border" },
+          ]);
+          addRow([
+            {},
+            { v: "Total Copies", style: "border" },
+            { v: net, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+            { style: "border" },
+            { style: "border" },
+          ]);
         }
-        return { total, billable }
-      }
+        return { total, billable };
+      };
 
       const chargeRow = (desc: string, rate: number, amount: number) => {
         addRow([
-          { v: rowNum++, style: 'borderCenter' },
-          { v: desc, style: 'border' },
-          { v: '(x)', style: 'borderCenter' },
-          { v: rate, style: 'borderRight', numFmt: NUMFMT_RP_RATE },
-          { v: amount, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-        ])
-      }
+          { v: rowNum++, style: "borderCenter" },
+          { v: desc, style: "border" },
+          { v: "(x)", style: "borderCenter" },
+          { v: rate, style: "borderRight", numFmt: NUMFMT_RP_RATE },
+          { v: amount, style: "borderBoldRight", numFmt: NUMFMT_RP },
+        ]);
+      };
 
-      const meterDetails: any[] = item.meter_details || []
+      const meterDetails: any[] = item.meter_details || [];
 
       if (meterDetails.length > 0) {
-        const byPaperSize = new Map<string, any[]>()
+        const byPaperSize = new Map<string, any[]>();
         for (const detail of meterDetails) {
-          const psName = hasExplicitPaperSize ? (detail.paper_size?.name || '') : ''
-          const ptName = detail.paper_type?.name || ''
-          const key = ptName ? (psName ? `${psName}/${ptName}` : ptName) : psName
-          if (!byPaperSize.has(key)) byPaperSize.set(key, [])
-          byPaperSize.get(key)!.push(detail)
+          const psName = hasExplicitPaperSize
+            ? detail.paper_size?.name || ""
+            : "";
+          const ptName = detail.paper_type?.name || "";
+          const key = ptName
+            ? psName
+              ? `${psName}/${ptName}`
+              : ptName
+            : psName;
+          if (!byPaperSize.has(key)) byPaperSize.set(key, []);
+          byPaperSize.get(key)!.push(detail);
         }
 
         // Urutkan agar A4 tampil pertama, lalu ukuran kertas lainnya
-        const sortedPaperSizes = Array.from(byPaperSize.entries()).sort(([a], [b]) => {
-          const aIsA4 = /a4/i.test(a) || !a
-          const bIsA4 = /a4/i.test(b) || !b
-          if (aIsA4 && !bIsA4) return -1
-          if (!aIsA4 && bIsA4) return 1
-          return a.localeCompare(b)
-        })
+        const sortedPaperSizes = Array.from(byPaperSize.entries()).sort(
+          ([a], [b]) => {
+            const aIsA4 = /a4/i.test(a) || !a;
+            const bIsA4 = /a4/i.test(b) || !b;
+            if (aIsA4 && !bIsA4) return -1;
+            if (!aIsA4 && bIsA4) return 1;
+            return a.localeCompare(b);
+          },
+        );
 
         for (const [paperSize, details] of sortedPaperSizes) {
-          const bwDetails = details.filter((d: any) => /bw|mono|b\/w/i.test(d.color_mode || ''))
-          const colorDetails = details.filter((d: any) => /colou?r/i.test(d.color_mode || ''))
+          const bwDetails = details.filter((d: any) =>
+            /bw|mono|b\/w/i.test(d.color_mode || ""),
+          );
+          const colorDetails = details.filter((d: any) =>
+            /colou?r/i.test(d.color_mode || ""),
+          );
           // Jika tidak ada ukuran kertasnya kosongin aja
-          const sizeLabel = (paperSize && paperSize.trim() && hasExplicitPaperSize) ? ` ${paperSize.trim()}` : ''
+          const sizeLabel =
+            paperSize && paperSize.trim() && hasExplicitPaperSize
+              ? ` ${paperSize.trim()}`
+              : "";
 
           for (const detail of bwDetails) {
-            const start = detail.start_meter_reading || 0
-            const last = detail.last_meter_reading || 0
-            const free = detail.free_quota ?? 0
-            pushMeterSection(`B/W${sizeLabel}`, start, last, free)
-            chargeRow(`Copies Charges B/W${sizeLabel}`, detail.rate_per_page || 0, detail.total_amount || 0)
+            const start = detail.start_meter_reading || 0;
+            const last = detail.last_meter_reading || 0;
+            const free = detail.free_quota ?? 0;
+            pushMeterSection(`B/W${sizeLabel}`, start, last, free);
+            chargeRow(
+              `Copies Charges B/W${sizeLabel}`,
+              detail.rate_per_page || 0,
+              detail.total_amount || 0,
+            );
           }
 
           for (const detail of colorDetails) {
-            const start = detail.start_meter_reading || 0
-            const last = detail.last_meter_reading || 0
-            const free = detail.free_quota ?? 0
-            pushMeterSection(`Colour${sizeLabel}`, start, last, free)
-            chargeRow(`Copies Charges Colour${sizeLabel}`, detail.rate_per_page || 0, detail.total_amount || 0)
+            const start = detail.start_meter_reading || 0;
+            const last = detail.last_meter_reading || 0;
+            const free = detail.free_quota ?? 0;
+            pushMeterSection(`Colour${sizeLabel}`, start, last, free);
+            chargeRow(
+              `Copies Charges Colour${sizeLabel}`,
+              detail.rate_per_page || 0,
+              detail.total_amount || 0,
+            );
           }
         }
       } else {
-        const bwStart = item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0
-        const bwEnd = item.meter_end || item.meter_end_bw || bwStart
-        const bwFree = item.free_copies ?? ci?.free_copy_quota ?? 0
-        const bwRate = item.rate_per_page || 150
-        const sizeSuffix = '' // Kosongin jika tidak ada ukuran kertas
-        const bw = pushMeterSection(`B/W${sizeSuffix}`, bwStart, bwEnd, bwFree)
-        chargeRow(`Copies Charges B/W${sizeSuffix}`, bwRate, bw.billable * bwRate)
+        const bwStart =
+          item.meter_start || item.meter_start_bw || ci?.start_meter_bw || 0;
+        const bwEnd = item.meter_end || item.meter_end_bw || bwStart;
+        const bwFree = item.free_copies ?? ci?.free_copy_quota ?? 0;
+        const bwRate = item.rate_per_page || 150;
+        const sizeSuffix = ""; // Kosongin jika tidak ada ukuran kertas
+        const bw = pushMeterSection(`B/W${sizeSuffix}`, bwStart, bwEnd, bwFree);
+        chargeRow(
+          `Copies Charges B/W${sizeSuffix}`,
+          bwRate,
+          bw.billable * bwRate,
+        );
 
-        const colorStart = ci?.start_meter_color || 0
-        const colorEnd = item.meter_end_colour || colorStart
-        const colorFree = ci?.free_quota_color || 0
-        const colorRate = ci?.rate_per_page_color || bwRate
+        const colorStart = ci?.start_meter_color || 0;
+        const colorEnd = item.meter_end_colour || colorStart;
+        const colorFree = ci?.free_quota_color || 0;
+        const colorRate = ci?.rate_per_page_color || bwRate;
         if (colorStart > 0 || colorFree > 0 || colorEnd > colorStart) {
-          const col = pushMeterSection(`Colour${sizeSuffix}`, colorStart, colorEnd, colorFree)
-          chargeRow(`Copies Charges Colour${sizeSuffix}`, colorRate, col.billable * colorRate)
+          const col = pushMeterSection(
+            `Colour${sizeSuffix}`,
+            colorStart,
+            colorEnd,
+            colorFree,
+          );
+          chargeRow(
+            `Copies Charges Colour${sizeSuffix}`,
+            colorRate,
+            col.billable * colorRate,
+          );
         }
       }
 
       // 2-Sided meter readings dari item, contract item, atau rental item
-      const bwDblStart = Number(item.meter_start_bw_double || item.start_meter_bw_double || item.counter_awal_bw_double || ci?.start_meter_bw_double || rentalItem?.start_meter_bw_double || 0)
-      const bwDblEnd = Number(item.meter_end_bw_double || item.end_meter_bw_double || item.counter_akhir_bw_double || item.gross_counter_bw_double || (bwDblStart > 0 ? bwDblStart : 0))
-      const bwDblTotal = Math.max(0, bwDblEnd - bwDblStart)
+      const bwDblStart = Number(
+        item.meter_start_bw_double ||
+          item.start_meter_bw_double ||
+          item.counter_awal_bw_double ||
+          ci?.start_meter_bw_double ||
+          rentalItem?.start_meter_bw_double ||
+          0,
+      );
+      const bwDblEnd = Number(
+        item.meter_end_bw_double ||
+          item.end_meter_bw_double ||
+          item.counter_akhir_bw_double ||
+          item.gross_counter_bw_double ||
+          (bwDblStart > 0 ? bwDblStart : 0),
+      );
+      const bwDblTotal = Math.max(0, bwDblEnd - bwDblStart);
 
-      const colDblStart = Number(item.meter_start_color_double || item.start_meter_color_double || item.counter_awal_color_double || ci?.start_meter_color_double || rentalItem?.start_meter_color_double || 0)
-      const colDblEnd = Number(item.meter_end_color_double || item.end_meter_color_double || item.counter_akhir_color_double || item.gross_counter_color_double || (colDblStart > 0 ? colDblStart : 0))
-      const colDblTotal = Math.max(0, colDblEnd - colDblStart)
+      const colDblStart = Number(
+        item.meter_start_color_double ||
+          item.start_meter_color_double ||
+          item.counter_awal_color_double ||
+          ci?.start_meter_color_double ||
+          rentalItem?.start_meter_color_double ||
+          0,
+      );
+      const colDblEnd = Number(
+        item.meter_end_color_double ||
+          item.end_meter_color_double ||
+          item.counter_akhir_color_double ||
+          item.gross_counter_color_double ||
+          (colDblStart > 0 ? colDblStart : 0),
+      );
+      const colDblTotal = Math.max(0, colDblEnd - colDblStart);
 
       if (bwDblStart > 0 || bwDblEnd > 0 || bwDblTotal > 0) {
-        pushMeterSection('B/W (2-Sided)', bwDblStart, bwDblEnd, 0, bwDblTotal)
+        pushMeterSection("B/W (2-Sided)", bwDblStart, bwDblEnd, 0, bwDblTotal);
       }
       if (colDblStart > 0 || colDblEnd > 0 || colDblTotal > 0) {
-        pushMeterSection('Colour (2-Sided)', colDblStart, colDblEnd, 0, colDblTotal)
+        pushMeterSection(
+          "Colour (2-Sided)",
+          colDblStart,
+          colDblEnd,
+          0,
+          colDblTotal,
+        );
       }
     }
 
-    const subtotal = item.subtotal ?? (baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0))
-    const tax = item.tax || 0
-    const totalPay = item.total_pay ?? subtotal + tax
+    const subtotal =
+      item.subtotal ??
+      baseRentalFee + (item.excess_copies_fee || item.excess_amount || 0);
+    const tax = item.tax || 0;
+    const totalPay = item.total_pay ?? subtotal + tax;
 
-    addRow([{}, {}, {}, { v: 'TOTAL', style: 'borderBoldRight' }, { v: subtotal, style: 'borderBoldRight', numFmt: NUMFMT_RP }])
     addRow([
-      { v: 'Pembayaran Transfer ke rekening :', mergeAcross: 1, style: 'border' }, {},
-      { style: 'border' },
-      { v: 'D.P.P', style: 'borderBoldRight' },
-      tax > 0 ? { v: subtotal, style: 'borderBoldRight', numFmt: NUMFMT_RP } : { style: 'border' },
-    ])
+      {},
+      {},
+      {},
+      { v: "TOTAL", style: "borderBoldRight" },
+      { v: subtotal, style: "borderBoldRight", numFmt: NUMFMT_RP },
+    ]);
     addRow([
-      { v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'borderBoldCenter' }, {},
-      { style: 'border' },
-      { v: 'PPN', style: 'borderBoldRight' },
-      tax > 0 ? { v: tax, style: 'borderBoldRight', numFmt: NUMFMT_RP } : { style: 'border' },
-    ])
+      {
+        v: "Pembayaran Transfer ke rekening :",
+        mergeAcross: 1,
+        style: "border",
+      },
+      {},
+      { style: "border" },
+      { v: "D.P.P", style: "borderBoldRight" },
+      tax > 0
+        ? { v: subtotal, style: "borderBoldRight", numFmt: NUMFMT_RP }
+        : { style: "border" },
+    ]);
     addRow([
-      { v: 'NPWP : 0941.8395.0822.5000', mergeAcross: 1, style: 'borderBoldCenter' }, {},
-      { style: 'border' },
-      { v: 'TOTAL PAY', style: 'borderBoldRight' },
-      { v: totalPay, style: 'borderBoldRight', numFmt: NUMFMT_RP },
-    ])
-    addRow([{ v: 'BANK RIAU KEPRI SYARIAH CAB. BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-    addRow([{ v: 'Rek No. 1060885757', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-    addRow([{ v: 'BANK MANDIRI CABANG BATAM', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
-    addRow([{ v: 'Rek No. 109-00-3388575-7', mergeAcross: 1, style: 'borderBold' }, {}, { style: 'border' }, { style: 'border' }, { style: 'border' }])
+      {
+        v: "PT. BIAS SURYA TEKNOLOGI",
+        mergeAcross: 1,
+        style: "borderBoldCenter",
+      },
+      {},
+      { style: "border" },
+      { v: "PPN", style: "borderBoldRight" },
+      tax > 0
+        ? { v: tax, style: "borderBoldRight", numFmt: NUMFMT_RP }
+        : { style: "border" },
+    ]);
+    addRow([
+      {
+        v: "NPWP : 0941.8395.0822.5000",
+        mergeAcross: 1,
+        style: "borderBoldCenter",
+      },
+      {},
+      { style: "border" },
+      { v: "TOTAL PAY", style: "borderBoldRight" },
+      { v: totalPay, style: "borderBoldRight", numFmt: NUMFMT_RP },
+    ]);
+    addRow([
+      {
+        v: "BANK RIAU KEPRI SYARIAH CAB. BATAM",
+        mergeAcross: 1,
+        style: "borderBold",
+      },
+      {},
+      { style: "border" },
+      { style: "border" },
+      { style: "border" },
+    ]);
+    addRow([
+      { v: "Rek No. 1060885757", mergeAcross: 1, style: "borderBold" },
+      {},
+      { style: "border" },
+      { style: "border" },
+      { style: "border" },
+    ]);
+    addRow([
+      { v: "BANK MANDIRI CABANG BATAM", mergeAcross: 1, style: "borderBold" },
+      {},
+      { style: "border" },
+      { style: "border" },
+      { style: "border" },
+    ]);
+    addRow([
+      { v: "Rek No. 109-00-3388575-7", mergeAcross: 1, style: "borderBold" },
+      {},
+      { style: "border" },
+      { style: "border" },
+      { style: "border" },
+    ]);
 
     // Signatures
-    addRow([])
-    addRow([{ v: 'Received By,', mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: 1, style: 'plainBoldCenter' }])
-    addRow([])
-    addRow([{ v: '_______________________', mergeAcross: 1, style: 'plainCenter' }, {}, {}, { v: '_______________________', mergeAcross: 1, style: 'plainCenter' }])
-    addRow([{ v: picDisplay, mergeAcross: 1, style: 'plainBoldCenter' }, {}, {}, { v: signer, mergeAcross: 1, style: 'plainBoldCenter' }])
-    addRow([{}, {}, {}, { v: 'Admin Finance', mergeAcross: 1, style: 'plainCenter' }])
+    addRow([]);
+    addRow([
+      { v: "Received By,", mergeAcross: 1, style: "plainBoldCenter" },
+      {},
+      {},
+      {
+        v: "PT. BiAS SURYA TEKNOLOGI",
+        mergeAcross: 1,
+        style: "plainBoldCenter",
+      },
+    ]);
+    addRow([]);
+    addRow([
+      { v: "_______________________", mergeAcross: 1, style: "plainCenter" },
+      {},
+      {},
+      { v: "_______________________", mergeAcross: 1, style: "plainCenter" },
+    ]);
+    addRow([
+      { v: picDisplay, mergeAcross: 1, style: "plainBoldCenter" },
+      {},
+      {},
+      { v: signer, mergeAcross: 1, style: "plainBoldCenter" },
+    ]);
+    addRow([
+      {},
+      {},
+      {},
+      { v: "Admin Finance", mergeAcross: 1, style: "plainCenter" },
+    ]);
 
-    sheets.push({ name: sheetName, columnWidths, rows })
+    sheets.push({ name: sheetName, columnWidths, rows });
   }
 
   // Tambahkan Sheet Kalkulasi Pemakaian Meter untuk Atlas Copco & PT Great Eastern berdasarkan nama Customer
-  let customerCalcSheets: any[] = []
+  let customerCalcSheets: any[] = [];
   try {
-    customerCalcSheets = await buildAtlasGreatSheetsForInvoices(sortedItems, usedSheetNames)
+    customerCalcSheets = await buildAtlasGreatSheetsForInvoices(
+      sortedItems,
+      usedSheetNames,
+    );
   } catch (calcErr: any) {
-    console.warn('Could not build Atlas/Great calculation sheets for invoices:', calcErr)
+    console.warn(
+      "Could not build Atlas/Great calculation sheets for invoices:",
+      calcErr,
+    );
   }
 
-  await downloadStyledExcel([...leadingSheets, ...sheets, ...customerCalcSheets], filename)
+  await downloadStyledExcel(
+    [...leadingSheets, ...sheets, ...customerCalcSheets],
+    filename,
+  );
 }
 
 async function buildAtlasGreatSheetsForInvoices(
   sortedItems: any[],
-  usedSheetNames: Set<string>
-): Promise<Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }>> {
-  let agReadings: any[] = []
+  usedSheetNames: Set<string>,
+): Promise<
+  Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }>
+> {
+  let agReadings: any[] = [];
   try {
-    const res: any = await resources.atlasGreatReadings.list({ per_page: 500 })
-    agReadings = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+    const res: any = await resources.atlasGreatReadings.list({ per_page: 500 });
+    agReadings = Array.isArray(res?.data)
+      ? res.data
+      : Array.isArray(res)
+        ? res
+        : [];
   } catch (e) {
-    console.warn('Could not load atlasGreatReadings for export:', e)
+    console.warn("Could not load atlasGreatReadings for export:", e);
   }
 
   // Group customer dari invoice yang diekspor
-  const customerMap = new Map<string, {
-    customer: any
-    custName: string
-    custAddress: string
-    isAtlas: boolean
-    isGreat: boolean
-    readings: any[]
-    assetInfo: any
-  }>()
+  const customerMap = new Map<
+    string,
+    {
+      customer: any;
+      custName: string;
+      custAddress: string;
+      isAtlas: boolean;
+      isGreat: boolean;
+      readings: any[];
+      assetInfo: any;
+    }
+  >();
 
   for (const item of sortedItems) {
-    const assetInfo = resolveInvoiceAsset(item)
-    const custId = String(item.customer_id || assetInfo.customer?.id || 'cust_default')
-    let custName = assetInfo.custName || 'Customer'
-    if (custName === '-' || custName === 'Customer') {
-      if (item.customer_type === 'atlas') custName = 'Atlas Copco'
-      else if (item.customer_type === 'great') custName = 'PT Great Eastern'
+    const assetInfo = resolveInvoiceAsset(item);
+    const custId = String(
+      item.customer_id || assetInfo.customer?.id || "cust_default",
+    );
+    let custName = assetInfo.custName || "Customer";
+    if (custName === "-" || custName === "Customer") {
+      if (item.customer_type === "atlas") custName = "Atlas Copco";
+      else if (item.customer_type === "great") custName = "PT Great Eastern";
     }
-    const lowerName = custName.toLowerCase()
+    const lowerName = custName.toLowerCase();
 
-    const targetUnitId = String(assetInfo.unit?.id || item.unit_id || '')
-    const targetSerialNo = (assetInfo.serialNo || '').toLowerCase().trim()
-    const itemInvDate = item.period_start || item.monthly_date || item.invoice_date
-    const itemMonth = itemInvDate ? new Date(itemInvDate).getMonth() + 1 : null
-    const itemYear = itemInvDate ? new Date(itemInvDate).getFullYear() : null
+    const targetUnitId = String(assetInfo.unit?.id || item.unit_id || "");
+    const targetSerialNo = (assetInfo.serialNo || "").toLowerCase().trim();
+    const itemInvDate =
+      item.period_start || item.monthly_date || item.invoice_date;
+    const itemMonth = itemInvDate ? new Date(itemInvDate).getMonth() + 1 : null;
+    const itemYear = itemInvDate ? new Date(itemInvDate).getFullYear() : null;
 
     // Cocokkan pencatatan yang KHUSUS untuk rental invoice yang dipilih & unitnya
     const matched = agReadings.find((r: any) => {
       // 1. Direct match by rental_invoice_id or id
-      if (r.rental_invoice_id && item.id && String(r.rental_invoice_id) === String(item.id)) return true
-      if (item.id && String(r.id) === String(item.id)) return true
+      if (
+        r.rental_invoice_id &&
+        item.id &&
+        String(r.rental_invoice_id) === String(item.id)
+      )
+        return true;
+      if (item.id && String(r.id) === String(item.id)) return true;
 
       // 2. Match by customer_id AND unit_id
-      const rCustId = String(r.customer_id || r.customer?.id || '')
-      const rUnitId = String(r.unit_id || r.unit?.id || '')
-      const rSerial = (r.unit?.serial_number || r.unit?.serial_no || '').toLowerCase().trim()
-      const sameCust = rCustId && custId && rCustId === custId
-      const sameUnit = (targetUnitId && rUnitId && targetUnitId === rUnitId) || (targetSerialNo && rSerial && targetSerialNo === rSerial)
+      const rCustId = String(r.customer_id || r.customer?.id || "");
+      const rUnitId = String(r.unit_id || r.unit?.id || "");
+      const rSerial = (r.unit?.serial_number || r.unit?.serial_no || "")
+        .toLowerCase()
+        .trim();
+      const sameCust = rCustId && custId && rCustId === custId;
+      const sameUnit =
+        (targetUnitId && rUnitId && targetUnitId === rUnitId) ||
+        (targetSerialNo && rSerial && targetSerialNo === rSerial);
 
-      if (!sameCust) return false
-      if (!sameUnit) return false
+      if (!sameCust) return false;
+      if (!sameUnit) return false;
 
       if (itemMonth && itemYear && r.period_date) {
-        const rd = new Date(r.period_date)
-        return (rd.getMonth() + 1 === itemMonth) && (rd.getFullYear() === itemYear)
+        const rd = new Date(r.period_date);
+        return rd.getMonth() + 1 === itemMonth && rd.getFullYear() === itemYear;
       }
-      return true
-    })
+      return true;
+    });
 
-    const isAtlas = item.customer_type === 'atlas' || lowerName.includes('atlas') || (matched && matched.customer_type === 'atlas')
-    const isGreat = !isAtlas && (item.customer_type === 'great' || lowerName.includes('great') || (matched && matched.customer_type === 'great'))
+    const isAtlas =
+      item.customer_type === "atlas" ||
+      lowerName.includes("atlas") ||
+      (matched && matched.customer_type === "atlas");
+    const isGreat =
+      !isAtlas &&
+      (item.customer_type === "great" ||
+        lowerName.includes("great") ||
+        (matched && matched.customer_type === "great"));
 
     if (!isAtlas && !isGreat && !matched) {
-      continue
+      continue;
     }
 
-    const periodLabel = item.period_start && item.period_end
-      ? `${formatDate(item.period_start)} - ${formatDate(item.period_end)}`
-      : assetInfo.periodStr || 'Bulan Berjalan'
+    const periodLabel =
+      item.period_start && item.period_end
+        ? `${formatDate(item.period_start)} - ${formatDate(item.period_end)}`
+        : assetInfo.periodStr || "Bulan Berjalan";
 
-    let readingForThisInvoice: any
+    let readingForThisInvoice: any;
     if (matched) {
-      readingForThisInvoice = { ...matched }
+      readingForThisInvoice = { ...matched };
       if (!readingForThisInvoice.unit && assetInfo.unit) {
-        readingForThisInvoice.unit = assetInfo.unit
+        readingForThisInvoice.unit = assetInfo.unit;
       }
     } else {
-      const startBW = Number(item.meter_start || item.meter_start_bw || 0)
-      const endBW = Number(item.meter_end || item.meter_end_bw || startBW)
-      const grossBW = endBW
-      const a3BW = 0
-      const pemakaianBW = Math.max(0, endBW - startBW)
+      const startBW = Number(item.meter_start || item.meter_start_bw || 0);
+      const endBW = Number(item.meter_end || item.meter_end_bw || startBW);
+      const grossBW = endBW;
+      const a3BW = 0;
+      const pemakaianBW = Math.max(0, endBW - startBW);
 
-      const startColor = Number(item.meter_start_color || item.meter_start_colour || 0)
-      const endColor = Number(item.meter_end_color || item.meter_end_colour || startColor)
-      const grossColor = endColor
-      const a3Color = 0
-      const pemakaianColor = Math.max(0, endColor - startColor)
+      const startColor = Number(
+        item.meter_start_color || item.meter_start_colour || 0,
+      );
+      const endColor = Number(
+        item.meter_end_color || item.meter_end_colour || startColor,
+      );
+      const grossColor = endColor;
+      const a3Color = 0;
+      const pemakaianColor = Math.max(0, endColor - startColor);
 
-      const pctBW = 88
-      const pctCol = 12
-      const allocBW = Math.round(pemakaianColor * (pctBW / 100) * 100) / 100
-      const allocColor = Math.round(pemakaianColor * (pctCol / 100) * 100) / 100
-      const totalBW = Math.round((pemakaianBW + allocBW) * 100) / 100
-      const totalColor = allocColor
+      const pctBW = 88;
+      const pctCol = 12;
+      const allocBW = Math.round(pemakaianColor * (pctBW / 100) * 100) / 100;
+      const allocColor =
+        Math.round(pemakaianColor * (pctCol / 100) * 100) / 100;
+      const totalBW = Math.round((pemakaianBW + allocBW) * 100) / 100;
+      const totalColor = allocColor;
 
       readingForThisInvoice = {
         id: `synth_${item.id || Math.random()}`,
         rental_invoice_id: item.id,
-        customer_type: isAtlas ? 'atlas' : 'great',
+        customer_type: isAtlas ? "atlas" : "great",
         customer_id: custId,
         customer: assetInfo.customer,
         unit: assetInfo.unit,
         unit_id: assetInfo.unit?.id,
         period_label: periodLabel,
-        period_date: item.period_start || item.monthly_date || item.invoice_date,
+        period_date:
+          item.period_start || item.monthly_date || item.invoice_date,
         counter_awal_bw: startBW,
         gross_counter_bw: grossBW,
         a3_counter_bw: a3BW,
@@ -1388,7 +2311,7 @@ async function buildAtlasGreatSheetsForInvoices(
         allocation_color: allocColor,
         total_bw: totalBW,
         total_color: totalColor,
-      }
+      };
     }
 
     if (!customerMap.has(custId)) {
@@ -1400,409 +2323,712 @@ async function buildAtlasGreatSheetsForInvoices(
         isGreat,
         readings: [readingForThisInvoice],
         assetInfo,
-      })
+      });
     } else {
-      customerMap.get(custId)!.readings.push(readingForThisInvoice)
+      customerMap.get(custId)!.readings.push(readingForThisInvoice);
     }
   }
 
-  const generatedSheets: Array<{ name: string; columnWidths: number[]; rows: StyledCell[][] }> = []
+  const generatedSheets: Array<{
+    name: string;
+    columnWidths: number[];
+    rows: StyledCell[][];
+  }> = [];
 
   for (const [, custData] of customerMap) {
-    const isAtlas = custData.isAtlas
-    const defaultTitle = isAtlas ? 'Atlas Copco' : 'PT Great Eastern'
-    let custTitle = custData.custName
-    if (!custTitle || custTitle === '-' || custTitle === 'Customer') {
-      custTitle = defaultTitle
+    const isAtlas = custData.isAtlas;
+    const defaultTitle = isAtlas ? "Atlas Copco" : "PT Great Eastern";
+    let custTitle = custData.custName;
+    if (!custTitle || custTitle === "-" || custTitle === "Customer") {
+      custTitle = defaultTitle;
     }
-    const sheetName = uniqueSheetName(custTitle, usedSheetNames)
+    const sheetName = uniqueSheetName(custTitle, usedSheetNames);
     const columnWidths = isAtlas
       ? [5.5, 24, 15, 16, 16, 16, 16, 26, 16, 18]
-      : [5.5, 24, 16, 16, 16, 26, 16, 18]
-    const mergeWidth = columnWidths.length - 1
+      : [5.5, 24, 16, 16, 16, 26, 16, 18];
+    const mergeWidth = columnWidths.length - 1;
 
-    const rows: StyledCell[][] = []
-    const addRow = (r: StyledCell[] = []) => rows.push(r)
-    const padEmpty = (count: number) => Array.from({ length: count }, () => ({}))
+    const rows: StyledCell[][] = [];
+    const addRow = (r: StyledCell[] = []) => rows.push(r);
+    const padEmpty = (count: number) =>
+      Array.from({ length: count }, () => ({}));
 
     // Header Perusahaan
-    addRow([{ v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: mergeWidth, style: 'plainBoldCenter' }, ...padEmpty(mergeWidth)])
-    addRow([{ v: 'Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Telp: +62 811 7045 657 | Email: admin@biasbst.com', mergeAcross: mergeWidth, style: 'plainCenter' }, ...padEmpty(mergeWidth)])
-    addRow([])
-    addRow([{ v: 'LEMBAR PERHITUNGAN PEMAKAIAN METER RENTAL', mergeAcross: mergeWidth, style: 'titleCell' }, ...padEmpty(mergeWidth)])
-    addRow([{
-      v: isAtlas
-        ? 'SKEMA: ATLAS COPCO (Deduksi Ukuran A3 & Rumus Alokasi 88% : 12%)'
-        : 'SKEMA: PT GREAT EASTERN (Direct Counter & Rumus Alokasi 88% : 12%)',
-      mergeAcross: mergeWidth,
-      style: 'subTitleCell'
-    }, ...padEmpty(mergeWidth)])
-    addRow([])
+    addRow([
+      {
+        v: "PT. BiAS SURYA TEKNOLOGI",
+        mergeAcross: mergeWidth,
+        style: "plainBoldCenter",
+      },
+      ...padEmpty(mergeWidth),
+    ]);
+    addRow([
+      {
+        v: "Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Telp: +62 811 7045 657 | Email: admin@biasbst.com",
+        mergeAcross: mergeWidth,
+        style: "plainCenter",
+      },
+      ...padEmpty(mergeWidth),
+    ]);
+    addRow([]);
+    addRow([
+      {
+        v: "LEMBAR PERHITUNGAN PEMAKAIAN METER RENTAL",
+        mergeAcross: mergeWidth,
+        style: "titleCell",
+      },
+      ...padEmpty(mergeWidth),
+    ]);
+    addRow([
+      {
+        v: isAtlas
+          ? "SKEMA: ATLAS COPCO (Deduksi Ukuran A3 & Rumus Alokasi 88% : 12%)"
+          : "SKEMA: PT GREAT EASTERN (Direct Counter & Rumus Alokasi 88% : 12%)",
+        mergeAcross: mergeWidth,
+        style: "subTitleCell",
+      },
+      ...padEmpty(mergeWidth),
+    ]);
+    addRow([]);
 
     // Meta Informasi Customer & Mesin
-    const latestReading = custData.readings[0] || {}
-    const periodDisplay = latestReading.period_label || custData.assetInfo?.periodStr || '-'
-    const unitDisplay = custData.assetInfo?.brandModel || latestReading.unit?.model || 'Mesin Copier'
-    const snDisplay = custData.assetInfo?.serialNo || latestReading.unit?.serial_number || '-'
+    const latestReading = custData.readings[0] || {};
+    const periodDisplay =
+      latestReading.period_label || custData.assetInfo?.periodStr || "-";
+    const unitDisplay =
+      custData.assetInfo?.brandModel ||
+      latestReading.unit?.model ||
+      "Mesin Copier";
+    const snDisplay =
+      custData.assetInfo?.serialNo || latestReading.unit?.serial_number || "-";
 
-    const halfMerge = Math.floor(mergeWidth / 2) - 1
-    const remMerge = mergeWidth - (halfMerge + 1) - 2
+    const halfMerge = Math.floor(mergeWidth / 2) - 1;
+    const remMerge = mergeWidth - (halfMerge + 1) - 2;
 
     addRow([
-      { v: 'Customer :', style: 'borderBold' },
-      { v: custTitle, mergeAcross: halfMerge, style: 'borderBold' },
+      { v: "Customer :", style: "borderBold" },
+      { v: custTitle, mergeAcross: halfMerge, style: "borderBold" },
       ...padEmpty(halfMerge),
-      { v: 'Billing Cycle :', style: 'borderBold' },
-      { v: 'Setiap Tanggal 7 (Cut-Off Otomatis)', mergeAcross: remMerge, style: 'borderCenter' },
+      { v: "Billing Cycle :", style: "borderBold" },
+      {
+        v: "Setiap Tanggal 7 (Cut-Off Otomatis)",
+        mergeAcross: remMerge,
+        style: "borderCenter",
+      },
       ...padEmpty(remMerge),
-    ])
+    ]);
     addRow([
-      { v: 'Alamat :', style: 'border' },
-      { v: custData.custAddress || '-', mergeAcross: halfMerge, style: 'border' },
+      { v: "Alamat :", style: "border" },
+      {
+        v: custData.custAddress || "-",
+        mergeAcross: halfMerge,
+        style: "border",
+      },
       ...padEmpty(halfMerge),
-      { v: 'Periode :', style: 'borderBold' },
-      { v: periodDisplay, mergeAcross: remMerge, style: 'borderCenter' },
+      { v: "Periode :", style: "borderBold" },
+      { v: periodDisplay, mergeAcross: remMerge, style: "borderCenter" },
       ...padEmpty(remMerge),
-    ])
+    ]);
     addRow([
-      { v: 'Unit Mesin :', style: 'border' },
-      { v: unitDisplay, mergeAcross: halfMerge, style: 'border' },
+      { v: "Unit Mesin :", style: "border" },
+      { v: unitDisplay, mergeAcross: halfMerge, style: "border" },
       ...padEmpty(halfMerge),
-      { v: 'No. Seri (S/N) :', style: 'borderBold' },
-      { v: snDisplay, mergeAcross: remMerge, style: 'borderCenter' },
+      { v: "No. Seri (S/N) :", style: "borderBold" },
+      { v: snDisplay, mergeAcross: remMerge, style: "borderCenter" },
       ...padEmpty(remMerge),
-    ])
-    addRow([])
+    ]);
+    addRow([]);
 
-    let overallGrandTotalBW = 0
-    let overallGrandTotalCL = 0
+    let overallGrandTotalBW = 0;
+    let overallGrandTotalCL = 0;
 
     // Render masing-masing pencatatan mesin
     for (let rIdx = 0; rIdx < custData.readings.length; rIdx++) {
-      const r = custData.readings[rIdx]
-      const curUnit = r.unit ? (r.unit.model || r.unit.name || '') : unitDisplay
-      const curSN = r.unit ? (r.unit.serial_number || r.unit.serial_no || '-') : snDisplay
-      const curPeriod = r.period_label || periodDisplay
+      const r = custData.readings[rIdx];
+      const curUnit = r.unit ? r.unit.model || r.unit.name || "" : unitDisplay;
+      const curSN = r.unit
+        ? r.unit.serial_number || r.unit.serial_no || "-"
+        : snDisplay;
+      const curPeriod = r.period_label || periodDisplay;
 
       if (custData.readings.length > 1) {
-        addRow([{ v: `Pencatatan #${rIdx + 1} - Unit: ${curUnit} (SN: ${curSN}) | Periode: ${curPeriod}`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
+        addRow([
+          {
+            v: `Pencatatan #${rIdx + 1} - Unit: ${curUnit} (SN: ${curSN}) | Periode: ${curPeriod}`,
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
       }
 
       if (isAtlas) {
         // ATLAS TABLE HEADER (Dinamis Kertas)
-        let pDeducts: Array<{ name: string; bw: number; color: number }> = []
+        let pDeducts: Array<{ name: string; bw: number; color: number }> = [];
         if (r.paper_deductions) {
           try {
-            pDeducts = typeof r.paper_deductions === 'string' ? JSON.parse(r.paper_deductions) : r.paper_deductions
+            pDeducts =
+              typeof r.paper_deductions === "string"
+                ? JSON.parse(r.paper_deductions)
+                : r.paper_deductions;
           } catch (e) {}
         }
-        const bwDeduksi = pDeducts.length > 0 ? pDeducts.reduce((s, p) => s + Number(p.bw || 0), 0) : Number(r.a3_counter_bw || 0)
-        const colDeduksi = pDeducts.length > 0 ? pDeducts.reduce((s, p) => s + Number(p.color || 0), 0) : Number(r.a3_counter_color || 0)
-        const deductHeaderLabel = pDeducts.length > 1
-          ? `Deduksi Kertas (${pDeducts.map(p => p.name).join('+')}) (-)`
-          : (pDeducts.length === 1 ? `Deduksi Ukuran ${pDeducts[0].name} (-)` : 'Deduksi A3 (-)')
+        const bwDeduksi =
+          pDeducts.length > 0
+            ? pDeducts.reduce((s, p) => s + Number(p.bw || 0), 0)
+            : Number(r.a3_counter_bw || 0);
+        const colDeduksi =
+          pDeducts.length > 0
+            ? pDeducts.reduce((s, p) => s + Number(p.color || 0), 0)
+            : Number(r.a3_counter_color || 0);
+        const deductHeaderLabel =
+          pDeducts.length > 1
+            ? `Deduksi Kertas (${pDeducts.map((p) => p.name).join("+")}) (-)`
+            : pDeducts.length === 1
+              ? `Deduksi Ukuran ${pDeducts[0].name} (-)`
+              : "Deduksi A3 (-)";
 
         addRow([
-          { v: 'No', style: 'headerCell' },
-          { v: 'Kategori / Item', style: 'headerCell' },
-          { v: 'Counter Awal', style: 'headerCell' },
-          { v: 'Gross Mesin', style: 'headerCell' },
-          { v: deductHeaderLabel, style: 'headerCell' },
-          { v: 'Counter Akhir', style: 'headerCell' },
-          { v: 'Pemakaian Dasar', style: 'headerCell' },
-          { v: 'Rumus Alokasi (88%:12%)', style: 'headerCell' },
-          { v: 'Lembar Alokasi', style: 'headerCell' },
-          { v: 'Total Lembar Akhir', style: 'headerCell' },
-        ])
+          { v: "No", style: "headerCell" },
+          { v: "Kategori / Item", style: "headerCell" },
+          { v: "Counter Awal", style: "headerCell" },
+          { v: "Gross Mesin", style: "headerCell" },
+          { v: deductHeaderLabel, style: "headerCell" },
+          { v: "Counter Akhir", style: "headerCell" },
+          { v: "Pemakaian Dasar", style: "headerCell" },
+          { v: "Rumus Alokasi (88%:12%)", style: "headerCell" },
+          { v: "Lembar Alokasi", style: "headerCell" },
+          { v: "Total Lembar Akhir", style: "headerCell" },
+        ]);
 
-        const bwAwal = Number(r.counter_awal_bw || 0)
-        const bwGross = Number(r.gross_counter_bw || (Number(r.counter_akhir_bw || 0) + bwDeduksi))
-        const bwAkhir = Number(r.counter_akhir_bw || (bwGross - bwDeduksi))
-        const bwPemakaian = Number(r.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+        const bwAwal = Number(r.counter_awal_bw || 0);
+        const bwGross = Number(
+          r.gross_counter_bw || Number(r.counter_akhir_bw || 0) + bwDeduksi,
+        );
+        const bwAkhir = Number(r.counter_akhir_bw || bwGross - bwDeduksi);
+        const bwPemakaian = Number(
+          r.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal),
+        );
 
-        const colAwal = Number(r.counter_awal_color || 0)
-        const colGross = Number(r.gross_counter_color || (Number(r.counter_akhir_color || 0) + colDeduksi))
-        const colAkhir = Number(r.counter_akhir_color || (colGross - colDeduksi))
-        const colPemakaian = Number(r.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+        const colAwal = Number(r.counter_awal_color || 0);
+        const colGross = Number(
+          r.gross_counter_color ||
+            Number(r.counter_akhir_color || 0) + colDeduksi,
+        );
+        const colAkhir = Number(r.counter_akhir_color || colGross - colDeduksi);
+        const colPemakaian = Number(
+          r.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal),
+        );
 
-        const pctBW = Number(r.percentage_bw || 88)
-        const pctCol = Number(r.percentage_color || 12)
-        const allocBW = Number(r.allocation_bw || Math.round(colPemakaian * (pctBW / 100) * 100) / 100)
-        const allocCol = Number(r.allocation_color || Math.round(colPemakaian * (pctCol / 100) * 100) / 100)
+        const pctBW = Number(r.percentage_bw || 88);
+        const pctCol = Number(r.percentage_color || 12);
+        const allocBW = Number(
+          r.allocation_bw ||
+            Math.round(colPemakaian * (pctBW / 100) * 100) / 100,
+        );
+        const allocCol = Number(
+          r.allocation_color ||
+            Math.round(colPemakaian * (pctCol / 100) * 100) / 100,
+        );
 
-        const totalBW = Number(r.total_bw || Math.round((bwPemakaian + allocBW) * 100) / 100)
-        const totalCol = Number(r.total_color || allocCol)
-        const grandTotalLembar = Math.round((totalBW + totalCol) * 100) / 100
+        const totalBW = Number(
+          r.total_bw || Math.round((bwPemakaian + allocBW) * 100) / 100,
+        );
+        const totalCol = Number(r.total_color || allocCol);
+        const grandTotalLembar = Math.round((totalBW + totalCol) * 100) / 100;
 
-        overallGrandTotalBW += totalBW
-        overallGrandTotalCL += totalCol
+        overallGrandTotalBW += totalBW;
+        overallGrandTotalCL += totalCol;
 
         addRow([
-          { v: 1, style: 'borderCenter' },
-          { v: 'Black & White (BW)', style: 'borderBold' },
-          { v: bwAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: bwGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: bwDeduksi, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: bwAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: bwPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
-          { v: `88% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
-          { v: allocBW, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: totalBW, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
-        ])
+          { v: 1, style: "borderCenter" },
+          { v: "Black & White (BW)", style: "borderBold" },
+          { v: bwAwal, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: bwGross, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: bwDeduksi, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: bwAkhir, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: bwPemakaian, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+          {
+            v: `88% dari Pemakaian CL (${colPemakaian.toLocaleString()})`,
+            style: "borderCenter",
+          },
+          { v: allocBW, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: totalBW, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+        ]);
 
         addRow([
-          { v: 2, style: 'borderCenter' },
-          { v: 'Colour (CL)', style: 'borderBold' },
-          { v: colAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: colGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: colDeduksi, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: colAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: colPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
-          { v: `12% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
-          { v: allocCol, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
-        ])
+          { v: 2, style: "borderCenter" },
+          { v: "Colour (CL)", style: "borderBold" },
+          { v: colAwal, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: colGross, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: colDeduksi, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: colAkhir, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: colPemakaian, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+          {
+            v: `12% dari Pemakaian CL (${colPemakaian.toLocaleString()})`,
+            style: "borderCenter",
+          },
+          { v: allocCol, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: totalCol, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+        ]);
 
-        const hasDouble = (Number(r.counter_akhir_bw_double || r.counter_awal_bw_double || r.gross_counter_bw_double) > 0) ||
-                          (Number(r.counter_akhir_color_double || r.counter_awal_color_double || r.gross_counter_color_double) > 0)
+        const hasDouble =
+          Number(
+            r.counter_akhir_bw_double ||
+              r.counter_awal_bw_double ||
+              r.gross_counter_bw_double,
+          ) > 0 ||
+          Number(
+            r.counter_akhir_color_double ||
+              r.counter_awal_color_double ||
+              r.gross_counter_color_double,
+          ) > 0;
         if (hasDouble) {
-          const bwDblAwal = Number(r.counter_awal_bw_double || 0)
-          const bwDblGross = Number(r.gross_counter_bw_double || 0)
-          const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross)
-          const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
+          const bwDblAwal = Number(r.counter_awal_bw_double || 0);
+          const bwDblGross = Number(r.gross_counter_bw_double || 0);
+          const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross);
+          const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal);
           if (bwDblAkhir > 0 || bwDblGross > 0 || bwDblAwal > 0) {
             addRow([
-              { v: '2S', style: 'borderCenter' },
-              { v: '↳ Black & White (2-Sided)', style: 'border' },
-              { v: bwDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: bwDblGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: bwDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: '2-Sided Tracking', style: 'borderCenter' },
-              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
-            ])
+              { v: "2S", style: "borderCenter" },
+              { v: "↳ Black & White (2-Sided)", style: "border" },
+              { v: bwDblAwal, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: bwDblGross, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: 0, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: bwDblAkhir, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: bwDblUsage, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: "2-Sided Tracking", style: "borderCenter" },
+              { v: 0, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: bwDblUsage, style: "borderRight", numFmt: NUMFMT_COUNT },
+            ]);
           }
-          const colDblAwal = Number(r.counter_awal_color_double || 0)
-          const colDblGross = Number(r.gross_counter_color_double || 0)
-          const colDblAkhir = Number(r.counter_akhir_color_double || colDblGross)
-          const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
+          const colDblAwal = Number(r.counter_awal_color_double || 0);
+          const colDblGross = Number(r.gross_counter_color_double || 0);
+          const colDblAkhir = Number(
+            r.counter_akhir_color_double || colDblGross,
+          );
+          const colDblUsage = Math.max(0, colDblAkhir - colDblAwal);
           if (colDblAkhir > 0 || colDblGross > 0 || colDblAwal > 0) {
             addRow([
-              { v: '2S', style: 'borderCenter' },
-              { v: '↳ Colour (2-Sided)', style: 'border' },
-              { v: colDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: colDblGross, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: colDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: '2-Sided Tracking', style: 'borderCenter' },
-              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
-            ])
+              { v: "2S", style: "borderCenter" },
+              { v: "↳ Colour (2-Sided)", style: "border" },
+              { v: colDblAwal, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: colDblGross, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: 0, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: colDblAkhir, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: colDblUsage, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: "2-Sided Tracking", style: "borderCenter" },
+              { v: 0, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: colDblUsage, style: "borderRight", numFmt: NUMFMT_COUNT },
+            ]);
           }
         }
 
         addRow([
-          { v: 'SUBTOTAL LEMBAR', mergeAcross: 5, style: 'totalCell' },
+          { v: "SUBTOTAL LEMBAR", mergeAcross: 5, style: "totalCell" },
           ...padEmpty(5),
-          { v: bwPemakaian + colPemakaian, style: 'totalCell', numFmt: NUMFMT_COUNT },
-          { v: 'Total Alokasi 100%', style: 'totalCell' },
-          { v: allocBW + allocCol, style: 'totalCell', numFmt: NUMFMT_COUNT },
-          { v: grandTotalLembar, style: 'grandTotalCell', numFmt: NUMFMT_COUNT },
-        ])
+          {
+            v: bwPemakaian + colPemakaian,
+            style: "totalCell",
+            numFmt: NUMFMT_COUNT,
+          },
+          { v: "Total Alokasi 100%", style: "totalCell" },
+          { v: allocBW + allocCol, style: "totalCell", numFmt: NUMFMT_COUNT },
+          {
+            v: grandTotalLembar,
+            style: "grandTotalCell",
+            numFmt: NUMFMT_COUNT,
+          },
+        ]);
 
         if (pDeducts.length > 1) {
-          const detailStr = pDeducts.map(p => `${p.name} (BW: ${Number(p.bw || 0).toLocaleString()}, CL: ${Number(p.color || 0).toLocaleString()})`).join(' | ')
-          addRow([{ v: `* Rincian Deduksi per Ukuran Kertas: ${detailStr}`, mergeAcross: mergeWidth, style: 'plain' }, ...padEmpty(mergeWidth)])
+          const detailStr = pDeducts
+            .map(
+              (p) =>
+                `${p.name} (BW: ${Number(p.bw || 0).toLocaleString()}, CL: ${Number(p.color || 0).toLocaleString()})`,
+            )
+            .join(" | ");
+          addRow([
+            {
+              v: `* Rincian Deduksi per Ukuran Kertas: ${detailStr}`,
+              mergeAcross: mergeWidth,
+              style: "plain",
+            },
+            ...padEmpty(mergeWidth),
+          ]);
         }
 
-        addRow([])
-        addRow([{ v: 'Rincian Rumus Alokasi & Rekapitulasi Lembar:', mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• Pemakaian Dasar BW = Counter Akhir (${bwAkhir.toLocaleString()}) - Counter Awal (${bwAwal.toLocaleString()}) = ${bwPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• Pemakaian Dasar Color = Counter Akhir (${colAkhir.toLocaleString()}) - Counter Awal (${colAwal.toLocaleString()}) = ${colPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• Alokasi Color ke BW (88%) = 88% × ${colPemakaian.toLocaleString()} = ${allocBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• Alokasi Color Murni (12%) = 12% × ${colPemakaian.toLocaleString()} = ${allocCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• TOTAL AKHIR BW = Pemakaian Dasar BW (${bwPemakaian.toLocaleString()}) + Alokasi Color 88% (${allocBW.toLocaleString()}) = ${totalBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• TOTAL AKHIR COLOR = Alokasi Color Murni 12% = ${totalCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• GRAND TOTAL PEMAKAIAN = ${grandTotalLembar.toLocaleString()} LEMBAR`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
-        addRow([])
+        addRow([]);
+        addRow([
+          {
+            v: "Rincian Rumus Alokasi & Rekapitulasi Lembar:",
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• Pemakaian Dasar BW = Counter Akhir (${bwAkhir.toLocaleString()}) - Counter Awal (${bwAwal.toLocaleString()}) = ${bwPemakaian.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainLeft",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• Pemakaian Dasar Color = Counter Akhir (${colAkhir.toLocaleString()}) - Counter Awal (${colAwal.toLocaleString()}) = ${colPemakaian.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainLeft",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• Alokasi Color ke BW (88%) = 88% × ${colPemakaian.toLocaleString()} = ${allocBW.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainLeft",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• Alokasi Color Murni (12%) = 12% × ${colPemakaian.toLocaleString()} = ${allocCol.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainLeft",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• TOTAL AKHIR BW = Pemakaian Dasar BW (${bwPemakaian.toLocaleString()}) + Alokasi Color 88% (${allocBW.toLocaleString()}) = ${totalBW.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• TOTAL AKHIR COLOR = Alokasi Color Murni 12% = ${totalCol.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• GRAND TOTAL PEMAKAIAN = ${grandTotalLembar.toLocaleString()} LEMBAR`,
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([]);
       } else {
         // GREAT TABLE HEADER (Direct counter tanpa Gross/Deduksi A3)
         addRow([
-          { v: 'No', style: 'headerCell' },
-          { v: 'Kategori / Item', style: 'headerCell' },
-          { v: 'Counter Awal', style: 'headerCell' },
-          { v: 'Counter Akhir', style: 'headerCell' },
-          { v: 'Pemakaian Dasar', style: 'headerCell' },
-          { v: 'Rumus Alokasi (88%:12%)', style: 'headerCell' },
-          { v: 'Lembar Alokasi', style: 'headerCell' },
-          { v: 'Total Lembar Akhir', style: 'headerCell' },
-        ])
+          { v: "No", style: "headerCell" },
+          { v: "Kategori / Item", style: "headerCell" },
+          { v: "Counter Awal", style: "headerCell" },
+          { v: "Counter Akhir", style: "headerCell" },
+          { v: "Pemakaian Dasar", style: "headerCell" },
+          { v: "Rumus Alokasi (88%:12%)", style: "headerCell" },
+          { v: "Lembar Alokasi", style: "headerCell" },
+          { v: "Total Lembar Akhir", style: "headerCell" },
+        ]);
 
-        const bwAwal = Number(r.counter_awal_bw || 0)
-        const bwAkhir = Number(r.counter_akhir_bw || 0)
-        const bwPemakaian = Number(r.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal))
+        const bwAwal = Number(r.counter_awal_bw || 0);
+        const bwAkhir = Number(r.counter_akhir_bw || 0);
+        const bwPemakaian = Number(
+          r.pemakaian_bw_dasar ?? Math.max(0, bwAkhir - bwAwal),
+        );
 
-        const colAwal = Number(r.counter_awal_color || 0)
-        const colAkhir = Number(r.counter_akhir_color || 0)
-        const colPemakaian = Number(r.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal))
+        const colAwal = Number(r.counter_awal_color || 0);
+        const colAkhir = Number(r.counter_akhir_color || 0);
+        const colPemakaian = Number(
+          r.pemakaian_color_dasar ?? Math.max(0, colAkhir - colAwal),
+        );
 
-        const pctBW = Number(r.percentage_bw || 88)
-        const pctCol = Number(r.percentage_color || 12)
-        const allocBW = Number(r.allocation_bw || Math.round(colPemakaian * (pctBW / 100) * 100) / 100)
-        const allocCol = Number(r.allocation_color || Math.round(colPemakaian * (pctCol / 100) * 100) / 100)
+        const pctBW = Number(r.percentage_bw || 88);
+        const pctCol = Number(r.percentage_color || 12);
+        const allocBW = Number(
+          r.allocation_bw ||
+            Math.round(colPemakaian * (pctBW / 100) * 100) / 100,
+        );
+        const allocCol = Number(
+          r.allocation_color ||
+            Math.round(colPemakaian * (pctCol / 100) * 100) / 100,
+        );
 
-        const totalBW = Number(r.total_bw || Math.round((bwPemakaian + allocBW) * 100) / 100)
-        const totalCol = Number(r.total_color || allocCol)
-        const grandTotalLembar = Math.round((totalBW + totalCol) * 100) / 100
+        const totalBW = Number(
+          r.total_bw || Math.round((bwPemakaian + allocBW) * 100) / 100,
+        );
+        const totalCol = Number(r.total_color || allocCol);
+        const grandTotalLembar = Math.round((totalBW + totalCol) * 100) / 100;
 
-        overallGrandTotalBW += totalBW
-        overallGrandTotalCL += totalCol
+        overallGrandTotalBW += totalBW;
+        overallGrandTotalCL += totalCol;
 
         addRow([
-          { v: 1, style: 'borderCenter' },
-          { v: 'Black & White (BW)', style: 'borderBold' },
-          { v: bwAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: bwAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: bwPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
-          { v: `88% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
-          { v: allocBW, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: totalBW, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
-        ])
+          { v: 1, style: "borderCenter" },
+          { v: "Black & White (BW)", style: "borderBold" },
+          { v: bwAwal, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: bwAkhir, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: bwPemakaian, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+          {
+            v: `88% dari Pemakaian CL (${colPemakaian.toLocaleString()})`,
+            style: "borderCenter",
+          },
+          { v: allocBW, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: totalBW, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+        ]);
 
         addRow([
-          { v: 2, style: 'borderCenter' },
-          { v: 'Colour (CL)', style: 'borderBold' },
-          { v: colAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: colAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: colPemakaian, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
-          { v: `12% dari Pemakaian CL (${colPemakaian.toLocaleString()})`, style: 'borderCenter' },
-          { v: allocCol, style: 'borderRight', numFmt: NUMFMT_COUNT },
-          { v: totalCol, style: 'borderBoldRight', numFmt: NUMFMT_COUNT },
-        ])
+          { v: 2, style: "borderCenter" },
+          { v: "Colour (CL)", style: "borderBold" },
+          { v: colAwal, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: colAkhir, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: colPemakaian, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+          {
+            v: `12% dari Pemakaian CL (${colPemakaian.toLocaleString()})`,
+            style: "borderCenter",
+          },
+          { v: allocCol, style: "borderRight", numFmt: NUMFMT_COUNT },
+          { v: totalCol, style: "borderBoldRight", numFmt: NUMFMT_COUNT },
+        ]);
 
-        const hasDouble = (Number(r.counter_akhir_bw_double || r.counter_awal_bw_double || r.gross_counter_bw_double) > 0) ||
-                          (Number(r.counter_akhir_color_double || r.counter_awal_color_double || r.gross_counter_color_double) > 0)
+        const hasDouble =
+          Number(
+            r.counter_akhir_bw_double ||
+              r.counter_awal_bw_double ||
+              r.gross_counter_bw_double,
+          ) > 0 ||
+          Number(
+            r.counter_akhir_color_double ||
+              r.counter_awal_color_double ||
+              r.gross_counter_color_double,
+          ) > 0;
         if (hasDouble) {
-          const bwDblAwal = Number(r.counter_awal_bw_double || 0)
-          const bwDblGross = Number(r.gross_counter_bw_double || 0)
-          const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross)
-          const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal)
+          const bwDblAwal = Number(r.counter_awal_bw_double || 0);
+          const bwDblGross = Number(r.gross_counter_bw_double || 0);
+          const bwDblAkhir = Number(r.counter_akhir_bw_double || bwDblGross);
+          const bwDblUsage = Math.max(0, bwDblAkhir - bwDblAwal);
           if (bwDblAkhir > 0 || bwDblGross > 0 || bwDblAwal > 0) {
             addRow([
-              { v: '2S', style: 'borderCenter' },
-              { v: '↳ Black & White (2-Sided)', style: 'border' },
-              { v: bwDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: bwDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: '2-Sided Tracking', style: 'borderCenter' },
-              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: bwDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
-            ])
+              { v: "2S", style: "borderCenter" },
+              { v: "↳ Black & White (2-Sided)", style: "border" },
+              { v: bwDblAwal, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: bwDblAkhir, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: bwDblUsage, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: "2-Sided Tracking", style: "borderCenter" },
+              { v: 0, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: bwDblUsage, style: "borderRight", numFmt: NUMFMT_COUNT },
+            ]);
           }
-          const colDblAwal = Number(r.counter_awal_color_double || 0)
-          const colDblGross = Number(r.gross_counter_color_double || 0)
-          const colDblAkhir = Number(r.counter_akhir_color_double || colDblGross)
-          const colDblUsage = Math.max(0, colDblAkhir - colDblAwal)
+          const colDblAwal = Number(r.counter_awal_color_double || 0);
+          const colDblGross = Number(r.gross_counter_color_double || 0);
+          const colDblAkhir = Number(
+            r.counter_akhir_color_double || colDblGross,
+          );
+          const colDblUsage = Math.max(0, colDblAkhir - colDblAwal);
           if (colDblAkhir > 0 || colDblGross > 0 || colDblAwal > 0) {
             addRow([
-              { v: '2S', style: 'borderCenter' },
-              { v: '↳ Colour (2-Sided)', style: 'border' },
-              { v: colDblAwal, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: colDblAkhir, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: '2-Sided Tracking', style: 'borderCenter' },
-              { v: 0, style: 'borderRight', numFmt: NUMFMT_COUNT },
-              { v: colDblUsage, style: 'borderRight', numFmt: NUMFMT_COUNT },
-            ])
+              { v: "2S", style: "borderCenter" },
+              { v: "↳ Colour (2-Sided)", style: "border" },
+              { v: colDblAwal, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: colDblAkhir, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: colDblUsage, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: "2-Sided Tracking", style: "borderCenter" },
+              { v: 0, style: "borderRight", numFmt: NUMFMT_COUNT },
+              { v: colDblUsage, style: "borderRight", numFmt: NUMFMT_COUNT },
+            ]);
           }
         }
 
         addRow([
-          { v: 'SUBTOTAL LEMBAR', mergeAcross: 3, style: 'totalCell' },
+          { v: "SUBTOTAL LEMBAR", mergeAcross: 3, style: "totalCell" },
           ...padEmpty(3),
-          { v: bwPemakaian + colPemakaian, style: 'totalCell', numFmt: NUMFMT_COUNT },
-          { v: 'Total Alokasi 100%', style: 'totalCell' },
-          { v: allocBW + allocCol, style: 'totalCell', numFmt: NUMFMT_COUNT },
-          { v: grandTotalLembar, style: 'grandTotalCell', numFmt: NUMFMT_COUNT },
-        ])
+          {
+            v: bwPemakaian + colPemakaian,
+            style: "totalCell",
+            numFmt: NUMFMT_COUNT,
+          },
+          { v: "Total Alokasi 100%", style: "totalCell" },
+          { v: allocBW + allocCol, style: "totalCell", numFmt: NUMFMT_COUNT },
+          {
+            v: grandTotalLembar,
+            style: "grandTotalCell",
+            numFmt: NUMFMT_COUNT,
+          },
+        ]);
 
-        addRow([])
-        addRow([{ v: 'Rincian Rumus Alokasi & Rekapitulasi Lembar:', mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• Pemakaian Dasar BW = Counter Akhir (${bwAkhir.toLocaleString()}) - Counter Awal (${bwAwal.toLocaleString()}) = ${bwPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• Pemakaian Dasar Color = Counter Akhir (${colAkhir.toLocaleString()}) - Counter Awal (${colAwal.toLocaleString()}) = ${colPemakaian.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• Alokasi Color ke BW (88%) = 88% × ${colPemakaian.toLocaleString()} = ${allocBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• Alokasi Color Murni (12%) = 12% × ${colPemakaian.toLocaleString()} = ${allocCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainLeft' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• TOTAL AKHIR BW = Pemakaian Dasar BW (${bwPemakaian.toLocaleString()}) + Alokasi Color 88% (${allocBW.toLocaleString()}) = ${totalBW.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• TOTAL AKHIR COLOR = Alokasi Color Murni 12% = ${totalCol.toLocaleString()} Lembar`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
-        addRow([{ v: `• GRAND TOTAL PEMAKAIAN = ${grandTotalLembar.toLocaleString()} LEMBAR`, mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
-        addRow([])
+        addRow([]);
+        addRow([
+          {
+            v: "Rincian Rumus Alokasi & Rekapitulasi Lembar:",
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• Pemakaian Dasar BW = Counter Akhir (${bwAkhir.toLocaleString()}) - Counter Awal (${bwAwal.toLocaleString()}) = ${bwPemakaian.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainLeft",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• Pemakaian Dasar Color = Counter Akhir (${colAkhir.toLocaleString()}) - Counter Awal (${colAwal.toLocaleString()}) = ${colPemakaian.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainLeft",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• Alokasi Color ke BW (88%) = 88% × ${colPemakaian.toLocaleString()} = ${allocBW.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainLeft",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• Alokasi Color Murni (12%) = 12% × ${colPemakaian.toLocaleString()} = ${allocCol.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainLeft",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• TOTAL AKHIR BW = Pemakaian Dasar BW (${bwPemakaian.toLocaleString()}) + Alokasi Color 88% (${allocBW.toLocaleString()}) = ${totalBW.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• TOTAL AKHIR COLOR = Alokasi Color Murni 12% = ${totalCol.toLocaleString()} Lembar`,
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([
+          {
+            v: `• GRAND TOTAL PEMAKAIAN = ${grandTotalLembar.toLocaleString()} LEMBAR`,
+            mergeAcross: mergeWidth,
+            style: "plainBold",
+          },
+          ...padEmpty(mergeWidth),
+        ]);
+        addRow([]);
       }
     }
 
     if (custData.readings.length > 1) {
-      addRow([{ v: 'REKAPITULASI KESELURUHAN UNIT:', mergeAcross: mergeWidth, style: 'plainBold' }, ...padEmpty(mergeWidth)])
       addRow([
-        { v: `TOTAL SEMUA UNIT: BW = ${overallGrandTotalBW.toLocaleString()} Lembar | Colour = ${overallGrandTotalCL.toLocaleString()} Lembar | GRAND TOTAL = ${(overallGrandTotalBW + overallGrandTotalCL).toLocaleString()} LEMBAR`, mergeAcross: mergeWidth, style: 'grandTotalCell' },
-        ...padEmpty(mergeWidth)
-      ])
-      addRow([])
+        {
+          v: "REKAPITULASI KESELURUHAN UNIT:",
+          mergeAcross: mergeWidth,
+          style: "plainBold",
+        },
+        ...padEmpty(mergeWidth),
+      ]);
+      addRow([
+        {
+          v: `TOTAL SEMUA UNIT: BW = ${overallGrandTotalBW.toLocaleString()} Lembar | Colour = ${overallGrandTotalCL.toLocaleString()} Lembar | GRAND TOTAL = ${(overallGrandTotalBW + overallGrandTotalCL).toLocaleString()} LEMBAR`,
+          mergeAcross: mergeWidth,
+          style: "grandTotalCell",
+        },
+        ...padEmpty(mergeWidth),
+      ]);
+      addRow([]);
     }
 
     // Blok Otorisasi / Tanda Tangan
-    addRow([])
-    const sigHalf = Math.floor(mergeWidth / 2)
-    const sigRem = mergeWidth - sigHalf - 1
+    addRow([]);
+    const sigHalf = Math.floor(mergeWidth / 2);
+    const sigRem = mergeWidth - sigHalf - 1;
     addRow([
-      { v: 'Received By,', mergeAcross: sigHalf, style: 'plainBoldCenter' },
+      { v: "Received By,", mergeAcross: sigHalf, style: "plainBoldCenter" },
       ...padEmpty(sigHalf),
-      { v: 'PT. BiAS SURYA TEKNOLOGI', mergeAcross: sigRem, style: 'plainBoldCenter' },
+      {
+        v: "PT. BiAS SURYA TEKNOLOGI",
+        mergeAcross: sigRem,
+        style: "plainBoldCenter",
+      },
       ...padEmpty(sigRem),
-    ])
-    addRow([])
-    addRow([])
+    ]);
+    addRow([]);
+    addRow([]);
     addRow([
-      { v: '_______________________', mergeAcross: sigHalf, style: 'plainCenter' },
+      {
+        v: "_______________________",
+        mergeAcross: sigHalf,
+        style: "plainCenter",
+      },
       ...padEmpty(sigHalf),
-      { v: '_______________________', mergeAcross: sigRem, style: 'plainCenter' },
+      {
+        v: "_______________________",
+        mergeAcross: sigRem,
+        style: "plainCenter",
+      },
       ...padEmpty(sigRem),
-    ])
+    ]);
     addRow([
-      { v: `( ${custTitle} )`, mergeAcross: sigHalf, style: 'plainBoldCenter' },
+      { v: `( ${custTitle} )`, mergeAcross: sigHalf, style: "plainBoldCenter" },
       ...padEmpty(sigHalf),
-      { v: '( Admin Finance / Technical )', mergeAcross: sigRem, style: 'plainBoldCenter' },
+      {
+        v: "( Admin Finance / Technical )",
+        mergeAcross: sigRem,
+        style: "plainBoldCenter",
+      },
       ...padEmpty(sigRem),
-    ])
+    ]);
 
-    generatedSheets.push({ name: sheetName, columnWidths, rows })
+    generatedSheets.push({ name: sheetName, columnWidths, rows });
   }
 
-  return generatedSheets
+  return generatedSheets;
 }
 
 async function exportAtlasGreatInvoicesExcel() {
-  if (isExporting.value) return
-  isExporting.value = true
+  if (isExporting.value) return;
+  isExporting.value = true;
   try {
-    const res: any = await resources.atlasGreatReadings.list({ per_page: 500 })
-    const agReadings = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+    const res: any = await resources.atlasGreatReadings.list({ per_page: 500 });
+    const agReadings = Array.isArray(res?.data)
+      ? res.data
+      : Array.isArray(res)
+        ? res
+        : [];
     if (agReadings.length === 0) {
-      toast.warning('Belum ada data pencatatan meter Atlas / Great.')
-      return
+      toast.warning("Belum ada data pencatatan meter Atlas / Great.");
+      return;
     }
 
-    const usedSheetNames = new Set<string>()
+    const usedSheetNames = new Set<string>();
     const pseudoItems = agReadings.map((r: any) => {
-      let cust = r.customer || findCustomer(r.customer_id)
-      let custName = cust?.company_name || cust?.name || (r.customer_type === 'great' ? 'PT Great Eastern' : 'Atlas Copco')
-      if (!custName || custName === '-') {
-        custName = r.customer_type === 'great' ? 'PT Great Eastern' : 'Atlas Copco'
+      let cust = r.customer || findCustomer(r.customer_id);
+      let custName =
+        cust?.company_name ||
+        cust?.name ||
+        (r.customer_type === "great" ? "PT Great Eastern" : "Atlas Copco");
+      if (!custName || custName === "-") {
+        custName =
+          r.customer_type === "great" ? "PT Great Eastern" : "Atlas Copco";
       }
       return {
         id: r.id,
-        customer_type: r.customer_type || (custName.toLowerCase().includes('great') ? 'great' : 'atlas'),
+        customer_type:
+          r.customer_type ||
+          (custName.toLowerCase().includes("great") ? "great" : "atlas"),
         customer_id: r.customer_id,
         customer: cust || { company_name: custName, name: custName },
         customer_name: custName,
@@ -1817,184 +3043,210 @@ async function exportAtlasGreatInvoicesExcel() {
         counter_akhir_color: r.counter_akhir_color,
         pemakaian_color: r.pemakaian_color,
         meter_details: r.meter_details,
-      }
-    })
+      };
+    });
 
-    const sheets = await buildAtlasGreatSheetsForInvoices(pseudoItems, usedSheetNames)
+    const sheets = await buildAtlasGreatSheetsForInvoices(
+      pseudoItems,
+      usedSheetNames,
+    );
     if (sheets.length === 0) {
-      toast.warning('Tidak ada sheet kalkulasi yang terbentuk.')
-      return
+      toast.warning("Tidak ada sheet kalkulasi yang terbentuk.");
+      return;
     }
 
-    await downloadStyledExcel(sheets, `Perhitungan_Meter_Atlas_Great_${new Date().toISOString().slice(0, 10)}`)
-    toast.success('Excel Perhitungan Meter Atlas & Great berhasil didownload.')
+    await downloadStyledExcel(
+      sheets,
+      `Perhitungan_Meter_Atlas_Great_${new Date().toISOString().slice(0, 10)}`,
+    );
+    toast.success("Excel Perhitungan Meter Atlas & Great berhasil didownload.");
   } catch (err: any) {
-    toast.error('Gagal export kalkulasi Atlas & Great: ' + (err?.message || 'Error'))
+    toast.error(
+      "Gagal export kalkulasi Atlas & Great: " + (err?.message || "Error"),
+    );
   } finally {
-    isExporting.value = false
+    isExporting.value = false;
   }
 }
 
 function exportMonthToPdf() {
   try {
-    const items = filteredData.value
+    const items = filteredData.value;
     if (items.length === 0) {
-      toast.warning('No rental invoice data to export to PDF!')
-      return
+      toast.warning("No rental invoice data to export to PDF!");
+      return;
     }
-    let periodLabel = 'Semua Periode'
+    let periodLabel = "Semua Periode";
     if (monthFilter.value) {
-      const [y, m] = monthFilter.value.split('-')
-      const mName = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
-      periodLabel = mName
+      const [y, m] = monthFilter.value.split("-");
+      const mName = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString(
+        "id-ID",
+        { month: "long", year: "numeric" },
+      );
+      periodLabel = mName;
     } else if (startDateFilter.value || endDateFilter.value) {
-      periodLabel = `${startDateFilter.value || 'Awal'} s/d ${endDateFilter.value || 'Akhir'}`
+      periodLabel = `${startDateFilter.value || "Awal"} s/d ${endDateFilter.value || "Akhir"}`;
     }
-    const html = renderRentalInvoicesPdf(items, `Rental Invoices - ${periodLabel}`)
-    const printWindow = window.open('', '_blank')
+    const html = renderRentalInvoicesPdf(
+      items,
+      `Rental Invoices - ${periodLabel}`,
+    );
+    const printWindow = window.open("", "_blank");
     if (printWindow) {
-      printWindow.document.write(html)
-      printWindow.document.close()
+      printWindow.document.write(html);
+      printWindow.document.close();
     } else {
-      toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
+      toast.warning("Izinkan pop-up browser untuk mencetak / download PDF.");
     }
   } catch (err: any) {
-    toast.error('Gagal export PDF Rental Invoice: ' + (err?.message || 'Error'))
+    toast.error(
+      "Gagal export PDF Rental Invoice: " + (err?.message || "Error"),
+    );
   }
 }
 
 function exportAnnualPdf() {
   try {
-    const year = normalizeExportYear(yearFilter.value)
+    const year = normalizeExportYear(yearFilter.value);
     if (year === null) {
-      toast.warning('Invalid year (1900–2100)!')
-      return
+      toast.warning("Invalid year (1900–2100)!");
+      return;
     }
-    const items = filterApprovedPaid(filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS))
+    const items = filterApprovedPaid(
+      filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS),
+    );
     if (items.length === 0) {
-      toast.warning(`No approved & paid rental invoice data for year ${year}!`)
-      return
+      toast.warning(`No approved & paid rental invoice data for year ${year}!`);
+      return;
     }
-    const html = renderRentalInvoicesPdf(items, `Rental Invoices Annual ${year}`)
-    const printWindow = window.open('', '_blank')
+    const html = renderRentalInvoicesPdf(
+      items,
+      `Rental Invoices Annual ${year}`,
+    );
+    const printWindow = window.open("", "_blank");
     if (printWindow) {
-      printWindow.document.write(html)
-      printWindow.document.close()
+      printWindow.document.write(html);
+      printWindow.document.close();
     } else {
-      toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
+      toast.warning("Izinkan pop-up browser untuk mencetak / download PDF.");
     }
   } catch (err: any) {
-    toast.error('Gagal export PDF Tahunan: ' + (err?.message || 'Error'))
+    toast.error("Gagal export PDF Tahunan: " + (err?.message || "Error"));
   }
 }
 
 const form = reactive({
-  invoice_no: '',
+  invoice_no: "",
   contract_item_id: null as any,
   customer_id: null as any,
-  period_start: '',
-  period_end: '',
-  monthly_date: '',
-  due_date: '',
+  period_start: "",
+  period_end: "",
+  monthly_date: "",
+  due_date: "",
   basis_rental_fee: 0,
   excess_amount: 0,
   subtotal: 0,
   tax: 0,
   total_pay: 0,
-  status: 'unpaid',
+  status: "unpaid",
   meter_start: 0,
   meter_end: 0,
   free_copies: 2000,
-  rate_per_page: 150
-})
+  rate_per_page: 150,
+});
 
-const defaultForm = { ...form }
+const defaultForm = { ...form };
 
 const customerFilterOptions = computed(() => [
-  { value: '', label: 'All Customers' },
+  { value: "", label: "All Customers" },
   ...(customers.value as any[]).map((customer: any) => ({
     value: String(customer.id),
-    label: customer.company_name || customer.name || '-',
+    label: customer.company_name || customer.name || "-",
   })),
-])
+]);
 const riContractOptions = computed(() =>
   (contractItems.value as any[]).map((ci: any) => ({
     value: ci.id,
     label: ci.contract_no,
   })),
-)
+);
 const riCustomerOptions = computed(() =>
   (customers.value as any[]).map((c: any) => ({
     value: c.id,
-    label: c.company_name || c.name || '-',
+    label: c.company_name || c.name || "-",
   })),
-)
+);
 const riStatusOptions = [
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'overdue', label: 'Overdue' },
-]
+  { value: "unpaid", label: "Unpaid" },
+  { value: "paid", label: "Paid" },
+  { value: "overdue", label: "Overdue" },
+];
 const riPaymentMethodOptions = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'transfer', label: 'Bank Transfer' },
-  { value: 'credit_card', label: 'Credit / Debit Card' },
-]
+  { value: "cash", label: "Cash" },
+  { value: "transfer", label: "Bank Transfer" },
+  { value: "credit_card", label: "Credit / Debit Card" },
+];
 
 async function exportAnnualExcel() {
-  if (isExporting.value) return
+  if (isExporting.value) return;
   // Strict filter: only records with ALL dates inside the selected year,
   // so other-year data (e.g. 2027) is excluded when exporting 2026.
-  const year = normalizeExportYear(yearFilter.value)
+  const year = normalizeExportYear(yearFilter.value);
   if (year === null) {
-    toast.warning('Invalid year (1900–2100)!')
-    return
+    toast.warning("Invalid year (1900–2100)!");
+    return;
   }
   // Annual export only for invoices that are approved AND paid.
-  const items = filterApprovedPaid(filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS))
+  const items = filterApprovedPaid(
+    filterByYear(data.value, year, RENTAL_INVOICE_YEAR_FIELDS),
+  );
   if (items.length === 0) {
-    toast.warning(`No approved & paid rental invoice data for year ${year}!`)
-    return
+    toast.warning(`No approved & paid rental invoice data for year ${year}!`);
+    return;
   }
-  isExporting.value = true
+  isExporting.value = true;
   try {
-    await exportInvoicesToExcel(items, `RentalInvoice_Annual_${year}`, [])
-    toast.success('Annual Excel report downloaded successfully')
+    await exportInvoicesToExcel(items, `RentalInvoice_Annual_${year}`, []);
+    toast.success("Annual Excel report downloaded successfully");
   } finally {
-    isExporting.value = false
+    isExporting.value = false;
   }
 }
 
 function onContractChange() {
-  const ci = findContractItem(form.contract_item_id)
+  const ci = findContractItem(form.contract_item_id);
   if (ci) {
-    form.customer_id = ci.customer_id
-    form.basis_rental_fee = ci.monthly_rent_fee
-    recalculate()
+    form.customer_id = ci.customer_id;
+    form.basis_rental_fee = ci.monthly_rent_fee;
+    recalculate();
   }
 }
 
 function recalculate() {
-  const ci = findContractItem(form.contract_item_id)
-  const isComputer = ci && ci.specs && ci.specs.length > 5
+  const ci = findContractItem(form.contract_item_id);
+  const isComputer = ci && ci.specs && ci.specs.length > 5;
 
   if (!isComputer) {
-    const totalUsage = Math.max(0, form.meter_end - form.meter_start)
-    const excess = Math.max(0, totalUsage - form.free_copies)
-    form.excess_amount = excess * form.rate_per_page
+    const totalUsage = Math.max(0, form.meter_end - form.meter_start);
+    const excess = Math.max(0, totalUsage - form.free_copies);
+    form.excess_amount = excess * form.rate_per_page;
   }
 
-  form.subtotal = form.basis_rental_fee + form.excess_amount
-  form.total_pay = form.subtotal + form.tax
+  form.subtotal = form.basis_rental_fee + form.excess_amount;
+  form.total_pay = form.subtotal + form.tax;
 }
 
 function openAdd() {
-  editingItem.value = null
-  Object.assign(form, { ...defaultForm, invoice_no: `INV-R-${Date.now().toString().slice(-6)}` })
-  showModal.value = true
+  editingItem.value = null;
+  Object.assign(form, {
+    ...defaultForm,
+    invoice_no: `INV-R-${Date.now().toString().slice(-6)}`,
+  });
+  showModal.value = true;
 }
 
 function openEdit(item: RentalInvoice) {
-  editingItem.value = item
+  editingItem.value = item;
   Object.assign(form, {
     invoice_no: item.invoice_no,
     contract_item_id: item.contract_item_id,
@@ -2012,138 +3264,162 @@ function openEdit(item: RentalInvoice) {
     meter_start: item.meter_start || 0,
     meter_end: item.meter_end || 0,
     free_copies: item.free_copies || 2000,
-    rate_per_page: item.rate_per_page || 150
-  })
-  showModal.value = true
+    rate_per_page: item.rate_per_page || 150,
+  });
+  showModal.value = true;
 }
 
 async function handleUpdateStatus(item: any, newStatus: string) {
   try {
-    await api.patch(`/rental-invoices/${item.id}`, { status: newStatus })
-    await refreshInBackground()
-    toast.success(`Invoice status updated to ${newStatus}`)
+    await api.patch(`/rental-invoices/${item.id}`, { status: newStatus });
+    await refreshInBackground();
+    toast.success(`Invoice status updated to ${newStatus}`);
   } catch (error: any) {
-    toast.error('Failed to update status: ' + (error.message || 'Error'))
+    toast.error("Failed to update status: " + (error.message || "Error"));
   }
 }
 
-const showPaymentModal = ref(false)
-const paymentInvoiceId = ref<string | null>(null)
+const showPaymentModal = ref(false);
+const paymentInvoiceId = ref<string | null>(null);
 const paymentForm = reactive({
   amount: 0,
-  payment_date: new Date().toISOString().split('T')[0],
-  payment_method: 'transfer',
-  reference: '',
-  notes: '',
-  bank_name: '',
-  account_number: '',
-  sender_name: ''
-})
+  payment_date: new Date().toISOString().split("T")[0],
+  payment_method: "transfer",
+  reference: "",
+  notes: "",
+  bank_name: "",
+  account_number: "",
+  sender_name: "",
+});
 
 function openPaymentModal(item: any) {
-  if (item?.status === 'pending_meter_reading') {
-    toast.warning('Payment blocked: technician has not submitted the meter reading for this period yet.')
-    return
+  if (item?.status === "pending_meter_reading") {
+    toast.warning(
+      "Payment blocked: technician has not submitted the meter reading for this period yet.",
+    );
+    return;
   }
-  paymentInvoiceId.value = item.id
-  paymentForm.amount = item.total_pay || item.subtotal || 0
-  paymentForm.payment_date = new Date().toISOString().split('T')[0]
-  paymentForm.payment_method = 'transfer'
-  paymentForm.reference = ''
-  paymentForm.notes = ''
-  paymentForm.bank_name = ''
-  paymentForm.account_number = ''
-  paymentForm.sender_name = ''
-  showPaymentModal.value = true
+  paymentInvoiceId.value = item.id;
+  paymentForm.amount = item.total_pay || item.subtotal || 0;
+  paymentForm.payment_date = new Date().toISOString().split("T")[0];
+  paymentForm.payment_method = "transfer";
+  paymentForm.reference = "";
+  paymentForm.notes = "";
+  paymentForm.bank_name = "";
+  paymentForm.account_number = "";
+  paymentForm.sender_name = "";
+  showPaymentModal.value = true;
 }
 
 async function submitPayment() {
   if (!paymentInvoiceId.value || paymentForm.amount <= 0) {
-    toast.error('Invalid payment amount')
-    return
+    toast.error("Invalid payment amount");
+    return;
   }
   try {
-    let finalBankName = paymentForm.bank_name
-    if (paymentForm.payment_method === 'transfer' || paymentForm.payment_method === 'credit_card') {
-      finalBankName = `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`
+    let finalBankName = paymentForm.bank_name;
+    if (
+      paymentForm.payment_method === "transfer" ||
+      paymentForm.payment_method === "credit_card"
+    ) {
+      finalBankName = `${paymentForm.bank_name} - ${paymentForm.account_number} (A/N: ${paymentForm.sender_name})`;
     }
 
-    const payNo = `PAY-${Date.now()}`
-    const paymentTs = buildPaymentTimestamp(paymentForm.payment_date)
+    const payNo = `PAY-${Date.now()}`;
+    const paymentTs = buildPaymentTimestamp(paymentForm.payment_date);
     await api.post(`/payments`, {
       payment_no: payNo,
       rental_invoice_id: paymentInvoiceId.value,
       payment_date: paymentTs,
       amount: paymentForm.amount,
       payment_method: paymentForm.payment_method,
-      bank_name: paymentForm.payment_method === 'cash' ? 'CASH' : finalBankName,
+      bank_name: paymentForm.payment_method === "cash" ? "CASH" : finalBankName,
       sender_name: paymentForm.sender_name,
-      reference_no: paymentForm.reference || '-',
-      notes: paymentForm.notes
-    })
-    toast.success('Payment recorded successfully')
-    const inv = data.value.find((d: any) => String(d.id) === String(paymentInvoiceId.value))
+      reference_no: paymentForm.reference || "-",
+      notes: paymentForm.notes,
+    });
+    toast.success("Payment recorded successfully");
+    const inv = data.value.find(
+      (d: any) => String(d.id) === String(paymentInvoiceId.value),
+    );
     const opened = printPaymentSlip({
       payment_no: payNo,
-      invoice_no: inv?.invoice_no || '-',
+      invoice_no: inv?.invoice_no || "-",
       customer_name: customerName(inv?.customer_id),
       payment_date: paymentTs,
       amount: Number(paymentForm.amount || 0),
-      reference_no: paymentForm.reference || '-',
+      reference_no: paymentForm.reference || "-",
       sender_name: paymentForm.sender_name,
       notes: paymentForm.notes,
       bank_name: finalBankName,
-      status: 'pending',
-      method: paymentForm.payment_method === 'cash' ? 'Tunai' : 'Transfer',
-      cs_name: currentUser.value?.name?.trim() || '-',
-    })
-    if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak tanda terima.')
-    showPaymentModal.value = false
-    refreshInBackground()
+      status: "pending",
+      method: paymentForm.payment_method === "cash" ? "Tunai" : "Transfer",
+      cs_name: currentUser.value?.name?.trim() || "-",
+    });
+    if (!opened)
+      toast.warning("Izinkan pop-up browser untuk mencetak tanda terima.");
+    showPaymentModal.value = false;
+    refreshInBackground();
   } catch (error: any) {
-    toast.error('Failed to record payment: ' + (error.message || 'Error'))
+    toast.error("Failed to record payment: " + (error.message || "Error"));
   }
 }
 
 function handleSubmit() {
-  if (!form.invoice_no.trim()) return
-  recalculate()
+  if (!form.invoice_no.trim()) return;
+  recalculate();
   if (editingItem.value) {
-    const idx = data.value.findIndex(d => d.id === editingItem.value!.id)
-    if (idx >= 0) data.value[idx] = { ...data.value[idx]!, ...form, updated_at: new Date().toISOString() }
+    const idx = data.value.findIndex((d) => d.id === editingItem.value!.id);
+    if (idx >= 0)
+      data.value[idx] = {
+        ...data.value[idx]!,
+        ...form,
+        updated_at: new Date().toISOString(),
+      };
   } else {
-    data.value.push({ id: Date.now(), ...form, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), deleted_at: null })
+    data.value.push({
+      id: Date.now(),
+      ...form,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted_at: null,
+    });
   }
-  showModal.value = false
+  showModal.value = false;
 }
 
-
-
 function customerName(id: any): string {
-  const c = findCustomer(id as any)
-  return c ? c.company_name || c.name || '-' : '-'
+  const c = findCustomer(id as any);
+  return c ? c.company_name || c.name || "-" : "-";
 }
 
 function contractNo(id: any): string {
-  const ci = findContractItem(id)
-  return ci ? ci.contract_no : '-'
+  const ci = findContractItem(id);
+  return ci ? ci.contract_no : "-";
 }
 
 function formatRupiah(val: number): string {
-  return 'Rp ' + val.toLocaleString('id-ID')
+  return "Rp " + val.toLocaleString("id-ID");
 }
 
 function invoiceHtml(item: any): string {
-  return renderRentalInvoicesPdf([item], `Invoice - ${item.invoice_no || 'Rental'}`)
+  return renderRentalInvoicesPdf(
+    [item],
+    `Invoice - ${item.invoice_no || "Rental"}`,
+  );
 }
 
 function printReceipt(item: any) {
-  const approved = invoicePayments(item).find((payment: any) => payment.status === 'approved')
+  const approved = invoicePayments(item).find(
+    (payment: any) => payment.status === "approved",
+  );
   if (!approved) {
-    toast.warning('Bukti bayar tersedia setelah pembayaran disetujui Accounting.')
-    return
+    toast.warning(
+      "Bukti bayar tersedia setelah pembayaran disetujui Accounting.",
+    );
+    return;
   }
-  printReceiptAsync(item, approved)
+  printReceiptAsync(item, approved);
 }
 
 async function printReceiptAsync(item: any, approved: any) {
@@ -2153,176 +3429,283 @@ async function printReceiptAsync(item: any, approved: any) {
     customer_name: customerName(item.customer_id),
     payment_date: approved.payment_date,
     amount: Number(approved.amount || 0),
-    reference_no: approved.reference_no || '-',
+    reference_no: approved.reference_no || "-",
     sender_name: approved.sender_name,
     bank_name: approved.bank_name,
     notes: approved.notes,
     status: approved.status,
     lunas: true,
-    method: paymentMethodOf(approved.bank_name) || (approved.bank_name ? 'Transfer' : undefined),
-    cs_name: approved.user?.name || approved.user?.username || currentUser.value?.name?.trim() || '-',
-  }
-  const win = window.open('', '_blank')
+    method:
+      paymentMethodOf(approved.bank_name) ||
+      (approved.bank_name ? "Transfer" : undefined),
+    cs_name:
+      approved.user?.name ||
+      approved.user?.username ||
+      currentUser.value?.name?.trim() ||
+      "-",
+  };
+  const win = window.open("", "_blank");
   if (!win) {
-    toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
-    return
+    toast.warning("Izinkan pop-up browser untuk mencetak bukti bayar.");
+    return;
   }
-  payload.qr_data_url = await generatePaymentQrDataUrl(buildPaymentVerifyUrl(payload))
-  const opened = printPaymentStruk(payload, win)
-  if (!opened) toast.warning('Izinkan pop-up browser untuk mencetak bukti bayar.')
+  payload.qr_data_url = await generatePaymentQrDataUrl(
+    buildPaymentVerifyUrl(payload),
+  );
+  const opened = printPaymentStruk(payload, win);
+  if (!opened)
+    toast.warning("Izinkan pop-up browser untuk mencetak bukti bayar.");
 }
 
 function exportSingleRentalInvoiceToPdf(item: any) {
   try {
-    const html = invoiceHtml(item)
-    const w = window.open('', '_blank')
+    const html = invoiceHtml(item);
+    const w = window.open("", "_blank");
     if (w) {
-      w.document.write(html)
-      w.document.close()
+      w.document.write(html);
+      w.document.close();
     } else {
-      toast.warning('Izinkan pop-up browser untuk mencetak / download PDF.')
+      toast.warning("Izinkan pop-up browser untuk mencetak / download PDF.");
     }
   } catch (err: any) {
-    toast.error('Gagal membuat PDF invoice: ' + (err?.message || 'Error'))
+    toast.error("Gagal membuat PDF invoice: " + (err?.message || "Error"));
   }
 }
 
 async function exportSingleRentalInvoiceToExcel(item: any) {
-  if (isExporting.value) return
-  isExporting.value = true
+  if (isExporting.value) return;
+  isExporting.value = true;
   try {
-    const invNo = (item.invoice_no || `Inv_${item.id || 'draft'}`).replace(/[:\\/?*[\]]/g, '_')
-    await exportInvoicesToExcel([item], `RentalInvoice_${invNo}`, [])
-    toast.success(`Excel Rental Invoice ${item.invoice_no || ''} berhasil diunduh`)
+    const invNo = (item.invoice_no || `Inv_${item.id || "draft"}`).replace(
+      /[:\\/?*[\]]/g,
+      "_",
+    );
+    await exportInvoicesToExcel([item], `RentalInvoice_${invNo}`, []);
+    toast.success(
+      `Excel Rental Invoice ${item.invoice_no || ""} berhasil diunduh`,
+    );
   } catch (err: any) {
-    toast.error('Gagal export Excel: ' + (err?.message || 'Error'))
+    toast.error("Gagal export Excel: " + (err?.message || "Error"));
   } finally {
-    isExporting.value = false
+    isExporting.value = false;
   }
 }
 
 function printInvoice(item: any) {
-  exportSingleRentalInvoiceToPdf(item)
+  exportSingleRentalInvoiceToPdf(item);
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Rental Invoices"/>
+    <PageHeader title="Rental Invoices" />
 
     <!-- Filter & Export Toolbar -->
     <div class="filter-toolbar">
       <div class="filter-inputs">
         <div class="filter-item">
           <label class="filter-label">Start Date</label>
-          <input v-model="startDateFilter" type="date" class="form-input filter-input">
+          <input
+            v-model="startDateFilter"
+            type="date"
+            class="form-input filter-input"
+          />
         </div>
         <div class="filter-item">
           <label class="filter-label">End Date</label>
-          <input v-model="endDateFilter" type="date" class="form-input filter-input">
+          <input
+            v-model="endDateFilter"
+            type="date"
+            class="form-input filter-input"
+          />
         </div>
         <div class="filter-item">
           <label class="filter-label">Month Filter</label>
-          <input v-model="monthFilter" type="month" class="form-input filter-input" @change="onMonthFilterChange">
+          <input
+            v-model="monthFilter"
+            type="month"
+            class="form-input filter-input"
+            @change="onMonthFilterChange"
+          />
         </div>
         <div class="filter-item">
           <label class="filter-label">Year</label>
-          <input v-model.number="yearFilter" type="number" min="1900" max="9999" class="form-input filter-input">
+          <input
+            v-model.number="yearFilter"
+            type="number"
+            min="1900"
+            max="9999"
+            class="form-input filter-input"
+          />
         </div>
         <div class="filter-item">
           <label class="filter-label">Customer</label>
-          <CustomSelect v-model="customerFilter" :options="customerFilterOptions" class="form-select filter-input" />
+          <CustomSelect
+            v-model="customerFilter"
+            :options="customerFilterOptions"
+            class="form-select filter-input"
+          />
         </div>
-        <button v-if="startDateFilter || endDateFilter || monthFilter || customerFilter" type="button"
-          class="btn btn-outline btn-sm filter-reset-btn" @click="resetFilters">
+        <div class="filter-item">
+          <label class="filter-label">Status</label>
+          <CustomSelect
+            v-model="paymentStatusFilter"
+            :options="paymentStatusOptions"
+            class="form-select filter-input"
+          />
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">Approval Status</label>
+          <CustomSelect
+            v-model="approvalStatusFilter"
+            :options="approvalStatusOptions"
+            class="form-select filter-input"
+          />
+        </div>
+        <button
+          v-if="
+            startDateFilter || endDateFilter || monthFilter || customerFilter || paymentStatusFilter || approvalStatusFilter
+          "
+          type="button"
+          class="btn btn-outline btn-sm filter-reset-btn"
+          @click="resetFilters"
+        >
           Reset Filter
         </button>
       </div>
 
       <div class="export-actions">
-        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportMonthToPdf"
-          title="Export PDF (Filtered)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-          </svg>
-          Export PDF
-        </button>
-        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-excel" @click="exportMonthToExcel"
-          :disabled="isExporting" title="Export Excel (Filtered)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="8" y1="13" x2="16" y2="13"></line>
-            <line x1="8" y1="17" x2="16" y2="17"></line>
-          </svg>
-          Export Excel
-        </button>
-        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-pdf" @click="exportAnnualPdf"
-          title="Export Annual (PDF)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <button
+          v-if="can('rental_invoice:read')"
+          type="button"
+          class="btn btn-export-pdf"
+          @click="exportAnnualPdf"
+          title="Export Annual (PDF)"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            style="margin-right: 4px"
+          >
+            <path
+              d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+            ></path>
             <polyline points="14 2 14 8 20 8"></polyline>
             <line x1="16" y1="13" x2="8" y2="13"></line>
             <line x1="16" y1="17" x2="8" y2="17"></line>
           </svg>
           Annual PDF
         </button>
-        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-excel" @click="exportAnnualExcel"
-          :disabled="isExporting" title="Export Annual (Excel)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <button
+          v-if="can('rental_invoice:read')"
+          type="button"
+          class="btn btn-export-excel"
+          @click="exportAnnualExcel"
+          :disabled="isExporting"
+          title="Export Annual (Excel)"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            style="margin-right: 4px"
+          >
+            <path
+              d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+            ></path>
             <polyline points="14 2 14 8 20 8"></polyline>
             <line x1="8" y1="13" x2="16" y2="13"></line>
             <line x1="8" y1="17" x2="16" y2="17"></line>
           </svg>
           Annual Excel
         </button>
-        <button v-if="can('rental_invoice:read')" type="button" class="btn btn-export-excel btn-atlas-great-excel" @click="exportAtlasGreatInvoicesExcel"
-          :disabled="isExporting" title="Export Lembar Perhitungan Meter Atlas & Great (Sheet per Customer)">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="3" y1="9" x2="21" y2="9"></line>
-            <line x1="9" y1="21" x2="9" y2="9"></line>
-          </svg>
-          Perhitungan Atlas &amp; Great
-        </button>
       </div>
     </div>
 
-    <div v-if="isLoading" style="padding: 40px; text-align: center; color: var(--color-text-muted);">
+    <div
+      v-if="isLoading"
+      style="padding: 40px; text-align: center; color: var(--color-text-muted)"
+    >
       Loading rental invoices...
     </div>
-    <DataTable v-else :columns="columns" :data="filteredData" search-placeholder="Search invoices..." @edit="openEdit"
-      @delete="openDelete" :perPage="20">
-      <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
-      <template #cell-contract_item_id="{ value }">{{ contractNo(value as any) }}</template>
+    <DataTable
+      v-else
+      :columns="columns"
+      :data="filteredData"
+      search-placeholder="Search invoices..."
+      @edit="openEdit"
+      @delete="openDelete"
+      :perPage="20"
+    >
+      <template #cell-customer_id="{ value }">{{
+        customerName(value as any)
+      }}</template>
+      <template #cell-contract_item_id="{ value }">{{
+        contractNo(value as any)
+      }}</template>
       <template #cell-po_no="{ row }">
-        <span style="font-weight: 500;">{{ getRentalPoNo(row) }}</span>
+        <span style="font-weight: 500">{{ getRentalPoNo(row) }}</span>
       </template>
-      <template #cell-period_start="{ value }">{{ formatDate(value) }}</template>
+      <template #cell-period_start="{ value }">{{
+        formatDate(value)
+      }}</template>
       <template #cell-period_end="{ value }">{{ formatDate(value) }}</template>
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
-      <template #cell-total_pay="{ value }">{{ formatRupiah(value || 0) }}</template>
+      <template #cell-total_pay="{ value }">{{
+        formatRupiah(value || 0)
+      }}</template>
       <template #cell-status="{ row }">
         <span
-          :class="row.status === 'approved' ? 'badge badge-info' : row.status === 'rejected' ? 'badge badge-danger' : row.status === 'pending_meter_reading' ? 'badge badge-warning' : 'badge badge-warning'"
-          :title="row.status === 'pending_meter_reading' ? 'Payment blocked until technician submits meter reading' : ''">
+          :class="
+            row.status === 'approved'
+              ? 'badge badge-info'
+              : row.status === 'rejected'
+                ? 'badge badge-danger'
+                : row.status === 'pending_meter_reading'
+                  ? 'badge badge-warning'
+                  : 'badge badge-warning'
+          "
+          :title="
+            row.status === 'pending_meter_reading'
+              ? 'Payment blocked until technician submits meter reading'
+              : ''
+          "
+        >
           {{ approvalStatusLabel(row.status) }}
         </span>
       </template>
       <template #cell-payment_status="{ value }">
         <span
-          :class="value === 'paid' ? 'badge badge-success' : value === 'overdue' ? 'badge badge-danger' : value === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-          {{ value === 'paid' ? 'Paid' : value === 'overdue' ? 'Overdue' : value === 'partially_paid' ?
-            'Partial' : 'Unpaid' }}
+          :class="
+            value === 'paid'
+              ? 'badge badge-success'
+              : value === 'overdue'
+                ? 'badge badge-danger'
+                : value === 'partially_paid'
+                  ? 'badge badge-info'
+                  : 'badge badge-warning'
+          "
+        >
+          {{
+            value === "paid"
+              ? "Paid"
+              : value === "overdue"
+                ? "Overdue"
+                : value === "partially_paid"
+                  ? "Partial"
+                  : "Unpaid"
+          }}
         </span>
       </template>
       <template #actions="{ row }">
@@ -2333,10 +3716,22 @@ function printInvoice(item: any) {
             class="action-btn action-btn--pdf"
             :title="`Export PDF / Cetak Invoice (${row.invoice_no || 'Draft'})`"
             @click.stop="exportSingleRentalInvoiceToPdf(row)"
-            style="width: 36px; height: 36px;"
+            style="width: 36px; height: 36px"
           >
-            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <svg
+              class="action-icon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+              ></path>
               <polyline points="14 2 14 8 20 8"></polyline>
               <line x1="16" y1="13" x2="8" y2="13"></line>
               <line x1="16" y1="17" x2="8" y2="17"></line>
@@ -2350,10 +3745,22 @@ function printInvoice(item: any) {
             :title="`Export Excel Invoice (${row.invoice_no || 'Draft'})`"
             :disabled="isExporting"
             @click.stop="exportSingleRentalInvoiceToExcel(row)"
-            style="width: 36px; height: 36px;"
+            style="width: 36px; height: 36px"
           >
-            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <svg
+              class="action-icon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+              ></path>
               <polyline points="14 2 14 8 20 8"></polyline>
               <line x1="8" y1="13" x2="16" y2="13"></line>
               <line x1="8" y1="17" x2="16" y2="17"></line>
@@ -2366,10 +3773,22 @@ function printInvoice(item: any) {
             class="action-btn action-btn--receipt"
             :title="`Cetak Bukti Pembayaran Struk (${row.invoice_no || ''})`"
             @click.stop="printReceipt(row)"
-            style="width: 36px; height: 36px;"
+            style="width: 36px; height: 36px"
           >
-            <svg class="action-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"></path>
+            <svg
+              class="action-icon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"
+              ></path>
               <line x1="8" y1="10" x2="16" y2="10"></line>
               <line x1="8" y1="14" x2="16" y2="14"></line>
             </svg>
@@ -2380,59 +3799,125 @@ function printInvoice(item: any) {
 
           <!-- GROUP 2: STATUS & OPERASIONAL (Bayar, Detail, Edit, Hapus) -->
           <button
-            v-if="(row.status === 'unpaid' || row.status === 'draft' || row.status === 'partially_paid') && (can('payment:create') || can('rental_invoice:update'))"
-            class="action-btn action-btn--edit" title="Bayar (Input Payment)" @click.stop="openPaymentModal(row)"
-            style="color: #059669; width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            v-if="
+              (row.status === 'unpaid' ||
+                row.status === 'draft' ||
+                row.status === 'partially_paid') &&
+              (can('payment:create') || can('rental_invoice:update'))
+            "
+            class="action-btn action-btn--edit"
+            title="Bayar (Input Payment)"
+            @click.stop="openPaymentModal(row)"
+            style="color: #059669; width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <rect x="2" y="5" width="20" height="14" rx="2"></rect>
               <line x1="2" y1="10" x2="22" y2="10"></line>
             </svg>
           </button>
           <button
-            v-if="row.status === 'pending_meter_reading' && can('rental_invoice:read')"
-            class="action-btn" disabled
+            v-if="
+              row.status === 'pending_meter_reading' &&
+              can('rental_invoice:read')
+            "
+            class="action-btn"
+            disabled
             title="Payment blocked: technician has not submitted the meter reading for this period"
-            style="color: var(--color-text-muted); width: 36px; height: 36px; opacity: 0.5; cursor: not-allowed;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            style="
+              color: var(--color-text-muted);
+              width: 36px;
+              height: 36px;
+              opacity: 0.5;
+              cursor: not-allowed;
+            "
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <rect x="2" y="5" width="20" height="14" rx="2"></rect>
               <line x1="2" y1="10" x2="22" y2="10"></line>
-              <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2"></line>
+              <line
+                x1="4"
+                y1="4"
+                x2="20"
+                y2="20"
+                stroke="currentColor"
+                stroke-width="2"
+              ></line>
             </svg>
           </button>
-          <button v-if="can('rental_invoice:read')" class="action-btn action-btn--edit" title="Lihat Detail Invoice"
-            @click.stop="openDetail(row)" style="color: var(--color-text-muted); width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <button
+            v-if="can('rental_invoice:read')"
+            class="action-btn action-btn--edit"
+            title="Lihat Detail Invoice"
+            @click.stop="openDetail(row)"
+            style="color: var(--color-text-muted); width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
               <circle cx="12" cy="12" r="3"></circle>
             </svg>
           </button>
-          <button v-if="can('rental_invoice:update')" class="action-btn action-btn--edit" title="Edit Invoice"
-            @click.stop="openEdit(row)" style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-            </svg>
-          </button>
-          <button v-if="can('rental_invoice:delete')" class="action-btn action-btn--delete" title="Hapus Invoice"
-            @click.stop="openDelete(row)" style="width: 36px; height: 36px;">
-            <svg class="action-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
-              <line x1="10" y1="11" x2="10" y2="17"></line>
-              <line x1="14" y1="11" x2="14" y2="17"></line>
+          <button
+            v-if="can('rental_invoice:update')"
+            class="action-btn action-btn--edit"
+            title="Edit Invoice"
+            @click.stop="openEdit(row)"
+            style="width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
+              ></path>
+              <path
+                d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
+              ></path>
             </svg>
           </button>
           <button
-            v-if="hardDelete.isSuperadmin"
-            class="action-btn action-btn--hard"
-            title="Hapus permanen dari database (superadmin)"
-            @click.stop="hardDelete.open(row)"
-            style="width: 36px; height: 36px;"
+            v-if="can('rental_invoice:delete')"
+            class="action-btn action-btn--delete"
+            title="Hapus Invoice"
+            @click.stop="openDelete(row)"
+            style="width: 36px; height: 36px"
           >
             <svg
               class="action-icon"
@@ -2446,17 +3931,49 @@ function printInvoice(item: any) {
               stroke-linejoin="round"
             >
               <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+              <path
+                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+              ></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+          </button>
+          <button
+            v-if="hardDelete.isSuperadmin"
+            class="action-btn action-btn--hard"
+            title="Hapus permanen dari database (superadmin)"
+            @click.stop="hardDelete.open(row)"
+            style="width: 36px; height: 36px"
+          >
+            <svg
+              class="action-icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path
+                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+              ></path>
               <line x1="12" y1="11" x2="12" y2="17"></line>
             </svg>
           </button>
         </div>
       </template>
     </DataTable>
- 
-    <ConfirmDialog :open="showConfirm" title="Delete Invoice"
-      :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`" @close="showConfirm = false"
-      @confirm="handleDelete" />
+
+    <ConfirmDialog
+      :open="showConfirm"
+      title="Delete Invoice"
+      :message="`Are you sure you want to delete invoice '${deletingItem?.invoice_no}'?`"
+      @close="showConfirm = false"
+      @confirm="handleDelete"
+    />
 
     <HardDeleteDialog
       :open="hardDelete.show"
@@ -2472,147 +3989,313 @@ function printInvoice(item: any) {
       @close="hardDelete.close"
     />
 
-    <FormModal :open="showDetail" :title="detailItem ? `Invoice Details ${detailItem.invoice_no}` : 'Invoice Details'"
-      @close="showDetail = false">
+    <FormModal
+      :open="showDetail"
+      :title="
+        detailItem
+          ? `Invoice Details ${detailItem.invoice_no}`
+          : 'Invoice Details'
+      "
+      @close="showDetail = false"
+    >
       <template v-if="isLoadingDetail">
-        <div style="padding: 40px; text-align: center; color: var(--color-text-muted);">
+        <div
+          style="
+            padding: 40px;
+            text-align: center;
+            color: var(--color-text-muted);
+          "
+        >
           Loading invoice details...
         </div>
       </template>
       <template v-else-if="detailItem">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+        <div
+          style="
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+          "
+        >
           <div class="form-group">
             <label class="form-label">No. Invoice</label>
             <div>{{ detailItem.invoice_no }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Customer</label>
-            <div>{{ detailCustomer.value?.company_name || detailCustomer.value?.name || '-' }}</div>
+            <div>
+              {{
+                detailCustomer.value?.company_name ||
+                detailCustomer.value?.name ||
+                "-"
+              }}
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Contract</label>
-            <div>{{ detailContract.value?.contract_no || '-' }}</div>
+            <div>{{ detailContract.value?.contract_no || "-" }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">PO No.</label>
-            <div style="font-weight: 500;">{{ getRentalPoNo(detailItem) }}</div>
+            <div style="font-weight: 500">{{ getRentalPoNo(detailItem) }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Total Amount</label>
-            <div>{{ formatRupiah(detailItem.total_pay || detailItem.subtotal || 0) }}</div>
+            <div>
+              {{
+                formatRupiah(detailItem.total_pay || detailItem.subtotal || 0)
+              }}
+            </div>
           </div>
           <div class="form-group">
             <label class="form-label">Approval Status</label>
             <span
-              :class="approvalStatus(detailItem.status) === 'approved' ? 'badge badge-info' : approvalStatus(detailItem.status) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-              {{ approvalStatus(detailItem.status) === 'approved' ? 'Approved' : approvalStatus(detailItem.status) ===
-                'rejected' ? 'Rejected' : 'Pending' }}
+              :class="
+                approvalStatus(detailItem.status) === 'approved'
+                  ? 'badge badge-info'
+                  : approvalStatus(detailItem.status) === 'rejected'
+                    ? 'badge badge-danger'
+                    : 'badge badge-warning'
+              "
+            >
+              {{
+                approvalStatus(detailItem.status) === "approved"
+                  ? "Approved"
+                  : approvalStatus(detailItem.status) === "rejected"
+                    ? "Rejected"
+                    : "Pending"
+              }}
             </span>
           </div>
           <div class="form-group">
             <label class="form-label">Payment Status</label>
             <span
-              :class="detailItem.payment_status === 'paid' ? 'badge badge-success' : detailItem.payment_status === 'overdue' ? 'badge badge-danger' : detailItem.payment_status === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-              {{ detailItem.payment_status === 'paid' ? 'Paid' : detailItem.payment_status === 'overdue' ? 'Overdue' :
-                detailItem.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
+              :class="
+                detailItem.payment_status === 'paid'
+                  ? 'badge badge-success'
+                  : detailItem.payment_status === 'overdue'
+                    ? 'badge badge-danger'
+                    : detailItem.payment_status === 'partially_paid'
+                      ? 'badge badge-info'
+                      : 'badge badge-warning'
+              "
+            >
+              {{
+                detailItem.payment_status === "paid"
+                  ? "Paid"
+                  : detailItem.payment_status === "overdue"
+                    ? "Overdue"
+                    : detailItem.payment_status === "partially_paid"
+                      ? "Partial"
+                      : "Unpaid"
+              }}
             </span>
           </div>
         </div>
 
-        <div class="form-section-title" style="margin-bottom: 8px;">Payment History</div>
-        <div v-if="detailPayments.length > 0"
-          style="border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden;">
-          <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: var(--font-size-sm);">
-            <thead style="background: var(--color-surface-raised); border-bottom: 1px solid var(--color-border);">
+        <div class="form-section-title" style="margin-bottom: 8px">
+          Payment History
+        </div>
+        <div
+          v-if="detailPayments.length > 0"
+          style="
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+          "
+        >
+          <table
+            style="
+              width: 100%;
+              border-collapse: collapse;
+              text-align: left;
+              font-size: var(--font-size-sm);
+            "
+          >
+            <thead
+              style="
+                background: var(--color-surface-raised);
+                border-bottom: 1px solid var(--color-border);
+              "
+            >
               <tr>
-                <th style="padding: 12px;">Payment No.</th>
-                <th style="padding: 12px;">Date</th>
-                <th style="padding: 12px;">Method / Bank</th>
-                <th style="padding: 12px;">Ref No.</th>
-                <th style="padding: 12px; text-align: right;">Amount</th>
+                <th style="padding: 12px">Payment No.</th>
+                <th style="padding: 12px">Date</th>
+                <th style="padding: 12px">Method / Bank</th>
+                <th style="padding: 12px">Ref No.</th>
+                <th style="padding: 12px; text-align: right">Amount</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(pay, idx) in detailPayments" :key="idx"
-                style="border-bottom: 1px solid var(--color-border-light);">
-                <td style="padding: 12px;">{{ pay.payment_no || '-' }}</td>
-                <td style="padding: 12px;">{{ pay.payment_date ? String(pay.payment_date).substring(0, 10) : '-' }}</td>
-                <td style="padding: 12px;">{{ pay.bank_name || '-' }}</td>
-                <td style="padding: 12px;">{{ pay.reference_no || '-' }}</td>
-                <td style="padding: 12px; text-align: right; font-weight: 600; color: var(--color-success);">{{
-                  formatRupiah(pay.amount || 0) }}</td>
+              <tr
+                v-for="(pay, idx) in detailPayments"
+                :key="idx"
+                style="border-bottom: 1px solid var(--color-border-light)"
+              >
+                <td style="padding: 12px">{{ pay.payment_no || "-" }}</td>
+                <td style="padding: 12px">
+                  {{
+                    pay.payment_date
+                      ? String(pay.payment_date).substring(0, 10)
+                      : "-"
+                  }}
+                </td>
+                <td style="padding: 12px">{{ pay.bank_name || "-" }}</td>
+                <td style="padding: 12px">{{ pay.reference_no || "-" }}</td>
+                <td
+                  style="
+                    padding: 12px;
+                    text-align: right;
+                    font-weight: 600;
+                    color: var(--color-success);
+                  "
+                >
+                  {{ formatRupiah(pay.amount || 0) }}
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div v-else
-          style="padding: 16px; text-align: center; color: var(--color-text-muted); background: var(--color-surface); border-radius: var(--radius-md);">
+        <div
+          v-else
+          style="
+            padding: 16px;
+            text-align: center;
+            color: var(--color-text-muted);
+            background: var(--color-surface);
+            border-radius: var(--radius-md);
+          "
+        >
           No payment history yet.
         </div>
       </template>
       <template #footer>
-        <button class="btn btn-outline" @click="showDetail = false">Close</button>
+        <button class="btn btn-outline" @click="showDetail = false">
+          Close
+        </button>
       </template>
     </FormModal>
 
-    <FormModal :open="showPaymentModal" title="Process Payment" @close="showPaymentModal = false"
-      @submit="submitPayment">
+    <FormModal
+      :open="showPaymentModal"
+      title="Process Payment"
+      @close="showPaymentModal = false"
+      @submit="submitPayment"
+    >
       <div class="form-group">
         <label class="form-label">Payment Date</label>
-        <input v-model="paymentForm.payment_date" type="date" class="form-input" required>
+        <input
+          v-model="paymentForm.payment_date"
+          type="date"
+          class="form-input"
+          required
+        />
       </div>
       <div class="form-group">
         <label class="form-label">Payment Method</label>
-        <CustomSelect v-model="paymentForm.payment_method" :options="riPaymentMethodOptions" class="form-select" />
+        <CustomSelect
+          v-model="paymentForm.payment_method"
+          :options="riPaymentMethodOptions"
+          class="form-select"
+        />
       </div>
 
       <template v-if="paymentForm.payment_method === 'transfer'">
         <div class="form-group">
           <label class="form-label">Bank Name</label>
-          <input type="text" class="form-input" v-model="paymentForm.bank_name" placeholder="E.g. BCA, Mandiri, BRI"
-            required />
+          <input
+            type="text"
+            class="form-input"
+            v-model="paymentForm.bank_name"
+            placeholder="E.g. BCA, Mandiri, BRI"
+            required
+          />
         </div>
         <div class="form-group">
           <label class="form-label">Account Number</label>
-          <input type="text" class="form-input" v-model="paymentForm.account_number" placeholder="Sender account number"
-            required />
+          <input
+            type="text"
+            class="form-input"
+            v-model="paymentForm.account_number"
+            placeholder="Sender account number"
+            required
+          />
         </div>
         <div class="form-group">
           <label class="form-label">Sender Name</label>
-          <input type="text" class="form-input" v-model="paymentForm.sender_name" placeholder="Account holder name"
-            required />
+          <input
+            type="text"
+            class="form-input"
+            v-model="paymentForm.sender_name"
+            placeholder="Account holder name"
+            required
+          />
         </div>
       </template>
 
       <template v-if="paymentForm.payment_method === 'credit_card'">
         <div class="form-group">
           <label class="form-label">Card Provider / Bank</label>
-          <input type="text" class="form-input" v-model="paymentForm.bank_name" placeholder="E.g. Visa, Mastercard, BCA"
-            required />
+          <input
+            type="text"
+            class="form-input"
+            v-model="paymentForm.bank_name"
+            placeholder="E.g. Visa, Mastercard, BCA"
+            required
+          />
         </div>
         <div class="form-group">
           <label class="form-label">Card Number (Last 4 Digits)</label>
-          <input type="text" class="form-input" v-model="paymentForm.account_number" placeholder="E.g. 1234"
-            maxlength="16" required />
+          <input
+            type="text"
+            class="form-input"
+            v-model="paymentForm.account_number"
+            placeholder="E.g. 1234"
+            maxlength="16"
+            required
+          />
         </div>
         <div class="form-group">
           <label class="form-label">Cardholder Name</label>
-          <input type="text" class="form-input" v-model="paymentForm.sender_name" placeholder="Name as shown on card"
-            required />
+          <input
+            type="text"
+            class="form-input"
+            v-model="paymentForm.sender_name"
+            placeholder="Name as shown on card"
+            required
+          />
         </div>
       </template>
 
       <div class="form-group">
         <label class="form-label">Payment Amount (Rp)</label>
-        <input :value="Number(paymentForm.amount || 0).toLocaleString('id-ID')" type="text" class="form-input" readonly title="Otomatis dari total invoice" style="background: var(--color-surface-raised); cursor: not-allowed;">
+        <input
+          :value="Number(paymentForm.amount || 0).toLocaleString('id-ID')"
+          type="text"
+          class="form-input"
+          readonly
+          title="Otomatis dari total invoice"
+          style="background: var(--color-surface-raised); cursor: not-allowed"
+        />
       </div>
       <div class="form-group">
         <label class="form-label">Reference No. / Receipt (Optional)</label>
-        <input v-model="paymentForm.reference" type="text" class="form-input" placeholder="Enter reference number...">
+        <input
+          v-model="paymentForm.reference"
+          type="text"
+          class="form-input"
+          placeholder="Enter reference number..."
+        />
       </div>
       <div class="form-group">
         <label class="form-label">Notes (Optional)</label>
-        <textarea v-model="paymentForm.notes" class="form-input" rows="2" placeholder="Add payment notes..."></textarea>
+        <textarea
+          v-model="paymentForm.notes"
+          class="form-input"
+          rows="2"
+          placeholder="Add payment notes..."
+        ></textarea>
       </div>
     </FormModal>
   </div>
@@ -2813,5 +4496,4 @@ function printInvoice(item: any) {
   margin: 0 3px;
   flex-shrink: 0;
 }
-
 </style>

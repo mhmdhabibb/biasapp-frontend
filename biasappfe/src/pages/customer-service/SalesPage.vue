@@ -515,10 +515,10 @@ function generateSingleInvoiceHtml(item: any) {
   const custAddress = customer?.address || "-";
   const custPhone = customer?.phone || "-";
   const pic = customer?.pic_name || "-";
-  const gender = customer?.pic_gender;
+  const rawGender = String(customer?.pic_gender || "").trim().toUpperCase();
   let prefix = "Bapak/Ibu ";
-  if (gender === "L") prefix = "Bapak ";
-  if (gender === "P") prefix = "Ibu ";
+  if (rawGender === "L" || rawGender === "M" || rawGender === "MALE" || rawGender === "LAKI-LAKI" || rawGender === "PRIA") prefix = "Bapak ";
+  if (rawGender === "P" || rawGender === "F" || rawGender === "FEMALE" || rawGender === "PEREMPUAN" || rawGender === "WANITA") prefix = "Ibu ";
   const picDisplay = pic !== "-" ? prefix + pic : "-";
   const signer =
     item?.user?.name ||
@@ -801,10 +801,10 @@ function exportMonthToExcel() {
       .replace(/\n/g, " ");
     const custPhone = (customer?.phone || "-").replace(/;/g, ",");
     const pic = customer?.pic_name || "-";
-    const gender = customer?.pic_gender;
+    const rawGender = String(customer?.pic_gender || "").trim().toUpperCase();
     let prefix = "Bapak/Ibu ";
-    if (gender === "L") prefix = "Bapak ";
-    if (gender === "P") prefix = "Ibu ";
+    if (rawGender === "L" || rawGender === "M" || rawGender === "MALE" || rawGender === "LAKI-LAKI" || rawGender === "PRIA") prefix = "Bapak ";
+    if (rawGender === "P" || rawGender === "F" || rawGender === "FEMALE" || rawGender === "PEREMPUAN" || rawGender === "WANITA") prefix = "Ibu ";
     const picDisplay = pic !== "-" ? (prefix + pic).replace(/;/g, ",") : "-";
 
     const invoice = salesInvoices.value.find(

@@ -92,7 +92,7 @@ function initForm(overrideData?: any) {
   Object.assign(form, {
     problem: src.problem || '',
     action: src.action || '',
-    time_in: src.time_in || nowHM,
+    time_in: src.time_in || (isPending.value ? '' : nowHM),
     time_out: src.time_out || '',
     is_tested: !!src.is_tested,
     is_completed: !!src.is_completed,
@@ -420,7 +420,20 @@ async function startJob() {
     const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     form.time_in = hm
     await api.patch(`/delivery-orders/${id}`, { status: 'in_progress', time_in: hm })
-    await store.refreshOnly(['deliveryOrders'])
+    const linked = ((store.jobOrders?.value || []) as any[]).find((j: any) => String(j.delivery_order_id) === String(id))
+    if (linked?.id) {
+      try {
+        await api.patch(`/job-orders/${linked.id}`, { status: 'in_progress' })
+      } catch {}
+    }
+    try {
+      const res: any = await api.get(`/delivery-orders/${id}`)
+      const full = res.data?.data ?? res.data
+      if (full) {
+        localItem.value = full
+      }
+    } catch {}
+    await store.refreshOnly(['deliveryOrders', 'jobOrders'])
     toast.success('Pekerjaan dimulai (Time In dicatat).')
   } catch (err: any) {
     toast.error(err?.message || 'Gagal memulai pekerjaan.')
@@ -449,7 +462,13 @@ async function saveDraft() {
   isSaving.value = true
   try {
     await api.patch(`/delivery-orders/${id}`, { ...form, status: 'draft' })
-    await store.refreshOnly(['deliveryOrders'])
+    const linked = ((store.jobOrders?.value || []) as any[]).find((j: any) => String(j.delivery_order_id) === String(id))
+    if (linked?.id) {
+      try {
+        await api.patch(`/job-orders/${linked.id}`, { status: 'draft' })
+      } catch {}
+    }
+    await store.refreshOnly(['deliveryOrders', 'jobOrders'])
     try {
       const res: any = await api.get(`/delivery-orders/${id}`)
       const full = res.data?.data ?? res.data
@@ -491,6 +510,12 @@ async function executeCompleteForm() {
     const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     form.time_out = form.time_out || hm
     await api.patch(`/delivery-orders/${id}`, { ...form, status: 'completed' })
+    const linked = ((store.jobOrders?.value || []) as any[]).find((j: any) => String(j.delivery_order_id) === String(id))
+    if (linked?.id) {
+      try {
+        await api.patch(`/job-orders/${linked.id}`, { status: 'completed', completed_at: new Date().toISOString() })
+      } catch {}
+    }
     
     // Create follow-up job if unit is not fixed
     if (!form.is_completed) {

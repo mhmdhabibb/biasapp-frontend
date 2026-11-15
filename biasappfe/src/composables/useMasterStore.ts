@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useAuthStore } from "@/stores/auth.store";
 import { useResourcesStore } from "@/stores/resources.store";
+import { resources as rawResources } from "@/services/resource.service";
 import type {
     Brand,
     ContractItem,
@@ -54,6 +55,7 @@ const store = reactive({
   sparepartRequests: [] as SparepartRequest[],
   indents: [] as Indent[],
   rents: [] as any[],
+  uoms: [] as any[],
   deliveryOrders: [] as DeliveryOrder[],
   purchaseOrders: [] as PurchaseOrder[],
   procurementDeliveryOrders: [] as ProcurementDeliveryOrder[],
@@ -73,6 +75,7 @@ const CRITICAL_RESOURCES = [
   "products",
   "warranties",
   "contractItems",
+  "uoms",
 ] as const;
 
 const PAGE_RESOURCE_MAP: Record<string, string[]> = {
@@ -82,8 +85,8 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests"],
 
   // Customer Service Operational Pages
-  "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments", "technicians", "deliveryOrders"],
-  "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units", "rents", "products", "brands", "unitTypes"],
+  "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments", "technicians", "deliveryOrders", "uoms", "brands", "unitTypes"],
+  "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units", "rents", "products", "brands", "unitTypes", "uoms"],
   "/customer-service/sales": ["sales", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes"],
   "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "purchaseOrders", "technicians", "units", "customers", "products", "brands", "unitTypes"],
@@ -326,12 +329,17 @@ export function useMasterStore() {
           fetchAll("indents", DROPDOWN_LIMIT),
           (items) => (store.indents = items || []),
         ),
+      uoms: () =>
+        safeFetch(
+          fetchAll("uoms", DROPDOWN_LIMIT),
+          (items) => ((store as any).uoms = items || []),
+        ),
     };
 
     return new Proxy(baseTasks, {
       get(target, prop: string) {
         if (prop in target) return (target as any)[prop];
-        if (prop in resources) {
+        if (prop in rawResources) {
           return () =>
             safeFetch(
               fetchAll(prop as any, DROPDOWN_LIMIT),
@@ -604,6 +612,12 @@ export function useMasterStore() {
     return (store.products || []).find((p) => String(p.id).trim().toLowerCase() === str);
   }
 
+  function findUom(id: number | string | null): any | undefined {
+    if (id == null) return undefined;
+    const str = String(id).trim().toLowerCase();
+    return (store.uoms || []).find((u: any) => String(u.id).trim().toLowerCase() === str);
+  }
+
   function findWarranty(id: number | string | null): Warranty | undefined {
     if (id == null) return undefined;
     const str = String(id).trim().toLowerCase();
@@ -795,6 +809,7 @@ export function useMasterStore() {
     findBrand,
     findUnitType,
     findProduct,
+    findUom,
     findWarranty,
     findContractItem,
     findServiceReport,
