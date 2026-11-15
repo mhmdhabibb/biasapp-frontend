@@ -10,7 +10,10 @@ interface AuthUser {
   permissions: string[];
 }
 
-const rememberSession = ref(Boolean(localStorage.getItem("bias_token")));
+const rememberSession = ref(
+  localStorage.getItem("bias_remember_me") === "true" ||
+    Boolean(localStorage.getItem("bias_token")),
+);
 
 function preferredStorage() {
   return rememberSession.value ? localStorage : sessionStorage;
@@ -104,6 +107,11 @@ export function useAuthStore() {
 
       rememberSession.value = Boolean(credentials.remember_me);
       clearStoredAuth();
+      if (rememberSession.value) {
+        localStorage.setItem("bias_remember_me", "true");
+      } else {
+        localStorage.removeItem("bias_remember_me");
+      }
       const storage = preferredStorage();
       storage.setItem("bias_token", token.value);
       storage.setItem("bias_user", JSON.stringify(currentUser.value));
@@ -124,6 +132,7 @@ export function useAuthStore() {
     token.value = null;
     currentUser.value = null;
     rememberSession.value = false;
+    localStorage.removeItem("bias_remember_me");
     clearStoredAuth();
   }
 

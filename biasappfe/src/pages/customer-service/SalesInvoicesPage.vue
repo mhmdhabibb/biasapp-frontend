@@ -114,6 +114,31 @@ function approvalStatus(status: string): string {
   return 'pending'
 }
 
+function getInvoiceApprovalStatus(row: any): string {
+  const sale = findSale(row?.sale_id)
+  if (sale?.status === 'paid') return 'approved'
+  const st = String(row?.status || '').toLowerCase()
+  if (st === 'approved') return 'approved'
+  if (st === 'rejected') return 'rejected'
+  return 'pending'
+}
+
+function getInvoicePaymentStatus(row: any): string {
+  const sale = findSale(row?.sale_id)
+  if (sale?.status === 'paid') return 'paid'
+  const paySt = String(row?.payment_status || '').toLowerCase()
+  if (paySt === 'paid') return 'paid'
+  const pays = invoicePayments(row)
+  if (pays.length > 0) {
+    const totalPaid = pays.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0)
+    if (totalPaid >= Number(row?.total || 0) && Number(row?.total || 0) > 0) {
+      return 'paid'
+    }
+    if (totalPaid > 0) return 'partially_paid'
+  }
+  return paySt || 'unpaid'
+}
+
 function invoicePayments(item: any) {
   return payments.value.filter((p: any) => String(p.sales_invoice_id) === String(item.id))
 }
@@ -227,12 +252,12 @@ const filteredData = computed(() => {
   }
   if (paymentStatusFilter.value) {
     const target = paymentStatusFilter.value.toLowerCase()
-    items = items.filter(d => String(d.payment_status || 'unpaid').toLowerCase() === target)
+    items = items.filter(d => getInvoicePaymentStatus(d).toLowerCase() === target)
   }
   if (approvalStatusFilter.value) {
     const target = approvalStatusFilter.value.toLowerCase()
     items = items.filter(d => {
-      const s = String(d.status || '').toLowerCase()
+      const s = getInvoiceApprovalStatus(d).toLowerCase()
       if (target === 'pending') {
         return s === 'pending' || s === '' || s === 'unpaid'
       }
@@ -1197,14 +1222,14 @@ async function printReceiptAsync(item: any, approved: any) {
       <template #cell-due_date="{ value }">{{ formatDate(value) }}</template>
       <template #cell-subtotal="{ value }">{{ formatRupiah(value || 0) }}</template>
       <template #cell-total="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-status="{ value }">
-        <span :class="approvalStatus(value) === 'approved' ? 'badge badge-info' : approvalStatus(value) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-          {{ approvalStatus(value) === 'approved' ? 'Approved' : approvalStatus(value) === 'rejected' ? 'Rejected' : 'Unpaid' }}
+      <template #cell-status="{ row }">
+        <span :class="getInvoiceApprovalStatus(row) === 'approved' ? 'badge badge-info' : getInvoiceApprovalStatus(row) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
+          {{ getInvoiceApprovalStatus(row) === 'approved' ? 'Approved' : getInvoiceApprovalStatus(row) === 'rejected' ? 'Rejected' : 'Unpaid' }}
         </span>
       </template>
-      <template #cell-payment_status="{ value }">
-        <span :class="value === 'paid' ? 'badge badge-success' : value === 'overdue' ? 'badge badge-danger' : value === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-          {{ value === 'paid' ? 'Paid' : value === 'overdue' ? 'Overdue' : value === 'partially_paid' ? 'Partial' : 'Unpaid' }}
+      <template #cell-payment_status="{ row }">
+        <span :class="getInvoicePaymentStatus(row) === 'paid' ? 'badge badge-success' : getInvoicePaymentStatus(row) === 'overdue' ? 'badge badge-danger' : getInvoicePaymentStatus(row) === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
+          {{ getInvoicePaymentStatus(row) === 'paid' ? 'Paid' : getInvoicePaymentStatus(row) === 'overdue' ? 'Overdue' : getInvoicePaymentStatus(row) === 'partially_paid' ? 'Partial' : 'Unpaid' }}
         </span>
       </template>
       <template #actions="{ row }">
@@ -1391,14 +1416,14 @@ async function printReceiptAsync(item: any, approved: any) {
           </div>
           <div class="form-group">
             <label class="form-label">Approval Status</label>
-            <span :class="approvalStatus(detailItem.status) === 'approved' ? 'badge badge-info' : approvalStatus(detailItem.status) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
-              {{ approvalStatus(detailItem.status) === 'approved' ? 'Approved' : approvalStatus(detailItem.status) === 'rejected' ? 'Rejected' : 'Pending' }}
+            <span :class="getInvoiceApprovalStatus(detailItem) === 'approved' ? 'badge badge-info' : getInvoiceApprovalStatus(detailItem) === 'rejected' ? 'badge badge-danger' : 'badge badge-warning'">
+              {{ getInvoiceApprovalStatus(detailItem) === 'approved' ? 'Approved' : getInvoiceApprovalStatus(detailItem) === 'rejected' ? 'Rejected' : 'Pending' }}
             </span>
           </div>
           <div class="form-group">
             <label class="form-label">Payment Status</label>
-            <span :class="detailItem.payment_status === 'paid' ? 'badge badge-success' : detailItem.payment_status === 'overdue' ? 'badge badge-danger' : detailItem.payment_status === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
-              {{ detailItem.payment_status === 'paid' ? 'Paid' : detailItem.payment_status === 'overdue' ? 'Overdue' : detailItem.payment_status === 'partially_paid' ? 'Partial' : 'Unpaid' }}
+            <span :class="getInvoicePaymentStatus(detailItem) === 'paid' ? 'badge badge-success' : getInvoicePaymentStatus(detailItem) === 'overdue' ? 'badge badge-danger' : getInvoicePaymentStatus(detailItem) === 'partially_paid' ? 'badge badge-info' : 'badge badge-warning'">
+              {{ getInvoicePaymentStatus(detailItem) === 'paid' ? 'Paid' : getInvoicePaymentStatus(detailItem) === 'overdue' ? 'Overdue' : getInvoicePaymentStatus(detailItem) === 'partially_paid' ? 'Partial' : 'Unpaid' }}
             </span>
           </div>
         </div>

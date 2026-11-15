@@ -87,8 +87,8 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   // Customer Service Operational Pages
   "/customer-service/rentals": ["rents", "rentalInvoices", "contractItems", "units", "customers", "products", "payments", "technicians", "deliveryOrders", "uoms", "brands", "unitTypes"],
   "/customer-service/rental-invoices": ["rentalInvoices", "payments", "contractItems", "customers", "units", "rents", "products", "brands", "unitTypes", "uoms"],
-  "/customer-service/sales": ["sales", "customers", "units", "products", "brands", "unitTypes"],
-  "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes"],
+  "/customer-service/sales": ["sales", "customers", "units", "products", "brands", "unitTypes", "salesInvoices", "payments", "deliveryOrders"],
+  "/customer-service/sales-invoices": ["salesInvoices", "sales", "customers", "units", "products", "brands", "unitTypes", "payments", "deliveryOrders"],
   "/customer-service/service-reports": ["serviceReports", "deliveryOrders", "sparepartRequests", "purchaseOrders", "technicians", "units", "customers", "products", "brands", "unitTypes"],
   "/customer-service/contract-items": ["contractItems", "customers", "units", "brands", "unitTypes"],
   "/customer-service/job-orders": ["jobOrders", "deliveryOrders", "serviceReports", "serviceRequests", "technicians", "units", "customers", "brands", "unitTypes"],

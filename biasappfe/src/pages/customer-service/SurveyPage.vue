@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";

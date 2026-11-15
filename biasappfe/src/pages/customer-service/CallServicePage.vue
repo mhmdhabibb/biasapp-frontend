@@ -79,7 +79,7 @@ async function handleAssignJob() {
   let projectName = ''
   if (String(form.service_type || '').toLowerCase() === 'delivery') {
     const selectedUnit = availableUnits.value.find(u => u.id === form.unit_id)
-    const unitName = selectedUnit ? `${selectedUnit.brand?.name || selectedUnit.brand || ''} ${selectedUnit.model || selectedUnit.name || 'Unit'}`.trim() : 'Unit'
+    const unitName = selectedUnit ? formatUnitDisplayName(selectedUnit) : 'Unit'
     const addr = selectedCustomer.value?.address || ''
     projectName = addr ? `Pengantaran ${unitName} ke ${addr}` : `Pengantaran ${unitName}`
   } else if (relatedContract?.placement_location) {

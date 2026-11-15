@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'

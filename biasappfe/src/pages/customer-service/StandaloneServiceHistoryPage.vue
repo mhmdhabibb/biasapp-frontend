@@ -150,6 +150,17 @@ function statusClass(row: any): string {
   return 'badge-warning'
 }
 
+function isRowCompleted(row: any): boolean {
+  if (!row) return false
+  const s = String(row.status || '').toLowerCase()
+  if (s === 'completed' || s === 'delivered' || s === 'cancelled') return true
+  if (row.is_completed) return true
+  if (statusLabel(row) === 'COMPLETED') return true
+  const jo = findJobOrderForDO(row.id)
+  if (jo && (String(jo.status || '').toLowerCase() === 'completed' || String(jo.status || '').toLowerCase() === 'cancelled')) return true
+  return false
+}
+
 function productSummary(row: any): string {
   const items = row?.delivery_order_items || []
   if (!items.length) return 'Belum diisi teknisi'
@@ -266,7 +277,7 @@ async function handleSubmit() {
   isSaving.value = true
   try {
     if (editingItem.value) {
-      await resources.update('deliveryOrders', String(editingItem.value.id), {
+      const payload: any = {
         customer_id: form.customer_id,
         customer_category: form.customer_category,
         project_name: form.project_name,
@@ -274,12 +285,15 @@ async function handleSubmit() {
         recipient_name: form.recipient_name,
         recipient_phone: form.recipient_phone,
         delivery_date: form.delivery_date ? `${form.delivery_date}T00:00:00Z` : undefined,
-        technician_id: form.technician_id,
         notes: form.notes,
-      })
+      }
+      if (!isRowCompleted(editingItem.value)) {
+        payload.technician_id = form.technician_id
+      }
+      await resources.update('deliveryOrders', String(editingItem.value.id), payload)
 
       // Jika ada Job Order terhubung dan teknisi diubah, sinkronkan ke Job Order
-      if (form.technician_id) {
+      if (form.technician_id && !isRowCompleted(editingItem.value)) {
         const linkedJO = findJobOrderForDO(editingItem.value.id)
         if (linkedJO) {
           try {
@@ -344,6 +358,10 @@ const filterStatusOptions = [
 ]
 
 function openAssign(row: any) {
+  if (isRowCompleted(row)) {
+    toast.warning('Pekerjaan ini sudah selesai (Completed) dan tidak dapat di-assign lagi.')
+    return
+  }
   assigningRow.value = row
   const linkedJO = findJobOrderForDO(row.id)
   Object.assign(assignForm, {
@@ -360,6 +378,11 @@ function openAssign(row: any) {
 
 async function handleAssignSubmit() {
   if (!assigningRow.value) return
+  if (isRowCompleted(assigningRow.value)) {
+    toast.error('Pekerjaan ini sudah selesai (Completed) dan tidak dapat di-assign lagi.')
+    showAssignModal.value = false
+    return
+  }
   if (!assignForm.technician_id) {
     toast.warning('Pilih teknisi terlebih dahulu.')
     return
@@ -700,7 +723,7 @@ async function exportPdf() {
               Edit
             </button>
             <button
-              v-if="can('job_order:create') || can('delivery_order:update')"
+              v-if="(can('job_order:create') || can('delivery_order:update')) && !isRowCompleted(row)"
               class="btn btn-sm btn-outline btn-assign-action"
               @click="openAssign(row)"
               :title="findJobOrderForDO(row.id) ? 'Re-assign Job Order' : 'Assign ke Job Order'"
@@ -774,7 +797,7 @@ async function exportPdf() {
           <input v-model="form.recipient_phone" type="text" class="form-input" placeholder="08xx..." />
         </div>
       </div>
-      <div class="form-group">
+      <div class="form-group" v-if="!isRowCompleted(editingItem)">
         <label class="form-label">Teknisi (opsional, atau gunakan tombol Assign)</label>
         <CustomSelect v-model="form.technician_id" :options="technicianOptions" placeholder="-- Tanpa penunjukan langsung --" class="form-select" />
         <span class="form-hint">Dapat di-assign langsung nanti melalui tombol "Assign" di tabel.</span>

@@ -17,7 +17,7 @@ import { resources as resourceService } from "@/services/resource.service";
 import type { Sale, TableColumn } from "@/types";
 import { computed, reactive, ref, onMounted, onUnmounted, watch } from "vue";
 import { useRoute } from "vue-router";
-import { apiRequest } from "@/services/api";
+import { apiRequest, api } from "@/services/api";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
 import { buildPaymentTimestamp } from "@/utils/paymentReceipt";
 import { normalizeRole } from "@/router/role-access";
@@ -59,7 +59,9 @@ const {
   formatProductDisplayName,
 } = useMasterStore();
 
-const isLoading = ref(((data.value as any[])?.length || 0) === 0 && !route.query.customer_id);
+const isLoading = ref(
+  ((data.value as any[])?.length || 0) === 0 && !route.query.customer_id,
+);
 
 const resources = useResourcesStore();
 
@@ -469,9 +471,27 @@ const salePayments = computed(() => {
 async function handlePayment() {
   if (!viewingItem.value) return;
   try {
-    const invoice = salesInvoices.value.find(
+    let invoice = salesInvoices.value.find(
       (inv: any) => inv.sale_id === viewingItem.value?.id,
     );
+    if (!invoice && viewingItem.value?.id) {
+      try {
+        const res: any = await api.get(
+          `/sales-invoices?sale_id=${viewingItem.value.id}`,
+          false,
+          false,
+        );
+        const items = res?.data?.data || res?.data || [];
+        if (Array.isArray(items) && items.length > 0) {
+          invoice =
+            items.find((i: any) => i.sale_id === viewingItem.value?.id) ||
+            items[0];
+        }
+      } catch (e) {
+        console.warn("Direct invoice fetch failed", e);
+      }
+    }
+
     if (invoice) {
       let finalBankName = paymentData.bank_name;
       if (
@@ -491,6 +511,15 @@ async function handlePayment() {
         reference_no: paymentData.reference_no || "-",
       };
       await resources.create("payments", paymentPayload);
+
+      try {
+        await resources.update("salesInvoices", invoice.id as any, {
+          status: "approved",
+          payment_status: "paid",
+        });
+      } catch (invErr) {
+        console.warn("Invoice status update error", invErr);
+      }
     }
 
     const payload = {
@@ -498,7 +527,18 @@ async function handlePayment() {
       status: "paid",
     };
     await resources.update("sales", viewingItem.value.id as any, payload);
+
+    if (!hasActiveDO(viewingItem.value)) {
+      try {
+        await api.post(`/sales/${viewingItem.value.id}/delivery-order`, {});
+      } catch (doErr) {
+        console.warn("Auto-create DO on payment warning", doErr);
+      }
+    }
+
     await useMasterStore().refreshInBackground();
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
     showPaymentModal.value = false;
     toast.success("Payment recorded successfully!");
   } catch (err: any) {
@@ -515,10 +555,26 @@ function generateSingleInvoiceHtml(item: any) {
   const custAddress = customer?.address || "-";
   const custPhone = customer?.phone || "-";
   const pic = customer?.pic_name || "-";
-  const rawGender = String(customer?.pic_gender || "").trim().toUpperCase();
+  const rawGender = String(customer?.pic_gender || "")
+    .trim()
+    .toUpperCase();
   let prefix = "Bapak/Ibu ";
-  if (rawGender === "L" || rawGender === "M" || rawGender === "MALE" || rawGender === "LAKI-LAKI" || rawGender === "PRIA") prefix = "Bapak ";
-  if (rawGender === "P" || rawGender === "F" || rawGender === "FEMALE" || rawGender === "PEREMPUAN" || rawGender === "WANITA") prefix = "Ibu ";
+  if (
+    rawGender === "L" ||
+    rawGender === "M" ||
+    rawGender === "MALE" ||
+    rawGender === "LAKI-LAKI" ||
+    rawGender === "PRIA"
+  )
+    prefix = "Bapak ";
+  if (
+    rawGender === "P" ||
+    rawGender === "F" ||
+    rawGender === "FEMALE" ||
+    rawGender === "PEREMPUAN" ||
+    rawGender === "WANITA"
+  )
+    prefix = "Ibu ";
   const picDisplay = pic !== "-" ? prefix + pic : "-";
   const signer =
     item?.user?.name ||
@@ -801,10 +857,26 @@ function exportMonthToExcel() {
       .replace(/\n/g, " ");
     const custPhone = (customer?.phone || "-").replace(/;/g, ",");
     const pic = customer?.pic_name || "-";
-    const rawGender = String(customer?.pic_gender || "").trim().toUpperCase();
+    const rawGender = String(customer?.pic_gender || "")
+      .trim()
+      .toUpperCase();
     let prefix = "Bapak/Ibu ";
-    if (rawGender === "L" || rawGender === "M" || rawGender === "MALE" || rawGender === "LAKI-LAKI" || rawGender === "PRIA") prefix = "Bapak ";
-    if (rawGender === "P" || rawGender === "F" || rawGender === "FEMALE" || rawGender === "PEREMPUAN" || rawGender === "WANITA") prefix = "Ibu ";
+    if (
+      rawGender === "L" ||
+      rawGender === "M" ||
+      rawGender === "MALE" ||
+      rawGender === "LAKI-LAKI" ||
+      rawGender === "PRIA"
+    )
+      prefix = "Bapak ";
+    if (
+      rawGender === "P" ||
+      rawGender === "F" ||
+      rawGender === "FEMALE" ||
+      rawGender === "PEREMPUAN" ||
+      rawGender === "WANITA"
+    )
+      prefix = "Ibu ";
     const picDisplay = pic !== "-" ? (prefix + pic).replace(/;/g, ",") : "-";
 
     const invoice = salesInvoices.value.find(
@@ -1038,6 +1110,11 @@ const form = reactive({
     duration_months: 12,
     duration_days: 0,
     expired_date: "",
+    expired_dates: {
+      machine: "",
+      sparepart: "",
+      service: "",
+    } as Record<string, string>,
     terms_conditions: "",
   },
 });
@@ -1049,6 +1126,37 @@ function addMonthsISO(dateStr: string, months: number): string {
   const d = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date();
   d.setMonth(d.getMonth() + months);
   return toISODate(d);
+}
+
+function defaultExpiredDateForType(type: string, baseDateStr?: string): string {
+  const base =
+    baseDateStr || form.sale_date || new Date().toISOString().slice(0, 10);
+  switch (type) {
+    case "machine":
+      return addMonthsISO(base, 12);
+    case "sparepart":
+      return addMonthsISO(base, 6);
+    case "service":
+      return addMonthsISO(base, 3);
+    default:
+      return addMonthsISO(base, 12);
+  }
+}
+
+function getWarrantyTypeLabel(val: string): string {
+  const opt = warrantyTypeOptions.find((o) => o.value === val);
+  return opt ? opt.label : val;
+}
+
+function onWarrantyTypeToggle(type: string) {
+  if (form.warranty.warranty_types.includes(type)) {
+    if (!form.warranty.expired_dates[type]) {
+      form.warranty.expired_dates[type] = defaultExpiredDateForType(
+        type,
+        form.sale_date,
+      );
+    }
+  }
 }
 
 const calcSubtotal = computed(() =>
@@ -1141,10 +1249,11 @@ const isSubmitting = ref(false);
 function openAdd() {
   editingItem.value = null;
   currentStep.value = 1;
+  const todayStr = new Date().toISOString().slice(0, 10);
   Object.assign(form, {
     sale_no: `SLS-${Date.now().toString().slice(-6)}`,
     customer_id: null,
-    sale_date: new Date().toISOString().slice(0, 10),
+    sale_date: todayStr,
     po_no: "",
     installation_address: "",
     total_amount: 0,
@@ -1156,7 +1265,12 @@ function openAdd() {
       warranty_types: ["machine"],
       duration_months: 12,
       duration_days: 0,
-      expired_date: addMonthsISO(new Date().toISOString().slice(0, 10), 12),
+      expired_date: defaultExpiredDateForType("machine", todayStr),
+      expired_dates: {
+        machine: defaultExpiredDateForType("machine", todayStr),
+        sparepart: defaultExpiredDateForType("sparepart", todayStr),
+        service: defaultExpiredDateForType("service", todayStr),
+      },
       terms_conditions: "",
     },
   });
@@ -1222,6 +1336,22 @@ function openEdit(item: any) {
                   item.sale_date ? item.sale_date.slice(0, 10) : "",
                   12,
                 ),
+            expired_dates: (() => {
+              const baseDate = item.sale_date
+                ? item.sale_date.slice(0, 10)
+                : "";
+              const map: Record<string, string> = {
+                machine: defaultExpiredDateForType("machine", baseDate),
+                sparepart: defaultExpiredDateForType("sparepart", baseDate),
+                service: defaultExpiredDateForType("service", baseDate),
+              };
+              for (const w of item.warranties) {
+                if (w.warranty_type && w.end_date) {
+                  map[w.warranty_type] = String(w.end_date).substring(0, 10);
+                }
+              }
+              return map;
+            })(),
             terms_conditions: item.warranties?.[0]?.terms_conditions || "",
           }
         : {
@@ -1233,6 +1363,20 @@ function openEdit(item: any) {
               item.sale_date ? item.sale_date.slice(0, 10) : "",
               12,
             ),
+            expired_dates: {
+              machine: defaultExpiredDateForType(
+                "machine",
+                item.sale_date ? item.sale_date.slice(0, 10) : "",
+              ),
+              sparepart: defaultExpiredDateForType(
+                "sparepart",
+                item.sale_date ? item.sale_date.slice(0, 10) : "",
+              ),
+              service: defaultExpiredDateForType(
+                "service",
+                item.sale_date ? item.sale_date.slice(0, 10) : "",
+              ),
+            },
             terms_conditions: "",
           },
   });
@@ -1320,10 +1464,6 @@ async function handleSubmit() {
   // Konversi expired date -> duration
   const warrantyPayload = { ...form.warranty };
   if (form.has_warranty) {
-    if (!warrantyPayload.expired_date) {
-      toast.warning("Warranty expired date is required.");
-      return;
-    }
     const types = [
       ...new Set((warrantyPayload.warranty_types || []).filter(Boolean)),
     ];
@@ -1331,17 +1471,52 @@ async function handleSubmit() {
       toast.warning("Pilih minimal 1 warranty type.");
       return;
     }
+
     const start = new Date(`${form.sale_date}T00:00:00`);
-    const end = new Date(`${warrantyPayload.expired_date}T00:00:00`);
-    const diffDays = Math.round((end.getTime() - start.getTime()) / 86400000);
-    if (diffDays < 0) {
-      toast.warning("Warranty expired date must not be before the sale date.");
+    if (isNaN(start.getTime())) {
+      toast.warning("Tanggal penjualan tidak valid.");
       return;
     }
+
+    for (const t of types) {
+      const expDateStr = form.warranty.expired_dates?.[t];
+      if (!expDateStr) {
+        toast.warning(
+          `Warranty expired date untuk ${getWarrantyTypeLabel(t)} wajib diisi.`,
+        );
+        return;
+      }
+      const end = new Date(`${expDateStr}T00:00:00`);
+      if (isNaN(end.getTime())) {
+        toast.warning(
+          `Format expired date untuk ${getWarrantyTypeLabel(t)} tidak valid.`,
+        );
+        return;
+      }
+      const diffDays = Math.round((end.getTime() - start.getTime()) / 86400000);
+      if (diffDays < 0) {
+        toast.warning(
+          `Warranty expired date untuk ${getWarrantyTypeLabel(t)} tidak boleh sebelum tanggal penjualan.`,
+        );
+        return;
+      }
+    }
+
+    const primaryType = types[0] || "machine";
+    const primaryExp =
+      form.warranty.expired_dates?.[primaryType] ||
+      defaultExpiredDateForType(primaryType, form.sale_date);
+    const primaryEnd = new Date(`${primaryExp}T00:00:00`);
+    const primaryDiffDays = Math.max(
+      0,
+      Math.round((primaryEnd.getTime() - start.getTime()) / 86400000),
+    );
+
     warrantyPayload.start_date = formatToISO8601(form.sale_date);
     warrantyPayload.duration_months = 0;
-    warrantyPayload.duration_days = diffDays;
-    warrantyPayload.warranty_type = types?.[0] || "machine";
+    warrantyPayload.duration_days = primaryDiffDays;
+    warrantyPayload.expired_date = primaryExp;
+    warrantyPayload.warranty_type = primaryType;
     warrantyPayload.warranty_types = types;
   }
 
@@ -1354,13 +1529,24 @@ async function handleSubmit() {
     warranty: warrantyPayload,
     warranties: form.has_warranty
       ? [...new Set((form.warranty.warranty_types || []).filter(Boolean))].map(
-          (t) => ({
-            warranty_type: t,
-            start_date: formatToISO8601(form.sale_date),
-            duration_months: warrantyPayload.duration_months,
-            duration_days: warrantyPayload.duration_days,
-            terms_conditions: form.warranty.terms_conditions || "",
-          }),
+          (t) => {
+            const exp =
+              form.warranty.expired_dates?.[t] ||
+              defaultExpiredDateForType(t, form.sale_date);
+            const start = new Date(`${form.sale_date}T00:00:00`);
+            const end = new Date(`${exp}T00:00:00`);
+            const diffDays = Math.max(
+              0,
+              Math.round((end.getTime() - start.getTime()) / 86400000),
+            );
+            return {
+              warranty_type: t,
+              start_date: formatToISO8601(form.sale_date),
+              duration_months: 0,
+              duration_days: diffDays,
+              terms_conditions: form.warranty.terms_conditions || "",
+            };
+          },
         )
       : [],
     subtotal: calcSubtotal.value,
@@ -1396,6 +1582,7 @@ async function handleSubmit() {
       res = await resources.create("sales", saleData);
     }
     await useMasterStore().refreshInBackground();
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
     showModal.value = false;
     toast.success(
       editingItem.value
@@ -1813,334 +2000,336 @@ const combinedItemOptions = computed(() => {
       :show-header-actions="true"
     />
     <div v-show="!isLoading">
-    <PageHeader
-      title="Sales"
-      button-label="Add Sale"
-      permission="sale:create"
-      @add="openAdd"
-    />
+      <PageHeader
+        title="Sales"
+        button-label="Add Sale"
+        permission="sale:create"
+        @add="openAdd"
+      />
 
-    <section class="report-toolbar" aria-label="Sales filters and exports">
-      <div class="report-filters">
-        <label class="report-filter report-filter-customer">
-          <span class="report-filter-label">Customer</span>
-          <CustomSelect
-            v-model="filterCustomer"
-            :options="customerOptions"
-            placeholder="All Customers"
-          />
-        </label>
-        <label class="report-filter report-filter-month">
-          <span class="report-filter-label">Month</span>
-          <CustomSelect
-            v-model="monthFilter"
-            :options="monthOptions"
-            placeholder="All Months"
-          />
-        </label>
-        <label class="report-filter report-filter-year">
-          <span class="report-filter-label">Year</span>
-          <CustomSelect
-            v-model="yearFilter"
-            :options="yearOptions"
-            placeholder="All Years"
-          />
-        </label>
-        <label class="report-filter report-filter-date">
-          <span class="report-filter-label">Start date</span>
-          <input v-model="startDateFilter" type="date" class="form-input" />
-        </label>
-        <label class="report-filter report-filter-date">
-          <span class="report-filter-label">End date</span>
-          <input v-model="endDateFilter" type="date" class="form-input" />
-        </label>
-        <button
-          v-if="monthFilter || yearFilter || startDateFilter || endDateFilter"
-          type="button"
-          class="btn btn-outline report-reset"
-          @click="resetDateFilters"
-        >
-          Reset filters
-        </button>
-      </div>
-      <div class="report-actions">
-        <button type="button" class="btn btn-outline" @click="exportToPdf">
-          Export PDF
-        </button>
-        <button type="button" class="btn btn-outline" @click="exportToExcel">
-          Export Excel
-        </button>
-      </div>
-    </section>
-
-    <DataTable
-      :columns="columns"
-      :data="filteredSales"
-      search-placeholder="Search sales..."
-      @edit="openEdit"
-      @delete="openDelete"
-    >
-      <template #cell-customer_id="{ value }">{{
-        customerName(value as any)
-      }}</template>
-      <template #cell-pic_name="{ row }">{{
-        picName(row.customer_id)
-      }}</template>
-      <template #cell-date="{ value }">{{
-        value ? new Date(value).toLocaleDateString("en-GB") : "-"
-      }}</template>
-      <template #cell-subtotal="{ value }">{{
-        formatRupiah(value || 0)
-      }}</template>
-      <template #cell-service_charge="{ value }">{{
-        formatRupiah(value || 0)
-      }}</template>
-      <template #cell-tax="{ value }">{{ formatRupiah(value || 0) }}</template>
-      <template #cell-do_number="{ row }">
-        <span
-          v-if="hasActiveDO(row)"
-          class="badge badge-info"
-          style="font-family: monospace; font-size: 0.78rem"
-        >
-          {{ getDONumber(row) }}
-        </span>
-        <span
-          v-else
-          class="text-muted"
-          style="font-size: 0.78rem; font-style: italic"
-        >
-          No DO
-        </span>
-      </template>
-      <template #cell-total="{ value }">{{
-        formatRupiah(value || 0)
-      }}</template>
-      <template #cell-status="{ value }">
-        <span
-          :class="
-            !value || value === 'pending'
-              ? 'badge badge-info'
-              : value === 'approved'
-                ? 'badge badge-success'
-                : value === 'paid'
-                  ? 'badge badge-success'
-                  : 'badge badge-danger'
-          "
-        >
-          {{
-            !value || value === "pending"
-              ? "Approved"
-              : value === "approved"
-                ? "Approved"
-                : value === "paid"
-                  ? "Paid"
-                  : "Cancelled"
-          }}
-        </span>
-      </template>
-      <template #actions="{ row }">
-        <div style="display: flex; align-items: center; gap: 6px">
+      <section class="report-toolbar" aria-label="Sales filters and exports">
+        <div class="report-filters">
+          <label class="report-filter report-filter-customer">
+            <span class="report-filter-label">Customer</span>
+            <CustomSelect
+              v-model="filterCustomer"
+              :options="customerOptions"
+              placeholder="All Customers"
+            />
+          </label>
+          <label class="report-filter report-filter-month">
+            <span class="report-filter-label">Month</span>
+            <CustomSelect
+              v-model="monthFilter"
+              :options="monthOptions"
+              placeholder="All Months"
+            />
+          </label>
+          <label class="report-filter report-filter-year">
+            <span class="report-filter-label">Year</span>
+            <CustomSelect
+              v-model="yearFilter"
+              :options="yearOptions"
+              placeholder="All Years"
+            />
+          </label>
+          <label class="report-filter report-filter-date">
+            <span class="report-filter-label">Start date</span>
+            <input v-model="startDateFilter" type="date" class="form-input" />
+          </label>
+          <label class="report-filter report-filter-date">
+            <span class="report-filter-label">End date</span>
+            <input v-model="endDateFilter" type="date" class="form-input" />
+          </label>
           <button
-            v-if="can('sale:read')"
-            class="action-btn action-btn--edit"
-            title="Detail"
-            @click="openView(row)"
-            style="color: var(--color-text-muted); width: 36px; height: 36px"
+            v-if="monthFilter || yearFilter || startDateFilter || endDateFilter"
+            type="button"
+            class="btn btn-outline report-reset"
+            @click="resetDateFilters"
           >
-            <svg
-              class="action-icon"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-              <circle cx="12" cy="12" r="3"></circle>
-            </svg>
-          </button>
-          <button
-            v-if="row.status !== 'paid' && can('payment:create')"
-            class="action-btn action-btn--edit"
-            title="Payment"
-            @click="openPayment(row)"
-            style="color: var(--color-success); width: 36px; height: 36px"
-          >
-            <svg
-              class="action-icon"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="2" y1="10" x2="22" y2="10"></line>
-            </svg>
-          </button>
-          <button
-            v-if="row.status === 'paid' && can('sale:read')"
-            class="action-btn action-btn--edit"
-            title="Print Receipt"
-            @click="printReceipt(row)"
-            style="color: var(--color-success); width: 36px; height: 36px"
-          >
-            <svg
-              class="action-icon"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path
-                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-              ></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-          </button>
-          <button
-            v-if="row.status === 'approved' && can('sale:read')"
-            class="action-btn action-btn--edit"
-            title="Print Invoice"
-            @click="printInvoice(row)"
-            style="color: var(--color-primary); width: 36px; height: 36px"
-          >
-            <svg
-              class="action-icon"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="6 9 6 2 18 2 18 9"></polyline>
-              <path
-                d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"
-              ></path>
-              <rect x="6" y="14" width="12" height="8"></rect>
-            </svg>
-          </button>
-          <button
-            v-if="can('sale:update')"
-            class="action-btn action-btn--edit"
-            title="Edit"
-            @click="openEdit(row)"
-            style="width: 36px; height: 36px"
-          >
-            <svg
-              class="action-icon"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path
-                d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
-              ></path>
-              <path
-                d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
-              ></path>
-            </svg>
-          </button>
-          <!-- Create / Restore Delivery Order Button -->
-          <button
-            v-if="!hasActiveDO(row) && can('sale:update')"
-            class="action-btn action-btn--edit"
-            title="Buat / Pulihkan Surat Jalan (DO)"
-            @click="openCreateDOModal(row)"
-            style="color: #e67e22; width: 36px; height: 36px"
-          >
-            <svg
-              class="action-icon"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="1" y="3" width="15" height="13"></rect>
-              <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
-              <circle cx="5.5" cy="18.5" r="2.5"></circle>
-              <circle cx="18.5" cy="18.5" r="2.5"></circle>
-            </svg>
-          </button>
-          <button
-            v-if="can('sale:delete')"
-            class="action-btn action-btn--delete"
-            title="Delete"
-            @click="openDelete(row)"
-            style="width: 36px; height: 36px"
-          >
-            <svg
-              class="action-icon"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path
-                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
-              ></path>
-              <line x1="10" y1="11" x2="10" y2="17"></line>
-              <line x1="14" y1="11" x2="14" y2="17"></line>
-            </svg>
-          </button>
-          <button
-            v-if="hardDelete.isSuperadmin"
-            class="action-btn action-btn--hard"
-            title="Hapus permanen dari database (superadmin)"
-            @click="hardDelete.open(row)"
-            style="width: 36px; height: 36px"
-          >
-            <svg
-              class="action-icon"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path
-                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
-              ></path>
-              <line x1="12" y1="11" x2="12" y2="17"></line>
-            </svg>
+            Reset filters
           </button>
         </div>
-      </template>
-    </DataTable>
+        <div class="report-actions">
+          <button type="button" class="btn btn-outline" @click="exportToPdf">
+            Export PDF
+          </button>
+          <button type="button" class="btn btn-outline" @click="exportToExcel">
+            Export Excel
+          </button>
+        </div>
+      </section>
+
+      <DataTable
+        :columns="columns"
+        :data="filteredSales"
+        search-placeholder="Search sales..."
+        @edit="openEdit"
+        @delete="openDelete"
+      >
+        <template #cell-customer_id="{ value }">{{
+          customerName(value as any)
+        }}</template>
+        <template #cell-pic_name="{ row }">{{
+          picName(row.customer_id)
+        }}</template>
+        <template #cell-date="{ value }">{{
+          value ? new Date(value).toLocaleDateString("en-GB") : "-"
+        }}</template>
+        <template #cell-subtotal="{ value }">{{
+          formatRupiah(value || 0)
+        }}</template>
+        <template #cell-service_charge="{ value }">{{
+          formatRupiah(value || 0)
+        }}</template>
+        <template #cell-tax="{ value }">{{
+          formatRupiah(value || 0)
+        }}</template>
+        <template #cell-do_number="{ row }">
+          <span
+            v-if="hasActiveDO(row)"
+            class="badge badge-info"
+            style="font-family: monospace; font-size: 0.78rem"
+          >
+            {{ getDONumber(row) }}
+          </span>
+          <span
+            v-else
+            class="text-muted"
+            style="font-size: 0.78rem; font-style: italic"
+          >
+            No DO
+          </span>
+        </template>
+        <template #cell-total="{ value }">{{
+          formatRupiah(value || 0)
+        }}</template>
+        <template #cell-status="{ value }">
+          <span
+            :class="
+              !value || value === 'pending'
+                ? 'badge badge-info'
+                : value === 'approved'
+                  ? 'badge badge-success'
+                  : value === 'paid'
+                    ? 'badge badge-success'
+                    : 'badge badge-danger'
+            "
+          >
+            {{
+              !value || value === "pending"
+                ? "Approved"
+                : value === "approved"
+                  ? "Approved"
+                  : value === "paid"
+                    ? "Paid"
+                    : "Cancelled"
+            }}
+          </span>
+        </template>
+        <template #actions="{ row }">
+          <div style="display: flex; align-items: center; gap: 6px">
+            <button
+              v-if="can('sale:read')"
+              class="action-btn action-btn--edit"
+              title="Detail"
+              @click="openView(row)"
+              style="color: var(--color-text-muted); width: 36px; height: 36px"
+            >
+              <svg
+                class="action-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+            <button
+              v-if="row.status !== 'paid' && can('payment:create')"
+              class="action-btn action-btn--edit"
+              title="Payment"
+              @click="openPayment(row)"
+              style="color: var(--color-success); width: 36px; height: 36px"
+            >
+              <svg
+                class="action-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="2" y1="10" x2="22" y2="10"></line>
+              </svg>
+            </button>
+            <button
+              v-if="row.status === 'paid' && can('sale:read')"
+              class="action-btn action-btn--edit"
+              title="Print Receipt"
+              @click="printReceipt(row)"
+              style="color: var(--color-success); width: 36px; height: 36px"
+            >
+              <svg
+                class="action-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                ></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            </button>
+            <button
+              v-if="row.status === 'approved' && can('sale:read')"
+              class="action-btn action-btn--edit"
+              title="Print Invoice"
+              @click="printInvoice(row)"
+              style="color: var(--color-primary); width: 36px; height: 36px"
+            >
+              <svg
+                class="action-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path
+                  d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"
+                ></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
+            </button>
+            <button
+              v-if="can('sale:update')"
+              class="action-btn action-btn--edit"
+              title="Edit"
+              @click="openEdit(row)"
+              style="width: 36px; height: 36px"
+            >
+              <svg
+                class="action-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"
+                ></path>
+                <path
+                  d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
+                ></path>
+              </svg>
+            </button>
+            <!-- Create / Restore Delivery Order Button -->
+            <button
+              v-if="!hasActiveDO(row) && can('sale:update')"
+              class="action-btn action-btn--edit"
+              title="Buat / Pulihkan Surat Jalan (DO)"
+              @click="openCreateDOModal(row)"
+              style="color: #e67e22; width: 36px; height: 36px"
+            >
+              <svg
+                class="action-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="1" y="3" width="15" height="13"></rect>
+                <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+                <circle cx="5.5" cy="18.5" r="2.5"></circle>
+                <circle cx="18.5" cy="18.5" r="2.5"></circle>
+              </svg>
+            </button>
+            <button
+              v-if="can('sale:delete')"
+              class="action-btn action-btn--delete"
+              title="Delete"
+              @click="openDelete(row)"
+              style="width: 36px; height: 36px"
+            >
+              <svg
+                class="action-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path
+                  d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                ></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+            <button
+              v-if="hardDelete.isSuperadmin"
+              class="action-btn action-btn--hard"
+              title="Hapus permanen dari database (superadmin)"
+              @click="hardDelete.open(row)"
+              style="width: 36px; height: 36px"
+            >
+              <svg
+                class="action-icon"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path
+                  d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                ></path>
+                <line x1="12" y1="11" x2="12" y2="17"></line>
+              </svg>
+            </button>
+          </div>
+        </template>
+      </DataTable>
     </div>
     <FormModal
       :open="showModal"
@@ -2466,18 +2655,43 @@ const combinedItemOptions = computed(() => {
                     type="checkbox"
                     :value="opt.value"
                     v-model="form.warranty.warranty_types"
+                    @change="onWarrantyTypeToggle(opt.value)"
                   />
                   {{ opt.label }}
                 </label>
               </div>
             </div>
-            <div class="form-group">
-              <label class="form-label">Warranty Expired Date</label>
-              <input
-                v-model="form.warranty.expired_date"
-                type="date"
-                class="form-input"
-              />
+
+            <!-- Per-type Expired Date Inputs -->
+            <div
+              v-if="
+                form.warranty.warranty_types &&
+                form.warranty.warranty_types.length > 0
+              "
+              class="warranty-dates-grid"
+            >
+              <div
+                v-for="t in form.warranty.warranty_types"
+                :key="t"
+                class="form-group"
+              >
+                <label class="form-label">
+                  Warranty Expired Date ({{ getWarrantyTypeLabel(t) }})
+                </label>
+                <input
+                  v-model="form.warranty.expired_dates[t]"
+                  type="date"
+                  class="form-input"
+                />
+              </div>
+            </div>
+            <div
+              v-else
+              class="text-muted"
+              style="font-size: var(--font-size-sm); font-style: italic"
+            >
+              Pilih minimal 1 jenis garansi di atas untuk menentukan masa
+              berlaku garansi.
             </div>
           </div>
           <div class="form-group" style="margin-top: 0.75rem">
@@ -2913,18 +3127,40 @@ const combinedItemOptions = computed(() => {
                   >
                     Warranty Expired Date
                   </p>
-                  <p style="font-weight: var(--font-weight-medium); margin: 0">
-                    {{
-                      viewingItem.warranties &&
-                      viewingItem.warranties.length > 0 &&
-                      viewingItem.warranties[0].end_date
-                        ? String(viewingItem.warranties[0].end_date).substring(
-                            0,
-                            10,
-                          )
-                        : "-"
-                    }}
-                  </p>
+                  <div
+                    style="font-weight: var(--font-weight-medium); margin: 0"
+                  >
+                    <template
+                      v-if="
+                        viewingItem.warranties &&
+                        viewingItem.warranties.length > 0
+                      "
+                    >
+                      <div
+                        v-for="w in viewingItem.warranties"
+                        :key="w.id || w.warranty_type"
+                        style="margin-bottom: 2px"
+                      >
+                        <span
+                          style="
+                            text-transform: capitalize;
+                            color: var(--color-text-muted);
+                            font-size: var(--font-size-xs);
+                          "
+                        >
+                          {{ w.warranty_type }}:
+                        </span>
+                        <span>
+                          {{
+                            w.end_date
+                              ? String(w.end_date).substring(0, 10)
+                              : "-"
+                          }}
+                        </span>
+                      </div>
+                    </template>
+                    <span v-else>-</span>
+                  </div>
                 </div>
                 <div>
                   <p
@@ -3913,6 +4149,12 @@ const combinedItemOptions = computed(() => {
   width: 15px;
   height: 15px;
   margin: 0;
+}
+
+.warranty-dates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
 }
 
 .step-content {

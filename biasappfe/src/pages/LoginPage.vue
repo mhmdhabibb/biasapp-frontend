@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -13,7 +13,21 @@ const password = ref('')
 const showPassword = ref(false)
 const rememberMe = ref(false)
 
+onMounted(() => {
+  const rememberedUser = localStorage.getItem('remembered_username')
+  if (rememberedUser) {
+    username.value = rememberedUser
+    rememberMe.value = true
+  }
+})
+
 async function handleSubmit() {
+  if (rememberMe.value) {
+    localStorage.setItem('remembered_username', username.value)
+  } else {
+    localStorage.removeItem('remembered_username')
+  }
+
   const success = await login({
     username: username.value,
     password: password.value,

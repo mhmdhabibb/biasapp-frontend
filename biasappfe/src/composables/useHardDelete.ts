@@ -47,7 +47,10 @@ export function useIsSuperadmin() {
   return computed(() => {
     // 1. Check raw JWT payload (preserves the actual role string)
     try {
-      const raw = sessionStorage.getItem('bias_token') || authStore.token.value
+      const raw =
+        localStorage.getItem('bias_token') ||
+        sessionStorage.getItem('bias_token') ||
+        authStore.token.value
       if (raw) {
         const payload = parseJwtPayload(raw)
         if (payload) {
@@ -103,7 +106,7 @@ export function useHardDelete(
   modulePermission?: string,
 ) {
   const toast = useToast()
-  const isSuperadmin = useIsSuperadmin(modulePermission)
+  const isSuperadmin = useIsSuperadmin()
 
   const show = ref(false)
   const target = ref<any>(null)

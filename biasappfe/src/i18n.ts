@@ -230,10 +230,6 @@ const messages = {
       call_service: 'Call Services',
       maintenance: 'Maintenance',
       service_history: 'Service History',
-      standalone_service_history: 'Standalone Service History',
-      sparepart_requests: 'Sparepart Requests',
-      meter_readings: 'Meter Readings',
-      tech_dashboard: 'Tech Dashboard',
       references: 'References',
     }
   }

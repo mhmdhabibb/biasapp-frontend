@@ -43,7 +43,9 @@ export const http = axios.create({
 });
 
 http.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem("bias_token");
+  const token =
+    localStorage.getItem("bias_token") ||
+    sessionStorage.getItem("bias_token");
   if (token) config.headers.set("Authorization", `Bearer ${token}`);
   return config;
 });

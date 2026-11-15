@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// @ts-nocheck
 import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'

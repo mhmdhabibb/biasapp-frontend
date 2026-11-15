@@ -1,11 +1,32 @@
 import { useMasterStore } from "@/composables/useMasterStore";
 import { api } from "@/services/api";
+import { formatUnitDisplayName } from "@/utils/format";
 
 export function isImageSrc(s: any): boolean {
   if (!s || typeof s !== 'string') return false;
   const str = s.trim();
-  if (str === 'signed' || str === 'has_photo' || str === '-') return false;
-  return str.startsWith('data:image/') || str.startsWith('http://') || str.startsWith('https://') || str.startsWith('/') || str.startsWith('blob:');
+  if (str === 'signed' || str === 'has_photo' || str === '-' || str === '') return false;
+  return (
+    str.startsWith('data:image/') ||
+    str.startsWith('http://') ||
+    str.startsWith('https://') ||
+    str.startsWith('/') ||
+    str.startsWith('blob:') ||
+    /\.(jpg|jpeg|png|webp|gif)($|\?)/i.test(str)
+  );
+}
+
+export function isDeliveryOrderItem(item: any): boolean {
+  if (!item) return false;
+  if (item.report_no || item.service_report_no || item.service_type) {
+    return false;
+  }
+  return !!(
+    item.do_number ||
+    item.do_type ||
+    item.delivery_order_items !== undefined ||
+    item.delivery_address
+  );
 }
 
 export function needsFullReportFetch(item: any): boolean {
@@ -17,6 +38,7 @@ export function needsFullReportFetch(item: any): boolean {
     item.technician_signature_copier === 'signed' ||
     item.customer_signature_technical === 'signed' ||
     item.technician_signature_technical === 'signed' ||
+    item.assigner_signature === 'signed' ||
     item.photo_before === 'has_photo' ||
     item.photo_progress === 'has_photo' ||
     item.photo_after === 'has_photo'
@@ -24,15 +46,30 @@ export function needsFullReportFetch(item: any): boolean {
 }
 
 export async function fetchFullServiceReport(item: any): Promise<any> {
-  if (!item?.id || !needsFullReportFetch(item)) return item;
+  if (!item?.id) return item;
+  const needsFetch =
+    needsFullReportFetch(item) ||
+    item.photo_before === 'has_photo' ||
+    item.photo_progress === 'has_photo' ||
+    item.photo_after === 'has_photo' ||
+    (!isImageSrc(item.photo_before) &&
+      !isImageSrc(item.photo_progress) &&
+      !isImageSrc(item.photo_after) &&
+      Boolean(item.photo_before || item.photo_progress || item.photo_after));
+  if (!needsFetch) return item;
+
   try {
-    const res: any = await api.get(`/service-reports/${item.id}`, true, false);
+    const isDO = isDeliveryOrderItem(item);
+    const endpoint = isDO
+      ? `/delivery-orders/${item.id}`
+      : `/service-reports/${item.id}`;
+    const res: any = await api.get(endpoint, true, false);
     const data = res?.data?.data || res?.data || res;
     if (data && data.id) {
       return { ...item, ...data };
     }
   } catch (e) {
-    console.warn("Failed to fetch full service report:", e);
+    console.warn("Failed to fetch full report/DO details:", e);
   }
   return item;
 }
@@ -129,17 +166,33 @@ function buildCtx(item: any): ReportCtx {
     modelName = (u.name || doi?.name || item.unit_name || '').trim();
   }
 
-  let unitDisplayName = modelName;
-  if (brandName && modelName) {
-    if (modelName.toLowerCase().includes(brandName.toLowerCase())) {
-      unitDisplayName = modelName;
+  const unitObjForFormat = {
+    ...u,
+    model: u.model || doi?.model || item.model || modelName,
+    name: u.name || doi?.name || item.unit_name,
+    brand_id: u.brand_id || doi?.brand_id || brand?.id,
+    brand: brand || u.brand || (brandName ? { name: brandName } : undefined),
+    unit_type_id: u.unit_type_id || u.type_id || doi?.unit_type_id || item.unit_type_id,
+    type_name: u.type_name || u.type?.name || doi?.unit_type?.name,
+    is_copier: u.is_copier ?? doi?.is_copier,
+    is_computer: u.is_computer ?? doi?.is_computer,
+    project_name: item.project_name,
+    description: item.description || item.remarks,
+  };
+
+  let unitDisplayName = formatUnitDisplayName(unitObjForFormat, {
+    findBrand: masterStore.findBrand,
+    findUnitType: masterStore.findUnitType,
+  });
+
+  if (!unitDisplayName || unitDisplayName === '-') {
+    if (brandName && modelName) {
+      unitDisplayName = modelName.toLowerCase().includes(brandName.toLowerCase())
+        ? modelName
+        : `${brandName} ${modelName}`;
     } else {
-      unitDisplayName = `${brandName} ${modelName}`;
+      unitDisplayName = modelName || brandName || '-';
     }
-  } else if (brandName) {
-    unitDisplayName = brandName;
-  } else if (!unitDisplayName) {
-    unitDisplayName = '-';
   }
 
   const serialNo = u.serial_no || u.serial_number || doi?.serial_no || item.serial_no || '-';
@@ -652,9 +705,25 @@ function servicePhotosBody(item: any): string {
 function photoDokumentasiBody(items: any[]): string {
   const masterStore = useMasterStore();
 
-  const rows = items.map((item: any, idx: number) => {
+  // If any DO has multiple delivery_order_items, expand each item as a row
+  const expandedItems: any[] = [];
+  for (const it of items) {
+    if (it.delivery_order_items && it.delivery_order_items.length > 1) {
+      for (const doi of it.delivery_order_items) {
+        expandedItems.push({
+          ...it,
+          delivery_order_items: [doi],
+          _target_doi: doi,
+        });
+      }
+    } else {
+      expandedItems.push(it);
+    }
+  }
+
+  const rows = expandedItems.map((item: any, idx: number) => {
     // Try to get unit from delivery_order_items if exists (Delivery Orders)
-    const doi = (item.delivery_order_items && item.delivery_order_items.length > 0) ? item.delivery_order_items[0] : null;
+    const doi = item._target_doi || ((item.delivery_order_items && item.delivery_order_items.length > 0) ? item.delivery_order_items[0] : null);
     const unitId = item.unit_id || (doi ? doi.unit_id : null);
     
     let u: any = masterStore.findUnit(unitId) || item.unit || {};
@@ -669,48 +738,42 @@ function photoDokumentasiBody(items: any[]): string {
       };
     }
     
-    let bName = (
-      u.brand?.name ||
-      u.brand_name ||
-      (typeof u.brand === 'string' ? u.brand : '') ||
-      masterStore.findBrand(u.brand_id)?.name ||
-      (doi?.brand_id ? masterStore.findBrand(doi.brand_id)?.name : '') ||
-      ''
-    ).trim();
+    const unitObjForFormat = {
+      ...u,
+      model: u.model || doi?.model || item.model || '',
+      name: u.name || doi?.name || '',
+      brand_id: u.brand_id || doi?.brand_id,
+      brand: u.brand || doi?.brand,
+      unit_type_id: u.unit_type_id || doi?.unit_type_id,
+      is_copier: u.is_copier ?? doi?.is_copier,
+      is_computer: u.is_computer ?? doi?.is_computer,
+      project_name: item.project_name,
+      description: item.description || item.remarks,
+    };
 
-    if (!bName) {
-      const hay = `${u.model || ''} ${u.name || ''} ${item.project_name || ''}`;
-      if (/\b(epson|ecotank|workforce|stylus|surecolor)\b/i.test(hay)) bName = 'Epson';
-      else if (/\b(canon|imagerunner|ir|ir-adv|pixma|maxify)\b/i.test(hay)) bName = 'Canon';
-      else if (/\b(hp|laserjet|deskjet|pagewide|designjet|officejet)\b/i.test(hay)) bName = 'HP';
-      else if (/\b(konica|minolta|bizhub)\b/i.test(hay)) bName = 'Konica Minolta';
-      else if (/\b(fuji|xerox|docucentre|apeosport)\b/i.test(hay)) bName = 'Fuji Xerox';
-      else if (/\b(kyocera|taskalfa|ecosys)\b/i.test(hay)) bName = 'Kyocera';
-      else if (/\b(brother|dcp|mfc|hl)\b/i.test(hay)) bName = 'Brother';
-    }
-
-    let mName = (u.model || doi?.model || u.name || item.model || '').trim();
-    let modelType = "-";
-    if (mName && bName && mName.toLowerCase().includes(bName.toLowerCase())) {
-      modelType = mName;
-    } else {
-      modelType = [bName, mName].filter(Boolean).join(" ") || "-";
-    }
+    const modelType = formatUnitDisplayName(unitObjForFormat, {
+      findBrand: masterStore.findBrand,
+      findUnitType: masterStore.findUnitType,
+    }) || "-";
     const serialNo = u.serial_no || u.serial_number || doi?.serial_no || item.serial_no || "-";
 
     const projectName = item.project_name || "-";
     const repairAction = item.repair_action || item.action || "-";
 
-    const photoBefore = isImageSrc(item.photo_before)
-      ? `<img src="${item.photo_before}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
+    const rawBefore = item.photo_before || item.delivery_order?.photo_before || doi?.photo_before || "";
+    const rawProgress = item.photo_progress || item.delivery_order?.photo_progress || doi?.photo_progress || "";
+    const rawAfter = item.photo_after || item.delivery_order?.photo_after || doi?.photo_after || "";
+
+    const photoBefore = isImageSrc(rawBefore)
+      ? `<img src="${rawBefore}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
       : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
-    const photoProgress = isImageSrc(item.photo_progress)
-      ? `<img src="${item.photo_progress}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
+    const photoProgress = isImageSrc(rawProgress)
+      ? `<img src="${rawProgress}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
       : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
-    const photoAfter = isImageSrc(item.photo_after)
-      ? `<img src="${item.photo_after}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
+    const photoAfter = isImageSrc(rawAfter)
+      ? `<img src="${rawAfter}" style="width:130px; height:95px; object-fit:cover; display:block; margin:0 auto; border-radius:4px;" />`
       : `<div style="color:#aaa; font-size:9px; text-align:center; padding:10px 0; width:130px; height:95px; display:flex; align-items:center; justify-content:center; margin:0 auto; border:1px dashed #ccc; border-radius:4px;">No Photo</div>`;
 
     return `
@@ -727,8 +790,8 @@ function photoDokumentasiBody(items: any[]): string {
   }).join("");
 
   // Get surat pesanan no from first item if available
-  const firstItem = items[0] || {};
-  const spNo = firstItem.report_no || firstItem.service_report_no || firstItem.do_number || "";
+  const firstItem = expandedItems[0] || {};
+  const spNo = firstItem.po_no || firstItem.report_no || firstItem.service_report_no || firstItem.do_number || "";
 
   return `
     <div class="pd-container">
@@ -772,16 +835,51 @@ const PD_CSS = `
 
 function wrapDokumentasiDocument(body: string, autoPrint: boolean): string {
   const printScript = autoPrint
-    ? `<script>window.onload = function() { setTimeout(function() { window.print(); }, 600); }<\/script>`
+    ? `<script>
+  window.onload = function() {
+    var imgs = document.querySelectorAll('img');
+    var total = imgs.length;
+    var loaded = 0;
+    function tryPrint() {
+      setTimeout(function() { window.print(); }, 400);
+    }
+    if (total === 0) {
+      tryPrint();
+    } else {
+      imgs.forEach(function(img) {
+        if (img.complete) {
+          loaded++;
+          if (loaded >= total) tryPrint();
+        } else {
+          img.onload = img.onerror = function() {
+            loaded++;
+            if (loaded >= total) tryPrint();
+          };
+        }
+      });
+      setTimeout(tryPrint, 2500);
+    }
+  };
+<\/script>`
     : "";
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${CSS}${PD_CSS}</style></head><body>${body}${printScript}</body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Photo Dokumentasi</title><style>${CSS}${PD_CSS}</style></head><body>${body}${printScript}</body></html>`;
 }
 
 /** Print Photo Dokumentasi untuk satu atau banyak service report sekaligus */
 export async function printPhotoDokumentasi(items: any | any[]) {
   const arr = Array.isArray(items) ? items : [items];
   let win: Window | null = null;
-  const willFetch = arr.some((it) => it?.id && needsFullReportFetch(it));
+  const willFetch = arr.some(
+    (it) =>
+      it?.id &&
+      (needsFullReportFetch(it) ||
+        it.photo_before === 'has_photo' ||
+        it.photo_progress === 'has_photo' ||
+        it.photo_after === 'has_photo' ||
+        (!isImageSrc(it.photo_before) &&
+          !isImageSrc(it.photo_progress) &&
+          !isImageSrc(it.photo_after))),
+  );
   if (willFetch) {
     win = window.open("", "_blank");
     if (win) {

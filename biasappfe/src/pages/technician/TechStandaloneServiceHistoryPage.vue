@@ -123,6 +123,17 @@ function statusClass(row: any): string {
   return 'badge-warning'
 }
 
+function isRowCompleted(row: any): boolean {
+  if (!row) return false
+  const s = String(row.status || '').toLowerCase()
+  if (s === 'completed' || s === 'delivered' || s === 'cancelled') return true
+  if (row.is_completed) return true
+  if (statusLabel(row) === 'COMPLETED') return true
+  const jo = findJobOrderForDO(row.id)
+  if (jo && (String(jo.status || '').toLowerCase() === 'completed' || String(jo.status || '').toLowerCase() === 'cancelled')) return true
+  return false
+}
+
 function itemsSummary(row: any): string {
   const items = row?.delivery_order_items || []
   if (!items.length) return '-'
@@ -215,13 +226,13 @@ async function saveEdit() {
     if (editForm.delivery_date) {
       payload.delivery_date = `${editForm.delivery_date}T00:00:00Z`
     }
-    if (editForm.technician_id) {
+    if (editForm.technician_id && !isRowCompleted(editingRow.value)) {
       payload.technician_id = editForm.technician_id
     }
     await api.patch(`/delivery-orders/${editingRow.value.id}`, payload)
 
     // Jika technician berubah dan sudah ada linked JO, update JO juga
-    if (editForm.technician_id) {
+    if (editForm.technician_id && !isRowCompleted(editingRow.value)) {
       const linkedJO = findJobOrderForDO(editingRow.value.id)
       if (linkedJO) {
         await api.patch(`/job-orders/${linkedJO.id}`, { technician_id: editForm.technician_id })
@@ -252,6 +263,10 @@ const assignForm = reactive({
 const assignSaving = ref(false)
 
 function openAssignModal(row: any) {
+  if (isRowCompleted(row)) {
+    toast.warning('Pekerjaan ini sudah selesai (Completed) dan tidak dapat di-assign lagi.')
+    return
+  }
   assigningRow.value = row
   Object.assign(assignForm, {
     technician_id: row.technician_id ? String(row.technician_id) : null,
@@ -263,6 +278,11 @@ function openAssignModal(row: any) {
 
 async function saveAssign() {
   if (!assigningRow.value) return
+  if (isRowCompleted(assigningRow.value)) {
+    toast.error('Pekerjaan ini sudah selesai (Completed) dan tidak dapat di-assign lagi.')
+    showAssignModal.value = false
+    return
+  }
   if (!assignForm.technician_id) {
     toast.warning('Pilih teknisi untuk di-assign.')
     return
@@ -408,7 +428,7 @@ async function saveAssign() {
                   </button>
 
                   <button
-                    v-if="isSuperadminOrAdmin || can('job_order:create')"
+                    v-if="(isSuperadminOrAdmin || can('job_order:create')) && !isRowCompleted(row)"
                     type="button"
                     class="btn btn-sm btn-outline btn-assign-action"
                     @click="openAssignModal(row)"
@@ -503,7 +523,7 @@ async function saveAssign() {
                 ✏️ Edit
               </button>
               <button
-                v-if="isSuperadminOrAdmin || can('job_order:create')"
+                v-if="(isSuperadminOrAdmin || can('job_order:create')) && !isRowCompleted(row)"
                 type="button"
                 class="btn btn-sm btn-outline btn-assign-action m-action-btn"
                 @click="openAssignModal(row)"
@@ -568,7 +588,7 @@ async function saveAssign() {
               <label>Installation Address</label>
               <textarea v-model="editForm.delivery_address" class="form-control" rows="2" placeholder="Alamat instalasi lengkap"></textarea>
             </div>
-            <div class="form-group">
+            <div class="form-group" v-if="!isRowCompleted(editingRow)">
               <label>Technician</label>
               <CustomSelect v-model="editForm.technician_id" :options="techOptions" placeholder="-- Pilih Teknisi --" />
             </div>
