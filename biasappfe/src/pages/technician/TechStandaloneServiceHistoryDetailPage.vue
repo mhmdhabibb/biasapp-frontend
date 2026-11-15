@@ -846,61 +846,71 @@ onMounted(async () => {
     </div>
 
     <!-- Modal tambah item (v-if agar CustomSelect tidak di-mount saat tertutup) -->
-    <FormModal v-if="showItemModal" :open="showItemModal" title="Tambah Unit / Product" @close="showItemModal = false" @submit="addItem" :is-loading="isSaving">
-      <div class="form-group mt-3">
-        <label class="form-label">Jenis Barang</label>
+    <FormModal
+      v-if="showItemModal"
+      :open="showItemModal"
+      title="Tambah Unit / Product"
+      max-width="640px"
+      min-height="460px"
+      submit-label="Simpan Unit / Product"
+      @close="showItemModal = false"
+      @submit="addItem"
+      :is-loading="isSaving"
+    >
+      <div class="form-group">
+        <label class="form-label font-bold">Jenis Barang</label>
         <CustomSelect v-model="itemForm.kind" :options="kindOptions" />
       </div>
 
-      <div v-if="itemForm.kind === 'unit'" class="form-group mt-3">
-        <label class="form-label">Pilih Unit / Product <span class="text-danger">*</span></label>
+      <div v-if="itemForm.kind === 'unit'" class="form-group">
+        <label class="form-label font-bold">Pilih Unit / Product <span class="text-danger">*</span></label>
         <CustomSelect v-model="itemForm.unit_id" :options="unitOptions" placeholder="-- Pilih Unit / Product --" :searchable="true" :loading="isModalLoading" />
       </div>
-      <div v-else-if="itemForm.kind === 'product'" class="form-group mt-3">
-        <label class="form-label">Pilih Consumable / Sparepart <span class="text-danger">*</span></label>
+      <div v-else-if="itemForm.kind === 'product'" class="form-group">
+        <label class="form-label font-bold">Pilih Consumable / Sparepart <span class="text-danger">*</span></label>
         <CustomSelect v-model="itemForm.product_id" :options="productOptions" placeholder="-- Pilih Consumable / Sparepart --" :searchable="true" :loading="isModalLoading" />
       </div>
       <template v-if="itemForm.kind === 'external'">
-        <div class="form-row mt-3">
+        <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Brand</label>
+            <label class="form-label font-bold">Brand</label>
             <CustomSelect v-model="itemForm.brand_id" :options="brandOptions" placeholder="-- Brand --" :searchable="true" :loading="isModalLoading" />
           </div>
           <div class="form-group">
-            <label class="form-label">Tipe Produk</label>
+            <label class="form-label font-bold">Tipe Produk</label>
             <CustomSelect v-model="itemForm.unit_type_id" :options="unitTypeOptions" placeholder="-- Tipe Produk --" :searchable="true" :loading="isModalLoading" />
           </div>
         </div>
-        <div class="form-row mt-3">
+        <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Model/Type</label>
+            <label class="form-label font-bold">Model/Type</label>
             <input v-model="itemForm.model" type="text" class="form-input" placeholder="Misal: GL65" />
           </div>
           <div class="form-group">
-            <label class="form-label">Serial Number</label>
+            <label class="form-label font-bold">Serial Number</label>
             <input v-model="itemForm.serial_no" type="text" class="form-input uppercase-input" placeholder="SN" autocapitalize="characters" autocomplete="off" spellcheck="false" @input="itemForm.serial_no = (itemForm.serial_no || '').toUpperCase()" />
           </div>
         </div>
-        <div class="form-row mt-3">
+        <div class="form-row">
           <div class="form-group">
-            <label class="form-label">Warranty Status</label>
+            <label class="form-label font-bold">Warranty Status</label>
             <CustomSelect v-model="itemForm.warranty_status" :options="warrantyOptions" placeholder="Status" />
           </div>
           <div class="form-group">
-            <label class="form-label">Warranty Expired Date</label>
+            <label class="form-label font-bold">Warranty Expired Date</label>
             <input v-model="itemForm.warranty_expired_date" type="date" class="form-input" />
           </div>
         </div>
       </template>
 
-      <div class="form-row mt-3 mb-3">
-        <div class="form-group" style="flex: 0 0 100px;">
-          <label class="form-label">Qty</label>
-          <input v-model.number="itemForm.qty" type="number" min="1" class="form-input" />
+      <div class="qty-remarks-row">
+        <div class="form-group qty-group">
+          <label class="form-label font-bold">Qty</label>
+          <input v-model.number="itemForm.qty" type="number" min="1" class="form-input text-center" />
         </div>
-        <div class="form-group">
-          <label class="form-label">Remarks (Opsional)</label>
-          <input v-model="itemForm.remarks" type="text" class="form-input" placeholder="Keterangan tambahan" />
+        <div class="form-group remarks-group">
+          <label class="form-label font-bold">Remarks (Opsional)</label>
+          <input v-model="itemForm.remarks" type="text" class="form-input" placeholder="Keterangan tambahan..." />
         </div>
       </div>
     </FormModal>
@@ -948,26 +958,126 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.info-list { display: flex; flex-direction: column; gap: 12px; }
-.info-item { display: flex; flex-direction: column; }
-.info-label { font-size: 12px; color: var(--color-text-muted); margin-bottom: 2px; }
-.info-value { font-size: 14px; color: var(--color-text); }
-.font-bold { font-weight: 700; }
-.items-box { background: var(--color-surface-sunken); border-radius: 12px; padding: 12px 14px; }
-.items-head { display: flex; justify-content: space-between; align-items: center; }
-.item-row { display: flex; justify-content: space-between; align-items: center; background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 8px 12px; margin-top: 8px; font-size: 13px; }
-.text-muted { color: var(--color-text-muted); }
-.text-sm { font-size: 13px; }
-.mt-sm { margin-top: 8px; }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.uppercase-input { text-transform: uppercase; }
-.photo-preview { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-.photo-preview img { max-width: 100%; max-height: 200px; border-radius: 8px; object-fit: contain; background: var(--color-surface-sunken); }
-@media (max-width: 520px) { .form-row { grid-template-columns: 1fr; } }
-.responsive-flex { display: flex; gap: 1rem; }
-.responsive-flex.align-center { align-items: center; }
-@media (max-width: 768px) { .responsive-flex { flex-direction: column; } }
-.modal-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 20px; }
-.modal-box { background: var(--color-surface, #fff); border-radius: 16px; padding: 20px; width: 100%; max-width: 520px; }
-.btn-danger { color: var(--color-danger, #dc2626); }
+.info-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  background: var(--color-surface-sunken);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
+}
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.info-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted);
+}
+.info-value {
+  font-size: 14px;
+  color: var(--color-text);
+  word-break: break-word;
+}
+.font-bold {
+  font-weight: 700;
+}
+.items-box {
+  background: var(--color-surface-sunken);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-border-light);
+}
+.items-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: 8px;
+  font-size: 13px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.text-muted {
+  color: var(--color-text-muted);
+}
+.text-sm {
+  font-size: 13px;
+}
+.mt-sm {
+  margin-top: 8px;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.qty-remarks-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.qty-group {
+  width: 110px;
+  flex-shrink: 0;
+}
+.remarks-group {
+  flex: 1;
+}
+.uppercase-input {
+  text-transform: uppercase;
+}
+.photo-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.photo-preview img {
+  width: 100%;
+  height: 180px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+}
+@media (max-width: 580px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  .qty-remarks-row {
+    flex-direction: column;
+  }
+  .qty-group {
+    width: 100%;
+  }
+}
+.responsive-flex {
+  display: flex;
+  gap: 1rem;
+}
+.responsive-flex.align-center {
+  align-items: center;
+}
+@media (max-width: 768px) {
+  .responsive-flex {
+    flex-direction: column;
+  }
+}
+.btn-danger {
+  color: var(--color-danger, #dc2626);
+}
 </style>

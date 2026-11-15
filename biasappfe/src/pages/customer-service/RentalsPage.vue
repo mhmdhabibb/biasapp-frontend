@@ -4485,7 +4485,7 @@ function isExpired(row: any): boolean {
           "
         >
           Untuk rental yang sudah berjalan sebelum sistem: assign teknisi
-          langsung ke draft visit copier.
+          langsung ke draft visit copier. Tanggal visit otomatis mengikuti tanggal mulai sewa (start date) atau tanggal penagihan (billing day).
         </p>
       </div>
 

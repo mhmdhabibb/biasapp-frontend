@@ -5,6 +5,7 @@ const props = withDefaults(defineProps<{
   title: string
   open: boolean
   maxWidth?: string
+  minHeight?: string
   submitLabel?: string
 }>(), {
   maxWidth: '520px',
@@ -41,7 +42,7 @@ onUnmounted(() => {
           role="dialog"
           :aria-label="title"
           aria-modal="true"
-          :style="{ maxWidth: props.maxWidth }"
+          :style="{ maxWidth: props.maxWidth, minHeight: props.minHeight }"
         >
           <div class="modal-header">
             <h3 class="modal-title">{{ title }}</h3>
@@ -77,25 +78,40 @@ onUnmounted(() => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 200;
-  padding: 20px var(--space-base);
+  padding: 20px 16px;
   overflow-y: auto;
 }
 
 .modal-content {
   background: var(--color-surface);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.08);
   width: 100%;
-  max-height: 90vh;
+  max-width: 100%;
+  max-height: calc(100vh - 40px);
   display: flex;
   flex-direction: column;
   margin: auto;
   position: relative;
+  transition: all var(--transition-base);
+}
+
+@media (max-width: 640px) {
+  .modal-overlay {
+    padding: 10px;
+    align-items: flex-end;
+  }
+  .modal-content {
+    max-height: 94vh;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
 }
 
 .modal-header {

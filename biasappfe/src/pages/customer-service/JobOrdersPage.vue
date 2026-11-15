@@ -1115,9 +1115,15 @@ async function onDrop(techId: string | number) {
       draggedRequest.delivery_date || new Date().toISOString(),
     );
   } else if (draggedRequest.taskType === "visit") {
-    assignVisitDate.value = toLocalDatetimeStr(
-      draggedRequest.scheduled_date || new Date().toISOString(),
+    const d = new Date(
+      draggedRequest.scheduled_date ||
+        draggedRequest.service_date ||
+        Date.now(),
     );
+    if (!isNaN(d.getTime()) && d.getDate() < 25) {
+      d.setDate(25);
+    }
+    assignVisitDate.value = toLocalDatetimeStr(d);
   } else if (draggedRequest.taskType === "maintenance") {
     assignScheduledDate.value = toLocalDatetimeStr(
       draggedRequest.scheduled_date || new Date().toISOString(),
