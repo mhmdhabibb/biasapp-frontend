@@ -114,7 +114,7 @@ watch(
   </Teleport>
 
   <aside class="sidebar" :class="{ 'sidebar-open': open }">
-    <div class="sidebar-header">
+    <div class="sidebar-header" style="cursor: pointer" @click="navigate('/dashboard')">
       <img class="sidebar-logo" src="@/assets/bias-logo.png" alt="BIAS" />
       <span class="sidebar-app-name">{{ panelName }}</span>
     </div>
@@ -179,7 +179,7 @@ watch(
           }}</span>
           <span class="sidebar-user-role">{{
             currentUser?.role
-              ? normalizeRole(currentUser.role)
+              ? currentUser.role
                   .replace(/_/g, " ")
                   .replace(/\b\w/g, (c) => c.toUpperCase())
               : "Superadmin"

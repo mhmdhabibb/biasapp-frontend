@@ -95,6 +95,7 @@ const pageTitle = computed(() => {
     "/customer-service/copier-reports" : "Copier Reports",
     "/customer-service/payments": "Payments",
     "/customer-service/warranty-claims": "Warranty Claims",
+    "/customer-service/dashboard": "CS Dashboard",
     "/accounting/dashboard": "Accounting Dashboard",
     "/accounting/sparepart-requests": "Sparepart Requests (Procurement)",
     "/accounting/purchase-orders": "Request Form",

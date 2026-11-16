@@ -22,14 +22,13 @@ const { currentUser } = useAuth()
 const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
 const columns: TableColumn[] = [
-  { key: 'name', label: 'Product Name' },
+  { key: 'name', label: 'Description' },
   { key: 'brand_id', label: 'Brand' },
   { key: 'model', label: 'Model' },
   { key: 'price', label: 'Price' },
-  { key: 'uom.name', label: 'UOM' },
+  { key: 'uom.name', label: 'Satuan' },
   { key: 'serial_no', label: 'SN' },
   { key: 'status', label: 'Status' },
-  { key: 'is_computer', label: 'Computer' },
   { key: 'is_copier', label: 'Copier' },
 ]
 
@@ -118,9 +117,128 @@ onUnmounted(() => {
 })
 
 const showModal = ref(false)
+const showDetailModal = ref(false)
+const detailItem = ref<any>(null)
 const showConfirm = ref(false)
 const editingItem = ref<Unit | null>(null)
 const deletingItem = ref<Unit | null>(null)
+
+function openDetail(item: any) {
+  detailItem.value = item
+  showDetailModal.value = true
+}
+
+function getCleanSpecsString(item: any): string {
+  if (!item || !item.specs) return ''
+  const raw = item.specs
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed || trimmed === '{}' || trimmed === '[]') return ''
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const obj = JSON.parse(trimmed)
+        if (obj && typeof obj === 'object') {
+          return formatSpecsObjectToString(obj)
+        }
+      } catch {}
+    }
+    return trimmed
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    return formatSpecsObjectToString(raw)
+  }
+  return ''
+}
+
+function formatSpecsObjectToString(obj: Record<string, any>): string {
+  const parts: string[] = []
+  
+  const storage = obj.storage ? String(obj.storage).trim() : ''
+  const storageType = obj.storage_type ? String(obj.storage_type).trim() : ''
+  const combinedStorage = storage && storageType ? `${storage} ${storageType}` : (storage || storageType)
+
+  const keyMap: Record<string, string> = {
+    cpu: 'CPU',
+    processor: 'Processor',
+    ram: 'RAM',
+    os: 'OS',
+    vga: 'VGA',
+    graphic: 'Graphic',
+    office: 'Office',
+  }
+
+  for (const [k, v] of Object.entries(obj)) {
+    if (!v || k === 'print_tech' || k === 'storage_type') continue
+    const valStr = String(v).trim()
+    if (!valStr) continue
+
+    if (k === 'storage') {
+      parts.push(combinedStorage ? `Storage: ${combinedStorage}` : '')
+      continue
+    }
+
+    const label = keyMap[k.toLowerCase()] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    if (valStr.toLowerCase().startsWith(label.toLowerCase())) {
+      parts.push(valStr)
+    } else {
+      parts.push(`${label}: ${valStr}`)
+    }
+  }
+
+  return parts.filter(Boolean).join('\n')
+}
+
+interface FormattedSpecLine {
+  label?: string
+  value: string
+}
+
+const cleanSpecsString = computed(() => getCleanSpecsString(detailItem.value))
+
+const parsedSpecLines = computed<FormattedSpecLine[]>(() => {
+  const str = cleanSpecsString.value
+  if (!str) return []
+  let rawLines = str.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  if (rawLines.length === 1) {
+    if (rawLines[0].includes('•')) {
+      rawLines = rawLines[0].split('•').map(s => s.trim()).filter(Boolean)
+    } else if (rawLines[0].includes(';')) {
+      rawLines = rawLines[0].split(';').map(s => s.trim()).filter(Boolean)
+    } else if (rawLines[0].includes(',') && rawLines[0].split(',').length >= 3) {
+      rawLines = rawLines[0].split(',').map(s => s.trim()).filter(Boolean)
+    }
+  }
+
+  return rawLines.map(line => {
+    const clean = line.replace(/^[-•*]\s*/, '').trim()
+    const colonIdx = clean.indexOf(':')
+    if (colonIdx > 0 && colonIdx < 30) {
+      const label = clean.slice(0, colonIdx).trim()
+      const value = clean.slice(colonIdx + 1).trim()
+      if (value) {
+        return { label, value }
+      }
+    }
+    return { value: clean }
+  })
+})
+
+const isComputerItem = computed(() => {
+  if (!detailItem.value) return false
+  if (detailItem.value.is_computer) return true
+  const tName = (
+    detailItem.value.type?.name ||
+    getTypeName(detailItem.value.type_id) ||
+    ''
+  ).toLowerCase()
+  return (
+    tName.includes('laptop') ||
+    tName.includes('komputer') ||
+    tName.includes('computer') ||
+    tName.includes('pc') ||
+    tName.includes('desktop')
+  )
+})
 // type_id is the json key expected by backend, frontend had unit_type_id
 const form = reactive({
   serial_no: '',
@@ -132,6 +250,7 @@ const form = reactive({
   uom_id: '' as string | null,
   model: '',
   name: '',
+  specs_text: '',
   price: null as number | null,
   is_copier: false,
   is_computer: false,
@@ -198,13 +317,18 @@ function formatUnitDisplayName(row: any): string {
   })
 }
 
+const isDescriptionCustom = ref(false)
+
 watch(
   [() => form.type_id, () => form.print_tech, () => form.brand_id, () => form.model, () => form.is_copier],
   ([newType, newTech, newBrand, newModel, newCopier]) => {
     if (!isPrinterOrCopier.value && form.print_tech) {
       form.print_tech = ''
     }
-    form.name = computeUnitName(newType, form.print_tech, newBrand, newModel, newCopier)
+    const autoName = computeUnitName(newType, form.print_tech, newBrand, newModel, newCopier)
+    if (!isDescriptionCustom.value) {
+      form.name = autoName
+    }
   }
 )
 
@@ -218,6 +342,7 @@ function removeRate(index: number) {
 
 function openAdd() {
   editingItem.value = null
+  isDescriptionCustom.value = false
   Object.assign(form, {
     serial_no: '',
     serial_numbers: [],
@@ -228,6 +353,7 @@ function openAdd() {
     uom_id: '',
     model: '',
     name: '',
+    specs_text: '',
     price: null,
     is_copier: false,
     is_computer: false,
@@ -251,6 +377,7 @@ function closeModal() {
 
 function openEdit(item: any) {
   editingItem.value = item
+  isDescriptionCustom.value = true
   let detectedTech = item.print_tech || ''
   if (!detectedTech && item.specs) {
     try {
@@ -273,6 +400,7 @@ function openEdit(item: any) {
     uom_id: item.uom_id ?? '',
     model: item.model,
     name: item.name || '',
+    specs_text: getCleanSpecsString(item),
     price: (item as any).price || null,
     is_copier: !!item.is_copier,
     is_computer: !!item.is_computer,
@@ -316,13 +444,13 @@ async function handleSubmit() {
   }
 
   if (editingItem.value) {
-    if (!form.brand_id || !form.type_id || !form.serial_no.trim()) {
-      toast.warning('Silakan lengkapi kolom Brand, Tipe Unit, dan Serial Number.')
+    if (!form.brand_id || !form.type_id || !form.model?.trim() || !form.serial_no.trim()) {
+      toast.warning('Silakan lengkapi kolom Item / Kategori, Merek, Type / Model, dan Serial Number.')
       return
     }
   } else {
-    if (!form.brand_id || !form.type_id) {
-      toast.warning('Silakan lengkapi kolom Brand dan Tipe Unit.')
+    if (!form.brand_id || !form.type_id || !form.model?.trim()) {
+      toast.warning('Silakan lengkapi kolom Item / Kategori, Merek, dan Type / Model.')
       return
     }
     if (form.serial_numbers.length === 0 && form.serial_no.trim()) {
@@ -345,10 +473,9 @@ async function handleSubmit() {
     const payload = {
       ...form,
       print_tech: form.print_tech || undefined,
-      specs: JSON.stringify({
-        ...(form.is_computer ? form.specsData : {}),
-        print_tech: form.print_tech || undefined,
-      })
+      specs: form.specs_text
+        ? form.specs_text.trim()
+        : (form.is_computer ? JSON.stringify(form.specsData) : (editingItem.value?.specs || ''))
     }
     delete (payload as any).serial_numbers
     delete (payload as any).temp_serial
@@ -778,7 +905,8 @@ function exportStockPdf() {
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #003366;">{{ formatRupiah(totalUnitValue) }}</div>
       </div>
     </div>
-    <DataTable :columns="columns" :data="filteredData" :loading="isLoading" search-placeholder="Search products..." permission="unit" @edit="openEdit"
+    <DataTable :columns="columns" :data="filteredData" :loading="isLoading" search-placeholder="Search products..." permission="unit"
+      :show-detail="true" @detail="openDetail" @row-click="openDetail" @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
       <template #toolbar>
         <div style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">
@@ -811,7 +939,7 @@ function exportStockPdf() {
       </template>
       <template #cell-name="{ row }">
         <div style="display: flex; align-items: center; gap: 8px;">
-          <span>{{ formatUnitDisplayName(row) }}</span>
+          <span>{{ row.name || formatUnitDisplayName(row) }}</span>
           <span v-if="row.is_external" class="badge badge-warning" style="font-size: 10px; padding: 2px 6px;">External</span>
         </div>
       </template>
@@ -829,12 +957,6 @@ function exportStockPdf() {
           {{ formatStatus(value) }}
         </span>
       </template>
-      <template #cell-is_computer="{ value }">
-        <span :style="value ? badgeTrue : badgeFalse">
-          <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          <svg v-else xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </span>
-      </template>
       <template #cell-is_copier="{ value }">
         <span :style="value ? badgeTrue : badgeFalse">
           <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -845,6 +967,69 @@ function exportStockPdf() {
     </div>
     <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'"
       @close="closeModal" @submit="handleSubmit">
+      <!-- 1. Item / Kategori -->
+      <div class="form-group" style="position: relative;">
+        <label for="unit-type" class="form-label">
+          Item / Kategori <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <CustomSelect id="unit-type" v-model="form.type_id" :options="typeOptions" placeholder="Pilih Item / Kategori" />
+      </div>
+      <div v-if="isPrinterOrCopier" class="form-group" style="position: relative;">
+        <label for="unit-print-tech" class="form-label">
+          Kategori Cetak (Laser / Inject) <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <CustomSelect
+          id="unit-print-tech"
+          v-model="form.print_tech"
+          :options="printTechOptions"
+          placeholder="-- Pilih Laser atau Inject --"
+        />
+      </div>
+
+      <!-- 2. Merek -->
+      <div class="form-group" style="position: relative;">
+        <label for="unit-brand" class="form-label">
+          Merek <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <CustomSelect id="unit-brand" v-model="form.brand_id" :options="brandOptions" placeholder="Pilih Merek" />
+      </div>
+
+      <!-- 3. Type / Model -->
+      <div class="form-group">
+        <label for="unit-model" class="form-label">
+          Type / Model <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <input id="unit-model" v-model="form.model" type="text" class="form-input" placeholder="Unit type / model (Contoh: IR 2520, L3110, dll)">
+      </div>
+
+      <!-- 4. Description (sebelumnya Product Name) -->
+      <div class="form-group">
+        <label for="unit-name" class="form-label">Description</label>
+        <textarea
+          id="unit-name"
+          v-model="form.name"
+          class="form-textarea"
+          rows="2"
+          @input="isDescriptionCustom = form.name.trim().length > 0"
+        ></textarea>
+      </div>
+
+      <!-- Spesifikasi (Optional - teks bebas) -->
+      <div class="form-group">
+        <label for="unit-specs" class="form-label">
+          Spesifikasi
+          <span style="font-weight: normal; font-size: 12px; color: var(--color-text-muted);"> (Optional - teks bebas)</span>
+        </label>
+        <textarea
+          id="unit-specs"
+          v-model="form.specs_text"
+          class="form-textarea"
+          rows="2"
+          placeholder="Contoh: Core i5, RAM 8GB, SSD 512GB, Windows 11"
+        ></textarea>
+      </div>
+
+      <!-- 5. SN (Serial Number) -->
       <div class="form-group">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
           <label for="unit-serial" class="form-label" style="margin-bottom: 0;">
@@ -876,7 +1061,7 @@ function exportStockPdf() {
             @keydown.comma.prevent="addSerialNumber"
             @blur="addSerialNumber"
             style="flex: 1; min-width: 140px; border: none; outline: none; background: transparent; text-transform: uppercase; padding: 2px 0; font-size: 0.875rem; color: var(--color-text);"
-            placeholder="Ketik SN lalu Enter, atau klik '+ Tanpa SN'"
+            placeholder="KETIK SN LALU ENTER, ATAU KLIK '+ TANPA SN'"
           />
         </div>
         
@@ -888,91 +1073,184 @@ function exportStockPdf() {
           </button>
         </div>
       </div>
-      <div class="form-group">
-        <label for="unit-name" class="form-label">Product Name</label>
-        <input id="unit-name" v-model="form.name" type="text" class="form-input" placeholder="Auto-generated" disabled
-          style="background-color: var(--color-surface-hover); cursor: not-allowed;">
-      </div>
+
+      <!-- 6. Satuan -->
       <div class="form-group" style="position: relative;">
-        <label for="unit-brand" class="form-label">Brand</label>
-        <CustomSelect id="unit-brand" v-model="form.brand_id" :options="brandOptions" placeholder="Select brand" />
+        <label for="uom" class="form-label">Satuan</label>
+        <CustomSelect id="uom" v-model="form.uom_id" :options="uomOptions" placeholder="Pilih Satuan" />
       </div>
-      <div class="form-group" style="position: relative;">
-        <label for="unit-type" class="form-label">Unit Type</label>
-        <CustomSelect id="unit-type" v-model="form.type_id" :options="typeOptions" placeholder="Select unit type" />
-      </div>
-      <div v-if="isPrinterOrCopier" class="form-group" style="position: relative;">
-        <label for="unit-print-tech" class="form-label">
-          Kategori Cetak (Laser / Inject) <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
-        </label>
-        <CustomSelect
-          id="unit-print-tech"
-          v-model="form.print_tech"
-          :options="printTechOptions"
-          placeholder="-- Pilih Laser atau Inject --"
-        />
-      </div>
-          <div class="form-group" style="position: relative;">
-        <label for="uom" class="form-label">Unit Of Measure</label>
-        <CustomSelect id="uom" v-model="form.uom_id" :options="uomOptions" placeholder="Select UOM type" />
-      </div>
+
+      <!-- 7. Price (Optional) -->
       <div class="form-group">
         <label for="unit-price" class="form-label">Price (Optional)</label>
         <input id="unit-price" v-model.number="form.price" type="number" class="form-input" placeholder="e.g. 15000000" min="0">
       </div>
-      <div class="form-group">
-        <label for="unit-model" class="form-label">Model</label>
-        <input id="unit-model" v-model="form.model" type="text" class="form-input" placeholder="Unit model">
-      </div>
+
+      <!-- 8. Is a Photocopy Machine -->
       <div class="form-group" style="margin-top: 1rem;">
         <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" v-model="form.is_copier" style="width: 1rem; height: 1rem;" />
           Is a Photocopy Machine
         </label>
       </div>
-      <div class="form-group" style="margin-top: 1rem;">
-        <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-          <input type="checkbox" v-model="form.is_computer" style="width: 1rem; height: 1rem;" />
-          Is a Computer / PC / Laptop
-        </label>
-      </div>
+    </FormModal>
 
-      <div v-if="form.is_computer"
-        style="margin-top: 1rem; border-top: 1px solid var(--color-border-light); padding-top: 1rem;">
-        <h4 style="margin-bottom: 1rem; font-weight: 600;">Computer / Desktop Specifications</h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-          <div class="form-group">
-            <label class="form-label">CPU</label>
-            <input v-model="form.specsData.cpu" type="text" class="form-input" placeholder="e.g. Intel Core i5">
+    <!-- Detail Modal -->
+    <FormModal
+      :open="showDetailModal"
+      :title="detailItem ? `Detail Product - ${detailItem.name || formatUnitDisplayName(detailItem)}` : 'Detail Product'"
+      max-width="580px"
+      @close="showDetailModal = false"
+    >
+      <div v-if="detailItem" style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Header badge & status -->
+        <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--color-border-light, #e2e8f0);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge" :class="statusBadgeClass(detailItem.status)">
+              {{ formatStatus(detailItem.status) }}
+            </span>
+            <span v-if="detailItem.is_external" class="badge badge-warning" style="font-size: 11px; padding: 2px 8px;">
+              External
+            </span>
+            <span v-if="detailItem.is_copier" class="badge" style="font-size: 11px; padding: 2px 8px; background: rgba(14, 165, 233, 0.1); color: #0284c7;">
+              Photocopy Machine
+            </span>
+            <span v-if="detailItem.is_computer || isComputerItem" class="badge" style="font-size: 11px; padding: 2px 8px; background: rgba(99, 102, 241, 0.1); color: #4f46e5;">
+              Computer / Laptop
+            </span>
           </div>
-          <div class="form-group">
-            <label class="form-label">RAM</label>
-            <input v-model="form.specsData.ram" type="text" class="form-input" placeholder="e.g. 8GB DDR4">
+          <div v-if="detailItem.price" style="font-size: 16px; font-weight: 700; color: #003366;">
+            {{ formatRupiah(detailItem.price) }}
           </div>
-          <div class="form-group">
-            <label class="form-label">Storage</label>
-            <input v-model="form.specsData.storage" type="text" class="form-input" placeholder="e.g. 512GB">
+        </div>
+
+        <!-- Info Grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px;">
+          <div style="grid-column: span 2;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Description</div>
+            <div style="font-size: 14px; font-weight: 600; color: var(--color-text, #1e293b); margin-top: 2px; word-break: break-word;">
+              {{ detailItem.name || formatUnitDisplayName(detailItem) }}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Storage Type</label>
-            <input v-model="form.specsData.storage_type" type="text" class="form-input"
-              placeholder="e.g. SSD, HDD, NVMe">
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Item / Kategori</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.type?.name || getTypeName(detailItem.type_id) || "-" }}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">OS</label>
-            <input v-model="form.specsData.os" type="text" class="form-input" placeholder="e.g. Windows 11">
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Merek / Brand</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.brand?.name || getBrandName(detailItem.brand_id) || "-" }}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">VGA</label>
-            <input v-model="form.specsData.vga" type="text" class="form-input" placeholder="e.g. Intel Iris Xe">
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Type / Model</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.model || "-" }}
+            </div>
           </div>
-          <div class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Office Package</label>
-            <input v-model="form.specsData.office" type="text" class="form-input"
-              placeholder="e.g. Office Home & Student 2021">
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">SN (Serial Number)</div>
+            <div style="font-size: 14px; font-family: monospace; font-weight: 600; color: #0284c7; margin-top: 2px;">
+              {{ detailItem.serial_no || "-" }}
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Satuan</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.uom?.name || "-" }}
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Harga Unit</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.price ? formatRupiah(detailItem.price) : "-" }}
+            </div>
+          </div>
+
+          <div v-if="detailItem.print_tech">
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Kategori Cetak</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.print_tech }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Spesifikasi (String text yang rapi) -->
+        <div
+          v-if="cleanSpecsString || isComputerItem"
+          style="padding: 14px 16px; background: var(--color-background-soft, #f8fafc); border-radius: 8px; border: 1px solid var(--color-border-light, #e2e8f0);"
+        >
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--color-text, #1e293b); margin-bottom: 10px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #0284c7;">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <span>Spesifikasi</span>
+          </div>
+
+          <div v-if="parsedSpecLines.length > 0" style="display: flex; flex-direction: column; gap: 8px;">
+            <div
+              v-for="(item, idx) in parsedSpecLines"
+              :key="idx"
+              style="display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.5; color: var(--color-text, #1e293b);"
+            >
+              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #0284c7; flex-shrink: 0; transform: translateY(-2px);"></span>
+              <span v-if="item.label" style="font-weight: 600; color: var(--color-text, #1e293b); min-width: 60px;">
+                {{ item.label }}:
+              </span>
+              <span style="color: var(--color-text, #1e293b);">
+                {{ item.value }}
+              </span>
+            </div>
+          </div>
+
+          <div v-else style="font-size: 13px; color: var(--color-text-muted, #64748b); font-style: italic;">
+            Belum ada data spesifikasi untuk unit ini.
+          </div>
+        </div>
+
+        <!-- Meter counts if copier -->
+        <div v-if="detailItem.is_copier || detailItem.current_meter_bw || detailItem.current_meter_color" style="padding: 12px; background: var(--color-background-soft, #f8fafc); border-radius: 8px; border: 1px solid var(--color-border-light, #e2e8f0);">
+          <div style="font-size: 12px; font-weight: 700; color: var(--color-text, #1e293b); margin-bottom: 8px;">Meter Readings & Quota</div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-muted, #64748b);">Meter B/W</div>
+              <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">{{ detailItem.current_meter_bw ?? 0 }}</div>
+            </div>
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-muted, #64748b);">Meter Color</div>
+              <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">{{ detailItem.current_meter_color ?? 0 }}</div>
+            </div>
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-muted, #64748b);">Free Quota Color</div>
+              <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">{{ detailItem.free_quota_color ?? 0 }}</div>
+            </div>
           </div>
         </div>
       </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showDetailModal = false">
+          Close
+        </button>
+        <button
+          v-if="!isTechnician"
+          type="button"
+          class="btn btn-primary"
+          @click="openEdit(detailItem); showDetailModal = false"
+        >
+          Edit Product
+        </button>
+      </template>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Product" :message="`Are you sure you want to delete this product?`"
       @close="showConfirm = false" @confirm="handleDelete" />

@@ -143,6 +143,7 @@ const statusFilterOptions = computed(() => [
   { value: 'assigned', label: 'Assigned' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'completed', label: 'Completed' },
+  { value: 'delivered', label: 'Delivered' },
   { value: 'cancelled', label: 'Cancelled' },
   { value: 'open', label: 'Open (legacy)' },
 ])
@@ -158,6 +159,16 @@ const serviceTypeFilterOptions = computed(() => [
   { value: 'installation', label: 'Installation' },
   { value: 'relocation', label: 'Relocation' },
   { value: 'delivery', label: 'Delivery' },
+])
+
+const doTypeFilter = ref('')
+const doTypeFilterOptions = computed(() => [
+  { value: '', label: 'All Types' },
+  { value: 'rental', label: 'Rental' },
+  { value: 'service', label: 'Service' },
+  { value: 'sale', label: 'Sales' },
+  { value: 'replacement', label: 'Replacement' },
+  { value: 'return', label: 'Return' },
 ])
 
 let srRefreshTimer: any = null
@@ -718,7 +729,9 @@ const deliveryHistories = computed(() =>
     (d: any) =>
       hasDeliveryHistory(d) &&
       String(d.do_type || '').toLowerCase() !== 'inbound' &&
-      matchesCustomer(d.customer_id),
+      matchesCustomer(d.customer_id) &&
+      (!doTypeFilter.value || (String(d.do_type || 'rental').toLowerCase() === doTypeFilter.value)) &&
+      (!statusFilter.value || String(d.status || '').toLowerCase() === statusFilter.value),
   ),
 )
 
@@ -1150,11 +1163,15 @@ function printTable() {
         <label class="filter-label">Service Type</label>
         <CustomSelect v-model="serviceTypeFilter" :options="serviceTypeFilterOptions" class="form-select filter-input" />
       </div>
+      <div v-if="activeTab === 'delivery'" class="filter-item">
+        <label class="filter-label">Type</label>
+        <CustomSelect v-model="doTypeFilter" :options="doTypeFilterOptions" class="form-select filter-input" />
+      </div>
       <div class="filter-item">
         <label class="filter-label">Status</label>
         <CustomSelect v-model="statusFilter" :options="statusFilterOptions" class="form-select filter-input" />
       </div>
-      <button v-if="customerFilter || statusFilter || serviceTypeFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="customerFilter = ''; statusFilter = ''; serviceTypeFilter = ''">
+      <button v-if="customerFilter || statusFilter || serviceTypeFilter || doTypeFilter" type="button" class="btn btn-outline btn-sm filter-reset-btn" @click="customerFilter = ''; statusFilter = ''; serviceTypeFilter = ''; doTypeFilter = ''">
         Reset Filter
       </button>
     </div>

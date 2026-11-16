@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
+import { homeRouteNameByRole, normalizeRole } from '@/router/role-access'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const { login, loginError } = useAuth()
+const { login, currentUser, loginError } = useAuth()
 const { success: toastSuccess } = useToast()
 
 const username = ref('')
@@ -21,7 +22,13 @@ async function handleSubmit() {
   })
   if (success) {
     toastSuccess('Login successful')
-    router.push('/')
+    const role = normalizeRole(currentUser.value?.role)
+    const home = homeRouteNameByRole[role]
+    if (home) {
+      router.push({ name: home })
+    } else {
+      router.push('/')
+    }
   }
 }
 </script>
