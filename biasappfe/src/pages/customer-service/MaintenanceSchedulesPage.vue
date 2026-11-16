@@ -79,6 +79,9 @@ onMounted(async () => {
   if (typeof (store as any).ensureResourcesLoaded === 'function') {
     await (store as any).ensureResourcesLoaded('/customer-service/maintenance')
   }
+  if (typeof (store as any).loadResources === 'function') {
+    await (store as any).loadResources(['deliveryOrders', 'serviceReports', 'units'])
+  }
   fetchJobs()
 })
 
@@ -102,20 +105,41 @@ const customerOptions = computed(() =>
   store.customers.value.map((c: any) => ({ value: c.id, label: c.company_name || c.name }))
 )
 
+function isUnitDelivered(u: any): boolean {
+  if (!u) return false
+  const status = String(u.status || '').toLowerCase()
+  if (status === 'rented' || status === 'sold') return true
+
+  const uId = String(u.id || '').toLowerCase()
+  const dos = ((store.deliveryOrders?.value || (store as any).deliveryOrders || []) as any[])
+  const hasDeliveredDo = dos.some((d: any) => {
+    const dStatus = String(d.status || '').toLowerCase()
+    const isDone = dStatus === 'delivered' || dStatus === 'completed'
+    if (!isDone) return false
+    if (String(d.unit_id || '').toLowerCase() === uId) return true
+    if (Array.isArray(d.delivery_order_items)) {
+      return d.delivery_order_items.some((item: any) => String(item.unit_id || '').toLowerCase() === uId)
+    }
+    return false
+  })
+  if (hasDeliveredDo) return true
+  return false
+}
+
 const unitOptions = computed(() => {
   if (!form.value.customer_id) return []
   const validUnits = store.getUnitsByCustomer(form.value.customer_id)
-  if (validUnits && validUnits.length > 0) {
-    return validUnits.map((u: any) => ({
+  const list = validUnits && validUnits.length > 0 ? validUnits : (store.units.value || [])
+  return list.map((u: any) => {
+    const delivered = isUnitDelivered(u)
+    return {
       value: u.id,
-      label: `${u.serial_no || '-'} - ${u.model || u.name} (Unit Rented)`,
-    }))
-  }
-  // Fallback ke seluruh unit jika belum terasosiasi di rental
-  return (store.units.value || []).map((u: any) => ({
-    value: u.id,
-    label: `${u.serial_no || '-'} - ${u.model || u.name}`,
-  }))
+      label: delivered
+        ? `${u.serial_no || '-'} - ${u.model || u.name} (Unit Rented)`
+        : `${u.serial_no || '-'} - ${u.model || u.name} (Belum dikirim - Belum bisa maintenance)`,
+      disabled: !delivered,
+    }
+  })
 })
 
 import { watch } from 'vue'
@@ -143,7 +167,16 @@ function getTechnicianName(row: any) {
   return t ? t.user?.name || t.name : '-'
 }
 
+function toLocalDatetimeString(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function openAdd() {
+  const defDate = new Date()
+  defDate.setDate(defDate.getDate() + 1)
+  defDate.setHours(9, 0, 0, 0)
+
   form.value = {
     id: '',
     job_order_no: `MT-${Date.now().toString().slice(-6)}`,
@@ -151,7 +184,7 @@ function openAdd() {
     unit_id: null,
     project_name: '',
     problem: '',
-    scheduled_date: new Date().toISOString().slice(0, 16),
+    scheduled_date: toLocalDatetimeString(defDate),
     instructions: 'Rutin Maintenance',
     customer_name: '',
     unit_name: ''
@@ -167,7 +200,7 @@ function openEdit(row: any) {
     unit_id: String(row.service_request?.unit_id || ''),
     project_name: row.service_request?.project_name || row.project_name || '',
     problem: (row.service_request?.problem_description || row.instructions || '').replace('[MAINTENANCE_VISIT]', '').trim(),
-    scheduled_date: row.scheduled_date ? new Date(row.scheduled_date).toISOString().slice(0, 16) : '',
+    scheduled_date: row.scheduled_date ? toLocalDatetimeString(new Date(row.scheduled_date)) : '',
     instructions: row.instructions || '',
     customer_name: getCustomerName(row) || '',
     unit_name: getUnitName(row) || ''
@@ -175,20 +208,46 @@ function openEdit(row: any) {
   showModal.value = true
 }
 
-function openDetail(row: any) {
+async function openDetail(row: any) {
   detailRow.value = row
   showDetailModal.value = true
   // Fetch full job order detail to get service_report with photos
-  api.get(`/job-orders/${row.id}`).then((res: any) => {
+  try {
+    const res: any = await api.get(`/job-orders/${row.id}`)
     const full = res?.data?.data ?? res?.data ?? res
-    if (full?.id) detailRow.value = full
-  }).catch(() => {
+    if (full?.id) {
+      if (!full.service_report) {
+        const srFound = (store.serviceReports.value || []).find((s: any) => String(s.job_order_id) === String(full.id))
+        if (srFound) full.service_report = srFound
+      }
+      detailRow.value = full
+    }
+  } catch {
     // fallback: keep row data already set
-  })
+  }
 }
+
+function getDetailPhoto(type: 'before' | 'progress' | 'after'): string | null {
+  if (!detailRow.value) return null
+  const sr = detailRow.value.service_report
+  if (type === 'before') return sr?.photo_before || detailRow.value.photo_before || null
+  if (type === 'progress') return sr?.photo_progress || detailRow.value.photo_progress || null
+  if (type === 'after') return sr?.photo_after || detailRow.value.photo_after || null
+  return null
+}
+
 async function submitForm() {
   loading.value = true
   try {
+    if (form.value.unit_id) {
+      const chosen = (store.units.value || []).find((u: any) => String(u.id) === String(form.value.unit_id))
+      if (chosen && !isUnitDelivered(chosen)) {
+        toast.error('Unit tersebut belum dikirim, sehingga belum bisa dilakukan maintenance.')
+        loading.value = false
+        return
+      }
+    }
+
     if (form.value.id) {
       // Edit existing
       await api.patch(`/job-orders/${form.value.id}`, {
@@ -198,13 +257,14 @@ async function submitForm() {
       toast.success('Maintenance schedule updated')
     } else {
       // Create new: requires a service request first
+      const scheduledIso = new Date(form.value.scheduled_date).toISOString()
       const srPayload = {
         request_no: `MT-${Date.now().toString().slice(-6)}`,
         customer_id: form.value.customer_id,
         unit_id: form.value.unit_id || null,
         project_name: form.value.project_name,
         problem_description: `[MAINTENANCE_VISIT] ${form.value.problem || form.value.instructions}`,
-        request_date: new Date().toISOString(),
+        request_date: scheduledIso,
         status: 'pending'
       }
       const srRes = await api.post<any>('/service-requests/', srPayload)
@@ -214,9 +274,9 @@ async function submitForm() {
         const joPayload = {
           job_order_no: form.value.job_order_no,
           service_request_id: srId,
-          scheduled_date: new Date(form.value.scheduled_date).toISOString(),
+          scheduled_date: scheduledIso,
           instructions: form.value.instructions,
-          job_type: 'service',
+          job_type: 'maintenance_visit',
           status: 'scheduled'
         }
         await api.post('/job-orders/', joPayload)
@@ -462,7 +522,7 @@ async function exportToExcel() {
           <div class="detail-photo-card">
             <div class="detail-photo-label detail-photo-label--before">Before</div>
             <div class="detail-photo-frame">
-              <img v-if="detailRow.service_report?.photo_before" :src="detailRow.service_report.photo_before" alt="Before" class="detail-photo-img" @click="detailPhotoZoom = detailRow.service_report.photo_before" />
+              <img v-if="getDetailPhoto('before')" :src="getDetailPhoto('before')!" alt="Before" class="detail-photo-img" @click="detailPhotoZoom = getDetailPhoto('before')" />
               <div v-else class="detail-photo-empty">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 <span>No photo</span>
@@ -472,7 +532,7 @@ async function exportToExcel() {
           <div class="detail-photo-card">
             <div class="detail-photo-label detail-photo-label--progress">Pengerjaan</div>
             <div class="detail-photo-frame">
-              <img v-if="detailRow.service_report?.photo_progress" :src="detailRow.service_report.photo_progress" alt="Pengerjaan" class="detail-photo-img" @click="detailPhotoZoom = detailRow.service_report.photo_progress" />
+              <img v-if="getDetailPhoto('progress')" :src="getDetailPhoto('progress')!" alt="Pengerjaan" class="detail-photo-img" @click="detailPhotoZoom = getDetailPhoto('progress')" />
               <div v-else class="detail-photo-empty">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 <span>No photo</span>
@@ -482,7 +542,7 @@ async function exportToExcel() {
           <div class="detail-photo-card">
             <div class="detail-photo-label detail-photo-label--after">After</div>
             <div class="detail-photo-frame">
-              <img v-if="detailRow.service_report?.photo_after" :src="detailRow.service_report.photo_after" alt="After" class="detail-photo-img" @click="detailPhotoZoom = detailRow.service_report.photo_after" />
+              <img v-if="getDetailPhoto('after')" :src="getDetailPhoto('after')!" alt="After" class="detail-photo-img" @click="detailPhotoZoom = getDetailPhoto('after')" />
               <div v-else class="detail-photo-empty">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                 <span>No photo</span>

@@ -255,24 +255,102 @@ const companyHeaderHtml = `
   </table>
 `;
 
-function getSpareparts(item: any, ctx: ReportCtx): any[] {
-  if (item.service_spareparts && item.service_spareparts.length > 0) return item.service_spareparts;
-  if (item.spareparts && item.spareparts.length > 0) return item.spareparts;
-  if (item.delivery_order_items && item.delivery_order_items.length > 0) {
+function getSpareparts(item: any, ctx?: ReportCtx): any[] {
+  if (Array.isArray(item.service_spareparts) && item.service_spareparts.length > 0) return item.service_spareparts;
+  if (Array.isArray(item.spareparts) && item.spareparts.length > 0) return item.spareparts;
+  if (Array.isArray(item.sparepart_requests) && item.sparepart_requests.length > 0) return item.sparepart_requests;
+  if (Array.isArray(item.service_report?.service_spareparts) && item.service_report.service_spareparts.length > 0) {
+    return item.service_report.service_spareparts;
+  }
+  if (Array.isArray(item.job_order?.service_spareparts) && item.job_order.service_spareparts.length > 0) {
+    return item.job_order.service_spareparts;
+  }
+  if (Array.isArray(item.job_order?.service_report?.service_spareparts) && item.job_order.service_report.service_spareparts.length > 0) {
+    return item.job_order.service_report.service_spareparts;
+  }
+  if (Array.isArray(item.delivery_order_items) && item.delivery_order_items.length > 0) {
     return item.delivery_order_items
-      .filter((d: any) => d.product_id)
-      .map((d: any) => ({ product_id: d.product_id, qty: d.qty || 1 }));
+      .filter((d: any) => d.product_id || d.item_name || d.name || d.product || d.description)
+      .map((d: any) => ({
+        ...d,
+        product_id: d.product_id,
+        item_name: d.item_name || d.name || d.product?.name || d.description,
+        qty: d.qty || 1,
+      }));
   }
   return [];
 }
 
-function sparepartsListHtml(item: any, ctx: ReportCtx): string {
-  return getSpareparts(item, ctx)
-    .map((sp: any, i: number) => {
-      const p = ctx.masterStore.findProduct(sp.product_id);
-      return (
-        "<div>" + (i + 1) + ". " + (p ? p.name : "") + " (" + sp.qty + ")</div>"
+function getSparepartDisplayName(sp: any, ctx: ReportCtx): string {
+  if (!sp) return "";
+
+  // 1. Explicit item_name or name properties
+  const directName = sp.item_name || sp.name || sp.sparepart_name || sp.product_name;
+  if (directName && typeof directName === "string" && directName.trim()) {
+    return directName.trim();
+  }
+
+  // 2. Preloaded product object
+  if (sp.product && typeof sp.product === "object") {
+    const pName = sp.product.name || sp.product.model || sp.product.title;
+    if (pName && typeof pName === "string" && pName.trim()) {
+      return pName.trim();
+    }
+  }
+
+  // 3. Lookup in masterStore products by product_id
+  const prodId = sp.product_id || sp.productId;
+  if (prodId) {
+    const p = ctx.masterStore?.findProduct ? ctx.masterStore.findProduct(prodId) : null;
+    if (p?.name && p.name.trim()) return p.name.trim();
+
+    const prods = ctx.masterStore?.products?.value || ctx.masterStore?.products || [];
+    if (Array.isArray(prods)) {
+      const found = prods.find((x: any) => String(x.id).trim().toLowerCase() === String(prodId).trim().toLowerCase());
+      if (found?.name && found.name.trim()) return found.name.trim();
+    }
+  }
+
+  // 4. Lookup in masterStore sparepartRequests by id or request_no
+  const reqId = sp.id || sp.sparepart_request_id || sp.request_no;
+  if (reqId && ctx.masterStore) {
+    const requests = ctx.masterStore?.sparepartRequests?.value || ctx.masterStore?.sparepartRequests || [];
+    if (Array.isArray(requests)) {
+      const foundReq = requests.find((r: any) => 
+        String(r.id) === String(reqId) || (r.request_no && String(r.request_no) === String(reqId))
       );
+      if (foundReq) {
+        const reqName = foundReq.item_name || foundReq.product?.name || foundReq.product_name || foundReq.name;
+        if (reqName && typeof reqName === "string" && reqName.trim()) {
+          return reqName.trim();
+        }
+      }
+    }
+  }
+
+  // 5. Description or remarks
+  if (sp.description && typeof sp.description === "string" && sp.description.trim()) {
+    return sp.description.trim();
+  }
+  if (sp.remarks && typeof sp.remarks === "string" && sp.remarks.trim()) {
+    return sp.remarks.trim();
+  }
+
+  if (prodId) {
+    return `Sparepart (${String(prodId).slice(0, 8)})`;
+  }
+
+  return "-";
+}
+
+function sparepartsListHtml(item: any, ctx: ReportCtx): string {
+  const parts = getSpareparts(item, ctx);
+  if (parts.length === 0) return "-";
+  return parts
+    .map((sp: any, i: number) => {
+      const name = getSparepartDisplayName(sp, ctx);
+      const qty = sp.qty !== undefined && sp.qty !== null ? sp.qty : 1;
+      return `<div>${i + 1}. ${name} (${qty})</div>`;
     })
     .join("");
 }
@@ -283,18 +361,11 @@ function componentsGridHtml(item: any, ctx: ReportCtx): string {
     .map((_, i) => {
       const sp = parts[i];
       if (sp) {
-        const p = ctx.masterStore.findProduct(sp.product_id);
-        return (
-          '<div class="comp-item">' +
-          (i + 1) +
-          ". " +
-          (p ? p.name : "") +
-          " (" +
-          sp.qty +
-          ")</div>"
-        );
+        const name = getSparepartDisplayName(sp, ctx);
+        const qty = sp.qty !== undefined && sp.qty !== null ? sp.qty : 1;
+        return `<div class="comp-item">${i + 1}. ${name} (${qty})</div>`;
       }
-      return '<div class="comp-item">' + (i + 1) + ". </div>";
+      return `<div class="comp-item">${i + 1}. </div>`;
     })
     .join("");
 }
@@ -986,6 +1057,18 @@ function wrapDocument(pages: string[], autoPrint: boolean): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>${body}${printScript}</body></html>`;
 }
 
+async function ensureMasterDataLoaded() {
+  try {
+    const store = useMasterStore();
+    const prods = (store.products as any)?.value || store.products || [];
+    if (prods.length === 0) {
+      await store.refreshOnly(["products", "sparepartRequests"]);
+    }
+  } catch {
+    // Ignore error
+  }
+}
+
 /** Print/PDF — all forms in one window, one page per form. */
 export async function printServiceReport(item: any, type?: ReportType) {
   let printWindow: Window | null = null;
@@ -998,6 +1081,7 @@ export async function printServiceReport(item: any, type?: ReportType) {
     }
   }
 
+  await ensureMasterDataLoaded();
   const fullItem = willFetch ? await fetchFullServiceReport(item) : item;
   const pages = getReportPages(fullItem, type);
   if (pages.length === 0) {
@@ -1027,6 +1111,7 @@ export async function printMultipleServiceReports(items: any[], type?: ReportTyp
     }
   }
 
+  await ensureMasterDataLoaded();
   const fullItems = willFetch
     ? await Promise.all(items.map((it) => fetchFullServiceReport(it)))
     : items;
@@ -1058,6 +1143,7 @@ export function getServiceReportFormHtml(item: any, type?: ReportType): string {
 }
 
 export async function downloadServiceReportPdf(item: any, type?: ReportType): Promise<boolean> {
+  await ensureMasterDataLoaded();
   const fullItem = (item?.id && needsFullReportFetch(item))
     ? await fetchFullServiceReport(item)
     : item;

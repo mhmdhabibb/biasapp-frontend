@@ -363,10 +363,11 @@ async function completeJob() {
     }
 
     const existing = serviceReports.value.find(s => String(s.job_order_id) === String(selectedJob.value.id))
+    let reportId = existing?.id
     if (existing) {
       await api.patch(`/service-reports/${existing.id}`, reportPayload)
     } else {
-      await api.post('/service-reports', {
+      const res: any = await api.post('/service-reports', {
         report_no: `SR-${Date.now().toString().slice(-6)}`,
         job_order_id: selectedJob.value.id,
         unit_id: String(unitId),
@@ -377,8 +378,12 @@ async function completeJob() {
         service_date: form.value.work_start,
         ...reportPayload,
       })
+      reportId = res?.data?.data?.id || res?.data?.id
     }
     const jobPatch: any = { status: 'completed' }
+    if (reportId) {
+      jobPatch.service_report_id = reportId
+    }
     if (selectedUnitId.value && !jobUnitId(selectedJob.value)) {
       jobPatch.unit_id = selectedUnitId.value
     }

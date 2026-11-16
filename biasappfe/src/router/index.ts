@@ -2,9 +2,9 @@ import { useAuth } from "@/composables/useAuth";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { canView, routeNamesByMenuOrder } from "@/router/permission-map";
 import {
-    allowedRouteNamesByRole,
-    homeRouteNameByRole,
-    normalizeRole
+  allowedRouteNamesByRole,
+  homeRouteNameByRole,
+  normalizeRole,
 } from "@/router/role-access";
 import { createRouter, createWebHistory } from "vue-router";
 
@@ -230,11 +230,7 @@ const router = createRouter({
       name: "csDashboard",
       component: () => import("@/pages/customer-service/CSDashboardPage.vue"),
     },
-    {
-      path: "/customer-service/call-service",
-      name: "csCallService",
-      component: () => import("@/pages/customer-service/CallServicePage.vue"),
-    },
+
     {
       path: "/customer-service/monitoring-service",
       name: "csMonitoringService",

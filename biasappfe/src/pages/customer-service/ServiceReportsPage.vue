@@ -276,7 +276,15 @@ function getProduct(row: any) {
 function getSR(row: any) {
   const id = row?.service_report_id ?? row
   const sr = (row as any)?.service_report || findServiceReport(id as any)
-  return sr ? sr.report_no || (sr as any).service_report_no || '-' : '-'
+  return sr ? formatReportNo(sr) : '-'
+}
+
+function formatReportNo(row: any): string {
+  let no = row?.report_no || (row as any)?.service_report_no || '-'
+  if (row?.service_type === 'maintenance' && no.startsWith('CPR-')) {
+    no = no.replace('CPR-', 'MT-')
+  }
+  return no
 }
 
 function sprTechName(row: any): string {
@@ -1193,7 +1201,7 @@ function printTable() {
     <DataTable v-if="activeTab === 'service'" :columns="columns" :data="serviceOnlyReports" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
       <template #cell-report_no="{ value, row }">
         <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-          <span class="sr-link" @click="openSrDetail(row)">{{ value || row.service_report_no || '-' }}</span>
+          <span class="sr-link" @click="openSrDetail(row)">{{ formatReportNo(row) }}</span>
           <span v-if="isRunningTransaction(row)" class="badge-running-tx">
             Transaksi sudah berjalan
           </span>

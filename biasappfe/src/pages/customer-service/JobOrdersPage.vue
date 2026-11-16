@@ -50,7 +50,7 @@ const searchTech = ref("");
 const dragOverTechId = ref<string | number | null>(null);
 
 const jobTypeFilter = ref<"all" | "sr" | "do" | "visit" | "maintenance">("all");
-const VISIT_JOB_TYPES = ["visit", "maintenance_visit", "meter_reading"];
+const VISIT_JOB_TYPES = ["visit", "meter_reading"];
 const VISIT_TERMINAL = ["completed", "done", "cancelled", "canceled"];
 
 function visitUnitLabel(visit: any): string {
@@ -79,15 +79,19 @@ async function fetchJobOrders(silent = false) {
         j.job_type === "delivery" ||
         !!j.delivery_order_id ||
         !!j.delivery_order;
-      const isVisit =
-        j.job_type === "visit" ||
-        VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase());
       const isMaintenance =
-        (j.job_type === "service" || j.job_type === "maintenance_visit") &&
-        (j.instructions?.includes("Rutin Maintenance") ||
-          j.service_request?.problem_description?.includes(
-            "[MAINTENANCE_VISIT]",
-          ));
+        j.job_type === "maintenance" ||
+        j.job_type === "maintenance_visit" ||
+        String(j.job_order_no || "").startsWith("MT-") ||
+        ((j.job_type === "service" || !j.job_type) &&
+          (j.instructions?.includes("Rutin Maintenance") ||
+            j.service_request?.problem_description?.includes(
+              "[MAINTENANCE_VISIT]",
+            )));
+      const isVisit =
+        !isMaintenance &&
+        (j.job_type === "visit" ||
+          VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase()));
 
       const sr = j.service_request || null;
       const srpt = j.service_report || null;
@@ -260,15 +264,19 @@ async function loadAllData(silent = false) {
         j.job_type === "delivery" ||
         !!j.delivery_order_id ||
         !!j.delivery_order;
-      const isVisit =
-        j.job_type === "visit" ||
-        VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase());
       const isMaintenance =
-        (j.job_type === "service" || j.job_type === "maintenance_visit") &&
-        (j.instructions?.includes("Rutin Maintenance") ||
-          j.service_request?.problem_description?.includes(
-            "[MAINTENANCE_VISIT]",
-          ));
+        j.job_type === "maintenance" ||
+        j.job_type === "maintenance_visit" ||
+        String(j.job_order_no || "").startsWith("MT-") ||
+        ((j.job_type === "service" || !j.job_type) &&
+          (j.instructions?.includes("Rutin Maintenance") ||
+            j.service_request?.problem_description?.includes(
+              "[MAINTENANCE_VISIT]",
+            )));
+      const isVisit =
+        !isMaintenance &&
+        (j.job_type === "visit" ||
+          VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase()));
 
       const sr = j.service_request || null;
       const srpt = j.service_report || null;
@@ -506,11 +514,14 @@ const unassignedMaintenance = computed<any[]>(() => {
     .filter(
       (j: any) =>
         !j.technician_id &&
-        (j.job_type === "service" || j.job_type === "maintenance_visit") &&
-        (j.instructions?.includes("Rutin Maintenance") ||
-          j.service_request?.problem_description?.includes(
-            "[MAINTENANCE_VISIT]",
-          )),
+        (j.job_type === "maintenance" ||
+          j.job_type === "maintenance_visit" ||
+          String(j.job_order_no || "").startsWith("MT-") ||
+          ((j.job_type === "service" || !j.job_type) &&
+            (j.instructions?.includes("Rutin Maintenance") ||
+              j.service_request?.problem_description?.includes(
+                "[MAINTENANCE_VISIT]",
+              )))),
     )
     .map((j: any) => ({
       ...j,
@@ -699,15 +710,19 @@ function getJobsForTech(techId: string | number): any[] {
 
 function getJobKind(job: any): "sr" | "do" | "visit" | "maintenance" {
   if (job?.taskType === "maintenance") return "maintenance";
+  const jt = String(job?.job_type || "").toLowerCase();
+  const joNo = String(job?.job_order_no || "").toUpperCase();
   const isMaintenance =
-    (job?.job_type === "service" || job?.job_type === "maintenance_visit") &&
-    (job?.instructions?.includes("Rutin Maintenance") ||
-      job?.service_request?.problem_description?.includes(
-        "[MAINTENANCE_VISIT]",
-      ));
+    jt === "maintenance" ||
+    jt === "maintenance_visit" ||
+    joNo.startsWith("MT-") ||
+    ((jt === "service" || jt === "") &&
+      (job?.instructions?.includes("Rutin Maintenance") ||
+        job?.service_request?.problem_description?.includes(
+          "[MAINTENANCE_VISIT]",
+        )));
   if (isMaintenance) return "maintenance";
 
-  const jt = String(job?.job_type || "").toLowerCase();
   if (VISIT_JOB_TYPES.includes(jt)) return "visit";
   if (job?.taskType === "visit") return "visit";
   return isDeliveryJob(job) ? "do" : "sr";

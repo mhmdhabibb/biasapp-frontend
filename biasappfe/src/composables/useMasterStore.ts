@@ -97,13 +97,13 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/customer-service/payments": ["payments", "rentalInvoices", "salesInvoices", "customers"],
   "/customer-service/warranty-claims": ["warrantyClaims", "units", "customers", "warranties"],
   "/customer-service/sparepart-request": ["sparepartRequests", "serviceReports", "purchaseOrders", "units", "customers", "products"],
-  "/customer-service/maintenance": ["serviceReports", "units", "technicians", "customers"],
+  "/customer-service/maintenance": ["serviceReports", "units", "technicians", "customers", "products", "sparepartRequests"],
   "/customer-service/indent": ["indents", "products", "suppliers"],
   "/customer-service/delivery": ["deliveryOrders", "purchaseOrders", "customers"],
-  "/customer-service/call-service": ["serviceRequests", "jobOrders", "technicians", "customers", "units"],
+  "/customer-service/call-service": ["serviceRequests", "jobOrders", "technicians", "customers", "units", "products"],
   "/customer-service/monitoring-service": ["serviceRequests", "jobOrders", "serviceReports", "deliveryOrders", "technicians", "customers", "units", "products"],
-  "/customer-service/copier-reports": ["serviceReports", "contractItems", "units", "customers", "monthlyMeterReadings", "brands", "unitTypes"],
-  "/customer-service/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers", "units", "brands", "unitTypes"],
+  "/customer-service/copier-reports": ["serviceReports", "contractItems", "units", "customers", "monthlyMeterReadings", "brands", "unitTypes", "products"],
+  "/customer-service/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers", "units", "brands", "unitTypes", "products", "sparepartRequests"],
   "/customer-service/surveys": ["customers", "units", "technicians"],
 
   // Shared Report Routes
@@ -125,7 +125,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers", "brands", "unitTypes", "products", "rents", "contractItems"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "technicians", "serviceReports"],
-  "/technician/service-history": ["serviceReports", "technicians", "units", "customers"],
+  "/technician/service-history": ["serviceReports", "technicians", "units", "customers", "products", "sparepartRequests"],
   "/technician/standalone-service-history/:id": ["deliveryOrders", "jobOrders", "technicians", "customers", "units", "products", "brands", "unitTypes", "rents", "sales"],
   "/technician/standalone-service-history": ["deliveryOrders", "jobOrders", "technicians", "customers", "units", "products", "brands", "unitTypes", "rents", "sales"],
 
