@@ -722,6 +722,30 @@ const customerRentedUnits = ref<any[]>([])
 const isLoadingCustomerUnits = ref(false)
 const showAllUnitsFallback = ref(false)
 
+function isCopierUnit(u: any): boolean {
+  if (!u) return false
+  if (u.is_computer) return false
+  const typeName = (u.type?.name || u.type_name || '').toLowerCase().trim()
+  const typeSlug = (u.type?.slug || '').toLowerCase().trim()
+  const name = (u.name || u.model || '').toLowerCase().trim()
+
+  // Non-copier exclusions (laptop, komputer, ac, tv, cctv, dll.)
+  const nonCopierTypes = ['laptop', 'notebook', 'pc', 'personal computer', 'monitor', 'tv', 'televisi', 'cctv', 'ac', 'dispenser', 'server', 'ups', 'kiosk', 'sofa', 'meja', 'kursi']
+  if (nonCopierTypes.some(t => typeName === t || typeSlug === t)) {
+    return false
+  }
+  if (name.includes('laptop') || name.includes('notebook') || name.startsWith('ac ') || name.includes('daikin') || name.includes('vivobook') || name.includes('expertbook') || name.includes('thinkpad') || name.includes('ideapad')) {
+    return false
+  }
+
+  // Copier / printer inclusions
+  if (u.is_copier) return true
+  if (typeName.includes('copier') || typeName.includes('fotocopy') || typeName.includes('printer') || typeSlug.includes('copier') || typeSlug.includes('printer')) {
+    return true
+  }
+  return false
+}
+
 async function loadUnitsForCustomer(customerId: string) {
   if (!customerId) {
     customerRentedUnits.value = []
@@ -733,10 +757,11 @@ async function loadUnitsForCustomer(customerId: string) {
     const items = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
     customerRentedUnits.value = items
 
-    // Jika customer hanya punya 1 unit mesin rental dan mode tambah, langsung auto-select
-    if (!isEditing.value && items.length === 1 && !form.unit_id) {
-      form.unit_id = items[0].id
-      await onUnitChange(items[0].id)
+    const validCopiers = items.filter(isCopierUnit)
+    // Jika customer hanya punya 1 unit mesin copier rental dan mode tambah, langsung auto-select
+    if (!isEditing.value && validCopiers.length === 1 && !form.unit_id) {
+      form.unit_id = validCopiers[0].id
+      await onUnitChange(validCopiers[0].id)
     }
   } catch (err) {
     console.error('Failed to load customer units:', err)
@@ -751,9 +776,12 @@ const unitOptions = computed(() => {
     return []
   }
 
+  // Filter hanya unit copier / printer mesin
+  const validCustomerUnits = (customerRentedUnits.value || []).filter(isCopierUnit)
+
   // Jika customer memiliki unit rental terdaftar
-  if (customerRentedUnits.value.length > 0 && !showAllUnitsFallback.value) {
-    return customerRentedUnits.value.map((u: any) => {
+  if (validCustomerUnits.length > 0 && !showAllUnitsFallback.value) {
+    return validCustomerUnits.map((u: any) => {
       const brandStr = u.brand?.name ? `${u.brand.name} ` : ''
       const modelStr = u.model || u.name || 'Unit'
       const snStr = u.serial_no ? ` (SN: ${u.serial_no})` : ''
@@ -764,12 +792,9 @@ const unitOptions = computed(() => {
     })
   }
 
-  // Fallback otomatis: Tampilkan seluruh unit printer / copier master (atau semua unit fisik)
-  const candidateUnits = (units.value || []).filter((u: any) => 
-    showAllUnitsFallback.value || u.is_copier || (u.name && (u.name.toLowerCase().includes('copier') || u.name.toLowerCase().includes('printer') || u.name.toLowerCase().includes('epson')))
-  )
-  const listToUse = candidateUnits.length > 0 ? candidateUnits : (units.value || [])
-  return listToUse.map((u: any) => {
+  // Fallback: Tampilkan seluruh unit copier master
+  const candidateUnits = (units.value || []).filter(isCopierUnit)
+  return candidateUnits.map((u: any) => {
     const disp = formatUnitDisplayName ? formatUnitDisplayName(u) : `${u.name || u.model || 'Unit'}${u.serial_no ? ` (SN: ${u.serial_no})` : ''}`
     return {
       value: u.id,
@@ -1044,6 +1069,32 @@ async function handleAutoFetchMeter() {
             form.a3_meter_color = a3Item.color
           }
         }
+
+        // Safeguard Metode Atlas: Pastikan Gross adalah akumulasi counter fisik mesin (Net A4 + Seluruh Deduksi)
+        const sumDedBW = form.paper_deductions.reduce((s: number, d: any) => s + Number(d.bw || 0), 0)
+        const endBW = Number(payload.counter_akhir_bw || 0)
+        if (form.gross_meter_bw <= sumDedBW && endBW > 0) {
+          form.gross_meter_bw = endBW + sumDedBW
+        }
+
+        const sumDedBWDouble = form.paper_deductions.reduce((s: number, d: any) => s + Number(d.bw_double || 0), 0)
+        const endBWDouble = Number(payload.counter_akhir_bw_double || 0)
+        if (form.gross_meter_bw_double <= sumDedBWDouble && endBWDouble > 0) {
+          form.gross_meter_bw_double = endBWDouble + sumDedBWDouble
+        }
+
+        const sumDedCol = form.paper_deductions.reduce((s: number, d: any) => s + Number(d.color || 0), 0)
+        const endCol = Number(payload.counter_akhir_color || 0)
+        if (form.gross_meter_color <= sumDedCol && endCol > 0) {
+          form.gross_meter_color = endCol + sumDedCol
+        }
+
+        const sumDedColDouble = form.paper_deductions.reduce((s: number, d: any) => s + Number(d.color_double || 0), 0)
+        const endColDouble = Number(payload.counter_akhir_color_double || 0)
+        if (form.gross_meter_color_double <= sumDedColDouble && endColDouble > 0) {
+          form.gross_meter_color_double = endColDouble + sumDedColDouble
+        }
+
         onGrossOrDeductionChange()
       }
 
