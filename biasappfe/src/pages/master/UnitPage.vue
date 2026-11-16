@@ -1,187 +1,256 @@
 <script setup lang="ts">
-import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
-import CustomSelect from "@/components/ui/CustomSelect.vue";
-import DataTable from "@/components/ui/DataTable.vue";
-import PageSkeleton from "@/components/ui/PageSkeleton.vue";
-import ExcelImportButtons from "@/components/ui/ExcelImportButtons.vue";
-import FormModal from "@/components/ui/FormModal.vue";
-import HardDeleteDialog from "@/components/ui/HardDeleteDialog.vue";
-import PageHeader from "@/components/ui/PageHeader.vue";
-import { useAuth } from "@/composables/useAuth";
-import { useHardDelete } from "@/composables/useHardDelete";
-import { useToast } from "@/composables/useToast";
-import { resources } from "@/services/resource.service";
-import type { TableColumn, Unit, UOM } from "@/types";
-import { computed, reactive, ref, onMounted, watch, onUnmounted } from "vue";
-import { formatUnitDisplayName as utilFormatUnitDisplayName } from "@/utils/format";
-import {
-  downloadStyledExcel,
-  NUMFMT_COUNT,
-  NUMFMT_RP,
-  type StyledCell,
-} from "@/utils/exportHelpers";
-import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import CustomSelect from '@/components/ui/CustomSelect.vue'
+import DataTable from '@/components/ui/DataTable.vue'
+import PageSkeleton from '@/components/ui/PageSkeleton.vue'
+import ExcelImportButtons from '@/components/ui/ExcelImportButtons.vue'
+import FormModal from '@/components/ui/FormModal.vue'
+import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import { useAuth } from '@/composables/useAuth'
+import { useHardDelete } from '@/composables/useHardDelete'
+import { useToast } from '@/composables/useToast'
+import { resources } from '@/services/resource.service'
+import type { TableColumn, Unit, UOM } from '@/types'
+import { computed, reactive, ref, onMounted, watch, onUnmounted } from 'vue'
+import { formatUnitDisplayName as utilFormatUnitDisplayName } from '@/utils/format'
+import { downloadStyledExcel, NUMFMT_COUNT, NUMFMT_RP, type StyledCell } from "@/utils/exportHelpers"
+import { BIAS_LOGO_DATA_URL } from "@/utils/logoData"
 
-const toast = useToast();
-const { currentUser } = useAuth();
-const isTechnician = computed(() => currentUser.value?.role === "technician");
+const toast = useToast()
+const { currentUser } = useAuth()
+const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
 const columns: TableColumn[] = [
-  { key: "name", label: "Product Name" },
-  { key: "brand_id", label: "Brand" },
-  { key: "model", label: "Model" },
-  { key: "price", label: "Price" },
-  { key: "uom.name", label: "UOM" },
-  { key: "serial_no", label: "SN" },
-  { key: "status", label: "Status" },
-  { key: "is_computer", label: "Computer" },
-  { key: "is_copier", label: "Copier" },
-];
+  { key: 'name', label: 'Description' },
+  { key: 'brand_id', label: 'Brand' },
+  { key: 'model', label: 'Model' },
+  { key: 'price', label: 'Price' },
+  { key: 'uom.name', label: 'Satuan' },
+  { key: 'serial_no', label: 'SN' },
+  { key: 'status', label: 'Status' },
+  { key: 'is_copier', label: 'Copier' },
+]
 
-const brands = ref<{ id: string; name: string }[]>([]);
-const unitTypes = ref<{ id: string; name: string }[]>([]);
-const paperSizes = ref<{ id: string; name: string }[]>([]);
-const uoms = ref<UOM[]>([]);
+const brands = ref<{ id: string, name: string }[]>([])
+const unitTypes = ref<{ id: string, name: string }[]>([])
+const paperSizes = ref<{ id: string, name: string }[]>([])
+const uoms = ref<UOM[]>([])
 
-const brandOptions = computed(() =>
-  brands.value.map((b) => ({ value: b.id, label: b.name })),
-);
-const typeOptions = computed(() =>
-  unitTypes.value.map((t) => ({ value: t.id, label: t.name })),
-);
-const paperSizeOptions = computed(() =>
-  paperSizes.value.map((p) => ({ value: p.id, label: p.name })),
-);
-const uomOptions = computed(() =>
-  uoms.value.map((u) => ({ value: u.id, label: u.name })),
-);
+const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label: b.name })))
+const typeOptions = computed(() => unitTypes.value.map(t => ({ value: t.id, label: t.name })))
+const paperSizeOptions = computed(() => paperSizes.value.map(p => ({ value: p.id, label: p.name })))
+const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
-const data = ref<Unit[]>([]);
-const isLoading = ref(true);
+const data = ref<Unit[]>([])
+const isLoading = ref(true)
 
 async function fetchData() {
-  isLoading.value = true;
+  isLoading.value = true
   try {
-    const [resUnits, resBrands, resTypes, resPaperSizes, resUoms] =
-      await Promise.all([
-        resources.units.list(),
-        resources.brands.list(),
-        resources.unitTypes.list(),
-        resources.paperSizes.list(),
-        resources.uoms.list(),
-      ]);
-    data.value = resUnits.data as any;
-    brands.value = resBrands.data as any;
-    unitTypes.value = resTypes.data as any;
-    paperSizes.value = resPaperSizes.data as any;
-    uoms.value = resUoms.data as any;
+    const [resUnits, resBrands, resTypes, resPaperSizes, resUoms] = await Promise.all([
+      resources.units.list(),
+      resources.brands.list(),
+      resources.unitTypes.list(),
+      resources.paperSizes.list(),
+      resources.uoms.list()
+    ])
+    data.value = resUnits.data as any
+    brands.value = resBrands.data as any
+    unitTypes.value = resTypes.data as any
+    paperSizes.value = resPaperSizes.data as any
+    uoms.value = resUoms.data as any
   } catch (error: any) {
-    console.error("Failed to fetch data:", error);
-    toast.error(
-      "Failed to fetch data from server: " + (error.message || "Error"),
-    );
+    console.error('Failed to fetch data:', error)
+    toast.error('Failed to fetch data from server: ' + (error.message || 'Error'))
   } finally {
-    isLoading.value = false;
+    isLoading.value = false
   }
 }
 
-const totalUnitCount = computed(() => (data.value || []).length);
-const totalAvailableCount = computed(
-  () =>
-    (data.value || []).filter(
-      (u) => (u.status || "").toLowerCase() === "available",
-    ).length,
-);
-const totalLockCount = computed(
-  () =>
-    (data.value || []).filter((u) =>
-      ["lock", "locked"].includes((u.status || "").toLowerCase()),
-    ).length,
-);
-const totalRentedCount = computed(
-  () =>
-    (data.value || []).filter(
-      (u) => (u.status || "").toLowerCase() === "rented",
-    ).length,
-);
-const totalMaintenanceCount = computed(
-  () =>
-    (data.value || []).filter(
-      (u) => (u.status || "").toLowerCase() === "maintenance",
-    ).length,
-);
-const totalBrokenCount = computed(
-  () =>
-    (data.value || []).filter(
-      (u) => (u.status || "").toLowerCase() === "broken",
-    ).length,
-);
-const totalSoldCount = computed(
-  () =>
-    (data.value || []).filter((u) => (u.status || "").toLowerCase() === "sold")
-      .length,
-);
-const totalUnitValue = computed(() =>
-  (data.value || []).reduce(
-    (acc, u) => acc + (Number((u as any).price) || 0),
-    0,
-  ),
-);
+const totalUnitCount = computed(() => (data.value || []).length)
+const totalAvailableCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'available').length)
+const totalLockCount = computed(() => (data.value || []).filter(u => ['lock', 'locked'].includes((u.status || '').toLowerCase())).length)
+const totalRentedCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'rented').length)
+const totalMaintenanceCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'maintenance').length)
+const totalBrokenCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'broken').length)
+const totalSoldCount = computed(() => (data.value || []).filter(u => (u.status || '').toLowerCase() === 'sold').length)
+const totalUnitValue = computed(() => (data.value || []).reduce((acc, u) => acc + (Number((u as any).price) || 0), 0))
 
-const selectedStatus = ref<string>("all");
+const selectedStatus = ref<string>('all')
 
 const filteredData = computed(() => {
-  const list = data.value || [];
-  if (selectedStatus.value === "all" || !selectedStatus.value) {
-    return list;
+  const list = data.value || []
+  if (selectedStatus.value === 'all' || !selectedStatus.value) {
+    return list
   }
-  const filterVal = selectedStatus.value.toLowerCase();
-  return list.filter((u) => {
-    const st = (u.status || "").toLowerCase();
-    if (filterVal === "lock" || filterVal === "locked") {
-      return st === "lock" || st === "locked";
+  const filterVal = selectedStatus.value.toLowerCase()
+  return list.filter(u => {
+    const st = (u.status || '').toLowerCase()
+    if (filterVal === 'lock' || filterVal === 'locked') {
+      return st === 'lock' || st === 'locked'
     }
-    return st === filterVal;
-  });
-});
+    return st === filterVal
+  })
+})
 
-let unitTimer: any = null;
+let unitTimer: any = null
 async function silentRefresh() {
-  if (showModal.value || showConfirm.value || hardDelete.show) return;
+  if (showModal.value || showConfirm.value || hardDelete.isOpen.value) return
   try {
-    const resUnits = await resources.units.list();
-    data.value = Array.isArray(resUnits.data) ? (resUnits.data as any) : [];
+    const resUnits = await resources.units.list()
+    data.value = Array.isArray(resUnits.data) ? (resUnits.data as any) : []
   } catch {}
 }
 
 onMounted(() => {
-  fetchData();
-  unitTimer = setInterval(silentRefresh, 30000);
-  window.addEventListener("focus", silentRefresh);
-  window.addEventListener("bias:data-mutated", silentRefresh);
-});
+  fetchData()
+  unitTimer = setInterval(silentRefresh, 30000)
+  window.addEventListener('focus', silentRefresh)
+  window.addEventListener('bias:data-mutated', silentRefresh)
+})
 
 onUnmounted(() => {
-  if (unitTimer) clearInterval(unitTimer);
-  window.removeEventListener("focus", silentRefresh);
-  window.removeEventListener("bias:data-mutated", silentRefresh);
-});
+  if (unitTimer) clearInterval(unitTimer)
+  window.removeEventListener('focus', silentRefresh)
+  window.removeEventListener('bias:data-mutated', silentRefresh)
+})
 
-const showModal = ref(false);
-const showConfirm = ref(false);
-const editingItem = ref<Unit | null>(null);
-const deletingItem = ref<Unit | null>(null);
+const showModal = ref(false)
+const showDetailModal = ref(false)
+const detailItem = ref<any>(null)
+const showConfirm = ref(false)
+const editingItem = ref<Unit | null>(null)
+const deletingItem = ref<Unit | null>(null)
+
+function openDetail(item: any) {
+  detailItem.value = item
+  showDetailModal.value = true
+}
+
+function getCleanSpecsString(item: any): string {
+  if (!item || !item.specs) return ''
+  const raw = item.specs
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed || trimmed === '{}' || trimmed === '[]') return ''
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const obj = JSON.parse(trimmed)
+        if (obj && typeof obj === 'object') {
+          return formatSpecsObjectToString(obj)
+        }
+      } catch {}
+    }
+    return trimmed
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    return formatSpecsObjectToString(raw)
+  }
+  return ''
+}
+
+function formatSpecsObjectToString(obj: Record<string, any>): string {
+  const parts: string[] = []
+  
+  const storage = obj.storage ? String(obj.storage).trim() : ''
+  const storageType = obj.storage_type ? String(obj.storage_type).trim() : ''
+  const combinedStorage = storage && storageType ? `${storage} ${storageType}` : (storage || storageType)
+
+  const keyMap: Record<string, string> = {
+    cpu: 'CPU',
+    processor: 'Processor',
+    ram: 'RAM',
+    os: 'OS',
+    vga: 'VGA',
+    graphic: 'Graphic',
+    office: 'Office',
+  }
+
+  for (const [k, v] of Object.entries(obj)) {
+    if (!v || k === 'print_tech' || k === 'storage_type') continue
+    const valStr = String(v).trim()
+    if (!valStr) continue
+
+    if (k === 'storage') {
+      parts.push(combinedStorage ? `Storage: ${combinedStorage}` : '')
+      continue
+    }
+
+    const label = keyMap[k.toLowerCase()] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    if (valStr.toLowerCase().startsWith(label.toLowerCase())) {
+      parts.push(valStr)
+    } else {
+      parts.push(`${label}: ${valStr}`)
+    }
+  }
+
+  return parts.filter(Boolean).join('\n')
+}
+
+interface FormattedSpecLine {
+  label?: string
+  value: string
+}
+
+const cleanSpecsString = computed(() => getCleanSpecsString(detailItem.value))
+
+const parsedSpecLines = computed<FormattedSpecLine[]>(() => {
+  const str = cleanSpecsString.value
+  if (!str) return []
+  let rawLines = str.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  if (rawLines.length === 1) {
+    if (rawLines[0].includes('•')) {
+      rawLines = rawLines[0].split('•').map(s => s.trim()).filter(Boolean)
+    } else if (rawLines[0].includes(';')) {
+      rawLines = rawLines[0].split(';').map(s => s.trim()).filter(Boolean)
+    } else if (rawLines[0].includes(',') && rawLines[0].split(',').length >= 3) {
+      rawLines = rawLines[0].split(',').map(s => s.trim()).filter(Boolean)
+    }
+  }
+
+  return rawLines.map(line => {
+    const clean = line.replace(/^[-•*]\s*/, '').trim()
+    const colonIdx = clean.indexOf(':')
+    if (colonIdx > 0 && colonIdx < 30) {
+      const label = clean.slice(0, colonIdx).trim()
+      const value = clean.slice(colonIdx + 1).trim()
+      if (value) {
+        return { label, value }
+      }
+    }
+    return { value: clean }
+  })
+})
+
+const isComputerItem = computed(() => {
+  if (!detailItem.value) return false
+  if (detailItem.value.is_computer) return true
+  const tName = (
+    detailItem.value.type?.name ||
+    getTypeName(detailItem.value.type_id) ||
+    ''
+  ).toLowerCase()
+  return (
+    tName.includes('laptop') ||
+    tName.includes('komputer') ||
+    tName.includes('computer') ||
+    tName.includes('pc') ||
+    tName.includes('desktop')
+  )
+})
 // type_id is the json key expected by backend, frontend had unit_type_id
 const form = reactive({
-  serial_no: "",
+  serial_no: '',
   serial_numbers: [] as string[],
-  temp_serial: "",
+  temp_serial: '',
   brand_id: null as string | null,
   type_id: null as string | null,
-  print_tech: "" as string,
-  uom_id: "" as string | null,
-  model: "",
-  name: "",
+  print_tech: '' as string,
+  uom_id: '' as string | null,
+  model: '',
+  name: '',
+  specs_text: '',
   price: null as number | null,
   is_copier: false,
   is_computer: false,
@@ -189,137 +258,102 @@ const form = reactive({
   current_meter_color: 0,
   free_quota_color: 0,
   free_quota_bw: 0,
-  rates: [] as {
-    paper_size_id: string;
-    paper_type_id: string | null;
-    rate_per_page_bw: number;
-    rate_per_page_color: number;
-    free_quota_bw: number;
-    free_quota_color: number;
-    quota_applies_to: string;
-  }[],
+  rates: [] as { paper_size_id: string; paper_type_id: string | null; rate_per_page_bw: number; rate_per_page_color: number; free_quota_bw: number; free_quota_color: number; quota_applies_to: string }[],
   specsData: {
-    cpu: "",
-    ram: "",
-    storage: "",
-    storage_type: "",
-    os: "",
-    vga: "",
-    office: "",
+    cpu: '',
+    ram: '',
+    storage: '',
+    storage_type: '',
+    os: '',
+    vga: '',
+    office: ''
   },
-});
+})
 
 const printTechOptions = [
-  { value: "Laser", label: "Laser" },
-  { value: "Inject", label: "Inject" },
-];
+  { value: 'Laser', label: 'Laser' },
+  { value: 'Inject', label: 'Inject' },
+]
 
 function getTypeName(id: string | null): string {
-  if (!id) return "";
-  const t = unitTypes.value.find((t) => String(t.id) === String(id));
-  return t ? t.name : "";
+  if (!id) return ''
+  const t = unitTypes.value.find(t => String(t.id) === String(id))
+  return t ? t.name : ''
 }
 
 const isPrinterOrCopier = computed(() => {
-  const tName = getTypeName(form.type_id).toLowerCase().trim();
+  const tName = getTypeName(form.type_id).toLowerCase().trim()
   return (
-    tName === "printer" ||
-    tName.includes("printer") ||
-    tName === "photocopy machine" ||
-    tName.includes("photocopy") ||
-    tName.includes("copier") ||
+    tName === 'printer' ||
+    tName.includes('printer') ||
+    tName === 'photocopy machine' ||
+    tName.includes('photocopy') ||
+    tName.includes('copier') ||
     Boolean(form.is_copier)
-  );
-});
+  )
+})
 
-function computeUnitName(
-  typeId: string | null,
-  printTech: string,
-  brandId: string | null,
-  model: string,
-  isCopier = false,
-): string {
-  const typeName = getTypeName(typeId).trim();
-  const brandName = getBrandName(brandId);
-  const validBrand = brandName && brandName !== "-" ? brandName.trim() : "";
-  const validModel = (model || "").trim();
+function computeUnitName(typeId: string | null, printTech: string, brandId: string | null, model: string, isCopier = false): string {
+  const typeName = getTypeName(typeId).trim()
+  const brandName = getBrandName(brandId)
+  const validBrand = (brandName && brandName !== '-') ? brandName.trim() : ''
+  const validModel = (model || '').trim()
 
-  const tLower = typeName.toLowerCase();
-  const isPrintOrCopy =
-    tLower.includes("printer") ||
-    tLower.includes("copier") ||
-    tLower.includes("photocopy") ||
-    isCopier;
+  const tLower = typeName.toLowerCase()
+  const isPrintOrCopy = tLower.includes('printer') || tLower.includes('copier') || tLower.includes('photocopy') || isCopier
 
   if (isPrintOrCopy) {
-    const tech = (printTech || "").trim();
-    return [typeName, tech, validBrand, validModel]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
+    const tech = (printTech || '').trim()
+    return [typeName, tech, validBrand, validModel].filter(Boolean).join(' ').trim()
   } else {
-    return [typeName, validBrand, validModel].filter(Boolean).join(" ").trim();
+    return [typeName, validBrand, validModel].filter(Boolean).join(' ').trim()
   }
 }
 
 function formatUnitDisplayName(row: any): string {
   return utilFormatUnitDisplayName(row, {
-    findBrand: (id) => brands.value.find((b) => String(b.id) === String(id)),
-    findUnitType: (id) =>
-      unitTypes.value.find((t) => String(t.id) === String(id)),
-  });
+    findBrand: (id) => brands.value.find(b => String(b.id) === String(id)),
+    findUnitType: (id) => unitTypes.value.find(t => String(t.id) === String(id)),
+  })
 }
 
+const isDescriptionCustom = ref(false)
+
 watch(
-  [
-    () => form.type_id,
-    () => form.print_tech,
-    () => form.brand_id,
-    () => form.model,
-    () => form.is_copier,
-  ],
+  [() => form.type_id, () => form.print_tech, () => form.brand_id, () => form.model, () => form.is_copier],
   ([newType, newTech, newBrand, newModel, newCopier]) => {
     if (!isPrinterOrCopier.value && form.print_tech) {
-      form.print_tech = "";
+      form.print_tech = ''
     }
-    form.name = computeUnitName(
-      newType,
-      form.print_tech,
-      newBrand,
-      newModel,
-      newCopier,
-    );
-  },
-);
+    const autoName = computeUnitName(newType, form.print_tech, newBrand, newModel, newCopier)
+    if (!isDescriptionCustom.value) {
+      form.name = autoName
+    }
+  }
+)
 
 function addRate() {
-  form.rates.push({
-    paper_size_id: "",
-    paper_type_id: null,
-    rate_per_page_bw: 0,
-    rate_per_page_color: 0,
-    free_quota_bw: 0,
-    free_quota_color: 0,
-    quota_applies_to: "color",
-  });
+  form.rates.push({ paper_size_id: '', paper_type_id: null, rate_per_page_bw: 0, rate_per_page_color: 0, free_quota_bw: 0, free_quota_color: 0, quota_applies_to: 'color' })
 }
 
 function removeRate(index: number) {
-  form.rates.splice(index, 1);
+  form.rates.splice(index, 1)
 }
 
 function openAdd() {
-  editingItem.value = null;
+  editingItem.value = null
+  isDescriptionCustom.value = false
   Object.assign(form, {
-    serial_no: "",
+    serial_no: '',
     serial_numbers: [],
-    temp_serial: "",
+    temp_serial: '',
     brand_id: null,
     type_id: null,
-    print_tech: "",
-    uom_id: "",
-    model: "",
-    name: "",
+    print_tech: '',
+    uom_id: '',
+    model: '',
+    name: '',
+    specs_text: '',
     price: null,
     is_copier: false,
     is_computer: false,
@@ -328,53 +362,45 @@ function openAdd() {
     free_quota_color: 0,
     free_quota_bw: 0,
     rates: [],
-    specsData: {
-      cpu: "",
-      ram: "",
-      storage: "",
-      storage_type: "",
-      os: "",
-      vga: "",
-      office: "",
-    },
-  });
-  showModal.value = true;
+    specsData: { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }
+  })
+  showModal.value = true
 }
 
 function closeModal() {
-  showModal.value = false;
-  editingItem.value = null;
-  form.serial_numbers = [];
-  form.temp_serial = "";
-  form.serial_no = "";
+  showModal.value = false
+  editingItem.value = null
+  form.serial_numbers = []
+  form.temp_serial = ''
+  form.serial_no = ''
 }
 
 function openEdit(item: any) {
-  editingItem.value = item;
-  let detectedTech = item.print_tech || "";
+  editingItem.value = item
+  isDescriptionCustom.value = true
+  let detectedTech = item.print_tech || ''
   if (!detectedTech && item.specs) {
     try {
-      const s =
-        typeof item.specs === "string" ? JSON.parse(item.specs) : item.specs;
-      detectedTech = s.print_tech || "";
+      const s = typeof item.specs === 'string' ? JSON.parse(item.specs) : item.specs
+      detectedTech = s.print_tech || ''
     } catch {}
   }
   if (!detectedTech && item.name) {
-    if (/\bLaser\b/i.test(item.name)) detectedTech = "Laser";
-    else if (/\bInject\b/i.test(item.name) || /\bInkjet\b/i.test(item.name))
-      detectedTech = "Inject";
+    if (/\bLaser\b/i.test(item.name)) detectedTech = 'Laser'
+    else if (/\bInject\b/i.test(item.name) || /\bInkjet\b/i.test(item.name)) detectedTech = 'Inject'
   }
 
   Object.assign(form, {
     serial_no: item.serial_no,
     serial_numbers: [],
-    temp_serial: "",
+    temp_serial: '',
     brand_id: item.brand_id,
     type_id: item.type_id,
     print_tech: detectedTech,
-    uom_id: item.uom_id ?? "",
+    uom_id: item.uom_id ?? '',
     model: item.model,
-    name: item.name || "",
+    name: item.name || '',
+    specs_text: getCleanSpecsString(item),
     price: (item as any).price || null,
     is_copier: !!item.is_copier,
     is_computer: !!item.is_computer,
@@ -382,466 +408,334 @@ function openEdit(item: any) {
     current_meter_color: item.current_meter_color || 0,
     free_quota_color: item.free_quota_color || 0,
     free_quota_bw: (item as any).free_quota_bw || 0,
-    rates: Array.isArray(item.rates)
-      ? item.rates.map((r: any) => ({
-          paper_size_id: r.paper_size_id,
-          paper_type_id: r.paper_type_id ?? null,
-          rate_per_page_bw: r.rate_per_page_bw,
-          rate_per_page_color: r.rate_per_page_color,
-          free_quota_bw: r.free_quota_bw ?? 0,
-          free_quota_color: r.free_quota_color ?? 0,
-          quota_applies_to:
-            r.quota_applies_to === "bw"
-              ? "bw"
-              : r.quota_applies_to === "both"
-                ? "both"
-                : "color",
-        }))
-      : [],
-    specsData: item.specs
-      ? typeof item.specs === "string"
-        ? JSON.parse(item.specs || "{}")
-        : item.specs
-      : {
-          cpu: "",
-          ram: "",
-          storage: "",
-          storage_type: "",
-          os: "",
-          vga: "",
-          office: "",
-        },
-  });
-  showModal.value = true;
+    rates: Array.isArray(item.rates) ? item.rates.map((r: any) => ({
+      paper_size_id: r.paper_size_id,
+      paper_type_id: r.paper_type_id ?? null,
+      rate_per_page_bw: r.rate_per_page_bw,
+      rate_per_page_color: r.rate_per_page_color,
+      free_quota_bw: r.free_quota_bw ?? 0,
+      free_quota_color: r.free_quota_color ?? 0,
+      quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : (r.quota_applies_to === 'both' ? 'both' : 'color')
+    })) : [],
+    specsData: item.specs ? (typeof item.specs === 'string' ? JSON.parse(item.specs || '{}') : item.specs) : { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
+  })
+  showModal.value = true
 }
 
 function generateRandomSN(): string {
-  const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
-  const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, "");
-  return `NONSN-${dateStr}-${rand}`;
+  const rand = Math.random().toString(36).substring(2, 7).toUpperCase()
+  const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
+  return `NONSN-${dateStr}-${rand}`
 }
 
 function addAutoSN() {
-  const sn = generateRandomSN();
-  form.serial_numbers.push(sn);
+  const sn = generateRandomSN()
+  form.serial_numbers.push(sn)
 }
 
 function isNoSN(val: string): boolean {
-  const v = (val || "").trim().toUpperCase();
-  return (
-    v === "-" ||
-    v === "NONE" ||
-    v === "N/A" ||
-    v === "TANPA SN" ||
-    v === "NO SN"
-  );
+  const v = (val || '').trim().toUpperCase()
+  return v === '-' || v === 'NONE' || v === 'N/A' || v === 'TANPA SN' || v === 'NO SN'
 }
 
 async function handleSubmit() {
   if (form.temp_serial && form.temp_serial.trim()) {
-    addSerialNumber();
+    addSerialNumber()
   }
 
-  const modelVal = (form.model || "").trim();
-  const serialNoVal = (form.serial_no || "").trim();
-
   if (editingItem.value) {
-    if (!form.type_id || !form.brand_id || !serialNoVal || !modelVal) {
-      toast.warning(
-        "Silakan lengkapi kolom Item / Kategori, Merek, Type / Model, dan Serial Number.",
-      );
-      return;
+    if (!form.brand_id || !form.type_id || !form.model?.trim() || !form.serial_no.trim()) {
+      toast.warning('Silakan lengkapi kolom Item / Kategori, Merek, Type / Model, dan Serial Number.')
+      return
     }
   } else {
-    if (!form.type_id || !form.brand_id || !modelVal) {
-      toast.warning("Silakan lengkapi kolom Item / Kategori, Merek, dan Type / Model.");
-      return;
+    if (!form.brand_id || !form.type_id || !form.model?.trim()) {
+      toast.warning('Silakan lengkapi kolom Item / Kategori, Merek, dan Type / Model.')
+      return
     }
-    if (form.serial_numbers.length === 0 && serialNoVal) {
-      let sn = serialNoVal.toUpperCase();
-      if (isNoSN(sn)) sn = generateRandomSN();
-      form.serial_numbers.push(sn);
+    if (form.serial_numbers.length === 0 && form.serial_no.trim()) {
+      let sn = form.serial_no.trim().toUpperCase()
+      if (isNoSN(sn)) sn = generateRandomSN()
+      form.serial_numbers.push(sn)
     }
     if (form.serial_numbers.length === 0) {
-      toast.warning(
-        'Silakan masukkan minimal satu Serial Number (SN) atau klik "+ Tanpa SN".',
-      );
-      return;
+      toast.warning('Silakan masukkan minimal satu Serial Number (SN) atau klik "+ Tanpa SN".')
+      return
     }
   }
 
   if (isPrinterOrCopier.value && !form.print_tech) {
-    toast.warning(
-      "Silakan pilih tipe Laser atau Inject untuk Printer / Copier Machine.",
-    );
-    return;
+    toast.warning('Silakan pilih tipe Laser atau Inject untuk Printer / Copier Machine.')
+    return
   }
 
   try {
-    const cleanUomId = form.uom_id && form.uom_id.trim() ? form.uom_id.trim() : null;
+    const cleanUomId = form.uom_id && form.uom_id.trim() ? form.uom_id.trim() : null
     const cleanPrice =
-      typeof form.price === "number"
+      typeof form.price === 'number'
         ? form.price
         : form.price
           ? Number(form.price)
-          : null;
+          : null
 
     const payload: any = {
       ...form,
-      model: modelVal || "-",
+      model: (form.model || '').trim() || '-',
       uom_id: cleanUomId,
       price: cleanPrice,
       print_tech: form.print_tech || undefined,
-      specs: JSON.stringify({
-        ...(form.is_computer ? form.specsData : {}),
-        print_tech: form.print_tech || undefined,
-      }),
-    };
-    delete payload.serial_numbers;
-    delete payload.temp_serial;
-    delete payload.specsData;
+      specs: form.specs_text
+        ? form.specs_text.trim()
+        : (form.is_computer ? JSON.stringify(form.specsData) : (editingItem.value?.specs || ''))
+    }
+    delete (payload as any).serial_numbers
+    delete (payload as any).temp_serial
+    delete (payload as any).specsData
+    delete (payload as any).specs_text
 
     if (editingItem.value) {
       if (isNoSN(payload.serial_no)) {
-        payload.serial_no = generateRandomSN();
+        payload.serial_no = generateRandomSN()
       }
-      await resources.units.update(String(editingItem.value.id), payload);
-      toast.success("Unit updated successfully!");
+      await resources.units.update(String(editingItem.value.id), payload)
+      toast.success("Unit updated successfully!")
     } else {
-      const serials = Array.from(
-        new Set(
-          form.serial_numbers
-            .map((s) => {
-              const trimmed = (s || "").trim().toUpperCase();
-              return isNoSN(trimmed) ? generateRandomSN() : trimmed;
-            })
-            .filter(Boolean),
-        ),
-      );
+      const serials = Array.from(new Set(form.serial_numbers.map(s => {
+        const trimmed = s.trim().toUpperCase()
+        return isNoSN(trimmed) ? generateRandomSN() : trimmed
+      }).filter(Boolean)))
       if (serials.length === 0) {
-        toast.warning("Silakan masukkan Serial Number yang valid.");
-        return;
+        toast.warning('Silakan masukkan Serial Number yang valid.')
+        return
       }
-
-      const promises = serials.map((sn) => {
-        return resources.units.create({ ...payload, serial_no: sn });
-      });
-      await Promise.all(promises);
-      toast.success(
-        serials.length > 1
-          ? `${serials.length} unit berhasil disimpan!`
-          : "Unit berhasil disimpan!",
-      );
+      
+      const promises = serials.map(sn => {
+         return resources.units.create({ ...payload, serial_no: sn })
+      })
+      await Promise.all(promises)
+      toast.success(serials.length > 1 ? `${serials.length} unit berhasil disimpan!` : "Unit berhasil disimpan!")
     }
-    await fetchData();
-    window.dispatchEvent(
-      new CustomEvent("bias:data-mutated", { detail: { path: "/units" } }),
-    );
-    closeModal();
+    await fetchData()
+    window.dispatchEvent(new CustomEvent('bias:data-mutated', { detail: { path: '/units' } }))
+    closeModal()
   } catch (error: any) {
-    console.error("Failed to save unit:", error);
-    toast.error(
-      "Failed to save Unit data: " + (error.message || "An error occurred"),
-    );
+    console.error('Failed to save unit:', error)
+    toast.error('Failed to save Unit data: ' + (error.message || 'An error occurred'))
   }
 }
 
 function addSerialNumber() {
-  let sn = (form.temp_serial || "").trim().toUpperCase();
-  if (!sn) return;
+  let sn = (form.temp_serial || '').trim().toUpperCase()
+  if (!sn) return
   if (isNoSN(sn)) {
-    sn = generateRandomSN();
+    sn = generateRandomSN()
   }
   if (sn && !form.serial_numbers.includes(sn)) {
-    form.serial_numbers.push(sn);
+    form.serial_numbers.push(sn)
   }
-  form.temp_serial = "";
+  form.temp_serial = ''
 }
 
-function openDelete(item: Unit) {
-  deletingItem.value = item;
-  showConfirm.value = true;
-}
+function openDelete(item: Unit) { deletingItem.value = item; showConfirm.value = true }
 
-const hardDelete = useHardDelete(
-  (id: string) => resources.units.hardRemove(id),
-  fetchData,
-);
+const hardDelete = useHardDelete((id: string) => resources.units.hardRemove(id), fetchData)
 
 async function handleDelete() {
   if (deletingItem.value) {
     try {
-      await resources.units.remove(String(deletingItem.value.id));
-      await fetchData();
-      toast.success("Unit deleted successfully!");
+      await resources.units.remove(String(deletingItem.value.id))
+      await fetchData()
+      toast.success("Unit deleted successfully!")
     } catch (error) {
-      console.error("Failed to delete unit:", error);
-      toast.error("Failed to delete Unit data");
+      console.error('Failed to delete unit:', error)
+      toast.error('Failed to delete Unit data')
     }
   }
-  showConfirm.value = false;
+  showConfirm.value = false
 }
 
 function getBrandName(id: string | null): string {
-  if (!id) return "-";
-  const b = brands.value.find((b) => b.id === id);
-  return b ? b.name : "-";
+  if (!id) return '-'
+  const b = brands.value.find(b => b.id === id)
+  return b ? b.name : '-'
 }
 
 function statusBadgeClass(status: string | null | undefined): string {
-  switch ((status || "").toLowerCase()) {
-    case "available":
-      return "badge-success";
-    case "lock":
-    case "locked":
-      return "badge-warning";
-    case "rented":
-      return "badge-info";
-    case "maintenance":
-      return "badge-warning";
-    case "broken":
-      return "badge-danger";
-    case "sold":
-      return "badge-neutral";
+  switch ((status || '').toLowerCase()) {
+    case 'available':
+      return 'badge-success'
+    case 'lock':
+    case 'locked':
+      return 'badge-warning'
+    case 'rented':
+      return 'badge-info'
+    case 'maintenance':
+      return 'badge-warning'
+    case 'broken':
+      return 'badge-danger'
+    case 'sold':
+      return 'badge-neutral'
     default:
-      return "badge-neutral";
+      return 'badge-neutral'
   }
 }
 
 function formatStatus(status: string | null | undefined): string {
-  if (!status) return "-";
+  if (!status) return '-'
   return status
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
 }
 
 function formatRupiah(val: number | null | undefined): string {
-  if (val === null || val === undefined) return "-";
-  return "Rp " + Number(val).toLocaleString("id-ID");
+  if (val === null || val === undefined) return '-'
+  return 'Rp ' + Number(val).toLocaleString('id-ID')
 }
 
 const badgeTrue = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "24px",
-  height: "24px",
-  borderRadius: "50%",
-  backgroundColor: "#dcfce7",
-  color: "#16a34a",
-};
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  borderRadius: '50%',
+  backgroundColor: '#dcfce7',
+  color: '#16a34a',
+}
 
 const badgeFalse = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "24px",
-  height: "24px",
-  borderRadius: "50%",
-  backgroundColor: "#fee2e2",
-  color: "#dc2626",
-};
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '24px',
+  height: '24px',
+  borderRadius: '50%',
+  backgroundColor: '#fee2e2',
+  color: '#dc2626',
+}
 
 async function exportStockExcel() {
-  const exportItems = filteredData.value;
+  const exportItems = filteredData.value
   if (!exportItems.length) {
-    toast.error("Tidak ada data stok unit untuk diekspor");
-    return;
+    toast.error("Tidak ada data stok unit untuk diekspor")
+    return
   }
 
-  const dateStr = new Date().toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
-  const totalItems = exportItems.length;
-  const availableItems = exportItems.filter(
-    (u) => (u.status || "").toLowerCase() === "available",
-  ).length;
-  const rentedItems = exportItems.filter(
-    (u) => (u.status || "").toLowerCase() === "rented",
-  ).length;
-  const exportTotalVal = exportItems.reduce(
-    (acc, u) => acc + (Number((u as any).price) || 0),
-    0,
-  );
+  const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+  const totalItems = exportItems.length
+  const availableItems = exportItems.filter(u => (u.status || '').toLowerCase() === 'available').length
+  const rentedItems = exportItems.filter(u => (u.status || '').toLowerCase() === 'rented').length
+  const exportTotalVal = exportItems.reduce((acc, u) => acc + (Number((u as any).price) || 0), 0)
 
   const rows: StyledCell[][] = [
-    [{ v: "PT. BIAS SURYA TEKNOLOGI", mergeAcross: 8, style: "titleCell" }],
+    [{ v: 'PT. BIAS SURYA TEKNOLOGI', mergeAcross: 8, style: 'titleCell' }],
+    [{ v: 'LAPORAN STOK & DAFTAR ASET UNIT (PRINTER, COPIER, PC / LAPTOP)', mergeAcross: 8, style: 'plainBoldCenter' }],
+    [{ v: 'Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia | Phone: +62 811 7045 657', mergeAcross: 8, style: 'subTitleCell' }],
+    [{ v: `Tanggal Cetak: ${dateStr}${selectedStatus.value !== 'all' ? ` | Filter Status: ${formatStatus(selectedStatus.value)}` : ''}`, mergeAcross: 8, style: 'subTitleCell' }],
+    [],
     [
-      {
-        v: "LAPORAN STOK & DAFTAR ASET UNIT (PRINTER, COPIER, PC / LAPTOP)",
-        mergeAcross: 8,
-        style: "plainBoldCenter",
-      },
+      { v: 'RINGKASAN STATUS & VALUASI UNIT', mergeAcross: 8, style: 'plainBoldCenter' },
     ],
     [
-      {
-        v: "Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia | Phone: +62 811 7045 657",
-        mergeAcross: 8,
-        style: "subTitleCell",
-      },
+      { v: 'Total Unit Terdaftar', style: 'headerCell', mergeAcross: 1 }, {},
+      { v: 'Unit Available (Siap)', style: 'headerCell', mergeAcross: 1 }, {},
+      { v: 'Unit Rented (Disewa)', style: 'headerCell', mergeAcross: 1 }, {},
+      { v: 'Total Estimasi Nilai Unit (Rp)', style: 'headerCell', mergeAcross: 2 }, {}, {},
     ],
     [
-      {
-        v: `Tanggal Cetak: ${dateStr}${selectedStatus.value !== "all" ? ` | Filter Status: ${formatStatus(selectedStatus.value)}` : ""}`,
-        mergeAcross: 8,
-        style: "subTitleCell",
-      },
+      { v: `${totalItems} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
+      { v: `${availableItems} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
+      { v: `${rentedItems} Unit`, style: 'grandTotalCell', mergeAcross: 1 }, {},
+      { v: exportTotalVal, style: 'grandTotalCell', mergeAcross: 2, numFmt: NUMFMT_RP }, {}, {},
     ],
     [],
     [
-      {
-        v: "RINGKASAN STATUS & VALUASI UNIT",
-        mergeAcross: 8,
-        style: "plainBoldCenter",
-      },
+      { v: 'No', style: 'headerCell' },
+      { v: 'Serial Number (SN)', style: 'headerCell' },
+      { v: 'Nama Lengkap Unit', style: 'headerCell' },
+      { v: 'Brand', style: 'headerCell' },
+      { v: 'Model', style: 'headerCell' },
+      { v: 'Tipe / Kategori', style: 'headerCell' },
+      { v: 'Status', style: 'headerCell' },
+      { v: 'Meter (BW / Color)', style: 'headerCell' },
+      { v: 'Nilai Unit (Rp)', style: 'headerCell' },
     ],
-    [
-      { v: "Total Unit Terdaftar", style: "headerCell", mergeAcross: 1 },
-      {},
-      { v: "Unit Available (Siap)", style: "headerCell", mergeAcross: 1 },
-      {},
-      { v: "Unit Rented (Disewa)", style: "headerCell", mergeAcross: 1 },
-      {},
-      {
-        v: "Total Estimasi Nilai Unit (Rp)",
-        style: "headerCell",
-        mergeAcross: 2,
-      },
-      {},
-      {},
-    ],
-    [
-      { v: `${totalItems} Unit`, style: "grandTotalCell", mergeAcross: 1 },
-      {},
-      { v: `${availableItems} Unit`, style: "grandTotalCell", mergeAcross: 1 },
-      {},
-      { v: `${rentedItems} Unit`, style: "grandTotalCell", mergeAcross: 1 },
-      {},
-      {
-        v: exportTotalVal,
-        style: "grandTotalCell",
-        mergeAcross: 2,
-        numFmt: NUMFMT_RP,
-      },
-      {},
-      {},
-    ],
-    [],
-    [
-      { v: "No", style: "headerCell" },
-      { v: "Serial Number (SN)", style: "headerCell" },
-      { v: "Nama Lengkap Unit", style: "headerCell" },
-      { v: "Brand", style: "headerCell" },
-      { v: "Model", style: "headerCell" },
-      { v: "Tipe / Kategori", style: "headerCell" },
-      { v: "Status", style: "headerCell" },
-      { v: "Meter (BW / Color)", style: "headerCell" },
-      { v: "Nilai Unit (Rp)", style: "headerCell" },
-    ],
-  ];
+  ]
 
   exportItems.forEach((u, idx) => {
-    const priceVal = Number((u as any).price) || 0;
-    const meterStr = u.is_copier
-      ? `${u.current_meter_bw || 0} / ${u.current_meter_color || 0}`
-      : "-";
-    const brandName = getBrandName(u.brand_id);
-    const typeName = getTypeName(u.type_id);
+    const priceVal = Number((u as any).price) || 0
+    const meterStr = u.is_copier ? `${u.current_meter_bw || 0} / ${u.current_meter_color || 0}` : '-'
+    const brandName = getBrandName(u.brand_id)
+    const typeName = getTypeName(u.type_id)
 
     rows.push([
-      { v: idx + 1, style: "borderCenter" },
-      { v: u.serial_no || "-", style: "borderCenter" },
-      { v: formatUnitDisplayName(u), style: "border" },
-      { v: brandName, style: "border" },
-      { v: u.model || "-", style: "border" },
-      { v: typeName || "-", style: "border" },
-      { v: formatStatus(u.status), style: "borderCenter" },
-      { v: meterStr, style: "borderCenter" },
-      { v: priceVal, style: "borderBoldRight", numFmt: NUMFMT_RP },
-    ]);
-  });
+      { v: idx + 1, style: 'borderCenter' },
+      { v: u.serial_no || '-', style: 'borderCenter' },
+      { v: formatUnitDisplayName(u), style: 'border' },
+      { v: brandName, style: 'border' },
+      { v: u.model || '-', style: 'border' },
+      { v: typeName || '-', style: 'border' },
+      { v: formatStatus(u.status), style: 'borderCenter' },
+      { v: meterStr, style: 'borderCenter' },
+      { v: priceVal, style: 'borderBoldRight', numFmt: NUMFMT_RP },
+    ])
+  })
 
   // Grand Total row
   rows.push([
-    { v: "GRAND TOTAL", mergeAcross: 7, style: "grandTotalCell" },
-    {},
-    {},
-    {},
-    {},
-    {},
-    {},
-    {},
-    { v: exportTotalVal, style: "grandTotalCell", numFmt: NUMFMT_RP },
-  ]);
+    { v: 'GRAND TOTAL', mergeAcross: 7, style: 'grandTotalCell' },
+    {}, {}, {}, {}, {}, {}, {},
+    { v: exportTotalVal, style: 'grandTotalCell', numFmt: NUMFMT_RP },
+  ])
 
-  const columnWidths = [6, 20, 36, 16, 18, 18, 16, 20, 22];
+  const columnWidths = [6, 20, 36, 16, 18, 18, 16, 20, 22]
   await downloadStyledExcel(
-    [{ name: "Stok Unit BiAS", columnWidths, rows }],
-    `Laporan_Stok_Unit_BiAS_${new Date().toISOString().slice(0, 10)}.xlsx`,
-  );
-  toast.success("Laporan stok unit berhasil diekspor ke Excel!");
+    [{ name: 'Stok Unit BiAS', columnWidths, rows }],
+    `Laporan_Stok_Unit_BiAS_${new Date().toISOString().slice(0, 10)}.xlsx`
+  )
+  toast.success("Laporan stok unit berhasil diekspor ke Excel!")
 }
 
 function exportStockPdf() {
-  const exportItems = filteredData.value;
+  const exportItems = filteredData.value
   if (!exportItems.length) {
-    toast.error("Tidak ada data stok unit untuk diekspor");
-    return;
+    toast.error("Tidak ada data stok unit untuk diekspor")
+    return
   }
-  const dateStr = new Date().toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
-  const totalItems = exportItems.length;
-  const availableItems = exportItems.filter(
-    (u) => (u.status || "").toLowerCase() === "available",
-  ).length;
-  const rentedItems = exportItems.filter(
-    (u) => (u.status || "").toLowerCase() === "rented",
-  ).length;
-  const exportTotalVal = exportItems.reduce(
-    (acc, u) => acc + (Number((u as any).price) || 0),
-    0,
-  );
-  const totalValStr = formatRupiah(exportTotalVal);
+  const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+  const totalItems = exportItems.length
+  const availableItems = exportItems.filter(u => (u.status || '').toLowerCase() === 'available').length
+  const rentedItems = exportItems.filter(u => (u.status || '').toLowerCase() === 'rented').length
+  const exportTotalVal = exportItems.reduce((acc, u) => acc + (Number((u as any).price) || 0), 0)
+  const totalValStr = formatRupiah(exportTotalVal)
 
-  const rowsHtml = exportItems
-    .map((u, idx) => {
-      const priceVal = Number((u as any).price) || 0;
-      const meterStr = u.is_copier
-        ? `${(u.current_meter_bw || 0).toLocaleString("id-ID")} / ${(u.current_meter_color || 0).toLocaleString("id-ID")}`
-        : "-";
-      const brandName = getBrandName(u.brand_id);
-      const typeName = getTypeName(u.type_id);
-      const statusText = formatStatus(u.status);
+  const rowsHtml = exportItems.map((u, idx) => {
+    const priceVal = Number((u as any).price) || 0
+    const meterStr = u.is_copier ? `${(u.current_meter_bw || 0).toLocaleString('id-ID')} / ${(u.current_meter_color || 0).toLocaleString('id-ID')}` : '-'
+    const brandName = getBrandName(u.brand_id)
+    const typeName = getTypeName(u.type_id)
+    const statusText = formatStatus(u.status)
 
-      let statusColor = "#64748b";
-      if ((u.status || "").toLowerCase() === "available")
-        statusColor = "#16a34a";
-      else if ((u.status || "").toLowerCase() === "rented")
-        statusColor = "#0284c7";
-      else if ((u.status || "").toLowerCase() === "maintenance")
-        statusColor = "#d97706";
+    let statusColor = '#64748b'
+    if ((u.status || '').toLowerCase() === 'available') statusColor = '#16a34a'
+    else if ((u.status || '').toLowerCase() === 'rented') statusColor = '#0284c7'
+    else if ((u.status || '').toLowerCase() === 'maintenance') statusColor = '#d97706'
 
-      return `
+    return `
       <tr>
         <td style="text-align: center;">${idx + 1}</td>
-        <td style="text-align: center; font-family: monospace; font-weight: 600;">${u.serial_no || "-"}</td>
+        <td style="text-align: center; font-family: monospace; font-weight: 600;">${u.serial_no || '-'}</td>
         <td style="font-weight: 500;">${formatUnitDisplayName(u)}</td>
         <td>${brandName}</td>
-        <td>${u.model || "-"}</td>
-        <td>${typeName || "-"}</td>
+        <td>${u.model || '-'}</td>
+        <td>${typeName || '-'}</td>
         <td style="text-align: center; font-weight: 600; color: ${statusColor};">${statusText}</td>
         <td style="text-align: center;">${meterStr}</td>
-        <td style="text-align: right; font-weight: 700;">${priceVal > 0 ? "Rp " + priceVal.toLocaleString("id-ID") : "-"}</td>
+        <td style="text-align: right; font-weight: 700;">${priceVal > 0 ? 'Rp ' + priceVal.toLocaleString('id-ID') : '-'}</td>
       </tr>
-    `;
-    })
-    .join("");
+    `
+  }).join('')
 
   const fullHtml = `<!DOCTYPE html>
 <html>
@@ -948,16 +842,14 @@ function exportStockPdf() {
     };
   <\/script>
 </body>
-</html>`;
+</html>`
 
-  const w = window.open("", "_blank");
+  const w = window.open('', '_blank')
   if (w) {
-    w.document.write(fullHtml);
-    w.document.close();
+    w.document.write(fullHtml)
+    w.document.close()
   } else {
-    toast.error(
-      "Pop-up terblokir oleh browser. Izinkan pop-up untuk mencetak PDF.",
-    );
+    toast.error('Pop-up terblokir oleh browser. Izinkan pop-up untuk mencetak PDF.')
   }
 }
 </script>
@@ -965,424 +857,139 @@ function exportStockPdf() {
 <template>
   <div>
     <!-- Skeleton Screen -->
-    <PageSkeleton
-      v-if="isLoading"
-      :cards="5"
-      :columns="10"
-      :rows="8"
-      :show-header-actions="true"
-    />
+    <PageSkeleton v-if="isLoading" :cards="5" :columns="10" :rows="8" :show-header-actions="true" />
 
     <!-- Real Content -->
     <div v-show="!isLoading">
-      <PageHeader
-        title="Products"
-        :button-label="isTechnician ? undefined : 'Add Product'"
-        permission="unit:create"
-        @add="openAdd"
-      >
-        <template #actions>
-          <button
-            class="btn btn-outline"
-            @click="exportStockPdf"
-            style="display: flex; align-items: center; gap: 6px"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path
-                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-              ></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            Export Unit Stock PDF
-          </button>
-          <button
-            class="btn btn-outline"
-            @click="exportStockExcel"
-            style="display: flex; align-items: center; gap: 6px"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path
-                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
-              ></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="8" y1="13" x2="16" y2="17"></line>
-              <line x1="16" y1="13" x2="8" y2="17"></line>
-            </svg>
-            Export Unit Stock Excel
-          </button>
-        </template>
-      </PageHeader>
+    <PageHeader title="Products" :button-label="isTechnician ? undefined : 'Add Product'" permission="unit:create"
+      @add="openAdd">
+      <template #actions>
+        <button class="btn btn-outline" @click="exportStockPdf" style="display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          Export Unit Stock PDF
+        </button>
+        <button class="btn btn-outline" @click="exportStockExcel" style="display: flex; align-items: center; gap: 6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="17"></line><line x1="16" y1="13" x2="8" y2="17"></line></svg>
+          Export Unit Stock Excel
+        </button>
+      </template>
+    </PageHeader>
 
-      <!-- Summary Cards -->
+    <!-- Summary Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px;">
       <div
-        style="
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-          gap: 16px;
-          margin-bottom: 20px;
-        "
+        class="card p-md summary-card"
+        :class="{ 'card-active': selectedStatus === 'all' }"
+        title="Klik untuk menampilkan semua unit"
+        @click="selectedStatus = 'all'"
       >
-        <div
-          class="card p-md summary-card"
-          :class="{ 'card-active': selectedStatus === 'all' }"
-          title="Klik untuk menampilkan semua unit"
-          @click="selectedStatus = 'all'"
-        >
-          <div
-            style="
-              font-size: 12px;
-              color: var(--color-text-muted);
-              font-weight: 600;
-              text-transform: uppercase;
-            "
-          >
-            Total Unit Aset
-          </div>
-          <div
-            style="
-              font-size: 24px;
-              font-weight: bold;
-              margin-top: 4px;
-              color: var(--color-text);
-            "
-          >
-            {{ totalUnitCount }} Unit
-          </div>
-        </div>
-        <div
-          class="card p-md summary-card"
-          :class="{ 'card-active': selectedStatus === 'available' }"
-          title="Klik untuk memfilter unit Available (Siap)"
-          @click="
-            selectedStatus =
-              selectedStatus === 'available' ? 'all' : 'available'
-          "
-        >
-          <div
-            style="
-              font-size: 12px;
-              color: var(--color-text-muted);
-              font-weight: 600;
-              text-transform: uppercase;
-            "
-          >
-            Unit Available (Siap)
-          </div>
-          <div
-            style="
-              font-size: 24px;
-              font-weight: bold;
-              margin-top: 4px;
-              color: #16a34a;
-            "
-          >
-            {{ totalAvailableCount }} Unit
-          </div>
-        </div>
-        <div
-          class="card p-md summary-card"
-          :class="{ 'card-active': selectedStatus === 'lock' }"
-          title="Klik untuk memfilter unit Lock (Terkunci)"
-          @click="selectedStatus = selectedStatus === 'lock' ? 'all' : 'lock'"
-        >
-          <div
-            style="
-              font-size: 12px;
-              color: var(--color-text-muted);
-              font-weight: 600;
-              text-transform: uppercase;
-            "
-          >
-            Unit Lock (Terkunci)
-          </div>
-          <div
-            style="
-              font-size: 24px;
-              font-weight: bold;
-              margin-top: 4px;
-              color: #d97706;
-            "
-          >
-            {{ totalLockCount }} Unit
-          </div>
-        </div>
-        <div
-          class="card p-md summary-card"
-          :class="{ 'card-active': selectedStatus === 'rented' }"
-          title="Klik untuk memfilter unit Rented (Disewa)"
-          @click="
-            selectedStatus = selectedStatus === 'rented' ? 'all' : 'rented'
-          "
-        >
-          <div
-            style="
-              font-size: 12px;
-              color: var(--color-text-muted);
-              font-weight: 600;
-              text-transform: uppercase;
-            "
-          >
-            Unit Rented (Disewa)
-          </div>
-          <div
-            style="
-              font-size: 24px;
-              font-weight: bold;
-              margin-top: 4px;
-              color: #0284c7;
-            "
-          >
-            {{ totalRentedCount }} Unit
-          </div>
-        </div>
-        <div
-          class="card p-md"
-          style="
-            background: var(--color-surface, #fff);
-            border: 1px solid var(--color-border-light);
-            border-radius: 8px;
-            padding: 16px;
-          "
-        >
-          <div
-            style="
-              font-size: 12px;
-              color: var(--color-text-muted);
-              font-weight: 600;
-              text-transform: uppercase;
-            "
-          >
-            Total Nilai Aset Unit
-          </div>
-          <div
-            style="
-              font-size: 24px;
-              font-weight: bold;
-              margin-top: 4px;
-              color: #003366;
-            "
-          >
-            {{ formatRupiah(totalUnitValue) }}
-          </div>
-        </div>
+        <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Total Unit Aset</div>
+        <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: var(--color-text);">{{ totalUnitCount }} Unit</div>
       </div>
-      <DataTable
-        :columns="columns"
-        :data="filteredData"
-        :loading="isLoading"
-        search-placeholder="Search products..."
-        permission="unit"
-        @edit="openEdit"
-        @delete="openDelete"
-        :show-hard-delete="hardDelete.isSuperadmin"
-        @hard-delete="hardDelete.open"
+      <div
+        class="card p-md summary-card"
+        :class="{ 'card-active': selectedStatus === 'available' }"
+        title="Klik untuk memfilter unit Available (Siap)"
+        @click="selectedStatus = selectedStatus === 'available' ? 'all' : 'available'"
       >
-        <template #toolbar>
-          <div
-            style="
-              display: flex;
-              align-items: center;
-              gap: 8px;
-              margin-right: 8px;
-            "
-          >
-            <label
-              style="
-                font-size: 12px;
-                font-weight: 600;
-                color: var(--color-text-muted);
-                white-space: nowrap;
-              "
-              >Status:</label
-            >
-            <select
-              v-model="selectedStatus"
-              class="form-select filter-status-select"
-              style="
-                min-width: 175px;
-                height: 36px;
-                padding: 0 10px;
-                font-size: 13px;
-                border-radius: 6px;
-                border: 1px solid var(--color-border);
-                background: var(--color-surface, #fff);
-                color: var(--color-text);
-                cursor: pointer;
-              "
-            >
-              <option value="all">All Status ({{ totalUnitCount }})</option>
-              <option value="available">
-                Available / Siap ({{ totalAvailableCount }})
-              </option>
-              <option value="lock">
-                Lock / Terkunci ({{ totalLockCount }})
-              </option>
-              <option value="rented">
-                Rented / Disewa ({{ totalRentedCount }})
-              </option>
-              <option value="maintenance">
-                Maintenance ({{ totalMaintenanceCount }})
-              </option>
-              <option value="broken">Broken ({{ totalBrokenCount }})</option>
-              <option value="sold">Sold ({{ totalSoldCount }})</option>
-            </select>
-            <button
-              v-if="selectedStatus !== 'all'"
-              type="button"
-              class="btn btn-outline"
-              style="height: 36px; padding: 0 10px; font-size: 12px"
-              title="Reset filter status"
-              @click="selectedStatus = 'all'"
-            >
-              Reset
-            </button>
-          </div>
-          <ExcelImportButtons master-key="unit" @imported="fetchData" />
-        </template>
-        <template #cell-name="{ row }">
-          <div style="display: flex; align-items: center; gap: 8px">
-            <span>{{ formatUnitDisplayName(row) }}</span>
-            <span
-              v-if="row.is_external"
-              class="badge badge-warning"
-              style="font-size: 10px; padding: 2px 6px"
-              >External</span
-            >
-          </div>
-        </template>
-        <template #cell-uom.name="{ row }">
-          {{ row.uom?.name ?? "-" }}
-        </template>
-        <template #cell-brand_id="{ value }">
-          {{ getBrandName(value) }}
-        </template>
-        <template #cell-price="{ value }">
-          {{ formatRupiah(value) }}
-        </template>
-        <template #cell-status="{ value }">
-          <span class="badge" :class="statusBadgeClass(value)">
-            {{ formatStatus(value) }}
-          </span>
-        </template>
-        <template #cell-is_computer="{ value }">
-          <span :style="value ? badgeTrue : badgeFalse">
-            <svg
-              v-if="value"
-              xmlns="http://www.w3.org/2000/svg"
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            <svg
-              v-else
-              xmlns="http://www.w3.org/2000/svg"
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </span>
-        </template>
-        <template #cell-is_copier="{ value }">
-          <span :style="value ? badgeTrue : badgeFalse">
-            <svg
-              v-if="value"
-              xmlns="http://www.w3.org/2000/svg"
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            <svg
-              v-else
-              xmlns="http://www.w3.org/2000/svg"
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </span>
-        </template>
-      </DataTable>
+        <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Available (Siap)</div>
+        <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #16a34a;">{{ totalAvailableCount }} Unit</div>
+      </div>
+      <div
+        class="card p-md summary-card"
+        :class="{ 'card-active': selectedStatus === 'lock' }"
+        title="Klik untuk memfilter unit Lock (Terkunci)"
+        @click="selectedStatus = selectedStatus === 'lock' ? 'all' : 'lock'"
+      >
+        <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Lock (Terkunci)</div>
+        <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #d97706;">{{ totalLockCount }} Unit</div>
+      </div>
+      <div
+        class="card p-md summary-card"
+        :class="{ 'card-active': selectedStatus === 'rented' }"
+        title="Klik untuk memfilter unit Rented (Disewa)"
+        @click="selectedStatus = selectedStatus === 'rented' ? 'all' : 'rented'"
+      >
+        <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Unit Rented (Disewa)</div>
+        <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #0284c7;">{{ totalRentedCount }} Unit</div>
+      </div>
+      <div class="card p-md" style="background: var(--color-surface, #fff); border: 1px solid var(--color-border-light); border-radius: 8px; padding: 16px;">
+        <div style="font-size: 12px; color: var(--color-text-muted); font-weight: 600; text-transform: uppercase;">Total Nilai Aset Unit</div>
+        <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #003366;">{{ formatRupiah(totalUnitValue) }}</div>
+      </div>
     </div>
-    <FormModal
-      v-if="!isTechnician"
-      :open="showModal"
-      :title="editingItem ? 'Edit Product' : 'Add Product'"
-      @close="closeModal"
-      @submit="handleSubmit"
-    >
-      <!-- 1. Item / Kategori -->
-      <div class="form-group" style="position: relative">
-        <label for="unit-type" class="form-label">
-          Item / Kategori <span class="text-danger">*</span>
-        </label>
-        <CustomSelect
-          id="unit-type"
-          v-model="form.type_id"
-          :options="typeOptions"
-          placeholder="Pilih Item / Kategori"
-        />
-      </div>
-
-      <div
-        v-if="isPrinterOrCopier"
-        class="form-group"
-        style="position: relative"
-      >
-        <label for="unit-print-tech" class="form-label">
-          Kategori Cetak (Laser / Inject)
-          <span class="text-danger" style="color: var(--color-danger, #ef4444)"
-            >*</span
+    <DataTable :columns="columns" :data="filteredData" :loading="isLoading" search-placeholder="Search products..." permission="unit"
+      :show-detail="true" @detail="openDetail" @row-click="openDetail" @edit="openEdit"
+      @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      <template #toolbar>
+        <div style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">
+          <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Status:</label>
+          <select
+            v-model="selectedStatus"
+            class="form-select filter-status-select"
+            style="min-width: 175px; height: 36px; padding: 0 10px; font-size: 13px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface, #fff); color: var(--color-text); cursor: pointer;"
           >
+            <option value="all">All Status ({{ totalUnitCount }})</option>
+            <option value="available">Available / Siap ({{ totalAvailableCount }})</option>
+            <option value="lock">Lock / Terkunci ({{ totalLockCount }})</option>
+            <option value="rented">Rented / Disewa ({{ totalRentedCount }})</option>
+            <option value="maintenance">Maintenance ({{ totalMaintenanceCount }})</option>
+            <option value="broken">Broken ({{ totalBrokenCount }})</option>
+            <option value="sold">Sold ({{ totalSoldCount }})</option>
+          </select>
+          <button
+            v-if="selectedStatus !== 'all'"
+            type="button"
+            class="btn btn-outline"
+            style="height: 36px; padding: 0 10px; font-size: 12px;"
+            title="Reset filter status"
+            @click="selectedStatus = 'all'"
+          >
+            Reset
+          </button>
+        </div>
+        <ExcelImportButtons master-key="unit" @imported="fetchData" />
+      </template>
+      <template #cell-name="{ row }">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>{{ row.name || formatUnitDisplayName(row) }}</span>
+          <span v-if="row.is_external" class="badge badge-warning" style="font-size: 10px; padding: 2px 6px;">External</span>
+        </div>
+      </template>
+      <template #cell-uom.name="{ row }">
+        {{ row.uom?.name ?? "-" }}
+      </template>
+      <template #cell-brand_id="{ value }">
+        {{ getBrandName(value) }}
+      </template>
+      <template #cell-price="{ value }">
+        {{ formatRupiah(value) }}
+      </template>
+      <template #cell-status="{ value }">
+        <span class="badge" :class="statusBadgeClass(value)">
+          {{ formatStatus(value) }}
+        </span>
+      </template>
+      <template #cell-is_copier="{ value }">
+        <span :style="value ? badgeTrue : badgeFalse">
+          <svg v-if="value" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </span>
+      </template>
+    </DataTable>
+    </div>
+    <FormModal v-if="!isTechnician" :open="showModal" :title="editingItem ? 'Edit Product' : 'Add Product'"
+      @close="closeModal" @submit="handleSubmit">
+      <!-- 1. Item / Kategori -->
+      <div class="form-group" style="position: relative;">
+        <label for="unit-type" class="form-label">
+          Item / Kategori <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <CustomSelect id="unit-type" v-model="form.type_id" :options="typeOptions" placeholder="Pilih Item / Kategori" />
+      </div>
+      <div v-if="isPrinterOrCopier" class="form-group" style="position: relative;">
+        <label for="unit-print-tech" class="form-label">
+          Kategori Cetak (Laser / Inject) <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
         </label>
         <CustomSelect
           id="unit-print-tech"
@@ -1393,346 +1000,276 @@ function exportStockPdf() {
       </div>
 
       <!-- 2. Merek -->
-      <div class="form-group" style="position: relative">
+      <div class="form-group" style="position: relative;">
         <label for="unit-brand" class="form-label">
-          Merek <span class="text-danger">*</span>
+          Merek <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
         </label>
-        <CustomSelect
-          id="unit-brand"
-          v-model="form.brand_id"
-          :options="brandOptions"
-          placeholder="Pilih Merek"
-        />
+        <CustomSelect id="unit-brand" v-model="form.brand_id" :options="brandOptions" placeholder="Pilih Merek" />
       </div>
 
       <!-- 3. Type / Model -->
       <div class="form-group">
         <label for="unit-model" class="form-label">
-          Type / Model <span class="text-danger">*</span>
+          Type / Model <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
         </label>
-        <input
-          id="unit-model"
-          v-model="form.model"
-          type="text"
-          class="form-input"
-          placeholder="Unit type / model (Contoh: IR 2520, L3110, dll)"
-        />
+        <input id="unit-model" v-model="form.model" type="text" class="form-input" placeholder="Unit type / model (Contoh: IR 2520, L3110, dll)">
       </div>
 
-      <!-- Product Name (Auto-generated) -->
+      <!-- 4. Description (sebelumnya Product Name) -->
       <div class="form-group">
-        <label for="unit-name" class="form-label">Product Name</label>
-        <input
+        <label for="unit-name" class="form-label">Description</label>
+        <textarea
           id="unit-name"
           v-model="form.name"
-          type="text"
-          class="form-input"
-          placeholder="Auto-generated"
-          disabled
-          style="
-            background-color: var(--color-surface-hover);
-            cursor: not-allowed;
-          "
-        />
+          class="form-textarea"
+          rows="2"
+          @input="isDescriptionCustom = form.name.trim().length > 0"
+        ></textarea>
       </div>
 
-      <!-- SN (Serial Number) -->
+      <!-- Spesifikasi (Optional - teks bebas) -->
       <div class="form-group">
-        <div
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-          "
-        >
-          <label for="unit-serial" class="form-label" style="margin-bottom: 0">
+        <label for="unit-specs" class="form-label">
+          Spesifikasi
+          <span style="font-weight: normal; font-size: 12px; color: var(--color-text-muted);"> (Optional - teks bebas)</span>
+        </label>
+        <textarea
+          id="unit-specs"
+          v-model="form.specs_text"
+          class="form-textarea"
+          rows="2"
+          placeholder="Contoh: Core i5, RAM 8GB, SSD 512GB, Windows 11"
+        ></textarea>
+      </div>
+
+      <!-- 5. SN (Serial Number) -->
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label for="unit-serial" class="form-label" style="margin-bottom: 0;">
             SN (Serial Number)
-            <span
-              v-if="!editingItem"
-              style="
-                font-weight: normal;
-                font-size: 0.85em;
-                color: var(--color-text-light);
-              "
-              >(Tekan enter atau koma untuk menambah)</span
-            >
+            <span v-if="!editingItem" style="font-weight:normal; font-size: 0.85em; color: var(--color-text-light);">(Tekan enter atau koma untuk menambah)</span>
           </label>
           <button
             v-if="!editingItem"
             type="button"
             class="btn btn-xs btn-outline"
-            style="
-              font-size: 0.75rem;
-              padding: 2px 8px;
-              border-radius: 4px;
-              cursor: pointer;
-              border-color: var(--color-primary);
-              color: var(--color-primary);
-            "
+            style="font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; cursor: pointer; border-color: var(--color-primary); color: var(--color-primary);"
             @click="addAutoSN"
             title="Generate SN otomatis untuk unit yang tidak memiliki serial number pabrik (Lampu, Kabel, Modul, dll)"
           >
             + Tanpa SN (Auto Generate)
           </button>
         </div>
-
-        <div
-          v-if="!editingItem"
-          class="tags-input-container"
-          style="
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            padding: 6px 12px;
-            border: 1px solid var(--color-border);
-            border-radius: 6px;
-            min-height: 42px;
-            align-items: center;
-            background: var(--color-surface);
-            transition: border-color 0.2s;
-          "
-        >
-          <span
-            v-for="(sn, index) in form.serial_numbers"
-            :key="index"
-            class="badge"
-            style="
-              background-color: var(--color-primary);
-              color: white;
-              display: flex;
-              align-items: center;
-              gap: 6px;
-              padding: 4px 8px;
-              border-radius: 4px;
-              font-size: 0.85rem;
-            "
-          >
+        
+        <div v-if="!editingItem" class="tags-input-container" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 12px; border: 1px solid var(--color-border); border-radius: 6px; min-height: 42px; align-items: center; background: var(--color-surface); transition: border-color 0.2s;">
+          <span v-for="(sn, index) in form.serial_numbers" :key="index" class="badge" style="background-color: var(--color-primary); color: white; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem;">
             {{ sn }}
-            <button
-              type="button"
-              @click="form.serial_numbers.splice(index, 1)"
-              style="
-                background: transparent;
-                border: none;
-                color: white;
-                cursor: pointer;
-                padding: 0;
-                display: flex;
-                align-items: center;
-                font-size: 1.1rem;
-                line-height: 1;
-              "
-            >
-              &times;
-            </button>
+            <button type="button" @click="form.serial_numbers.splice(index, 1)" style="background: transparent; border: none; color: white; cursor: pointer; padding: 0; display: flex; align-items: center; font-size: 1.1rem; line-height: 1;">&times;</button>
           </span>
-          <input
-            type="text"
-            v-model="form.temp_serial"
-            @input="
-              form.temp_serial = (
-                $event.target as HTMLInputElement
-              ).value.toUpperCase()
-            "
+          <input 
+            type="text" 
+            v-model="form.temp_serial" 
+            @input="form.temp_serial = ($event.target as HTMLInputElement).value.toUpperCase()"
             @keydown.enter.prevent="addSerialNumber"
             @keydown.comma.prevent="addSerialNumber"
             @blur="addSerialNumber"
-            style="
-              flex: 1;
-              min-width: 140px;
-              border: none;
-              outline: none;
-              background: transparent;
-              text-transform: uppercase;
-              padding: 2px 0;
-              font-size: 0.875rem;
-              color: var(--color-text);
-            "
-            placeholder="Ketik SN lalu Enter, atau klik '+ Tanpa SN'"
+            style="flex: 1; min-width: 140px; border: none; outline: none; background: transparent; text-transform: uppercase; padding: 2px 0; font-size: 0.875rem; color: var(--color-text);"
+            placeholder="KETIK SN LALU ENTER, ATAU KLIK '+ TANPA SN'"
           />
         </div>
-
-        <div v-else style="display: flex; gap: 8px">
-          <input
-            id="unit-serial"
-            v-model="form.serial_no"
-            @input="
-              form.serial_no = (
-                $event.target as HTMLInputElement
-              ).value.toUpperCase()
-            "
-            type="text"
-            class="form-input flex-1"
-            style="text-transform: uppercase"
-            placeholder="Product serial number (SN)"
-          />
-          <button
-            type="button"
-            class="btn btn-xs btn-outline"
-            @click="form.serial_no = generateRandomSN()"
-            title="Generate SN unik otomatis"
-          >
+        
+        <div v-else style="display: flex; gap: 8px;">
+          <input id="unit-serial" v-model="form.serial_no" @input="form.serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input flex-1" style="text-transform: uppercase;"
+            placeholder="Product serial number (SN)">
+          <button type="button" class="btn btn-xs btn-outline" @click="form.serial_no = generateRandomSN()" title="Generate SN unik otomatis">
             Auto SN
           </button>
         </div>
       </div>
 
-      <!-- Unit Of Measure -->
-      <div class="form-group" style="position: relative">
-        <label for="uom" class="form-label">Unit Of Measure</label>
-        <CustomSelect
-          id="uom"
-          v-model="form.uom_id"
-          :options="uomOptions"
-          placeholder="Select UOM type"
-        />
+      <!-- 6. Satuan -->
+      <div class="form-group" style="position: relative;">
+        <label for="uom" class="form-label">Satuan</label>
+        <CustomSelect id="uom" v-model="form.uom_id" :options="uomOptions" placeholder="Pilih Satuan" />
       </div>
 
-      <!-- Price -->
+      <!-- 7. Price (Optional) -->
       <div class="form-group">
         <label for="unit-price" class="form-label">Price (Optional)</label>
-        <input
-          id="unit-price"
-          v-model.number="form.price"
-          type="number"
-          class="form-input"
-          placeholder="e.g. 15000000"
-          min="0"
-        />
+        <input id="unit-price" v-model.number="form.price" type="number" class="form-input" placeholder="e.g. 15000000" min="0">
       </div>
-      <div class="form-group" style="margin-top: 1rem">
-        <label
-          class="form-label"
-          style="
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-          "
-        >
-          <input
-            type="checkbox"
-            v-model="form.is_copier"
-            style="width: 1rem; height: 1rem"
-          />
+
+      <!-- 8. Is a Photocopy Machine -->
+      <div class="form-group" style="margin-top: 1rem;">
+        <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" v-model="form.is_copier" style="width: 1rem; height: 1rem;" />
           Is a Photocopy Machine
         </label>
       </div>
-      <div class="form-group" style="margin-top: 1rem">
-        <label
-          class="form-label"
-          style="
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-          "
-        >
-          <input
-            type="checkbox"
-            v-model="form.is_computer"
-            style="width: 1rem; height: 1rem"
-          />
-          Is a Computer / PC / Laptop
-        </label>
-      </div>
+    </FormModal>
 
-      <div
-        v-if="form.is_computer"
-        style="
-          margin-top: 1rem;
-          border-top: 1px solid var(--color-border-light);
-          padding-top: 1rem;
-        "
-      >
-        <h4 style="margin-bottom: 1rem; font-weight: 600">
-          Computer / Desktop Specifications
-        </h4>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem">
-          <div class="form-group">
-            <label class="form-label">CPU</label>
-            <input
-              v-model="form.specsData.cpu"
-              type="text"
-              class="form-input"
-              placeholder="e.g. Intel Core i5"
-            />
+    <!-- Detail Modal -->
+    <FormModal
+      :open="showDetailModal"
+      :title="detailItem ? `Detail Product - ${detailItem.name || formatUnitDisplayName(detailItem)}` : 'Detail Product'"
+      max-width="580px"
+      @close="showDetailModal = false"
+    >
+      <div v-if="detailItem" style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Header badge & status -->
+        <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--color-border-light, #e2e8f0);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="badge" :class="statusBadgeClass(detailItem.status)">
+              {{ formatStatus(detailItem.status) }}
+            </span>
+            <span v-if="detailItem.is_external" class="badge badge-warning" style="font-size: 11px; padding: 2px 8px;">
+              External
+            </span>
+            <span v-if="detailItem.is_copier" class="badge" style="font-size: 11px; padding: 2px 8px; background: rgba(14, 165, 233, 0.1); color: #0284c7;">
+              Photocopy Machine
+            </span>
+            <span v-if="detailItem.is_computer || isComputerItem" class="badge" style="font-size: 11px; padding: 2px 8px; background: rgba(99, 102, 241, 0.1); color: #4f46e5;">
+              Computer / Laptop
+            </span>
           </div>
-          <div class="form-group">
-            <label class="form-label">RAM</label>
-            <input
-              v-model="form.specsData.ram"
-              type="text"
-              class="form-input"
-              placeholder="e.g. 8GB DDR4"
-            />
+          <div v-if="detailItem.price" style="font-size: 16px; font-weight: 700; color: #003366;">
+            {{ formatRupiah(detailItem.price) }}
           </div>
-          <div class="form-group">
-            <label class="form-label">Storage</label>
-            <input
-              v-model="form.specsData.storage"
-              type="text"
-              class="form-input"
-              placeholder="e.g. 512GB"
-            />
+        </div>
+
+        <!-- Info Grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px;">
+          <div style="grid-column: span 2;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Description</div>
+            <div style="font-size: 14px; font-weight: 600; color: var(--color-text, #1e293b); margin-top: 2px; word-break: break-word;">
+              {{ detailItem.name || formatUnitDisplayName(detailItem) }}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Storage Type</label>
-            <input
-              v-model="form.specsData.storage_type"
-              type="text"
-              class="form-input"
-              placeholder="e.g. SSD, HDD, NVMe"
-            />
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Item / Kategori</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.type?.name || getTypeName(detailItem.type_id) || "-" }}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">OS</label>
-            <input
-              v-model="form.specsData.os"
-              type="text"
-              class="form-input"
-              placeholder="e.g. Windows 11"
-            />
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Merek / Brand</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.brand?.name || getBrandName(detailItem.brand_id) || "-" }}
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">VGA</label>
-            <input
-              v-model="form.specsData.vga"
-              type="text"
-              class="form-input"
-              placeholder="e.g. Intel Iris Xe"
-            />
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Type / Model</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.model || "-" }}
+            </div>
           </div>
-          <div class="form-group" style="grid-column: span 2">
-            <label class="form-label">Office Package</label>
-            <input
-              v-model="form.specsData.office"
-              type="text"
-              class="form-input"
-              placeholder="e.g. Office Home & Student 2021"
-            />
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">SN (Serial Number)</div>
+            <div style="font-size: 14px; font-family: monospace; font-weight: 600; color: #0284c7; margin-top: 2px;">
+              {{ detailItem.serial_no || "-" }}
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Satuan</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.uom?.name || "-" }}
+            </div>
+          </div>
+
+          <div>
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Harga Unit</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.price ? formatRupiah(detailItem.price) : "-" }}
+            </div>
+          </div>
+
+          <div v-if="detailItem.print_tech">
+            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Kategori Cetak</div>
+            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
+              {{ detailItem.print_tech }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Spesifikasi (String text yang rapi) -->
+        <div
+          v-if="cleanSpecsString || isComputerItem"
+          style="padding: 14px 16px; background: var(--color-background-soft, #f8fafc); border-radius: 8px; border: 1px solid var(--color-border-light, #e2e8f0);"
+        >
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--color-text, #1e293b); margin-bottom: 10px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #0284c7;">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <span>Spesifikasi</span>
+          </div>
+
+          <div v-if="parsedSpecLines.length > 0" style="display: flex; flex-direction: column; gap: 8px;">
+            <div
+              v-for="(item, idx) in parsedSpecLines"
+              :key="idx"
+              style="display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.5; color: var(--color-text, #1e293b);"
+            >
+              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #0284c7; flex-shrink: 0; transform: translateY(-2px);"></span>
+              <span v-if="item.label" style="font-weight: 600; color: var(--color-text, #1e293b); min-width: 60px;">
+                {{ item.label }}:
+              </span>
+              <span style="color: var(--color-text, #1e293b);">
+                {{ item.value }}
+              </span>
+            </div>
+          </div>
+
+          <div v-else style="font-size: 13px; color: var(--color-text-muted, #64748b); font-style: italic;">
+            Belum ada data spesifikasi untuk unit ini.
+          </div>
+        </div>
+
+        <!-- Meter counts if copier -->
+        <div v-if="detailItem.is_copier || detailItem.current_meter_bw || detailItem.current_meter_color" style="padding: 12px; background: var(--color-background-soft, #f8fafc); border-radius: 8px; border: 1px solid var(--color-border-light, #e2e8f0);">
+          <div style="font-size: 12px; font-weight: 700; color: var(--color-text, #1e293b); margin-bottom: 8px;">Meter Readings & Quota</div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-muted, #64748b);">Meter B/W</div>
+              <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">{{ detailItem.current_meter_bw ?? 0 }}</div>
+            </div>
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-muted, #64748b);">Meter Color</div>
+              <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">{{ detailItem.current_meter_color ?? 0 }}</div>
+            </div>
+            <div>
+              <div style="font-size: 11px; color: var(--color-text-muted, #64748b);">Free Quota Color</div>
+              <div style="font-size: 14px; font-weight: 600; margin-top: 2px;">{{ detailItem.free_quota_color ?? 0 }}</div>
+            </div>
           </div>
         </div>
       </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showDetailModal = false">
+          Close
+        </button>
+        <button
+          v-if="!isTechnician"
+          type="button"
+          class="btn btn-primary"
+          @click="openEdit(detailItem); showDetailModal = false"
+        >
+          Edit Product
+        </button>
+      </template>
     </FormModal>
-    <ConfirmDialog
-      :open="showConfirm"
-      title="Delete Product"
-      :message="`Are you sure you want to delete this product?`"
-      @close="showConfirm = false"
-      @confirm="handleDelete"
-    />
-    <HardDeleteDialog
-      :open="hardDelete.show"
-      title="Hapus Permanen Product"
-      :item-label="hardDelete.expected"
-      :expected="hardDelete.expected"
-      :confirm-valid="hardDelete.confirmed"
-      @close="hardDelete.close"
-      @confirm="hardDelete.confirm"
-      @update:input="hardDelete.input = $event"
-    />
+    <ConfirmDialog :open="showConfirm" title="Delete Product" :message="`Are you sure you want to delete this product?`"
+      @close="showConfirm = false" @confirm="handleDelete" />
+    <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Product" :item-label="hardDelete.expected"
+      :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
+      @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
   </div>
 </template>
 

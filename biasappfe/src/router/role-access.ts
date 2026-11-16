@@ -21,6 +21,10 @@ export const dashboardRouteNames: string[] = [
 // (and may only open that dashboard).
 export const dashboardRouteByRole: Record<string, string> = {
   customer_service: "csDashboard",
+  admin_sales: "csDashboard",
+  adminsales: "csDashboard",
+  sales_admin: "csDashboard",
+  sales: "csDashboard",
   accounting: "accDashboard",
   technician: "techDashboard",
 };
@@ -52,6 +56,10 @@ export const allowedRouteNamesByRole: Record<string, string[]> = {
 // Role home routes used when a role hits a page it cannot access (or the login page while authed).
 export const homeRouteNameByRole: Record<string, string> = {
   customer_service: "csDashboard",
+  admin_sales: "csDashboard",
+  adminsales: "csDashboard",
+  sales_admin: "csDashboard",
+  sales: "csDashboard",
   technician: "techDashboard",
   accounting: "accDashboard",
 };
@@ -62,7 +70,18 @@ export function normalizeRole(role: string | null | undefined): string {
   const r = (role || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
   if (r === "superadmin") return "admin";
   if (r === "teknisi") return "technician";
-  if (r === "cs") return "customer_service";
+  if (
+    r === "cs" ||
+    r === "customer_service" ||
+    r === "customerservice" ||
+    r === "customer_services" ||
+    r === "admin_sales" ||
+    r === "adminsales" ||
+    r === "sales_admin" ||
+    r === "sales"
+  ) {
+    return "customer_service";
+  }
   if (r === "akuntansi") return "accounting";
   return r;
 }

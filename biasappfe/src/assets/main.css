@@ -289,6 +289,17 @@
   transform: scale(0.92);
 }
 
+.action-btn--detail {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0284c7;
+}
+
+.action-btn--detail:hover {
+  background: #0284c7;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+}
+
 .action-btn--edit {
   background: rgba(48, 92, 255, 0.1);
   color: var(--color-primary, #305cff);

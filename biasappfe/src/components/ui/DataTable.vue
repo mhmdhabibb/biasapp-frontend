@@ -19,6 +19,8 @@ const props = withDefaults(
     permission?: string;
     /** Show the permanent-delete button (parent must gate this to superadmin) */
     showHardDelete?: boolean;
+    /** Show the view / detail button (emits 'detail') */
+    showDetail?: boolean;
     /** Items per page for pagination (default: 10) */
     perPage?: number;
     /** Total pages for server-side pagination */
@@ -36,6 +38,7 @@ const props = withDefaults(
     searchPlaceholder: "",
     permission: "",
     showHardDelete: false,
+    showDetail: false,
     perPage: 10,
     totalPages: 1,
     currentPage: 1,
@@ -45,6 +48,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  (e: "detail", item: any): void;
   (e: "edit", item: any): void;
   (e: "delete", item: any): void;
   (e: "hard-delete", item: any): void;
@@ -85,7 +89,13 @@ const showEdit = computed(
 const showDelete = computed(
   () => !props.permission || can(`${props.permission}:delete`),
 );
-const showDefaultActions = computed(() => showEdit.value || showDelete.value);
+const showDefaultActions = computed(
+  () =>
+    props.showDetail ||
+    showEdit.value ||
+    showDelete.value ||
+    (props.showHardDelete && isSuperadmin.value),
+);
 // ACTION column: always shown when a custom #actions slot decides its own content,
 // otherwise only when at least one default action button is visible.
 const showActionsColumn = computed(
@@ -341,6 +351,29 @@ const visiblePages = computed(() => {
               <slot name="actions" :row="row" :item="row">
                 <slot name="cell(actions)" :row="row" :item="row">
                   <slot name="cell-actions" :row="row" :item="row">
+                <button
+                  v-if="showDetail"
+                  class="action-btn action-btn--detail"
+                  title="View Detail"
+                  @click.stop="$emit('detail', row)"
+                >
+                  <svg
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                    ></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
                 <button
                   v-if="showEdit"
                   class="action-btn action-btn--edit"
@@ -668,6 +701,17 @@ const visiblePages = computed(() => {
 
 .action-btn:active {
   transform: scale(0.92);
+}
+
+.action-btn--detail {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0284c7;
+}
+
+.action-btn--detail:hover {
+  background: #0284c7;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
 }
 
 .action-btn--edit {

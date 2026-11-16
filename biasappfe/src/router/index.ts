@@ -19,7 +19,24 @@ const router = createRouter({
     },
     {
       path: "/",
-      redirect: "/master/users",
+      redirect: () => {
+        const { isAuthenticated, currentUser } = useAuth();
+        if (!isAuthenticated.value) return "/login";
+        const role = normalizeRole(currentUser.value?.role);
+        const home = homeRouteNameByRole[role];
+        return { name: home || "users" };
+      },
+    },
+    {
+      path: "/dashboard",
+      name: "dashboard",
+      redirect: () => {
+        const { isAuthenticated, currentUser } = useAuth();
+        if (!isAuthenticated.value) return "/login";
+        const role = normalizeRole(currentUser.value?.role);
+        const home = homeRouteNameByRole[role];
+        return { name: home || "csDashboard" };
+      },
     },
     {
       path: "/master/users",
