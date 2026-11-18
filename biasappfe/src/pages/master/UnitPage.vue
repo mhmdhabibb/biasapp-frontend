@@ -9,6 +9,7 @@ import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useHardDelete } from '@/composables/useHardDelete'
+import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import type { TableColumn, Unit, UOM } from '@/types'
@@ -19,6 +20,7 @@ import { BIAS_LOGO_DATA_URL } from "@/utils/logoData"
 
 const toast = useToast()
 const { currentUser } = useAuth()
+const { can } = usePermission()
 const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
 const columns: TableColumn[] = [
@@ -78,20 +80,34 @@ const totalSoldCount = computed(() => (data.value || []).filter(u => (u.status |
 const totalUnitValue = computed(() => (data.value || []).reduce((acc, u) => acc + (Number((u as any).price) || 0), 0))
 
 const selectedStatus = ref<string>('all')
+const searchSN = ref<string>('')
 
 const filteredData = computed(() => {
-  const list = data.value || []
-  if (selectedStatus.value === 'all' || !selectedStatus.value) {
-    return list
+  let list = data.value || []
+  if (selectedStatus.value && selectedStatus.value !== 'all') {
+    const filterVal = selectedStatus.value.toLowerCase()
+    list = list.filter(u => {
+      const st = (u.status || '').toLowerCase()
+      if (filterVal === 'lock' || filterVal === 'locked') {
+        return st === 'lock' || st === 'locked'
+      }
+      return st === filterVal
+    })
   }
-  const filterVal = selectedStatus.value.toLowerCase()
-  return list.filter(u => {
-    const st = (u.status || '').toLowerCase()
-    if (filterVal === 'lock' || filterVal === 'locked') {
-      return st === 'lock' || st === 'locked'
+  if (searchSN.value && searchSN.value.trim()) {
+    const raw = searchSN.value.trim().toLowerCase()
+    const terms = raw
+      .split(/[\s,;\n]+/)
+      .map(t => t.trim())
+      .filter(Boolean)
+    if (terms.length > 0) {
+      list = list.filter(u => {
+        const sn = (u.serial_no || '').toLowerCase()
+        return terms.some(term => sn.includes(term))
+      })
     }
-    return st === filterVal
-  })
+  }
+  return list
 })
 
 let unitTimer: any = null

@@ -62,6 +62,10 @@ export function createResourceService<T extends ResourceRecord>(
       if (reason) params.set("reason", reason);
       return api.delete<ApiResponse<null>>(`${path}/${id}?${params.toString()}`);
     },
+    bulkDelete(ids: string[], permanent = false) {
+      const q = permanent ? "?permanent=true" : "";
+      return api.post<ApiResponse<{ deleted_count: number }>>(`${path}/bulk-delete${q}`, { ids });
+    },
   };
 
 }

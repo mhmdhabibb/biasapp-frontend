@@ -31,6 +31,10 @@ const props = withDefaults(
     loading?: boolean;
     /** Maximum height for internal scrollable data body (default: 'calc(100vh - 280px)') */
     maxHeight?: string;
+    /** Enable row selection checkboxes */
+    selectable?: boolean;
+    /** Selected keys / ids */
+    selectedKeys?: (string | number)[];
   }>(),
   {
     columns: () => [],
@@ -44,6 +48,8 @@ const props = withDefaults(
     currentPage: 1,
     loading: false,
     maxHeight: "calc(100vh - 360px)",
+    selectable: false,
+    selectedKeys: () => [],
   },
 );
 
@@ -55,6 +61,7 @@ const emit = defineEmits<{
   (e: "row-click", item: any): void;
   (e: "search", query: string): void;
   (e: "page-change", page: number): void;
+  (e: "update:selectedKeys", keys: (string | number)[]): void;
 }>();
 
 const slots = useSlots();
@@ -113,6 +120,7 @@ const processedData = computed(() => {
   if (!q) return list;
   return list.filter((row: any) => {
     if (!row || typeof row !== "object") return false;
+    if (row.serial_no && String(row.serial_no).toLowerCase().includes(q)) return true;
     return Object.values(row).some((val) => {
       if (val == null) return false;
       if (typeof val === "string" || typeof val === "number") {
@@ -122,6 +130,50 @@ const processedData = computed(() => {
     });
   });
 });
+
+const selectedSet = computed(() => new Set((props.selectedKeys || []).map(String)));
+
+function isRowSelected(row: any): boolean {
+  if (!row || row.id == null) return false;
+  return selectedSet.value.has(String(row.id));
+}
+
+const isAllSelected = computed(() => {
+  if (!props.selectable || !displayData.value.length) return false;
+  return displayData.value.every((row: any) => selectedSet.value.has(String(row.id)));
+});
+
+const isIndeterminate = computed(() => {
+  if (!props.selectable || !displayData.value.length) return false;
+  const count = displayData.value.filter((row: any) => selectedSet.value.has(String(row.id))).length;
+  return count > 0 && count < displayData.value.length;
+});
+
+function handleToggleSelectAll(e: Event) {
+  const checked = (e.target as HTMLInputElement).checked;
+  const currentIds = displayData.value.map((r: any) => String(r.id)).filter(Boolean);
+  let next: string[];
+  if (checked) {
+    next = Array.from(new Set([...(props.selectedKeys || []).map(String), ...currentIds]));
+  } else {
+    const removeSet = new Set(currentIds);
+    next = (props.selectedKeys || []).map(String).filter((id) => !removeSet.has(id));
+  }
+  emit("update:selectedKeys", next);
+}
+
+function handleToggleRow(row: any) {
+  if (!row || row.id == null) return;
+  const idStr = String(row.id);
+  const current = (props.selectedKeys || []).map(String);
+  let next: string[];
+  if (current.includes(idStr)) {
+    next = current.filter((id) => id !== idStr);
+  } else {
+    next = [...current, idStr];
+  }
+  emit("update:selectedKeys", next);
+}
 
 const totalPagesCount = computed(() => {
   if (
@@ -258,6 +310,7 @@ const visiblePages = computed(() => {
       <table class="data-table skeleton-table">
         <thead>
           <tr>
+            <th v-if="selectable" style="width: 44px; text-align: center;"></th>
             <th class="th-num">#</th>
             <th
               v-for="col in columns"
@@ -271,6 +324,9 @@ const visiblePages = computed(() => {
         </thead>
         <tbody>
           <tr v-for="r in 5" :key="r" class="skeleton-row">
+            <td v-if="selectable" style="width: 44px; text-align: center;">
+              <span class="skeleton-box" style="width: 16px; height: 16px; margin: 0 auto; display: inline-block;"></span>
+            </td>
             <td class="td-num">
               <span class="skeleton-box skeleton-box--sm"></span>
             </td>
@@ -326,6 +382,16 @@ const visiblePages = computed(() => {
       <table class="data-table">
         <thead>
           <tr>
+            <th v-if="selectable" class="th-checkbox" style="width: 44px; text-align: center;">
+              <input
+                type="checkbox"
+                :checked="isAllSelected"
+                :indeterminate="isIndeterminate"
+                @change="handleToggleSelectAll"
+                title="Pilih semua di halaman ini"
+                style="cursor: pointer; width: 16px; height: 16px; accent-color: #2563eb;"
+              />
+            </th>
             <th class="th-num">#</th>
             <th
               v-for="col in columns"
@@ -338,7 +404,21 @@ const visiblePages = computed(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(row, idx) in displayData" :key="row.id ?? idx" @click="$emit('row-click', row)" style="cursor: pointer;">
+          <tr
+            v-for="(row, idx) in displayData"
+            :key="row.id ?? idx"
+            :class="{ 'row-selected': isRowSelected(row) }"
+            @click="$emit('row-click', row)"
+            style="cursor: pointer;"
+          >
+            <td v-if="selectable" class="td-checkbox" style="width: 44px; text-align: center;" @click.stop>
+              <input
+                type="checkbox"
+                :checked="isRowSelected(row)"
+                @change="handleToggleRow(row)"
+                style="cursor: pointer; width: 16px; height: 16px; accent-color: #2563eb;"
+              />
+            </td>
             <td class="td-num">{{ (currentPage - 1) * perPage + idx + 1 }}</td>
             <td v-for="col in columns" :key="col.key">
               <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row" :item="row">
@@ -788,6 +868,20 @@ const visiblePages = computed(() => {
 
 .skeleton-row td {
   padding: 14px 16px;
+  vertical-align: middle;
+}
+
+.row-selected {
+  background-color: #f0f7ff !important;
+}
+
+.th-checkbox,
+.td-checkbox {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  text-align: center;
+  padding: 10px 4px !important;
   vertical-align: middle;
 }
 
