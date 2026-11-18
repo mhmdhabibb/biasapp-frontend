@@ -23,6 +23,12 @@ const { can } = usePermission()
 const route = useRoute()
 const router = useRouter()
 const { currentUser } = useAuth()
+const userRole = computed(() => normalizeRole(currentUser.value?.role))
+const isTechnician = computed(() => userRole.value === 'technician')
+const isSuperadminOrAdmin = computed(() => userRole.value === 'admin')
+const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
+const { isDemoMode, fetchDemoMode } = useDemoMode()
+
 const {
   serviceReports,
   jobOrders,
@@ -38,6 +44,133 @@ const {
 const serviceId = String(route.params.id)
 const directJobData = ref<any>(null)
 const job = computed(() => directJobData.value || jobOrders.value.find(j => String(j.id) === serviceId))
+
+function hasDeliveryOrder(j: any): boolean {
+  if (!j) return false
+  if (j.delivery_order_id) return true
+  const d = j.delivery_order
+  return !!d && (!!d.id || !!d.do_number)
+}
+const isDeliveryJob = computed(() => hasDeliveryOrder(job.value))
+const isSurveyJob = computed(() => {
+  const j: any = job.value
+  return String(j?.job_type || '').toLowerCase() === 'survey' || !!j?.survey_id || !!j?.survey
+})
+const surveyData = computed(() => (directJobData.value as any)?.survey || (job.value as any)?.survey || null)
+const surveyCustomer = computed(() => surveyData.value?.customer || findCustomer(surveyData.value?.customer_id || null) || null)
+
+const deliveryOrder = computed(() => {
+  const d = (job.value as any)?.delivery_order
+  if (d && (d.id || d.do_number)) return d
+  const doId = (job.value as any)?.delivery_order_id
+  if (doId) {
+    return ((deliveryOrders.value || []) as any[]).find((x: any) => String(x.id) === String(doId)) || null
+  }
+  return null
+})
+const doCustomer = computed(() => deliveryOrder.value?.customer || findCustomer(deliveryOrder.value?.customer_id || null) || null)
+
+const serviceReportFromStore = computed(() => {
+  if (isSurveyJob.value) return null
+  const directSr = directJobData.value?.service_report || directJobData.value?.ServiceReport
+  if (directSr) return directSr
+  return serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id))
+})
+const fullServiceReportData = ref<any>(null)
+
+const serviceReport = computed(() => {
+  // Merge: full API data takes priority, store data as fallback
+  const storeData = serviceReportFromStore.value
+  const apiData = fullServiceReportData.value
+  if (apiData && storeData) return { ...storeData, ...apiData }
+  return apiData || storeData || null
+})
+
+async function fetchFullServiceReport() {
+  const sr = serviceReportFromStore.value
+  if (!sr) return
+  try {
+    const res: any = await api.get(`/service-reports/${sr.id}`)
+    fullServiceReportData.value = res.data?.data || res.data
+  } catch { /* ignore, will use store data */ }
+}
+
+const isVisitJob = computed(() => {
+  const j: any = job.value
+  const sr: any = serviceReport.value
+  return (
+    String(j?.job_type || '').toLowerCase() === 'visit' ||
+    String(j?.taskType || '').toLowerCase() === 'visit' ||
+    String(sr?.service_type || '').toLowerCase() === 'copier'
+  )
+})
+
+const resolvedScheduledDate = computed(() => {
+  const j: any = job.value
+  const d: any = deliveryOrder.value
+  const sr: any = serviceReport.value
+  return j?.scheduled_date || d?.delivery_date || sr?.service_date || j?.created_at || ''
+})
+
+const toLocalYmd = (raw: any) => {
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+const isBlockedByScheduleDate = computed(() => {
+  if (isDemoMode.value) return false
+  if (!isTechnician.value) return false
+  const schedYmd = toLocalYmd(resolvedScheduledDate.value)
+  if (!schedYmd) return false
+  return schedYmd > toLocalYmd(new Date())
+})
+
+// ── Delivery jobs (JO dari delivery order) ──
+const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()) || !!job.value?.is_completed)
+
+const isEditable = computed(() => {
+  if (isDeliveredOrCompleted.value) return false
+  if (isBlockedByScheduleDate.value) return false
+  return userRole.value === 'technician' || userRole.value === 'admin'
+})
+const canManageSr = computed(() => isEditable.value && (can('service_report:update') || isTechnician.value || isSuperadminOrAdmin.value))
+const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
+
+const customer = computed(() => findCustomer(job.value?.customer_id || job.value?.service_request?.customer_id || (serviceReport.value as any)?.customer_id || null))
+// Job order visit (copier) tidak punya unit_id sendiri — unit ada di service report
+// yang terhubung via service_report_id, jadi sertakan sebagai fallback.
+const unit = computed(() => findUnit(job.value?.unit_id || job.value?.service_request?.unit_id || (serviceReport.value as any)?.unit_id || null) || (serviceReport.value as any)?.unit || null)
+const contract = computed(() => {
+  const uid = job.value?.unit_id || job.value?.service_request?.unit_id || (serviceReport.value as any)?.unit_id || (unit.value as any)?.id || null
+  if (!uid) return null
+  return contractItems.value.find(ci => String(ci.unit_id) === String(uid)) || null
+})
+
+const displayJobOrderNo = computed(() => {
+  const j: any = job.value
+  if (!j) return '-'
+  if (isVisitJob.value || String(j.job_order_no || '').startsWith('JOV') || (serviceReport.value as any)?.service_type === 'copier') {
+    return (serviceReport.value as any)?.report_no || (j.job_order_no ? j.job_order_no.replace(/^JOV/, 'CPR') : 'CPR')
+  }
+  return (j.job_order_no || j.service_request?.request_no || j.delivery_order?.do_number || j.survey?.survey_no || '-').replace(/^JOV/, 'CPR')
+})
+
+const isPreparingForm = ref(false)
+const servicePhotoZoom = ref<string | null>(null)
+function isRenderablePhoto(val: any): boolean {
+  if (typeof val !== 'string') return false
+  const s = val.trim()
+  if (!s || s === 'has_photo' || s === 'null' || s === 'undefined') return false
+  return s.startsWith('data:image') || s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')
+}
+
+watchEffect(() => {
+  if (userRole.value === 'technician' && job.value && myTechId.value && String(job.value.technician_id) !== String(myTechId.value)) {
+    toast.error('Unauthorized or Service Not Found')
+    router.replace('/technician/dashboard')
+  }
+})
 
 async function fetchDirectJob() {
   if (!serviceId) return
@@ -64,139 +197,6 @@ async function fetchDirectJob() {
     console.warn('Failed to fetch job directly:', e)
   }
 }
-const serviceReportFromStore = computed(() => {
-  if (isSurveyJob.value) return null
-  const directSr = directJobData.value?.service_report || directJobData.value?.ServiceReport
-  if (directSr) return directSr
-  return serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id))
-})
-const fullServiceReportData = ref<any>(null)
-
-const serviceReport = computed(() => {
-  // Merge: full API data takes priority, store data as fallback
-  const storeData = serviceReportFromStore.value
-  const apiData = fullServiceReportData.value
-  if (apiData && storeData) return { ...storeData, ...apiData }
-  return apiData || storeData || null
-})
-
-async function fetchFullServiceReport() {
-  const sr = serviceReportFromStore.value
-  if (!sr) return
-  try {
-    const res: any = await api.get(`/service-reports/${sr.id}`)
-    fullServiceReportData.value = res.data?.data || res.data
-  } catch { /* ignore, will use store data */ }
-}
-
-// service_report.technician_id references technicians.id, not users.id
-const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
-const isPreparingForm = ref(false)
-const servicePhotoZoom = ref<string | null>(null)
-function isRenderablePhoto(val: any): boolean {
-  if (typeof val !== 'string') return false
-  const s = val.trim()
-  if (!s || s === 'has_photo' || s === 'null' || s === 'undefined') return false
-  return s.startsWith('data:image') || s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')
-}
-
-watchEffect(() => {
-  if (userRole.value === 'technician' && job.value && myTechId.value && String(job.value.technician_id) !== String(myTechId.value)) {
-    toast.error('Unauthorized or Service Not Found')
-    router.replace('/technician/dashboard')
-  }
-})
-
-const customer = computed(() => findCustomer(job.value?.customer_id || job.value?.service_request?.customer_id || (serviceReport.value as any)?.customer_id || null))
-// Job order visit (copier) tidak punya unit_id sendiri — unit ada di service report
-// yang terhubung via service_report_id, jadi sertakan sebagai fallback.
-const unit = computed(() => findUnit(job.value?.unit_id || job.value?.service_request?.unit_id || (serviceReport.value as any)?.unit_id || null) || (serviceReport.value as any)?.unit || null)
-const contract = computed(() => {
-  const uid = job.value?.unit_id || job.value?.service_request?.unit_id || (serviceReport.value as any)?.unit_id || (unit.value as any)?.id || null
-  if (!uid) return null
-  return contractItems.value.find(ci => String(ci.unit_id) === String(uid)) || null
-})
-
-// ── Delivery jobs (JO dari delivery order) ──
-const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()) || !!job.value?.is_completed)
-const userRole = computed(() => normalizeRole(currentUser.value?.role))
-const isTechnician = computed(() => userRole.value === 'technician')
-const isSuperadminOrAdmin = computed(() => userRole.value === 'admin')
-const { isDemoMode, fetchDemoMode } = useDemoMode()
-
-const toLocalYmd = (raw: any) => {
-  if (!raw) return ''
-  const d = new Date(raw)
-  if (isNaN(d.getTime())) return ''
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-const isBlockedByScheduleDate = computed(() => {
-  if (isDemoMode.value) return false
-  if (!isTechnician.value) return false
-  const schedYmd = toLocalYmd(resolvedScheduledDate.value)
-  if (!schedYmd) return false
-  return schedYmd > toLocalYmd(new Date())
-})
-
-const isEditable = computed(() => {
-  if (isDeliveredOrCompleted.value) return false
-  if (isBlockedByScheduleDate.value) return false
-  return userRole.value === 'technician' || userRole.value === 'admin'
-})
-const canManageSr = computed(() => isEditable.value && (can('service_report:update') || isTechnician.value || isSuperadminOrAdmin.value))
-const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
-// Hanya job yang benar-benar terhubung ke delivery order (bukan sekadar
-// label job_type) yang menampilkan Service History Form.
-function hasDeliveryOrder(j: any): boolean {
-  if (!j) return false
-  if (j.delivery_order_id) return true
-  const d = j.delivery_order
-  return !!d && (!!d.id || !!d.do_number)
-}
-const isDeliveryJob = computed(() => hasDeliveryOrder(job.value))
-const isSurveyJob = computed(() => {
-  const j: any = job.value
-  return String(j?.job_type || '').toLowerCase() === 'survey' || !!j?.survey_id || !!j?.survey
-})
-const surveyData = computed(() => (directJobData.value as any)?.survey || (job.value as any)?.survey || null)
-const surveyCustomer = computed(() => surveyData.value?.customer || findCustomer(surveyData.value?.customer_id || null) || null)
-// Visit copier: hanya form Copier Service Report yang ditampilkan,
-// Technical Report disembunyikan.
-const isVisitJob = computed(() => {
-  const j: any = job.value
-  const sr: any = serviceReport.value
-  return (
-    String(j?.job_type || '').toLowerCase() === 'visit' ||
-    String(j?.taskType || '').toLowerCase() === 'visit' ||
-    String(sr?.service_type || '').toLowerCase() === 'copier'
-  )
-})
-const deliveryOrder = computed(() => {
-  const d = (job.value as any)?.delivery_order
-  if (d && (d.id || d.do_number)) return d
-  const doId = (job.value as any)?.delivery_order_id
-  if (doId) {
-    return ((deliveryOrders.value || []) as any[]).find((x: any) => String(x.id) === String(doId)) || null
-  }
-  return null
-})
-const doCustomer = computed(() => deliveryOrder.value?.customer || findCustomer(deliveryOrder.value?.customer_id || null) || null)
-
-const displayJobOrderNo = computed(() => {
-  const j: any = job.value
-  if (!j) return '-'
-  if (isVisitJob.value || String(j.job_order_no || '').startsWith('JOV') || (serviceReport.value as any)?.service_type === 'copier') {
-    return (serviceReport.value as any)?.report_no || (j.job_order_no ? j.job_order_no.replace(/^JOV/, 'CPR') : 'CPR')
-  }
-  return (j.job_order_no || j.service_request?.request_no || j.delivery_order?.do_number || j.survey?.survey_no || '-').replace(/^JOV/, 'CPR')
-})
-
-const resolvedScheduledDate = computed(() => {
-  const j: any = job.value
-  const d: any = deliveryOrder.value
-  const sr: any = serviceReport.value
-  return j?.scheduled_date || d?.delivery_date || sr?.service_date || j?.created_at || ''
-})
 
 const resolvedDeliveryAddress = computed(() => {
   const d: any = deliveryOrder.value

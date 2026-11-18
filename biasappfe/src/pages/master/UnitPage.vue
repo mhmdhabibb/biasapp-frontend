@@ -82,6 +82,31 @@ const totalUnitValue = computed(() => (data.value || []).reduce((acc, u) => acc 
 const selectedStatus = ref<string>('all')
 const searchSN = ref<string>('')
 
+// Multi-select & bulk delete
+const selectedKeys = ref<(string | number)[]>([])
+const showBulkDeleteConfirm = ref(false)
+const isBulkDeleting = ref(false)
+
+const selectedCount = computed(() => selectedKeys.value.length)
+
+async function handleBulkDelete() {
+  if (selectedKeys.value.length === 0) return
+  isBulkDeleting.value = true
+  try {
+    await Promise.all(selectedKeys.value.map(id => resources.units.remove(String(id))))
+    toast.success(`${selectedKeys.value.length} unit berhasil dihapus!`)
+    selectedKeys.value = []
+    await fetchData()
+    window.dispatchEvent(new CustomEvent('bias:data-mutated', { detail: { path: '/units' } }))
+  } catch (error: any) {
+    console.error('Failed to bulk delete:', error)
+    toast.error('Gagal menghapus unit: ' + (error.message || 'Error'))
+  } finally {
+    isBulkDeleting.value = false
+    showBulkDeleteConfirm.value = false
+  }
+}
+
 const filteredData = computed(() => {
   let list = data.value || []
   if (selectedStatus.value && selectedStatus.value !== 'all') {
@@ -112,7 +137,7 @@ const filteredData = computed(() => {
 
 let unitTimer: any = null
 async function silentRefresh() {
-  if (showModal.value || showConfirm.value || hardDelete.isOpen.value) return
+  if (showModal.value || showConfirm.value || hardDelete.show) return
   try {
     const resUnits = await resources.units.list()
     data.value = Array.isArray(resUnits.data) ? (resUnits.data as any) : []
@@ -216,12 +241,13 @@ const parsedSpecLines = computed<FormattedSpecLine[]>(() => {
   if (!str) return []
   let rawLines = str.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
   if (rawLines.length === 1) {
-    if (rawLines[0].includes('•')) {
-      rawLines = rawLines[0].split('•').map(s => s.trim()).filter(Boolean)
-    } else if (rawLines[0].includes(';')) {
-      rawLines = rawLines[0].split(';').map(s => s.trim()).filter(Boolean)
-    } else if (rawLines[0].includes(',') && rawLines[0].split(',').length >= 3) {
-      rawLines = rawLines[0].split(',').map(s => s.trim()).filter(Boolean)
+    const firstLine = rawLines[0] ?? ''
+    if (firstLine.includes('•')) {
+      rawLines = firstLine.split('•').map(s => s.trim()).filter(Boolean)
+    } else if (firstLine.includes(';')) {
+      rawLines = firstLine.split(';').map(s => s.trim()).filter(Boolean)
+    } else if (firstLine.includes(',') && firstLine.split(',').length >= 3) {
+      rawLines = firstLine.split(',').map(s => s.trim()).filter(Boolean)
     }
   }
 
@@ -502,7 +528,7 @@ async function handleSubmit() {
       print_tech: form.print_tech || undefined,
       specs: form.specs_text
         ? form.specs_text.trim()
-        : (form.is_computer ? JSON.stringify(form.specsData) : (editingItem.value?.specs || ''))
+        : (form.is_computer ? JSON.stringify(form.specsData) : ((editingItem.value as any)?.specs || ''))
     }
     delete (payload as any).serial_numbers
     delete (payload as any).temp_serial
@@ -936,8 +962,29 @@ function exportStockPdf() {
     </div>
     <DataTable :columns="columns" :data="filteredData" :loading="isLoading" search-placeholder="Search products..." permission="unit"
       :show-detail="true" @detail="openDetail" @row-click="openDetail" @edit="openEdit"
-      @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open">
+      @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open"
+      :selectable="true" v-model:selectedKeys="selectedKeys">
       <template #toolbar>
+        <!-- Multi SN Search -->
+        <div style="display: flex; align-items: center; gap: 6px; margin-right: 8px;">
+          <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Cari SN:</label>
+          <div style="position: relative;">
+            <textarea
+              v-model="searchSN"
+              rows="1"
+              placeholder="SN1, SN2, SN3... (pisah koma/spasi/enter)"
+              style="min-width: 200px; max-width: 280px; height: 36px; padding: 6px 32px 6px 10px; font-size: 12px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface, #fff); color: var(--color-text); resize: none; overflow: hidden; line-height: 1.4; vertical-align: middle;"
+              @keydown.enter.prevent
+            ></textarea>
+            <button
+              v-if="searchSN"
+              type="button"
+              @click="searchSN = ''"
+              title="Clear SN search"
+              style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted); font-size: 16px; line-height: 1; padding: 0;"
+            >&times;</button>
+          </div>
+        </div>
         <div style="display: flex; align-items: center; gap: 8px; margin-right: 8px;">
           <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Status:</label>
           <select
@@ -964,6 +1011,21 @@ function exportStockPdf() {
             Reset
           </button>
         </div>
+        <!-- Bulk Delete Button -->
+        <button
+          v-if="selectedCount > 0 && can('unit:delete')"
+          type="button"
+          class="btn"
+          style="height: 36px; padding: 0 12px; font-size: 13px; font-weight: 600; background: #ef4444; color: #fff; border: none; border-radius: 6px; display: flex; align-items: center; gap: 6px; cursor: pointer;"
+          @click="showBulkDeleteConfirm = true"
+          :disabled="isBulkDeleting"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+          </svg>
+          Hapus {{ selectedCount }} Unit
+        </button>
         <ExcelImportButtons master-key="unit" @imported="fetchData" />
       </template>
       <template #cell-name="{ row }">
@@ -1283,6 +1345,13 @@ function exportStockPdf() {
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Product" :message="`Are you sure you want to delete this product?`"
       @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog
+      :open="showBulkDeleteConfirm"
+      title="Hapus Unit Terpilih"
+      :message="`Yakin ingin menghapus ${selectedCount} unit yang dipilih? Tindakan ini tidak dapat dibatalkan.`"
+      @close="showBulkDeleteConfirm = false"
+      @confirm="handleBulkDelete"
+    />
     <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Product" :item-label="hardDelete.expected"
       :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
