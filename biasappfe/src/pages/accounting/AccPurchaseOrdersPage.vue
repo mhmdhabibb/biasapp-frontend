@@ -575,9 +575,15 @@ async function confirmCancelPO() {
 
 async function handleGenerateDO(po: PurchaseOrder) {
   await run(po.id, async () => {
+    const cust = resolvePOCustomer(po)
+    const targetCustId = cust?.id || po.customer_id || undefined
     await resources.create('deliveryOrders', {
       do_type: 'inbound',
       purchase_order_id: po.id,
+      customer_id: targetCustId,
+      customer_name: cust?.company_name || cust?.name || undefined,
+      recipient_name: cust?.pic_name || cust?.name || undefined,
+      delivery_address: cust?.address || undefined,
       delivery_date: new Date().toISOString(),
       status: 'draft',
       notes: `Inbound spareparts from ${po.po_no}`,

@@ -110,7 +110,12 @@ async function fetchJobOrders(silent = false) {
         }
       }
       const customer =
-        sr?.customer || doObj?.customer || srpt?.customer || j.customer || null;
+        sr?.customer ||
+        doObj?.customer ||
+        srpt?.customer ||
+        j.customer ||
+        (doObj?.customer_id ? findCustomer(doObj.customer_id) : null) ||
+        null;
 
       let taskType = "sr";
       if (isDelivery) taskType = "do";
@@ -235,12 +240,12 @@ function onVisibilityOrFocus() {
 
 async function loadAllData(silent = false) {
   try {
-    // Fetch all datasets in parallel for instant, flicker-free rendering
+    // Fetch all datasets in parallel for instant, flicker-free rendering (tracksLoading=false prevents UI freeze)
     const results = await Promise.allSettled([
-      api.get<any>("/delivery-orders/?page=1&limit=100", true, true),
-      api.get<any>("/job-orders/?page=1&limit=100", true, true),
-      api.get<any>("/service-requests/?page=1&limit=100", true, true),
-      masterStore.refreshOnly(["serviceReports", "technicians"]),
+      api.get<any>("/delivery-orders/?page=1&limit=100", false, true),
+      api.get<any>("/job-orders/?page=1&limit=100", false, true),
+      api.get<any>("/service-requests/?page=1&limit=100", false, true),
+      masterStore.refreshOnly(["serviceReports", "technicians", "customers"]),
     ]);
 
     const doRes = results[0].status === "fulfilled" ? results[0].value : null;
@@ -293,7 +298,12 @@ async function loadAllData(silent = false) {
         }
       }
       const customer =
-        sr?.customer || doObj?.customer || srpt?.customer || j.customer || null;
+        sr?.customer ||
+        doObj?.customer ||
+        srpt?.customer ||
+        j.customer ||
+        (doObj?.customer_id ? findCustomer(doObj.customer_id) : null) ||
+        null;
 
       let taskType = "sr";
       if (isDelivery) taskType = "do";
@@ -345,7 +355,10 @@ async function loadAllData(silent = false) {
 }
 
 onMounted(() => {
-  // Load data Kanban langsung secara paralel tanpa menunggu master store
+  // Tandai resource yang dikelola oleh loadAllData() agar ensureResourcesLoaded tidak fetch duplikat
+  ["jobOrders", "deliveryOrders", "serviceRequests"].forEach((r) => masterStore.loadedResources.value.add(r));
+
+  // Load data Kanban langsung secara paralel
   void loadAllData();
 
   if (masterStore.ensureResourcesLoaded) {
@@ -865,13 +878,18 @@ function technicianLabel(techId?: string | number) {
 const detailCustomer = computed(() => {
   const sr = selectedJob.value?.service_request || selectedRequest.value;
   if (sr?.customer) return sr.customer;
-  return (
+  const direct =
     selectedJob.value?.customer ||
     selectedJob.value?.delivery_order?.customer ||
     selectedJob.value?.service_report?.customer ||
-    selectedRequest.value?.customer ||
-    null
-  );
+    selectedRequest.value?.customer;
+  if (direct) return direct;
+  const cId =
+    selectedJob.value?.customer_id ||
+    selectedJob.value?.delivery_order?.customer_id ||
+    selectedRequest.value?.customer_id;
+  if (cId) return findCustomer(cId) || null;
+  return null;
 });
 
 let draggedRequest: any = null;
@@ -990,6 +1008,8 @@ function getTaskAddress(task: any): string {
     task?.delivery_order?.sale?.installation_address ||
     task?.customer?.address ||
     task?.delivery_order?.customer?.address ||
+    (task?.customer_id ? findCustomer(task.customer_id)?.address : null) ||
+    (task?.delivery_order?.customer_id ? findCustomer(task.delivery_order.customer_id)?.address : null) ||
     task?.service_report?.customer?.address ||
     task?.address ||
     ""
@@ -998,12 +1018,41 @@ function getTaskAddress(task: any): string {
 
 function doCustomerName(d: any): string {
   const job = d?.delivery_order || d;
-  return (
+  const direct =
     job?.customer?.company_name ||
     job?.customer?.name ||
-    findCustomer(job?.customer_id)?.company_name ||
-    findCustomer(job?.customer_id)?.name ||
-    job?.customer_name ||
+    job?.customer_name;
+  if (direct) return direct;
+
+  const custId = job?.customer_id || job?.customer?.id;
+  if (custId) {
+    const c = findCustomer(custId);
+    if (c) return c.company_name || c.name || "";
+  }
+
+  // Fallback via purchase order if linked
+  if (job?.purchase_order?.customer) {
+    return job.purchase_order.customer.company_name || job.purchase_order.customer.name || "";
+  }
+  if (job?.purchase_order?.customer_id) {
+    const c = findCustomer(job.purchase_order.customer_id);
+    if (c) return c.company_name || c.name || "";
+  }
+  if (job?.purchase_order_id) {
+    const poList = (masterStore.purchaseOrders?.value || masterStore.purchaseOrders || []) as any[];
+    const po = poList.find((p: any) => String(p.id) === String(job.purchase_order_id));
+    if (po) {
+      if (po.customer?.company_name || po.customer?.name) {
+        return po.customer.company_name || po.customer.name;
+      }
+      if (po.customer_id) {
+        const c = findCustomer(po.customer_id);
+        if (c) return c.company_name || c.name || "";
+      }
+    }
+  }
+
+  return (
     job?.recipient_name ||
     (typeof job?.customer === "string" ? job.customer : "") ||
     ""
