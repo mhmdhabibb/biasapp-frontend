@@ -738,7 +738,6 @@ const doColumns: TableColumn[] = [
 const deliveryHistories = computed(() =>
   (deliveryOrders.value as any[]).filter(
     (d: any) =>
-      hasDeliveryHistory(d) &&
       String(d.do_type || '').toLowerCase() !== 'inbound' &&
       matchesCustomer(d.customer_id) &&
       (!doTypeFilter.value || (String(d.do_type || 'rental').toLowerCase() === doTypeFilter.value)) &&

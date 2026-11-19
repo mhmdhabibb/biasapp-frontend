@@ -27,6 +27,65 @@ const showDeleteTechModal = ref(false);
 const techToDelete = ref<any | null>(null);
 const isDeleting = ref(false);
 
+const showAuditLogModal = ref(false);
+const auditLogs = ref<any[]>([]);
+const isLoadingAuditLogs = ref(false);
+const auditLogSearch = ref("");
+const auditLogAction = ref("all");
+const auditLogPage = ref(1);
+const auditLogTotalPages = ref(1);
+const auditLogTotal = ref(0);
+
+async function fetchAuditLogs() {
+  if (!isSuperadmin.value) return;
+  isLoadingAuditLogs.value = true;
+  try {
+    const params = new URLSearchParams({
+      page: String(auditLogPage.value),
+      limit: "20",
+    });
+    if (auditLogSearch.value.trim()) {
+      params.set("search", auditLogSearch.value.trim());
+    }
+    if (auditLogAction.value && auditLogAction.value !== "all") {
+      params.set("action", auditLogAction.value);
+    }
+    const res: any = await apiRequest({
+      url: `/job-orders/assignment-logs?${params.toString()}`,
+      method: "GET",
+    });
+    const data = res?.data ?? res;
+    auditLogs.value = data?.items || [];
+    auditLogTotal.value = data?.total || 0;
+    auditLogTotalPages.value = data?.total_pages || 1;
+  } catch (err: any) {
+    console.error("Failed to fetch assignment audit logs:", err);
+    toast.error("Gagal memuat log audit penugasan: " + (err.message || "Error"));
+  } finally {
+    isLoadingAuditLogs.value = false;
+  }
+}
+
+watch(showAuditLogModal, (val) => {
+  if (val) {
+    auditLogPage.value = 1;
+    auditLogSearch.value = "";
+    auditLogAction.value = "all";
+    fetchAuditLogs();
+  }
+});
+
+function handleAuditLogSearch() {
+  auditLogPage.value = 1;
+  fetchAuditLogs();
+}
+
+function handleAuditLogActionChange(act: string) {
+  auditLogAction.value = act;
+  auditLogPage.value = 1;
+  fetchAuditLogs();
+}
+
 function extractArray(res: any): any[] {
   if (!res) return [];
   if (Array.isArray(res)) return res;
@@ -1554,6 +1613,32 @@ async function handleDeleteTech() {
             >🔄</span
           >
           <span>{{ isReloading ? "Refreshing..." : "Refresh" }}</span>
+        </button>
+        <button
+          v-if="isSuperadmin"
+          class="btn btn-outline btn-sm btn-audit-log"
+          style="
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            font-size: 0.82rem;
+            color: #4f46e5;
+            border-color: #c7d2fe;
+            background: #eef2ff;
+            cursor: pointer;
+          "
+          @click="showAuditLogModal = true"
+          title="Log Audit Penugasan Teknisi (Khusus Superadmin)"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span>Log Audit Penugasan</span>
         </button>
         <div class="summary-chip">
           <span class="summary-value">{{
@@ -3191,6 +3276,176 @@ async function handleDeleteTech() {
         techToDelete = null;
       "
     />
+
+    <!-- Superadmin Audit Log Penugasan Modal -->
+    <FormModal
+      v-if="isSuperadmin"
+      :open="showAuditLogModal"
+      title="Audit Log Penugasan Teknisi"
+      max-width="960px"
+      @close="showAuditLogModal = false"
+    >
+      <div class="audit-log-modal-body">
+        <!-- Subtitle & Info -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+          <div style="font-size: 13px; color: var(--color-text-muted);">
+            Menampilkan riwayat waktu user assign ke teknisi dan audit trail penugasan (berlaku untuk data sekarang &amp; sebelumnya).
+          </div>
+          <span class="badge" style="background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; font-weight: 600;">
+            Khusus Superadmin
+          </span>
+        </div>
+
+        <!-- Filters -->
+        <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
+          <div style="flex: 1; min-width: 240px; position: relative;">
+            <input
+              v-model="auditLogSearch"
+              type="search"
+              class="form-input"
+              placeholder="Cari teknisi, user, no JO/DO/SR, customer..."
+              style="height: 38px; padding-right: 32px; font-size: 13px;"
+              @keyup.enter="handleAuditLogSearch"
+            />
+            <button
+              v-if="auditLogSearch"
+              type="button"
+              style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--color-text-muted);"
+              @click="auditLogSearch = ''; handleAuditLogSearch()"
+            >
+              &times;
+            </button>
+          </div>
+          <button type="button" class="btn btn-outline" style="height: 38px; font-size: 13px;" @click="handleAuditLogSearch">
+            Cari
+          </button>
+          <div style="display: flex; gap: 6px; background: var(--color-background-soft, #f8fafc); padding: 3px; border-radius: 6px; border: 1px solid var(--color-border-light);">
+            <button
+              type="button"
+              class="btn btn-xs"
+              :class="{ 'btn-primary': auditLogAction === 'all', 'btn-ghost': auditLogAction !== 'all' }"
+              style="font-size: 11px; padding: 4px 10px;"
+              @click="handleAuditLogActionChange('all')"
+            >
+              Semua ({{ auditLogTotal }})
+            </button>
+            <button
+              type="button"
+              class="btn btn-xs"
+              :class="{ 'btn-primary': auditLogAction === 'ASSIGN', 'btn-ghost': auditLogAction !== 'ASSIGN' }"
+              style="font-size: 11px; padding: 4px 10px;"
+              @click="handleAuditLogActionChange('ASSIGN')"
+            >
+              Penugasan
+            </button>
+            <button
+              type="button"
+              class="btn btn-xs"
+              :class="{ 'btn-primary': auditLogAction === 'CANCEL_ASSIGN', 'btn-ghost': auditLogAction !== 'CANCEL_ASSIGN' }"
+              style="font-size: 11px; padding: 4px 10px;"
+              @click="handleAuditLogActionChange('CANCEL_ASSIGN')"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+
+        <!-- Table -->
+        <div style="overflow-x: auto; max-height: 440px; border: 1px solid var(--color-border-light, #e2e8f0); border-radius: 8px;">
+          <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
+            <thead>
+              <tr style="background: var(--color-background-soft, #f8fafc); border-bottom: 1px solid var(--color-border-light);">
+                <th style="padding: 10px 12px; text-align: left; width: 145px; font-weight: 600;">Waktu Penugasan</th>
+                <th style="padding: 10px 12px; text-align: left; width: 135px; font-weight: 600;">User Penugas</th>
+                <th style="padding: 10px 12px; text-align: center; width: 95px; font-weight: 600;">Aksi</th>
+                <th style="padding: 10px 12px; text-align: left; font-weight: 600;">Detail Penugasan &amp; Tugas</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="isLoadingAuditLogs">
+                <td colspan="4" style="text-align: center; padding: 30px; color: var(--color-text-muted);">
+                  Memuat data log audit penugasan...
+                </td>
+              </tr>
+              <tr v-else-if="auditLogs.length === 0">
+                <td colspan="4" style="text-align: center; padding: 30px; color: var(--color-text-muted);">
+                  Tidak ada riwayat penugasan yang ditemukan.
+                </td>
+              </tr>
+              <tr
+                v-for="log in auditLogs"
+                :key="log.id"
+                style="border-bottom: 1px solid var(--color-border-light, #f1f5f9);"
+              >
+                <td style="padding: 10px 12px; vertical-align: top; white-space: nowrap; color: var(--color-text-muted);">
+                  <div style="font-weight: 600; color: var(--color-text);">
+                    {{ new Date(log.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) }}
+                  </div>
+                  <div style="font-size: 11px;">
+                    {{ new Date(log.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }} WIB
+                  </div>
+                </td>
+                <td style="padding: 10px 12px; vertical-align: top;">
+                  <div style="font-weight: 600; color: var(--color-text);">
+                    {{ log.user_name || 'System' }}
+                  </div>
+                  <span class="badge" style="font-size: 10px; padding: 1px 6px; background: rgba(99, 102, 241, 0.1); color: #4f46e5; margin-top: 2px;">
+                    {{ log.user_role || 'user' }}
+                  </span>
+                </td>
+                <td style="padding: 10px 12px; vertical-align: top; text-align: center;">
+                  <span
+                    class="badge"
+                    :style="log.action === 'ASSIGN'
+                      ? 'background: #dcfce7; color: #166534;'
+                      : log.action === 'CANCEL_ASSIGN'
+                        ? 'background: #fee2e2; color: #991b1b;'
+                        : 'background: #f1f5f9; color: #475569;'"
+                    style="font-size: 11px; padding: 2px 8px; font-weight: 600;"
+                  >
+                    {{ log.action === 'ASSIGN' ? 'Penugasan' : log.action === 'CANCEL_ASSIGN' ? 'Batal' : log.action }}
+                  </span>
+                </td>
+                <td style="padding: 10px 12px; vertical-align: top; line-height: 1.5; color: var(--color-text);">
+                  {{ log.description }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Footer -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 8px;">
+          <div style="font-size: 12px; color: var(--color-text-muted);">
+            Menampilkan halaman {{ auditLogPage }} dari {{ auditLogTotalPages }} (Total {{ auditLogTotal }} log penugasan)
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button
+              type="button"
+              class="btn btn-xs btn-outline"
+              :disabled="auditLogPage <= 1 || isLoadingAuditLogs"
+              @click="auditLogPage--; fetchAuditLogs()"
+            >
+              Prev
+            </button>
+            <button
+              type="button"
+              class="btn btn-xs btn-outline"
+              :disabled="auditLogPage >= auditLogTotalPages || isLoadingAuditLogs"
+              @click="auditLogPage++; fetchAuditLogs()"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showAuditLogModal = false">
+          Tutup
+        </button>
+      </template>
+    </FormModal>
   </div>
 </template>
 

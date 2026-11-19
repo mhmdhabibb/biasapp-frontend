@@ -578,6 +578,206 @@ function addSerialNumber() {
   form.temp_serial = ''
 }
 
+function handlePasteSerial(e: ClipboardEvent) {
+  const text = e.clipboardData?.getData('text') || ''
+  if (!text) return
+  if (/[\n,;\t]/.test(text)) {
+    e.preventDefault()
+    const parts = text
+      .split(/[\r\n,;\t]+/)
+      .map(s => s.trim().toUpperCase())
+      .filter(Boolean)
+    let addedCount = 0
+    parts.forEach(sn => {
+      let cleanSN = isNoSN(sn) ? generateRandomSN() : sn
+      if (cleanSN && !form.serial_numbers.includes(cleanSN)) {
+        form.serial_numbers.push(cleanSN)
+        addedCount++
+      }
+    })
+    form.temp_serial = ''
+    if (addedCount > 0) {
+      toast.success(`${addedCount} Serial Number berhasil ditambahkan dari clipboard!`)
+    }
+  }
+}
+
+// ── MULTI INPUT UNIT (TAMBAH MASSAL) ──
+const showMultiInputModal = ref(false)
+const multiInputMode = ref<'paste' | 'auto'>('paste')
+const multiInputSNText = ref('')
+const multiInputAutoQty = ref<number>(5)
+const isSubmittingMulti = ref(false)
+
+const multiInputForm = reactive({
+  brand_id: null as string | null,
+  type_id: null as string | null,
+  print_tech: '' as string,
+  model: '',
+  name: '',
+  specs_text: '',
+  uom_id: '' as string | null,
+  price: null as number | null,
+  is_copier: false,
+})
+
+const isMultiPrinterOrCopier = computed(() => {
+  const tName = getTypeName(multiInputForm.type_id).toLowerCase().trim()
+  return (
+    tName === 'printer' ||
+    tName.includes('printer') ||
+    tName === 'photocopy machine' ||
+    tName.includes('photocopy') ||
+    tName.includes('copier') ||
+    Boolean(multiInputForm.is_copier)
+  )
+})
+
+const isMultiDescriptionCustom = ref(false)
+
+watch(
+  [() => multiInputForm.type_id, () => multiInputForm.print_tech, () => multiInputForm.brand_id, () => multiInputForm.model, () => multiInputForm.is_copier],
+  ([newType, newTech, newBrand, newModel, newCopier]) => {
+    if (!isMultiPrinterOrCopier.value && multiInputForm.print_tech) {
+      multiInputForm.print_tech = ''
+    }
+    const autoName = computeUnitName(newType, multiInputForm.print_tech, newBrand, newModel, newCopier)
+    if (!isMultiDescriptionCustom.value) {
+      multiInputForm.name = autoName
+    }
+  }
+)
+
+const parsedMultiSerials = computed(() => {
+  if (multiInputMode.value === 'auto') {
+    const qty = Math.max(1, Math.min(100, Number(multiInputAutoQty.value) || 1))
+    return Array.from({ length: qty }, (_, i) => `(Auto Generate #${i + 1})`)
+  }
+  const text = multiInputSNText.value || ''
+  if (!text.trim()) return []
+  const rawList = text
+    .split(/[\r\n,;\t]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(Boolean)
+  return Array.from(new Set(rawList))
+})
+
+const multiSerialsCount = computed(() => {
+  if (multiInputMode.value === 'auto') {
+    return Math.max(1, Math.min(100, Number(multiInputAutoQty.value) || 1))
+  }
+  return parsedMultiSerials.value.length
+})
+
+function openMultiInput() {
+  isMultiDescriptionCustom.value = false
+  multiInputMode.value = 'paste'
+  multiInputSNText.value = ''
+  multiInputAutoQty.value = 5
+  Object.assign(multiInputForm, {
+    brand_id: null,
+    type_id: null,
+    print_tech: '',
+    model: '',
+    name: '',
+    specs_text: '',
+    uom_id: uoms.value[0]?.id || '',
+    price: null,
+    is_copier: false,
+  })
+  showMultiInputModal.value = true
+}
+
+function closeMultiInput() {
+  showMultiInputModal.value = false
+}
+
+async function handleMultiInputSubmit() {
+  if (!multiInputForm.brand_id || !multiInputForm.type_id || !multiInputForm.model?.trim()) {
+    toast.warning('Silakan lengkapi kolom Item / Kategori, Merek, dan Type / Model.')
+    return
+  }
+  if (isMultiPrinterOrCopier.value && !multiInputForm.print_tech) {
+    toast.warning('Silakan pilih tipe Laser atau Inject untuk Printer / Copier Machine.')
+    return
+  }
+
+  let serialsToCreate: string[] = []
+  if (multiInputMode.value === 'auto') {
+    const qty = Math.max(1, Math.min(100, Number(multiInputAutoQty.value) || 1))
+    for (let i = 0; i < qty; i++) {
+      serialsToCreate.push(generateRandomSN())
+    }
+  } else {
+    serialsToCreate = parsedMultiSerials.value.map(sn => isNoSN(sn) ? generateRandomSN() : sn)
+    if (serialsToCreate.length === 0) {
+      toast.warning('Silakan masukkan minimal satu Serial Number pada kotak input.')
+      return
+    }
+  }
+
+  isSubmittingMulti.value = true
+  try {
+    const cleanUomId = multiInputForm.uom_id && multiInputForm.uom_id.trim() ? multiInputForm.uom_id.trim() : null
+    const cleanPrice =
+      typeof multiInputForm.price === 'number'
+        ? multiInputForm.price
+        : multiInputForm.price
+          ? Number(multiInputForm.price)
+          : null
+
+    const basePayload = {
+      brand_id: multiInputForm.brand_id,
+      type_id: multiInputForm.type_id,
+      model: multiInputForm.model.trim() || '-',
+      name: multiInputForm.name.trim(),
+      specs: multiInputForm.specs_text ? multiInputForm.specs_text.trim() : '',
+      uom_id: cleanUomId,
+      price: cleanPrice,
+      print_tech: multiInputForm.print_tech || undefined,
+      is_copier: Boolean(multiInputForm.is_copier),
+    }
+
+    const chunkSize = 5
+    let successCount = 0
+    const errors: string[] = []
+
+    for (let i = 0; i < serialsToCreate.length; i += chunkSize) {
+      const chunk = serialsToCreate.slice(i, i + chunkSize)
+      const results = await Promise.allSettled(
+        chunk.map(sn => resources.units.create({ ...basePayload, serial_no: sn }))
+      )
+      results.forEach((res, idx) => {
+        if (res.status === 'fulfilled') {
+          successCount++
+        } else {
+          errors.push(`${chunk[idx]}: ${res.reason?.message || 'Gagal menyimpan'}`)
+        }
+      })
+    }
+
+    if (errors.length > 0) {
+      if (successCount > 0) {
+        toast.warning(`${successCount} unit berhasil disimpan, namun ${errors.length} unit gagal: ${errors[0]}`)
+      } else {
+        toast.error(`Gagal menyimpan unit: ${errors[0]}`)
+        return
+      }
+    } else {
+      toast.success(`Berhasil menambahkan ${successCount} unit sekaligus!`)
+    }
+
+    await fetchData()
+    window.dispatchEvent(new CustomEvent('bias:data-mutated', { detail: { path: '/units' } }))
+    closeMultiInput()
+  } catch (error: any) {
+    console.error('Failed to submit multi input:', error)
+    toast.error('Gagal menyimpan unit: ' + (error.message || 'Error'))
+  } finally {
+    isSubmittingMulti.value = false
+  }
+}
+
 function openDelete(item: Unit) { deletingItem.value = item; showConfirm.value = true }
 
 const hardDelete = useHardDelete((id: string) => resources.units.hardRemove(id), fetchData)
@@ -906,6 +1106,16 @@ function exportStockPdf() {
     <PageHeader title="Products" :button-label="isTechnician ? undefined : 'Add Product'" permission="unit:create"
       @add="openAdd">
       <template #actions>
+        <button
+          v-if="!isTechnician"
+          class="btn btn-primary"
+          style="display: flex; align-items: center; gap: 6px; background: #0284c7; border-color: #0284c7;"
+          @click="openMultiInput"
+          title="Input banyak unit / serial number sekaligus"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="16" height="14" rx="2"></rect><path d="M18 3H6a2 2 0 0 0-2 2v2h16V5a2 2 0 0 0-2-2z"></path><line x1="10" y1="12" x2="10" y2="16"></line><line x1="8" y1="14" x2="12" y2="14"></line></svg>
+          + Multi Input Unit
+        </button>
         <button class="btn btn-outline" @click="exportStockPdf" style="display: flex; align-items: center; gap: 6px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           Export Unit Stock PDF
@@ -960,6 +1170,23 @@ function exportStockPdf() {
         <div style="font-size: 24px; font-weight: bold; margin-top: 4px; color: #003366;">{{ formatRupiah(totalUnitValue) }}</div>
       </div>
     </div>
+    <!-- Bulk Action Bar -->
+    <div v-if="selectedCount > 0" class="bulk-action-bar" style="display: flex; justify-content: space-between; align-items: center; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 16px; margin-bottom: 14px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="badge" style="background: #2563eb; color: #fff; font-weight: bold; font-size: 12px; padding: 3px 8px; border-radius: 12px;">{{ selectedCount }}</span>
+        <span style="font-weight: 600; color: var(--color-text); font-size: 13.5px;">unit terpilih</span>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button type="button" class="btn btn-xs btn-outline" @click="selectedKeys = []" style="font-size: 12px; height: 32px; padding: 0 10px;">
+          Batal Pilihan
+        </button>
+        <button type="button" class="btn btn-xs btn-danger" @click="showBulkDeleteConfirm = true" style="font-size: 12px; height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"></path></svg>
+          Hapus {{ selectedCount }} Unit Terpilih
+        </button>
+      </div>
+    </div>
+
     <DataTable :columns="columns" :data="filteredData" :loading="isLoading" search-placeholder="Search products..." permission="unit"
       :show-detail="true" @detail="openDetail" @row-click="openDetail" @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open"
@@ -1148,11 +1375,12 @@ function exportStockPdf() {
             type="text" 
             v-model="form.temp_serial" 
             @input="form.temp_serial = ($event.target as HTMLInputElement).value.toUpperCase()"
+            @paste="handlePasteSerial"
             @keydown.enter.prevent="addSerialNumber"
             @keydown.comma.prevent="addSerialNumber"
             @blur="addSerialNumber"
             style="flex: 1; min-width: 140px; border: none; outline: none; background: transparent; text-transform: uppercase; padding: 2px 0; font-size: 0.875rem; color: var(--color-text);"
-            placeholder="KETIK SN LALU ENTER, ATAU KLIK '+ TANPA SN'"
+            placeholder="KETIK SN LALU ENTER, ATAU PASTE BANYAK SN"
           />
         </div>
         
@@ -1355,6 +1583,228 @@ function exportStockPdf() {
     <HardDeleteDialog :open="hardDelete.show" title="Hapus Permanen Product" :item-label="hardDelete.expected"
       :expected="hardDelete.expected" :confirm-valid="hardDelete.confirmed" @close="hardDelete.close"
       @confirm="hardDelete.confirm" @update:input="hardDelete.input = $event" />
+
+    <!-- Multi Input Modal -->
+    <FormModal
+      v-if="!isTechnician"
+      :open="showMultiInputModal"
+      title="Multi Input Products / Units (Tambah Massal)"
+      max-width="640px"
+      @close="closeMultiInput"
+      @submit="handleMultiInputSubmit"
+    >
+      <!-- Item / Kategori -->
+      <div class="form-group" style="position: relative;">
+        <label for="multi-unit-type" class="form-label">
+          Item / Kategori <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <CustomSelect id="multi-unit-type" v-model="multiInputForm.type_id" :options="typeOptions" placeholder="Pilih Item / Kategori" />
+      </div>
+
+      <!-- Kategori Cetak (Laser / Inject) -->
+      <div v-if="isMultiPrinterOrCopier" class="form-group" style="position: relative;">
+        <label for="multi-unit-print-tech" class="form-label">
+          Kategori Cetak (Laser / Inject) <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <CustomSelect
+          id="multi-unit-print-tech"
+          v-model="multiInputForm.print_tech"
+          :options="printTechOptions"
+          placeholder="-- Pilih Laser atau Inject --"
+        />
+      </div>
+
+      <!-- Merek -->
+      <div class="form-group" style="position: relative;">
+        <label for="multi-unit-brand" class="form-label">
+          Merek <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <CustomSelect id="multi-unit-brand" v-model="multiInputForm.brand_id" :options="brandOptions" placeholder="Pilih Merek" />
+      </div>
+
+      <!-- Type / Model -->
+      <div class="form-group">
+        <label for="multi-unit-model" class="form-label">
+          Type / Model <span class="text-danger" style="color: var(--color-danger, #ef4444);">*</span>
+        </label>
+        <input id="multi-unit-model" v-model="multiInputForm.model" type="text" class="form-input" placeholder="Unit type / model (Contoh: IR 2520, L3110, dll)">
+      </div>
+
+      <!-- Description -->
+      <div class="form-group">
+        <label for="multi-unit-name" class="form-label">Description</label>
+        <textarea
+          id="multi-unit-name"
+          v-model="multiInputForm.name"
+          class="form-textarea"
+          rows="2"
+          @input="isMultiDescriptionCustom = multiInputForm.name.trim().length > 0"
+        ></textarea>
+      </div>
+
+      <!-- Satuan & Price Grid -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-group" style="position: relative; margin-bottom: 0;">
+          <label for="multi-uom" class="form-label">Satuan</label>
+          <CustomSelect id="multi-uom" v-model="multiInputForm.uom_id" :options="uomOptions" placeholder="Pilih Satuan" />
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label for="multi-price" class="form-label">Price (Optional)</label>
+          <input id="multi-price" v-model.number="multiInputForm.price" type="number" class="form-input" placeholder="e.g. 15000000" min="0">
+        </div>
+      </div>
+
+      <!-- Is Copier -->
+      <div class="form-group" style="margin-top: 10px; margin-bottom: 12px;">
+        <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" v-model="multiInputForm.is_copier" style="width: 1rem; height: 1rem;" />
+          Is a Photocopy Machine
+        </label>
+      </div>
+
+      <!-- Spesifikasi -->
+      <div class="form-group">
+        <label for="multi-specs" class="form-label">
+          Spesifikasi
+          <span style="font-weight: normal; font-size: 12px; color: var(--color-text-muted);"> (Optional)</span>
+        </label>
+        <textarea
+          id="multi-specs"
+          v-model="multiInputForm.specs_text"
+          class="form-textarea"
+          rows="2"
+          placeholder="Contoh: Core i5, RAM 8GB, SSD 512GB"
+        ></textarea>
+      </div>
+
+      <!-- SECTION: SERIAL NUMBERS MULTI INPUT -->
+      <div style="background: var(--color-background-soft, #f8fafc); border: 1px solid var(--color-border-light, #e2e8f0); border-radius: 8px; padding: 14px; margin-top: 10px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+          <label class="form-label" style="margin-bottom: 0; font-weight: 700;">
+            Metode Multi Serial Number (SN)
+          </label>
+          <div style="display: flex; gap: 4px; background: var(--color-surface, #fff); padding: 2px; border-radius: 6px; border: 1px solid var(--color-border);">
+            <button
+              type="button"
+              class="btn btn-xs"
+              :class="{ 'btn-primary': multiInputMode === 'paste', 'btn-ghost': multiInputMode !== 'paste' }"
+              style="padding: 3px 8px; font-size: 11px;"
+              @click="multiInputMode = 'paste'"
+            >
+              📋 Paste / Ketik Daftar SN
+            </button>
+            <button
+              type="button"
+              class="btn btn-xs"
+              :class="{ 'btn-primary': multiInputMode === 'auto', 'btn-ghost': multiInputMode !== 'auto' }"
+              style="padding: 3px 8px; font-size: 11px;"
+              @click="multiInputMode = 'auto'"
+            >
+              ⚡ Massal Tanpa SN (Auto)
+            </button>
+          </div>
+        </div>
+
+        <!-- Mode A: Paste SN list -->
+        <div v-if="multiInputMode === 'paste'">
+          <div style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 6px;">
+            Tempel (paste) daftar serial number dari Excel atau barcode scanner. Pisahkan dengan <strong>enter baris baru</strong>, <strong>koma</strong>, atau <strong>spasi</strong>.
+          </div>
+          <textarea
+            v-model="multiInputSNText"
+            class="form-textarea"
+            rows="5"
+            style="font-family: monospace; font-size: 13px; text-transform: uppercase;"
+            placeholder="Contoh:&#10;SN-A1001&#10;SN-A1002&#10;SN-A1003&#10;SN-A1004"
+          ></textarea>
+
+          <!-- Live Count & Preview Badges -->
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; flex-wrap: wrap; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="badge badge-info" style="font-size: 12px; font-weight: 600;">
+                {{ parsedMultiSerials.length }} Serial Number Terdeteksi
+              </span>
+              <button
+                v-if="multiInputSNText"
+                type="button"
+                class="btn btn-xs btn-outline"
+                @click="multiInputSNText = ''"
+                style="font-size: 11px;"
+              >
+                Bersihkan
+              </button>
+            </div>
+            <button
+              type="button"
+              class="btn btn-xs btn-outline"
+              style="font-size: 11px;"
+              @click="multiInputSNText = (multiInputSNText ? multiInputSNText + '\n' : '') + generateRandomSN()"
+            >
+              + Tambah 1 Auto SN
+            </button>
+          </div>
+
+          <!-- Preview chips -->
+          <div v-if="parsedMultiSerials.length > 0" style="margin-top: 8px; max-height: 90px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; background: var(--color-surface, #fff); border-radius: 6px; border: 1px solid var(--color-border-light);">
+            <span
+              v-for="(sn, idx) in parsedMultiSerials.slice(0, 30)"
+              :key="idx"
+              class="badge"
+              style="background: #e0f2fe; color: #0369a1; font-family: monospace; font-size: 11px; padding: 2px 6px;"
+            >
+              {{ sn }}
+            </span>
+            <span v-if="parsedMultiSerials.length > 30" style="font-size: 11px; color: var(--color-text-muted); align-self: center;">
+              ...+{{ parsedMultiSerials.length - 30 }} lainnya
+            </span>
+          </div>
+        </div>
+
+        <!-- Mode B: Auto Generate Bulk -->
+        <div v-else>
+          <div style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 8px;">
+            Gunakan mode ini untuk unit yang tidak memiliki serial number pabrik (misal: kabel, aksesoris, modul umum). Sistem akan membuat SN acak otomatis berformat <code>NONSN-YYYYMMDD-XXXXX</code>.
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="font-size: 13px; font-weight: 600; color: var(--color-text); white-space: nowrap;">
+              Jumlah Unit (Qty):
+            </label>
+            <input
+              v-model.number="multiInputAutoQty"
+              type="number"
+              class="form-input"
+              style="width: 100px; text-align: center; font-size: 15px; font-weight: bold;"
+              min="1"
+              max="100"
+            />
+            <span style="font-size: 13px; color: var(--color-text-muted);">Unit akan dibuat</span>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <div style="font-size: 13px; color: var(--color-text-muted);">
+            Total Unit: <strong style="color: #0284c7; font-size: 15px;">{{ multiSerialsCount }} Unit</strong>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-outline" :disabled="isSubmittingMulti" @click="closeMultiInput">
+              Batal
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="isSubmittingMulti || multiSerialsCount === 0"
+              style="background-color: #0284c7; border-color: #0284c7;"
+              @click="handleMultiInputSubmit"
+            >
+              <span v-if="isSubmittingMulti">Menyimpan {{ multiSerialsCount }} Unit...</span>
+              <span v-else>Simpan {{ multiSerialsCount }} Unit</span>
+            </button>
+          </div>
+        </div>
+      </template>
+    </FormModal>
   </div>
 </template>
 
