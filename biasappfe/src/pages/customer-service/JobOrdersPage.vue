@@ -8,6 +8,7 @@ import { useMasterStore } from "@/composables/useMasterStore";
 import { useIsSuperadmin } from "@/composables/useHardDelete";
 import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
+import { activityLogService } from "@/services/activity_log.service";
 import { invalidateCache } from "@/utils/requestCache";
 import { isCopierReport } from "@/utils/copierReport";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
@@ -40,24 +41,87 @@ async function fetchAuditLogs() {
   if (!isSuperadmin.value) return;
   isLoadingAuditLogs.value = true;
   try {
-    const params = new URLSearchParams({
-      page: String(auditLogPage.value),
-      limit: "20",
-    });
-    if (auditLogSearch.value.trim()) {
-      params.set("search", auditLogSearch.value.trim());
+    let items: any[] = [];
+    let total = 0;
+    let totalPages = 1;
+
+    // 1. Coba ambil dari activityLogService (endpoint standar /activity-logs?module=job_order)
+    try {
+      const res = await activityLogService.getLogs({
+        module: "job_order",
+        action: auditLogAction.value !== "all" ? auditLogAction.value : undefined,
+        search: auditLogSearch.value.trim() || undefined,
+        page: auditLogPage.value,
+        limit: 20,
+      });
+      const data: any = (res as any)?.data ?? res;
+      if (Array.isArray(data?.items)) {
+        items = data.items;
+        total = data.total || 0;
+        totalPages = data.total_pages || 1;
+      }
+    } catch (apiErr) {
+      console.warn("activityLogService warning, falling back to local audit synthesis:", apiErr);
     }
-    if (auditLogAction.value && auditLogAction.value !== "all") {
-      params.set("action", auditLogAction.value);
+
+    // 2. Jika log backend masih kosong (belum dibackfill di server), sintesis otomatis dari riwayat jobOrders yang sudah ada
+    if (items.length === 0) {
+      const fallbackLogs = (jobOrders.value || [])
+        .filter((j: any) => !!j.technician_id)
+        .map((j: any) => {
+          const tech =
+            technicians.value.find((t: any) => String(t.id) === String(j.technician_id)) ||
+            j.technician;
+          const techName = tech?.user?.name || tech?.name || `Teknisi #${j.technician_id}`;
+          const custName =
+            j.customer?.company_name || j.customer?.name || j.customer_name || "-";
+          const jobNo = j.job_order_no || `JO-${j.id}`;
+          const jobType =
+            j.job_type === "delivery" || j.delivery_order_id
+              ? "Delivery"
+              : j.job_type === "service" || j.service_request_id
+                ? "Service"
+                : j.job_type === "maintenance"
+                  ? "Maintenance"
+                  : "Visit";
+          const assigner = j.assigner_name || "Admin/CS";
+          const dateStr = j.created_at || j.scheduled_date || new Date().toISOString();
+
+          return {
+            id: `legacy-${j.id}`,
+            user_name: assigner,
+            user_role: "admin",
+            action: "ASSIGN",
+            description: `Menugaskan teknisi ${techName} untuk pekerjaan ${jobType} #${jobNo} (Customer: ${custName})`,
+            created_at: dateStr,
+          };
+        });
+
+      let filtered = fallbackLogs;
+      if (auditLogAction.value && auditLogAction.value !== "all") {
+        filtered = filtered.filter((l) => l.action === auditLogAction.value);
+      }
+      if (auditLogSearch.value.trim()) {
+        const q = auditLogSearch.value.trim().toLowerCase();
+        filtered = filtered.filter(
+          (l) =>
+            (l.user_name || "").toLowerCase().includes(q) ||
+            (l.description || "").toLowerCase().includes(q)
+        );
+      }
+      filtered.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      total = filtered.length;
+      totalPages = Math.max(1, Math.ceil(total / 20));
+      const start = (auditLogPage.value - 1) * 20;
+      items = filtered.slice(start, start + 20);
     }
-    const res: any = await apiRequest({
-      url: `/job-orders/assignment-logs?${params.toString()}`,
-      method: "GET",
-    });
-    const data = res?.data ?? res;
-    auditLogs.value = data?.items || [];
-    auditLogTotal.value = data?.total || 0;
-    auditLogTotalPages.value = data?.total_pages || 1;
+
+    auditLogs.value = items;
+    auditLogTotal.value = total;
+    auditLogTotalPages.value = totalPages;
   } catch (err: any) {
     console.error("Failed to fetch assignment audit logs:", err);
     toast.error("Gagal memuat log audit penugasan: " + (err.message || "Error"));
@@ -3379,10 +3443,10 @@ async function handleDeleteTech() {
               >
                 <td style="padding: 10px 12px; vertical-align: top; white-space: nowrap; color: var(--color-text-muted);">
                   <div style="font-weight: 600; color: var(--color-text);">
-                    {{ new Date(log.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) }}
+                    {{ log.created_at && !isNaN(new Date(log.created_at).getTime()) ? new Date(log.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-' }}
                   </div>
                   <div style="font-size: 11px;">
-                    {{ new Date(log.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }} WIB
+                    {{ log.created_at && !isNaN(new Date(log.created_at).getTime()) ? new Date(log.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB' : '' }}
                   </div>
                 </td>
                 <td style="padding: 10px 12px; vertical-align: top;">
