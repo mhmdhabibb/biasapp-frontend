@@ -417,14 +417,35 @@ function closeModal() {
   form.serial_no = ''
 }
 
+function parseSpecsData(raw: any): { cpu: string; ram: string; storage: string; storage_type: string; os: string; vga: string; office: string } {
+  const defaultSpecs = { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' }
+  if (!raw) return defaultSpecs
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+    return { ...defaultSpecs, ...raw }
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const obj = JSON.parse(trimmed)
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+          return { ...defaultSpecs, ...obj }
+        }
+      } catch {}
+    }
+  }
+  return defaultSpecs
+}
+
 function openEdit(item: any) {
+  if (!item) return
   editingItem.value = item
   isDescriptionCustom.value = true
   let detectedTech = item.print_tech || ''
   if (!detectedTech && item.specs) {
     try {
       const s = typeof item.specs === 'string' ? JSON.parse(item.specs) : item.specs
-      detectedTech = s.print_tech || ''
+      detectedTech = s?.print_tech || ''
     } catch {}
   }
   if (!detectedTech && item.name) {
@@ -432,34 +453,36 @@ function openEdit(item: any) {
     else if (/\bInject\b/i.test(item.name) || /\bInkjet\b/i.test(item.name)) detectedTech = 'Inject'
   }
 
+  const validRates = Array.isArray(item.rates) ? item.rates.map((r: any) => ({
+    paper_size_id: r.paper_size_id || '',
+    paper_type_id: r.paper_type_id ?? null,
+    rate_per_page_bw: Number(r.rate_per_page_bw) || 0,
+    rate_per_page_color: Number(r.rate_per_page_color) || 0,
+    free_quota_bw: Number(r.free_quota_bw) || 0,
+    free_quota_color: Number(r.free_quota_color) || 0,
+    quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : (r.quota_applies_to === 'both' ? 'both' : 'color')
+  })) : []
+
   Object.assign(form, {
-    serial_no: item.serial_no,
+    serial_no: item.serial_no || '',
     serial_numbers: [],
     temp_serial: '',
-    brand_id: item.brand_id,
-    type_id: item.type_id,
+    brand_id: item.brand_id || item.brand?.id || null,
+    type_id: item.type_id || item.type?.id || null,
     print_tech: detectedTech,
-    uom_id: item.uom_id ?? '',
-    model: item.model,
+    uom_id: item.uom_id || item.uom?.id || '',
+    model: item.model || '',
     name: item.name || '',
     specs_text: getCleanSpecsString(item),
-    price: (item as any).price || null,
+    price: (item as any).price != null ? Number((item as any).price) : null,
     is_copier: !!item.is_copier,
     is_computer: !!item.is_computer,
-    current_meter_bw: item.current_meter_bw || 0,
-    current_meter_color: item.current_meter_color || 0,
-    free_quota_color: item.free_quota_color || 0,
-    free_quota_bw: (item as any).free_quota_bw || 0,
-    rates: Array.isArray(item.rates) ? item.rates.map((r: any) => ({
-      paper_size_id: r.paper_size_id,
-      paper_type_id: r.paper_type_id ?? null,
-      rate_per_page_bw: r.rate_per_page_bw,
-      rate_per_page_color: r.rate_per_page_color,
-      free_quota_bw: r.free_quota_bw ?? 0,
-      free_quota_color: r.free_quota_color ?? 0,
-      quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : (r.quota_applies_to === 'both' ? 'both' : 'color')
-    })) : [],
-    specsData: item.specs ? (typeof item.specs === 'string' ? JSON.parse(item.specs || '{}') : item.specs) : { cpu: '', ram: '', storage: '', storage_type: '', os: '', vga: '', office: '' },
+    current_meter_bw: Number(item.current_meter_bw) || 0,
+    current_meter_color: Number(item.current_meter_color) || 0,
+    free_quota_color: Number(item.free_quota_color) || 0,
+    free_quota_bw: Number((item as any).free_quota_bw) || 0,
+    rates: validRates,
+    specsData: parseSpecsData(item.specs),
   })
   showModal.value = true
 }
@@ -520,6 +543,20 @@ async function handleSubmit() {
           ? Number(form.price)
           : null
 
+    const cleanRates = form.is_copier
+      ? (form.rates || [])
+          .filter((r: any) => r && r.paper_size_id && String(r.paper_size_id).trim())
+          .map((r: any) => ({
+            paper_size_id: String(r.paper_size_id).trim(),
+            paper_type_id: r.paper_type_id ? String(r.paper_type_id).trim() : null,
+            rate_per_page_bw: Number(r.rate_per_page_bw) || 0,
+            rate_per_page_color: Number(r.rate_per_page_color) || 0,
+            free_quota_bw: Number(r.free_quota_bw) || 0,
+            free_quota_color: Number(r.free_quota_color) || 0,
+            quota_applies_to: r.quota_applies_to === 'bw' ? 'bw' : (r.quota_applies_to === 'both' ? 'both' : 'color'),
+          }))
+      : []
+
     const payload: any = {
       ...form,
       model: (form.model || '').trim() || '-',
@@ -534,6 +571,12 @@ async function handleSubmit() {
     delete (payload as any).temp_serial
     delete (payload as any).specsData
     delete (payload as any).specs_text
+
+    if (form.is_copier) {
+      payload.rates = cleanRates
+    } else {
+      delete payload.rates
+    }
 
     if (editingItem.value) {
       if (isNoSN(payload.serial_no)) {
