@@ -9,7 +9,6 @@ import { useToast } from '@/composables/useToast'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
-import { printJobOrder, downloadJobOrderPdf } from '@/utils/printJobOrder'
 import { printDeliveryOrder, downloadDeliveryOrderPdf } from '@/utils/printDeliveryOrder'
 import { printServiceReport, downloadServiceReportPdf, type ReportType } from '@/utils/printReport'
 import { isCopierReport } from '@/utils/copierReport'
@@ -443,22 +442,7 @@ async function handleDownloadTechnicalReport(job: any) {
   else toast.error('Gagal mendownload Technical Report Form PDF')
 }
 
-// ── 4. Surat Perintah Kerja (Job Order / SPK) ──
-async function handlePrintSPK(job: any) {
-  toast.info('Membuka dialog cetak SPK...')
-  await printJobOrder(job)
-}
-
-async function handleDownloadSPK(job: any) {
-  isModalActionLoading.value = true
-  toast.info('Menyiapkan SPK Job Order PDF...')
-  const ok = await downloadJobOrderPdf(job)
-  isModalActionLoading.value = false
-  if (ok) toast.success('SPK PDF berhasil didownload')
-  else toast.error('Gagal mendownload SPK PDF')
-}
-
-// ── 5. Surat Jalan (DO) ──
+// ── 4. Surat Jalan (DO) ──
 async function handlePrintDO(job: any) {
   toast.info('Membuka dialog cetak Surat Jalan...')
   await printDeliveryOrder(job.delivery_order || { id: job.delivery_order_id })
@@ -848,27 +832,6 @@ async function handleDownloadRowJob(job: any) {
                 🖨️ Print
               </button>
               <button class="btn btn-sm btn-outline" @click="handleDownloadDO(printTarget)" :disabled="isModalActionLoading">
-                📥 PDF
-              </button>
-            </div>
-          </div>
-
-          <!-- 5. Surat Perintah Kerja (Job Order / SPK) - Referensi Penugasan -->
-          <div class="doc-option-card" style="opacity: 0.85;">
-            <div class="doc-option-left">
-              <div class="doc-badge-spk">SPK</div>
-              <div>
-                <div class="doc-title">Surat Perintah Kerja (Job Order)</div>
-                <div class="doc-desc">
-                  Surat penugasan teknisi resmi, jadwal, detail unit/mesin, uraian tugas, dan blok tanda tangan.
-                </div>
-              </div>
-            </div>
-            <div class="doc-option-actions">
-              <button class="btn btn-sm btn-primary" @click="handlePrintSPK(printTarget)" :disabled="isModalActionLoading">
-                🖨️ Print
-              </button>
-              <button class="btn btn-sm btn-outline" @click="handleDownloadSPK(printTarget)" :disabled="isModalActionLoading">
                 📥 PDF
               </button>
             </div>
