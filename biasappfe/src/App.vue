@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import router from './router'
 import AdminLayout from './components/layout/AdminLayout.vue'
 import ToastHost from './components/ui/ToastHost.vue'
 import { useAuth } from './composables/useAuth'
 
-const route = useRoute()
+const currentRoute = router.currentRoute
 const { isAuthenticated, refreshPermissions } = useAuth()
-const isPublicPage = computed(() => route.name === 'login' || route.name === 'verifyPayment')
+const isPublicPage = computed(() => currentRoute.value.name === 'login' || currentRoute.value.name === 'verifyPayment')
 
 let permissionRefreshInterval: ReturnType<typeof setInterval> | undefined
 
