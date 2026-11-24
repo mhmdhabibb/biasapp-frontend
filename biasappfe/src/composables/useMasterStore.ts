@@ -121,7 +121,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/technician/call-services/:id/service-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests", "brands", "unitTypes"],
   "/technician/call-services/:id/technical-report": ["serviceReports", "jobOrders", "technicians", "units", "customers", "products", "sparepartRequests", "brands", "unitTypes"],
   "/technician/call-services/:id": ["jobOrders", "serviceReports", "deliveryOrders", "technicians", "units", "customers", "products", "brands", "unitTypes"],
-  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers"],
+  "/technician/call-services": ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "units", "customers", "products", "brands"],
   "/technician/maintenance": ["jobOrders", "serviceReports", "units", "technicians", "customers", "brands", "unitTypes", "products", "rents", "contractItems"],
   "/technician/sparepart-request": ["sparepartRequests", "serviceReports", "units", "products"],
   "/technician/meter-readings": ["monthlyMeterReadings", "contractItems", "units", "customers", "technicians", "serviceReports"],

@@ -30,7 +30,7 @@ onMounted(() => {
   ensureResourcesLoaded(route.path)
 })
 
-useAutoRefresh(15000, ["jobOrders", "serviceReports", "technicians", "customers", "units"])
+useAutoRefresh(15000, ["jobOrders", "deliveryOrders", "serviceReports", "technicians", "customers", "units", "products"])
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
@@ -59,8 +59,11 @@ const filterServiceNo = ref('')
 function isDeliveryJob(job: any): boolean {
   if (!job) return false
   if (job.delivery_order_id) return true
+  if (String(job.job_type || '').toLowerCase() === 'delivery') return true
   const d = job.delivery_order
-  return !!d && (!!d.id || !!d.do_number)
+  if (d && (d.id || d.do_number)) return true
+  if (String(job.job_order_no || '').startsWith('Bi/DO') || String(job.job_order_no || '').startsWith('DO')) return true
+  return false
 }
 
 function isSurveyJob(job: any): boolean {
@@ -95,20 +98,39 @@ function getJobUnitDisplay(job: any): string {
   if (isSurveyJob(job)) {
     return job.survey?.recommended_model || job.survey?.unit?.model || 'Survey Lokasi'
   }
+
+  // If it's a delivery job or has delivery order, look up delivery items
+  if (isDeliveryJob(job) || job.delivery_order || job.delivery_order_id) {
+    const d = job.delivery_order || (job.delivery_order_id ? masterStore.deliveryOrders?.find((doItem: any) => String(doItem.id) === String(job.delivery_order_id)) : null)
+    const items = d?.delivery_order_items?.length ? d.delivery_order_items : (d?.items?.length ? d.items : [])
+    if (items.length > 0) {
+      const itemNames = items.map((i: any) => {
+        let name = i.unit?.model || (i.unit_id ? getUnitName(i.unit_id) : '')
+        if (!name || name === '-') {
+          const prod = i.product || (i.product_id ? masterStore.findProduct(i.product_id) : null)
+          name = prod?.name || i.item_name || i.name || i.description || ''
+        }
+        if (!name || name === '-') {
+          name = i.model || '-'
+        }
+        if (i.qty && i.qty > 1) {
+          name += ` (x${i.qty})`
+        }
+        return name
+      }).filter((n: string) => n && n !== '-')
+
+      if (itemNames.length > 0) {
+        return itemNames.join(', ')
+      }
+    }
+  }
+
   const directUnit = job.unit?.model || job.service_report?.unit?.model || job.service_request?.unit?.model
   if (directUnit) return directUnit
   const uid = jobUnitId(job)
   if (uid) {
     const uName = getUnitName(uid)
     if (uName && uName !== '-') return uName
-  }
-  if (job.delivery_order?.items?.length) {
-    const itemWithUnit = job.delivery_order.items.find((i: any) => i.unit?.model || i.unit_id)
-    if (itemWithUnit?.unit?.model) return itemWithUnit.unit.model
-    if (itemWithUnit?.unit_id) {
-      const uName = getUnitName(itemWithUnit.unit_id)
-      if (uName && uName !== '-') return uName
-    }
   }
   return '-'
 }
@@ -330,7 +352,7 @@ async function exportToPdf() {
               <td style="padding: 6px 8px; border: 1px solid #e2e8f0; font-weight: bold;">${jobRefNo(job)}</td>
               <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${isSurveyJob(job) ? 'SURVEY' : isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE'}</td>
               <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${job.survey?.customer?.company_name || job.service_report?.customer?.company_name || job.service_request?.customer?.company_name || job.delivery_order?.customer?.company_name || getCustomerName(jobCustomerId(job))}</td>
-              <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${isSurveyJob(job) ? (job.survey?.recommended_model || job.survey?.unit?.model || 'Survey Lokasi') : isDeliveryJob(job) ? '-' : (job.service_report?.unit?.model || job.service_request?.unit?.model || getUnitName(jobUnitId(job)))}</td>
+              <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${getJobUnitDisplay(job)}</td>
               <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${jobDate(job) ? new Date(jobDate(job)).toLocaleString('id-ID') : '-'}</td>
               <td style="padding: 6px 8px; border: 1px solid #e2e8f0;">${(job.status || '').toUpperCase().replace('_', ' ')}</td>
             </tr>
@@ -360,7 +382,7 @@ function exportToExcel() {
     'SPK No': job.job_order_no || '-',
     'Tipe': isSurveyJob(job) ? 'SURVEY' : isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE',
     'Customer': job.survey?.customer?.company_name || job.service_report?.customer?.company_name || job.service_request?.customer?.company_name || job.delivery_order?.customer?.company_name || getCustomerName(jobCustomerId(job)),
-    'Unit / Mesin': isSurveyJob(job) ? (job.survey?.recommended_model || job.survey?.unit?.model || 'Survey Lokasi') : isDeliveryJob(job) ? '-' : (job.service_report?.unit?.model || job.service_request?.unit?.model || getUnitName(jobUnitId(job))),
+    'Unit / Mesin': getJobUnitDisplay(job),
     'Jadwal / Pengantaran': jobDate(job) ? new Date(jobDate(job)).toLocaleString('id-ID') : '-',
     'Status': (job.status || '').toUpperCase().replace('_', ' ')
   }))
@@ -411,17 +433,18 @@ function getPrintableServiceReport(job: any) {
   const linked = getLinkedServiceReport(job)
   if (linked) return linked
 
-  const d = job.delivery_order
+  const d = job.delivery_order || (job.delivery_order_id ? masterStore.deliveryOrders?.find((doItem: any) => String(doItem.id) === String(job.delivery_order_id)) : null)
   const custId = jobCustomerId(job)
   const cust = job.customer || job.survey?.customer || job.service_request?.customer || d?.customer || findCustomer(custId) || {}
 
   const uId = jobUnitId(job)
   let unit = findUnit(uId) || job.unit || job.service_request?.unit || job.service_report?.unit
 
-  const doi = (d?.items && d.items.length > 0) ? d.items[0] : ((d?.delivery_order_items && d.delivery_order_items.length > 0) ? d.delivery_order_items[0] : null)
+  const dItems = (d?.delivery_order_items && d.delivery_order_items.length > 0) ? d.delivery_order_items : (d?.items && d.items.length > 0 ? d.items : [])
+  const doi = dItems.length > 0 ? dItems[0] : null
   if (!unit && doi) {
     unit = doi.unit || findUnit(doi.unit_id) || {
-      model: doi.model || doi.product?.name || '-',
+      model: doi.model || doi.product?.name || doi.item_name || '-',
       serial_no: doi.serial_no || '-',
       brand_id: doi.brand_id,
       brand: doi.brand || findBrand(doi.brand_id),
@@ -429,12 +452,13 @@ function getPrintableServiceReport(job: any) {
     }
   }
 
-  const isCopier = isJobCopier(job)
+  const isDelivery = isDeliveryJob(job)
+  const isCopier = !isDelivery && isJobCopier(job)
 
   return {
     id: null,
     report_no: jobRefNo(job),
-    service_type: isCopier ? 'copier' : 'repair',
+    service_type: isCopier ? 'copier' : (isDelivery ? 'delivery' : 'repair'),
     customer_id: custId || cust?.id,
     customer: cust,
     customer_name: cust?.company_name || cust?.name || '',
@@ -445,17 +469,17 @@ function getPrintableServiceReport(job: any) {
     unit: unit ? { ...unit, is_copier: isCopier } : { is_copier: isCopier },
     brand: unit?.brand || doi?.brand || (doi?.brand_id ? findBrand(doi.brand_id) : null),
     brand_name: unit?.brand?.name || doi?.brand?.name || '',
-    model: unit?.model || doi?.model || doi?.product?.name || '',
+    model: unit?.model || doi?.model || doi?.product?.name || doi?.item_name || '',
     serial_no: unit?.serial_no || doi?.serial_no || '',
     technician_id: job.technician_id,
     technician: job.technician,
     technician_name: job.technician?.user?.name || job.technician?.name || '',
     service_date: jobDate(job) || new Date().toISOString(),
-    machine_problem: job.instructions || job.service_request?.problem_description || d?.problem || job.problem_description || '',
+    machine_problem: job.instructions || job.service_request?.problem_description || d?.problem || job.problem_description || (isDelivery ? (unit?.model || doi?.model || 'Pengantaran barang/unit') : ''),
     action_taken: job.action_taken || d?.action || '',
     job_order: job,
     delivery_order: d,
-    delivery_order_items: d?.items || d?.delivery_order_items || [],
+    delivery_order_items: dItems,
     service_request: job.service_request,
     is_copier: isCopier,
   }
@@ -832,8 +856,8 @@ async function handleDownloadRowJob(job: any) {
             </div>
           </div>
 
-          <!-- 2. Copier Service Report (Hanya jika Unit Mesin Copier) -->
-          <div v-if="isJobCopier(printTarget)" class="doc-option-card">
+          <!-- 2. Copier Service Report (Hanya jika Unit Mesin Copier dan BUKAN Delivery) -->
+          <div v-if="!isDeliveryJob(printTarget) && isJobCopier(printTarget)" class="doc-option-card">
             <div class="doc-option-left">
               <div class="doc-badge-copier">COPIER</div>
               <div>
@@ -853,8 +877,8 @@ async function handleDownloadRowJob(job: any) {
             </div>
           </div>
 
-          <!-- 3. Technical Report Form (Hanya jika Unit BUKAN Copier) -->
-          <div v-else class="doc-option-card">
+          <!-- 3. Technical Report Form (Hanya jika Unit BUKAN Copier dan BUKAN Delivery) -->
+          <div v-else-if="!isDeliveryJob(printTarget)" class="doc-option-card">
             <div class="doc-option-left">
               <div class="doc-badge-tech">TECHNICAL</div>
               <div>

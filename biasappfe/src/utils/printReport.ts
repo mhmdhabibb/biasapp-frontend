@@ -94,6 +94,7 @@ interface ReportCtx {
   dateStr: string;
   contract: any;
   isCopier: boolean;
+  isSparepart?: boolean;
 }
 
 function fmtTime(v: any): string {
@@ -278,6 +279,7 @@ function buildCtx(item: any): ReportCtx {
     contract:
       masterStore.findContractItem(item.contract_item_id) || contractByUnit,
     isCopier: !!u.is_copier || (u.model || '').toLowerCase().includes('copier') || (item.service_type || '').toLowerCase() === 'copier',
+    isSparepart: !!item.is_sparepart || !!(doi?.product_id || doi?.product || item.product_id || (!u.id && !doi?.unit_id && (doi?.model || doi?.name || item.model))),
   };
 }
 
@@ -696,7 +698,7 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
       <div class="section-title">PRODUCT DETAIL</div>
       <table class="data-table">
         <tr><td class="label-col">Brand</td><td class="val-col">${ctx.brandName || ctx.brand?.name || "-"}</td></tr>
-        <tr><td class="label-col">Product Type</td><td class="val-col">${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td></tr>
+        <tr><td class="label-col">Product Type</td><td class="val-col">${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : ctx.isSparepart ? "Sparepart / Consumable" : "Printer / Non-Photocopy"}</td></tr>
         <tr><td class="label-col">Model/Type</td><td class="val-col">${ctx.modelName || "-"}</td></tr>
         <tr><td class="label-col">Serial Number</td><td class="val-col">${ctx.serialNo || "-"}</td></tr>
         <tr><td class="label-col" style="min-height: 38px;">Problem</td><td class="val-col">${formatMachineProblem(item) || "-"}</td></tr>
@@ -1029,23 +1031,99 @@ export async function printPhotoDokumentasi(items: any | any[]) {
 
 export type ReportType = 'technical' | 'history' | 'copier';
 
+function getReportItems(item: any): any[] {
+  const d = item.delivery_order || item.job_order?.delivery_order || (item.do_number ? item : null);
+  const items = (Array.isArray(item.delivery_order_items) && item.delivery_order_items.length > 0)
+    ? item.delivery_order_items
+    : (Array.isArray(d?.delivery_order_items) && d.delivery_order_items.length > 0)
+      ? d.delivery_order_items
+      : (Array.isArray(d?.items) && d.items.length > 0)
+        ? d.items
+        : [];
+  return items;
+}
+
+function buildSubItemReport(baseReport: any, subItem: any, index: number, total: number): any {
+  const masterStore = useMasterStore();
+  const subUnit = subItem.unit || (subItem.unit_id ? masterStore.findUnit(subItem.unit_id) : null);
+  const subProd = subItem.product || (subItem.product_id ? masterStore.findProduct(subItem.product_id) : null);
+  const subBrand = subUnit?.brand || (subUnit?.brand_id ? masterStore.findBrand(subUnit.brand_id) : null) || subProd?.brand || (subItem.brand_id ? masterStore.findBrand(subItem.brand_id) : null);
+
+  const rawModel = subUnit?.model || subProd?.name || subProd?.model || subItem.item_name || subItem.name || subItem.model || '-';
+  const qtyStr = subItem.qty && subItem.qty > 1 ? ` (Qty: ${subItem.qty})` : '';
+  const model = `${rawModel}${qtyStr}`;
+  const serialNo = subUnit?.serial_no || subItem.serial_no || '-';
+
+  const isCopier = !!subUnit?.is_copier || (rawModel || '').toLowerCase().includes('copier');
+  const isComputer = !!subUnit?.is_computer || (rawModel || '').toLowerCase().includes('computer') || (rawModel || '').toLowerCase().includes('pc');
+  const isSparepart = !subUnit && (!!subProd || !!subItem.product_id || (!subItem.unit_id && !subUnit));
+
+  const baseRef = baseReport.report_no || baseReport.job_order_no || baseReport.do_number || (baseReport.id ? `SR-${baseReport.id}` : '-');
+  const serviceNo = total > 1 ? `${baseRef} (${index + 1}/${total})` : baseRef;
+
+  return {
+    ...baseReport,
+    report_no: serviceNo,
+    unit_id: subItem.unit_id || subUnit?.id,
+    unit: subUnit || {
+      model,
+      serial_no: serialNo,
+      brand: subBrand,
+      is_copier: isCopier,
+      is_computer: isComputer,
+    },
+    brand: subBrand,
+    brand_name: subBrand?.name || subUnit?.brand?.name || '',
+    model,
+    serial_no: serialNo,
+    machine_problem: baseReport.machine_problem || (baseReport.delivery_order?.do_number || baseReport.do_number ? `Pengantaran: ${rawModel}${qtyStr}` : ''),
+    remarks: subItem.notes || subItem.remarks || baseReport.remarks || '-',
+    delivery_order_items: [subItem],
+    is_copier: isCopier,
+    is_sparepart: isSparepart,
+  };
+}
+
 /**
  * All forms applicable to this report, in order or by type.
  */
 function getReportPages(item: any, type?: ReportType): string[] {
   const ctx = buildCtx(item);
   let pages: string[] = [];
-  
-  if (type === 'technical') pages = [technicalReportBody(item, ctx)];
-  else if (type === 'history') pages = [serviceReportBody(item, ctx)];
-  else if (type === 'copier') pages = ctx.isCopier ? [copierServiceReportBody(item, ctx)] : [];
-  else {
-    pages = [technicalReportBody(item, ctx), serviceReportBody(item, ctx)];
+  const subItems = getReportItems(item);
+
+  if (type === 'technical') {
+    pages = [technicalReportBody(item, ctx)];
+  } else if (type === 'history') {
+    if (subItems.length > 1) {
+      pages = subItems.map((sub, idx) => {
+        const subReport = buildSubItemReport(item, sub, idx, subItems.length);
+        const subCtx = buildCtx(subReport);
+        return serviceReportBody(subReport, subCtx);
+      });
+    } else {
+      pages = [serviceReportBody(item, ctx)];
+    }
+  } else if (type === 'copier') {
+    pages = ctx.isCopier ? [copierServiceReportBody(item, ctx)] : [];
+  } else {
+    if (subItems.length > 1) {
+      pages = subItems.map((sub, idx) => {
+        const subReport = buildSubItemReport(item, sub, idx, subItems.length);
+        const subCtx = buildCtx(subReport);
+        return serviceReportBody(subReport, subCtx);
+      });
+    } else {
+      pages = [serviceReportBody(item, ctx)];
+    }
+    if (!item.delivery_order && !item.delivery_order_items?.length && !item.do_number) {
+      pages.unshift(technicalReportBody(item, ctx));
+    }
     if (ctx.isCopier) {
       pages.push(copierServiceReportBody(item, ctx));
     }
   }
-  
+
   return pages;
 }
 
@@ -1223,6 +1301,7 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
       image: { type: "jpeg", quality: 0.95 },
       html2canvas: { scale: 1.75, useCORS: false, logging: false },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
     };
 
     try {
