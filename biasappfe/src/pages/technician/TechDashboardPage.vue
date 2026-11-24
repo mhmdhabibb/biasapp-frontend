@@ -42,15 +42,23 @@ const {
   refresh,
 } = useMasterStore();
 
-onMounted(() => {
-  ensureResourcesLoaded(route.path)
-  fetchDemoMode(true)
-})
+// Date filter tab: 'today' | 'upcoming' | 'all' | 'custom'
+const dateFilterTab = ref<'today' | 'upcoming' | 'all' | 'custom'>('today');
+const customFilterDate = ref('');
 
-const { isDemoMode, fetchDemoMode } = useDemoMode()
-watch(isDemoMode, (val) => {
-  dateFilterTab.value = val ? 'all' : 'today'
-}, { immediate: true })
+const { isDemoMode, fetchDemoMode } = useDemoMode();
+watch(
+  isDemoMode,
+  (val) => {
+    dateFilterTab.value = val ? 'all' : 'today';
+  },
+  { immediate: true }
+);
+
+onMounted(() => {
+  ensureResourcesLoaded(route.path);
+  fetchDemoMode(true);
+});
 
 useAutoRefresh(10000, [
   "jobOrders",
@@ -125,10 +133,6 @@ const isJobScheduledToday = (job: any) => {
   const d = getJobScheduledDate(job);
   return toLocalDateStr(d) === todayStr.value;
 };
-
-// Date filter tab: 'today' | 'upcoming' | 'all' | 'custom'
-const dateFilterTab = ref<'today' | 'upcoming' | 'all' | 'custom'>('today');
-const customFilterDate = ref('');
 
 const allActiveJobs = computed(() =>
   myJobs.value.filter(

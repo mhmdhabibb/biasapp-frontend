@@ -7,9 +7,11 @@ const props = withDefaults(defineProps<{
   maxWidth?: string
   minHeight?: string
   submitLabel?: string
+  loading?: boolean
 }>(), {
   maxWidth: '520px',
   submitLabel: 'Save',
+  loading: false,
 })
 const emit = defineEmits<{
   (e: 'close'): void
@@ -64,8 +66,11 @@ onUnmounted(() => {
 
           <div class="modal-footer">
             <slot name="footer">
-              <button class="btn btn-outline" @click="emit('close')">Cancel</button>
-              <button class="btn btn-accent" @click="emit('submit')">{{ props.submitLabel || 'Save' }}</button>
+              <button class="btn btn-outline" :disabled="props.loading" @click="emit('close')">Cancel</button>
+              <button class="btn btn-accent" :disabled="props.loading" @click="emit('submit')">
+                <span v-if="props.loading">Menyimpan...</span>
+                <span v-else>{{ props.submitLabel || 'Save' }}</span>
+              </button>
             </slot>
           </div>
         </div>
