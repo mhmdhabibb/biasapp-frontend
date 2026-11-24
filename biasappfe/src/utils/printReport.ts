@@ -1284,31 +1284,20 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
   }
   try {
     const { default: html2pdf } = await import("html2pdf.js");
-    const html = wrapDocument(pages, false);
     const container = document.createElement("div");
-    container.style.position = "fixed";
-    container.style.left = "-9999px";
-    container.style.top = "0";
-    container.style.width = "210mm";
-    container.style.background = "#fff";
-    container.innerHTML = html;
-    document.body.appendChild(container);
+    container.innerHTML = `<style>${CSS}</style>` + pages.map((p) => `<div class="page">${p}</div>`).join("\n");
 
     const reportNo = (fullItem.report_no || `SR-${fullItem.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
     const opt: any = {
       margin: [6, 6, 6, 6],
       filename: `Laporan_Servis_${reportNo}.pdf`,
       image: { type: "jpeg", quality: 0.95 },
-      html2canvas: { scale: 1.75, useCORS: false, logging: false },
+      html2canvas: { scale: 1.75, useCORS: true, logging: false },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     };
 
-    try {
-      await html2pdf().set(opt).from(container).save();
-    } finally {
-      container.remove();
-    }
+    await html2pdf().set(opt).from(container).save();
     return true;
   } catch (e) {
     console.error("Failed to download service report pdf:", e);
