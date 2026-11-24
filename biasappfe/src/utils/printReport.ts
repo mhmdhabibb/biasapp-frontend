@@ -1148,17 +1148,19 @@ function getReportPages(item: any, type?: ReportType): string[] {
 
 const CSS = `
   @media print {
-    @page { margin: 10mm; }
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .page { page-break-after: always; break-after: page; margin: 0; }
+    @page { size: A4 portrait; margin: 8mm 6mm; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 0; margin: 0; }
+    .page { page-break-after: always; break-after: page; margin: 0; padding: 0; }
     .page:last-child { page-break-after: auto; break-after: auto; }
   }
-  body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 20px; color: #000; background: #fff; }
+  body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 12px; color: #000; background: #fff; }
   .page {
     page-break-after: always;
     break-after: page;
     page-break-inside: avoid;
     break-inside: avoid;
+    width: 100%;
+    box-sizing: border-box;
     margin-bottom: 24px;
   }
   .page:last-child {
@@ -1173,7 +1175,7 @@ const CSS = `
     display: block;
     clear: both;
   }
-  .container { max-width: 800px; margin: 0 auto; border: 2px solid #000; box-sizing: border-box; }
+  .container { width: 100%; max-width: 790px; margin: 0 auto; border: 2px solid #000; box-sizing: border-box; background: #fff; }
   .header-table { width: 100%; border-collapse: collapse; }
   .header-table td { padding: 10px; }
   .logo-col { width: 100px; vertical-align: middle; border-bottom: 2px solid #000; }
@@ -1325,10 +1327,10 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
 
     const reportNo = (fullItem.report_no || `SR-${fullItem.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
     const opt: any = {
-      margin: [6, 6, 6, 6],
+      margin: [8, 8, 8, 8],
       filename: `Laporan_Servis_${reportNo}.pdf`,
-      image: { type: "jpeg", quality: 0.95 },
-      html2canvas: { scale: 1.75, useCORS: true, logging: false },
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"], after: [".page", ".html2pdf__page-break"] },
     };
