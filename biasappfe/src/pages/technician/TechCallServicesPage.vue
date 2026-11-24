@@ -11,7 +11,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { printServiceReport, downloadServiceReportPdf, type ReportType } from '@/utils/printReport'
 import { isCopierReport } from '@/utils/copierReport'
-import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import * as XLSX from 'xlsx'
 
 const router = useRouter()
@@ -412,30 +411,51 @@ function getPrintableServiceReport(job: any) {
   const linked = getLinkedServiceReport(job)
   if (linked) return linked
 
+  const d = job.delivery_order
   const custId = jobCustomerId(job)
-  const cust = job.customer || job.survey?.customer || job.service_request?.customer || job.delivery_order?.customer || findCustomer(custId)
+  const cust = job.customer || job.survey?.customer || job.service_request?.customer || d?.customer || findCustomer(custId) || {}
+
   const uId = jobUnitId(job)
-  const unit = findUnit(uId) || job.unit || job.service_request?.unit || job.service_report?.unit
+  let unit = findUnit(uId) || job.unit || job.service_request?.unit || job.service_report?.unit
+
+  const doi = (d?.items && d.items.length > 0) ? d.items[0] : ((d?.delivery_order_items && d.delivery_order_items.length > 0) ? d.delivery_order_items[0] : null)
+  if (!unit && doi) {
+    unit = doi.unit || findUnit(doi.unit_id) || {
+      model: doi.model || doi.product?.name || '-',
+      serial_no: doi.serial_no || '-',
+      brand_id: doi.brand_id,
+      brand: doi.brand || findBrand(doi.brand_id),
+      is_copier: doi.is_copier,
+    }
+  }
+
   const isCopier = isJobCopier(job)
 
   return {
     id: null,
     report_no: jobRefNo(job),
     service_type: isCopier ? 'copier' : 'repair',
-    customer_id: custId,
+    customer_id: custId || cust?.id,
     customer: cust,
     customer_name: cust?.company_name || cust?.name || '',
-    customer_address: getJobAddress(job),
-    customer_phone: cust?.phone || '',
-    pic_name: cust?.pic_name || cust?.contact_person || '',
-    unit_id: uId,
+    customer_address: getJobAddress(job) || cust?.address || '',
+    customer_phone: cust?.phone || d?.recipient_phone || '',
+    pic_name: cust?.pic_name || cust?.contact_person || d?.recipient_name || '',
+    unit_id: uId || unit?.id || doi?.unit_id,
     unit: unit ? { ...unit, is_copier: isCopier } : { is_copier: isCopier },
+    brand: unit?.brand || doi?.brand || (doi?.brand_id ? findBrand(doi.brand_id) : null),
+    brand_name: unit?.brand?.name || doi?.brand?.name || '',
+    model: unit?.model || doi?.model || doi?.product?.name || '',
+    serial_no: unit?.serial_no || doi?.serial_no || '',
     technician_id: job.technician_id,
     technician: job.technician,
+    technician_name: job.technician?.user?.name || job.technician?.name || '',
     service_date: jobDate(job) || new Date().toISOString(),
-    machine_problem: job.instructions || job.service_request?.problem_description || job.problem_description || '',
-    action_taken: job.action_taken || '',
+    machine_problem: job.instructions || job.service_request?.problem_description || d?.problem || job.problem_description || '',
+    action_taken: job.action_taken || d?.action || '',
     job_order: job,
+    delivery_order: d,
+    delivery_order_items: d?.items || d?.delivery_order_items || [],
     service_request: job.service_request,
     is_copier: isCopier,
   }
@@ -449,11 +469,6 @@ function openPrintModal(job: any) {
 
 // ── 1. Service History ──
 async function handlePrintServiceHistory(job: any) {
-  if (isDeliveryJob(job) && job.delivery_order) {
-    toast.info('Membuka dialog cetak Service History Pengiriman...')
-    await printDeliveryServiceHistory(job.delivery_order || { id: job.delivery_order_id })
-    return
-  }
   const report = getPrintableServiceReport(job)
   toast.info('Membuka dialog cetak Service History...')
   await printServiceReport(report, 'history')
@@ -462,13 +477,8 @@ async function handlePrintServiceHistory(job: any) {
 async function handleDownloadServiceHistory(job: any) {
   isModalActionLoading.value = true
   toast.info('Menyiapkan Service History PDF...')
-  let ok = false
-  if (isDeliveryJob(job) && job.delivery_order) {
-    ok = await downloadDeliveryOrderPdf(job.delivery_order || { id: job.delivery_order_id })
-  } else {
-    const report = getPrintableServiceReport(job)
-    ok = await downloadServiceReportPdf(report, 'history')
-  }
+  const report = getPrintableServiceReport(job)
+  const ok = await downloadServiceReportPdf(report, 'history')
   isModalActionLoading.value = false
   if (ok) toast.success('Service History PDF berhasil didownload')
   else toast.error('Gagal mendownload Service History PDF')

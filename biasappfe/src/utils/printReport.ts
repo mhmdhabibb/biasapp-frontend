@@ -1,6 +1,7 @@
 import { useMasterStore } from "@/composables/useMasterStore";
 import { api } from "@/services/api";
 import { formatUnitDisplayName } from "@/utils/format";
+import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
 
 export function isImageSrc(s: any): boolean {
   if (!s || typeof s !== 'string') return false;
@@ -113,14 +114,25 @@ function fmtTime(v: any): string {
 function buildCtx(item: any): ReportCtx {
   const masterStore = useMasterStore();
 
-  const customer: any = masterStore.findCustomer(item.customer_id) || {};
-  const doi = (item.delivery_order_items && item.delivery_order_items.length > 0) ? item.delivery_order_items[0] : null;
-  const unitId = item.unit_id || (doi ? doi.unit_id : null);
+  const customer: any =
+    item.customer ||
+    (item.customer_id ? masterStore.findCustomer(item.customer_id) : null) ||
+    item.job_order?.customer ||
+    item.job_order?.delivery_order?.customer ||
+    item.delivery_order?.customer ||
+    item.service_request?.customer ||
+    item.survey?.customer ||
+    {};
+
+  const doi = (item.delivery_order_items && item.delivery_order_items.length > 0)
+    ? item.delivery_order_items[0]
+    : ((item.delivery_order?.items || item.delivery_order?.delivery_order_items || item.job_order?.delivery_order?.items || item.job_order?.delivery_order?.delivery_order_items || [])[0] || null);
+  const unitId = item.unit_id || (doi ? doi.unit_id : null) || item.job_order?.unit_id;
 
   let u: any = masterStore.findUnit(unitId) || item.unit || {};
-  if (!u.id && doi && (doi.model || doi.serial_no)) {
-    u = {
-      model: doi.model,
+  if (!u.id && doi && (doi.model || doi.serial_no || doi.unit)) {
+    u = doi.unit || {
+      model: doi.model || doi.product?.name,
       serial_no: doi.serial_no,
       brand_id: doi.brand_id,
       unit_type_id: doi.unit_type_id,
@@ -129,25 +141,26 @@ function buildCtx(item: any): ReportCtx {
     };
   }
   if (!u.id || !u.model) {
-    const linkedUnit = item.job_order?.unit || item.job_order?.service_request?.unit || item.service_request?.unit;
+    const linkedUnit = item.job_order?.unit || item.job_order?.service_request?.unit || item.service_request?.unit || item.delivery_order?.items?.[0]?.unit;
     if (linkedUnit) {
       u = { ...linkedUnit, ...u };
     }
   }
 
-  let brand: any = u.brand || masterStore.findBrand(u.brand_id) || (doi?.brand_id ? masterStore.findBrand(doi.brand_id) : null) || item.brand;
+  let brand: any = u.brand || masterStore.findBrand(u.brand_id) || (doi?.brand_id ? masterStore.findBrand(doi.brand_id) : null) || item.brand || doi?.brand;
   let brandName = (
     brand?.name ||
     u.brand_name ||
     (typeof u.brand === 'string' ? u.brand : '') ||
     item.brand_name ||
     (typeof item.brand === 'string' ? item.brand : '') ||
+    doi?.brand?.name ||
     ''
   ).trim();
 
   // Heuristic brand detection if empty or '-'
   if (!brandName || brandName === '-') {
-    const hay = `${u.model || ''} ${u.name || ''} ${item.project_name || ''} ${item.machine_problem || ''}`;
+    const hay = `${u.model || ''} ${u.name || ''} ${doi?.model || ''} ${item.project_name || ''} ${item.machine_problem || ''}`;
     if (/\b(epson|ecotank|workforce|stylus|surecolor)\b/i.test(hay)) brandName = 'Epson';
     else if (/\b(canon|imagerunner|ir\s*\d+|ir-adv|pixma|maxify)\b/i.test(hay)) brandName = 'Canon';
     else if (/\b(hp|laserjet|deskjet|pagewide|designjet|officejet)\b/i.test(hay)) brandName = 'HP';
@@ -161,7 +174,7 @@ function buildCtx(item: any): ReportCtx {
     brand = { name: brandName };
   }
 
-  let modelName = (u.model || doi?.model || item.model || u.name || '').trim();
+  let modelName = (u.model || doi?.model || doi?.product?.name || item.model || u.name || '').trim();
   if (!modelName || modelName === '-') {
     modelName = (u.name || doi?.name || item.unit_name || '').trim();
   }
@@ -210,6 +223,40 @@ function buildCtx(item: any): ReportCtx {
 
   const rawDate = item.service_date || item.delivery_date || item.created_at;
 
+  const custName = (
+    customer.company_name ||
+    customer.name ||
+    item.customer_name ||
+    item.job_order?.customer?.company_name ||
+    item.delivery_order?.customer?.company_name ||
+    "-"
+  ).trim();
+
+  const custPhone = (
+    customer.phone ||
+    item.customer_phone ||
+    item.recipient_phone ||
+    customer.pic_phone ||
+    "-"
+  ).trim();
+
+  const picName = (
+    customer.pic_name ||
+    customer.contact_person ||
+    item.pic_name ||
+    item.recipient_name ||
+    "-"
+  ).trim();
+
+  const custAddress = (
+    item.customer_address ||
+    item.delivery_address ||
+    customer.address ||
+    item.job_order?.delivery_order?.delivery_address ||
+    item.delivery_order?.delivery_address ||
+    "-"
+  ).trim();
+
   return {
     masterStore,
     customer,
@@ -220,10 +267,10 @@ function buildCtx(item: any): ReportCtx {
     serialNo,
     unitDisplayName,
     tech,
-    custName: customer.company_name || customer.name || "-",
-    custPhone: customer.phone || item.recipient_phone || "-",
-    picName: customer.pic_name || item.recipient_name || item.customer_name || "-",
-    custAddress: item.delivery_address || customer.address || "-",
+    custName,
+    custPhone,
+    picName,
+    custAddress,
     custCategory: item.customer_category || customer.category || "Corporate",
     dateStr: rawDate
       ? new Date(rawDate).toLocaleDateString("en-GB")
@@ -234,13 +281,11 @@ function buildCtx(item: any): ReportCtx {
   };
 }
 
-import biasLogoUrl from '@/assets/bias-logo.png';
-
 const companyHeaderHtml = `
   <table class="header-table">
     <tr>
       <td class="logo-col">
-        <img src="${biasLogoUrl}" class="logo" alt="BiAS Logo" style="width: 75px; height: 75px; object-fit: contain;" />
+        <img src="${BIAS_LOGO_DATA_URL}" class="logo" alt="BiAS Logo" style="width: 75px; height: 75px; object-fit: contain;" />
       </td>
       <td class="info-col">
         <div class="company-name">PT. BIAS SURYA TEKNOLOGI</div>
@@ -539,20 +584,25 @@ function signatureBlockHtml(item: any, ctx: ReportCtx, type: 'technical' | 'hist
     : (item.technician_name || ctx.tech.user?.name || ctx.tech.name || ctx.tech.full_name || "");
   const custName = (type === 'technical' && item.customer_name_technical)
     ? item.customer_name_technical
-    : (item.customer_name || ctx.picName);
+    : (ctx.picName !== '-' ? ctx.picName : (ctx.custName !== '-' ? ctx.custName : ''));
+
   return `
     <div class="signature-block">
       <div class="sig-side">
-        <div>TECHNICIAN</div>
-        <div class="sig-line">${isImageSrc(techSig) ? '<img src="' + techSig + '" style="max-height: 50px;" />' : "<br><br><br>"}</div>
-        <div class="sig-name">${techName}</div>
-      </div>
-      <div class="sig-side sig-customer">
-        <div class="sig-cust">CUSTOMER<br>
-          ${isImageSrc(custSig) ? '<img src="' + custSig + '" style="max-height: 50px;" />' : ""}
-          <div class="sig-name">${custName}</div>
+        <div class="sig-title">TECHNICIAN</div>
+        <div class="sig-line">
+          ${isImageSrc(techSig) ? '<img src="' + techSig + '" style="max-height: 52px; max-width: 90%; object-fit: contain;" />' : '<div style="height: 48px;"></div>'}
         </div>
-        <div class="sig-stamp">Signature & Company Stamp</div>
+        <div class="sig-name">${techName || '-'}</div>
+        <div class="sig-role">Teknisi</div>
+      </div>
+      <div class="sig-side">
+        <div class="sig-title">CUSTOMER</div>
+        <div class="sig-line">
+          ${isImageSrc(custSig) ? '<img src="' + custSig + '" style="max-height: 52px; max-width: 90%; object-fit: contain;" />' : '<div style="height: 48px;"></div>'}
+        </div>
+        <div class="sig-name">${custName || '-'}</div>
+        <div class="sig-role">Tanda Tangan &amp; Cap Perusahaan</div>
       </div>
     </div>
   `;
@@ -623,53 +673,56 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
    FORM 2 — SERVICE REPORT FORM
    ========================================================= */
 function serviceReportBody(item: any, ctx: ReportCtx): string {
+  const serviceNo = item.report_no || item.job_order_no || item.do_number || (item.id ? `SR-${item.id}` : "-");
   return `
     <div class="container">
       ${companyHeaderHtml}
-      <div class="title-bar" style="font-size: 22px;">SERVICE HISTORY</div>
+      <div class="title-bar" style="font-size: 20px;">SERVICE HISTORY</div>
       <table class="meta-table">
-       
-       
         <tr>
-          <td>Date In ${ctx.dateStr}</td>
-       
+          <td>SERVICE NO : ${serviceNo}</td>
+          <td class="right-col">DATE : ${ctx.dateStr}</td>
         </tr>
       </table>
       <div class="section-title">CUSTOMER DETAIL</div>
       <table class="data-table">
-        <tr><td class="label-col">Company Name</td><td class="val-col"> ${ctx.custName}</td></tr>
-        <tr><td class="label-col">Customer Type</td><td class="val-col"> ${ctx.custCategory}</td></tr>
-        <tr><td class="label-col">Project Name</td><td class="val-col"> ${item.project_name || "-"}</td></tr>
-        <tr><td class="label-col">Address</td><td class="val-col"> ${ctx.custAddress}</td></tr>
-        <tr><td class="label-col">Phone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
-        <tr><td class="label-col">Personnel Incharges</td><td class="val-col"> ${ctx.picName}</td></tr>
+        <tr><td class="label-col">Company Name</td><td class="val-col">${ctx.custName}</td></tr>
+        <tr><td class="label-col">Customer Type</td><td class="val-col">${ctx.custCategory}</td></tr>
+        <tr><td class="label-col">Project Name</td><td class="val-col">${item.project_name || "-"}</td></tr>
+        <tr><td class="label-col">Address</td><td class="val-col">${ctx.custAddress}</td></tr>
+        <tr><td class="label-col">Phone</td><td class="val-col">${ctx.custPhone}</td></tr>
+        <tr><td class="label-col">Personnel Incharge</td><td class="val-col">${ctx.picName}</td></tr>
       </table>
-       <div class="section-title">PRODUCT DETAIL</div>
+      <div class="section-title">PRODUCT DETAIL</div>
       <table class="data-table">
-        <tr><td class="label-col">Brand</td><td class="val-col"> ${ctx.brandName || ctx.brand?.name || "-"}</td></tr>
-        <tr><td class="label-col">Product Type</td><td class="val-col">  ${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td></tr>
-        <tr><td class="label-col">Model/Type</td><td class="val-col"> ${ctx.modelName || "-"}</td></tr>
-        <tr><td class="label-col">Serial Number</td><td class="val-col"> ${ctx.serialNo || "-"}</td></tr>
-        <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col"> ${formatMachineProblem(item) || "-"}</td></tr>
-       
-        
-        <tr><td class="label-col" style="height: 40px;">Remarks</td><td class="val-col"> ${item.remarks || item.notes || item.action || "-"}</td></tr>
+        <tr><td class="label-col">Brand</td><td class="val-col">${ctx.brandName || ctx.brand?.name || "-"}</td></tr>
+        <tr><td class="label-col">Product Type</td><td class="val-col">${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td></tr>
+        <tr><td class="label-col">Model/Type</td><td class="val-col">${ctx.modelName || "-"}</td></tr>
+        <tr><td class="label-col">Serial Number</td><td class="val-col">${ctx.serialNo || "-"}</td></tr>
+        <tr><td class="label-col" style="min-height: 38px;">Problem</td><td class="val-col">${formatMachineProblem(item) || "-"}</td></tr>
+        <tr><td class="label-col" style="min-height: 38px;">Remarks / Action</td><td class="val-col">${item.remarks || item.notes || item.action || item.repair_action || "-"}</td></tr>
       </table>
- 
+
       <table class="bottom-table">
         <tr>
           <td style="width: 50%; border-right: 2px solid #000;">
-            <div style="margin-bottom: 20px;">TESTED YES / NO</div>
+            <div style="font-weight: bold; margin-bottom: 4px;">TESTED YES / NO</div>
+            <div style="font-size: 10px; color: #444; line-height: 1.4;">
+              Unit telah diperiksa dan diuji coba sesuai standar operasional PT. BIAS SURYA TEKNOLOGI.
+            </div>
           </td>
-          <td>
-            <div class="kv"><div class="kv-k">Tested</div><div>${item.is_tested ? "YES" : "NO"}</div></div>
-            <div class="kv"><div class="kv-k">Complete</div><div>${item.is_completed ? "YES" : "NO"}</div></div>
-            <div class="kv"><div class="kv-k">Time in</div><div>${fmtTime(item.time_in)}</div></div>
-            <div class="kv"><div class="kv-k">Time Out</div><div>${fmtTime(item.time_out)}</div></div>
+          <td style="width: 50%;">
+            <table class="tested-table">
+              <tr><td class="tt-label">Tested</td><td class="tt-val">${item.is_tested ? "YES" : "NO"}</td></tr>
+              <tr><td class="tt-label">Complete</td><td class="tt-val">${item.is_completed ? "YES" : "NO"}</td></tr>
+              <tr><td class="tt-label">Time In</td><td class="tt-val">${fmtTime(item.time_in)}</td></tr>
+              <tr><td class="tt-label">Time Out</td><td class="tt-val">${fmtTime(item.time_out)}</td></tr>
+            </table>
           </td>
         </tr>
       </table>
       ${signatureBlockHtml(item, ctx, 'history')}
+    </div>
   `;
 }
 
@@ -1040,13 +1093,12 @@ const CSS = `
   .tested-table tr:last-child td { border-bottom: none; }
   .tested-table .tt-label { width: 40%; border-right: 1px solid #000; font-weight: bold; }
   .tested-table .tt-val { padding-left: 8px; }
-  .signature-block { display: flex; justify-content: space-between; padding: 5px 20px 20px; font-weight: bold; text-align: center; }
-  .sig-side { width: 45%; }
-  .sig-line { margin-top: 20px; min-height: 50px; border-bottom: 1px solid #000; }
-  .sig-name { margin-top: 5px; }
-  .sig-customer { display: flex; flex-direction: column; justify-content: flex-end; }
-  .sig-cust { border-bottom: 1px solid #000; padding-bottom: 5px; min-height: 50px; }
-  .sig-stamp { background-color: #000; color: #fff; padding: 4px; font-size: 10px; }
+  .signature-block { display: flex; justify-content: space-between; padding: 12px 24px 20px; font-weight: bold; text-align: center; }
+  .sig-side { width: 44%; }
+  .sig-title { font-size: 12px; margin-bottom: 4px; }
+  .sig-line { min-height: 52px; border-bottom: 1.5px solid #000; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; margin-bottom: 6px; }
+  .sig-name { font-size: 11px; margin-top: 2px; }
+  .sig-role { font-size: 9px; font-weight: normal; color: #555; }
 `;
 
 function wrapDocument(pages: string[], autoPrint: boolean): string {
@@ -1143,7 +1195,6 @@ export function getServiceReportFormHtml(item: any, type?: ReportType): string {
 }
 
 export async function downloadServiceReportPdf(item: any, type?: ReportType): Promise<boolean> {
-  await ensureMasterDataLoaded();
   const fullItem = (item?.id && needsFullReportFetch(item))
     ? await fetchFullServiceReport(item)
     : item;
@@ -1157,18 +1208,28 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
     const { default: html2pdf } = await import("html2pdf.js");
     const html = wrapDocument(pages, false);
     const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-9999px";
+    container.style.top = "0";
+    container.style.width = "210mm";
+    container.style.background = "#fff";
     container.innerHTML = html;
+    document.body.appendChild(container);
 
     const reportNo = (fullItem.report_no || `SR-${fullItem.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
     const opt: any = {
       margin: [6, 6, 6, 6],
       filename: `Laporan_Servis_${reportNo}.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      image: { type: "jpeg", quality: 0.95 },
+      html2canvas: { scale: 1.75, useCORS: false, logging: false },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     };
 
-    await html2pdf().set(opt).from(container).save();
+    try {
+      await html2pdf().set(opt).from(container).save();
+    } finally {
+      container.remove();
+    }
     return true;
   } catch (e) {
     console.error("Failed to download service report pdf:", e);
