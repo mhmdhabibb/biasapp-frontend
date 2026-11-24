@@ -12,6 +12,8 @@ import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { printJobOrder, downloadJobOrderPdf } from '@/utils/printJobOrder'
 import { printDeliveryOrder, downloadDeliveryOrderPdf } from '@/utils/printDeliveryOrder'
 import { printServiceReport, downloadServiceReportPdf, type ReportType } from '@/utils/printReport'
+import { isCopierReport } from '@/utils/copierReport'
+import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import * as XLSX from 'xlsx'
 
 const router = useRouter()
@@ -319,17 +321,129 @@ function getLinkedServiceReport(job: any) {
   return srs.find(sr => String(sr.job_order_id) === String(job.id)) || null
 }
 
+function isJobCopier(job: any): boolean {
+  if (!job) return false
+  const uId = jobUnitId(job)
+  const unit = findUnit(uId) || job.unit || job.service_request?.unit || job.service_report?.unit
+  if (unit?.is_copier) return true
+
+  const uType = (unit?.type?.name || '').toLowerCase()
+  if (uType.includes('copier') || uType.includes('photocopy') || uType.includes('fotokopi')) return true
+
+  const sr = getLinkedServiceReport(job)
+  if (sr && isCopierReport(sr)) return true
+
+  const model = (unit?.model || unit?.name || job.instructions || '').toLowerCase()
+  if (model.includes('copier') || model.includes('photocopy') || model.includes('fotokopi')) return true
+
+  const jType = String(job.job_type || '').toLowerCase()
+  if (jType === 'visit' || String(job.job_order_no || '').startsWith('JOV')) return true
+
+  return false
+}
+
+function getPrintableServiceReport(job: any) {
+  if (!job) return null
+  const linked = getLinkedServiceReport(job)
+  if (linked) return linked
+
+  const custId = jobCustomerId(job)
+  const cust = job.customer || job.survey?.customer || job.service_request?.customer || job.delivery_order?.customer || findCustomer(custId)
+  const uId = jobUnitId(job)
+  const unit = findUnit(uId) || job.unit || job.service_request?.unit || job.service_report?.unit
+  const isCopier = isJobCopier(job)
+
+  return {
+    id: null,
+    report_no: jobRefNo(job),
+    service_type: isCopier ? 'copier' : 'repair',
+    customer_id: custId,
+    customer: cust,
+    customer_name: cust?.company_name || cust?.name || '',
+    customer_address: getJobAddress(job),
+    customer_phone: cust?.phone || '',
+    pic_name: cust?.pic_name || cust?.contact_person || '',
+    unit_id: uId,
+    unit: unit ? { ...unit, is_copier: isCopier } : { is_copier: isCopier },
+    technician_id: job.technician_id,
+    technician: job.technician,
+    service_date: jobDate(job) || new Date().toISOString(),
+    machine_problem: job.instructions || job.service_request?.problem_description || job.problem_description || '',
+    action_taken: job.action_taken || '',
+    job_order: job,
+    service_request: job.service_request,
+    is_copier: isCopier,
+  }
+}
+
 function openPrintModal(job: any) {
   printTarget.value = job
-  const unit = findUnit(jobUnitId(job))
-  if (unit?.is_copier) {
-    srPrintType.value = 'all'
-  } else {
-    srPrintType.value = 'technical'
-  }
+  srPrintType.value = isJobCopier(job) ? 'copier' : 'technical'
   printModalOpen.value = true
 }
 
+// ── 1. Service History ──
+async function handlePrintServiceHistory(job: any) {
+  if (isDeliveryJob(job) && job.delivery_order) {
+    toast.info('Membuka dialog cetak Service History Pengiriman...')
+    await printDeliveryServiceHistory(job.delivery_order || { id: job.delivery_order_id })
+    return
+  }
+  const report = getPrintableServiceReport(job)
+  toast.info('Membuka dialog cetak Service History...')
+  await printServiceReport(report, 'history')
+}
+
+async function handleDownloadServiceHistory(job: any) {
+  isModalActionLoading.value = true
+  toast.info('Menyiapkan Service History PDF...')
+  let ok = false
+  if (isDeliveryJob(job) && job.delivery_order) {
+    ok = await downloadDeliveryOrderPdf(job.delivery_order || { id: job.delivery_order_id })
+  } else {
+    const report = getPrintableServiceReport(job)
+    ok = await downloadServiceReportPdf(report, 'history')
+  }
+  isModalActionLoading.value = false
+  if (ok) toast.success('Service History PDF berhasil didownload')
+  else toast.error('Gagal mendownload Service History PDF')
+}
+
+// ── 2. Copier Service Report ──
+async function handlePrintCopierReport(job: any) {
+  const report = getPrintableServiceReport(job)
+  toast.info('Membuka dialog cetak Copier Service Report...')
+  await printServiceReport(report, 'copier')
+}
+
+async function handleDownloadCopierReport(job: any) {
+  isModalActionLoading.value = true
+  toast.info('Menyiapkan Copier Service Report PDF...')
+  const report = getPrintableServiceReport(job)
+  const ok = await downloadServiceReportPdf(report, 'copier')
+  isModalActionLoading.value = false
+  if (ok) toast.success('Copier Service Report PDF berhasil didownload')
+  else toast.error('Gagal mendownload Copier Service Report PDF')
+}
+
+// ── 3. Technical Report Form ──
+async function handlePrintTechnicalReport(job: any) {
+  const report = getPrintableServiceReport(job)
+  toast.info('Membuka dialog cetak Technical Report Form...')
+  await printServiceReport(report, 'technical')
+}
+
+async function handleDownloadTechnicalReport(job: any) {
+  isModalActionLoading.value = true
+  toast.info('Menyiapkan Technical Report Form PDF...')
+  const report = getPrintableServiceReport(job)
+  const ok = await downloadServiceReportPdf(report, 'technical')
+  isModalActionLoading.value = false
+  if (ok) toast.success('Technical Report Form PDF berhasil didownload')
+  else toast.error('Gagal mendownload Technical Report Form PDF')
+}
+
+// ── 4. Surat Perintah Kerja (Job Order / SPK) ──
 async function handlePrintSPK(job: any) {
   toast.info('Membuka dialog cetak SPK...')
   await printJobOrder(job)
@@ -344,6 +458,7 @@ async function handleDownloadSPK(job: any) {
   else toast.error('Gagal mendownload SPK PDF')
 }
 
+// ── 5. Surat Jalan (DO) ──
 async function handlePrintDO(job: any) {
   toast.info('Membuka dialog cetak Surat Jalan...')
   await printDeliveryOrder(job.delivery_order || { id: job.delivery_order_id })
@@ -358,30 +473,6 @@ async function handleDownloadDO(job: any) {
   else toast.error('Gagal mendownload Surat Jalan PDF')
 }
 
-async function handlePrintSR(job: any) {
-  const sr = getLinkedServiceReport(job)
-  if (!sr) {
-    toast.error('Laporan servis belum dibuat untuk pekerjaan ini')
-    return
-  }
-  toast.info('Membuka dialog cetak Laporan Servis...')
-  printServiceReport(sr, srPrintType.value === 'all' ? undefined : (srPrintType.value as ReportType))
-}
-
-async function handleDownloadSR(job: any) {
-  const sr = getLinkedServiceReport(job)
-  if (!sr) {
-    toast.error('Laporan servis belum dibuat untuk pekerjaan ini')
-    return
-  }
-  isModalActionLoading.value = true
-  toast.info('Menyiapkan Laporan Servis PDF...')
-  const ok = await downloadServiceReportPdf(sr, srPrintType.value === 'all' ? undefined : (srPrintType.value as ReportType))
-  isModalActionLoading.value = false
-  if (ok) toast.success('Laporan Servis PDF berhasil didownload')
-  else toast.error('Gagal mendownload Laporan Servis PDF')
-}
-
 async function handleDownloadRowJob(job: any) {
   if (downloadingJobId.value) return
   downloadingJobId.value = job.id
@@ -392,18 +483,13 @@ async function handleDownloadRowJob(job: any) {
       if (ok) toast.success('Surat Jalan PDF berhasil didownload')
       else toast.error('Gagal mendownload Surat Jalan PDF')
     } else {
-      const sr = getLinkedServiceReport(job)
-      if (sr && job.status === 'completed') {
-        toast.info('Menyiapkan Laporan Servis PDF...')
-        const ok = await downloadServiceReportPdf(sr)
-        if (ok) toast.success('Laporan Servis PDF berhasil didownload')
-        else toast.error('Gagal mendownload Laporan Servis PDF')
-      } else {
-        toast.info('Menyiapkan SPK Job Order PDF...')
-        const ok = await downloadJobOrderPdf(job)
-        if (ok) toast.success('SPK Job Order PDF berhasil didownload')
-        else toast.error('Gagal mendownload SPK Job Order PDF')
-      }
+      const isCopier = isJobCopier(job)
+      const report = getPrintableServiceReport(job)
+      const reportType: ReportType = isCopier ? 'copier' : 'history'
+      toast.info(`Menyiapkan ${isCopier ? 'Copier Service Report' : 'Service History'} PDF...`)
+      const ok = await downloadServiceReportPdf(report, reportType)
+      if (ok) toast.success('PDF berhasil didownload')
+      else toast.error('Gagal mendownload PDF')
     }
   } catch (e) {
     console.error('Download row job error:', e)
@@ -665,6 +751,12 @@ async function handleDownloadRowJob(job: any) {
               <span class="badge" :class="isSurveyJob(printTarget) ? 'badge-warning' : isDeliveryJob(printTarget) ? 'badge-info' : 'badge-primary'">
                 {{ isSurveyJob(printTarget) ? 'SURVEY' : isDeliveryJob(printTarget) ? 'DELIVERY' : 'SERVICE' }}
               </span>
+              <span v-if="isJobCopier(printTarget)" class="badge" style="background: rgba(14, 165, 233, 0.15); color: #0284c7; font-weight: 600;">
+                COPIER
+              </span>
+              <span v-else class="badge" style="background: rgba(99, 102, 241, 0.15); color: #4f46e5; font-weight: 600;">
+                NON-COPIER
+              </span>
             </div>
             <div class="target-info-sub">
               <strong>{{ printTarget.survey?.customer?.company_name || printTarget.service_report?.customer?.company_name || printTarget.service_request?.customer?.company_name || printTarget.delivery_order?.customer?.company_name || getCustomerName(jobCustomerId(printTarget)) }}</strong>
@@ -677,28 +769,70 @@ async function handleDownloadRowJob(job: any) {
         <div class="doc-options-title">Pilih Dokumen yang Ingin Dicetak atau Didownload:</div>
 
         <div class="doc-options-list">
-          <!-- 1. Surat Perintah Kerja (Job Order / SPK) -->
+          <!-- 1. Service History (Selalu Tersedia untuk Semua Unit) -->
           <div class="doc-option-card">
             <div class="doc-option-left">
-              <div class="doc-badge-spk">SPK</div>
+              <div class="doc-badge-history">HISTORY</div>
               <div>
-                <div class="doc-title">Surat Perintah Kerja (Job Order)</div>
+                <div class="doc-title">Service History</div>
                 <div class="doc-desc">
-                  Surat penugasan teknisi resmi, jadwal, detail unit/mesin, uraian tugas, dan blok tanda tangan.
+                  Lembar riwayat pengerjaan servis teknisi, status kondisi unit, detail penanganan, foto dokumentasi, dan blok tanda tangan.
                 </div>
               </div>
             </div>
             <div class="doc-option-actions">
-              <button class="btn btn-sm btn-primary" @click="handlePrintSPK(printTarget)" :disabled="isModalActionLoading">
+              <button class="btn btn-sm btn-primary" @click="handlePrintServiceHistory(printTarget)" :disabled="isModalActionLoading">
                 🖨️ Print
               </button>
-              <button class="btn btn-sm btn-outline" @click="handleDownloadSPK(printTarget)" :disabled="isModalActionLoading">
+              <button class="btn btn-sm btn-outline" @click="handleDownloadServiceHistory(printTarget)" :disabled="isModalActionLoading">
                 📥 PDF
               </button>
             </div>
           </div>
 
-          <!-- 2. Surat Jalan (Delivery Order) - If Delivery Job -->
+          <!-- 2. Copier Service Report (Hanya jika Unit Mesin Copier) -->
+          <div v-if="isJobCopier(printTarget)" class="doc-option-card">
+            <div class="doc-option-left">
+              <div class="doc-badge-copier">COPIER</div>
+              <div>
+                <div class="doc-title">Copier Service Report</div>
+                <div class="doc-desc">
+                  Format khusus mesin fotokopi dengan pencatatan counter meter (Black/White &amp; Color) serta checklist meter reading.
+                </div>
+              </div>
+            </div>
+            <div class="doc-option-actions">
+              <button class="btn btn-sm btn-primary" @click="handlePrintCopierReport(printTarget)" :disabled="isModalActionLoading">
+                🖨️ Print
+              </button>
+              <button class="btn btn-sm btn-outline" @click="handleDownloadCopierReport(printTarget)" :disabled="isModalActionLoading">
+                📥 PDF
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. Technical Report Form (Hanya jika Unit BUKAN Copier) -->
+          <div v-else class="doc-option-card">
+            <div class="doc-option-left">
+              <div class="doc-badge-tech">TECHNICAL</div>
+              <div>
+                <div class="doc-title">Technical Report Form</div>
+                <div class="doc-desc">
+                  Laporan teknis servis lengkap (detail masalah unit, tindakan perbaikan teknis, pergantian sparepart, dan rekomendasi).
+                </div>
+              </div>
+            </div>
+            <div class="doc-option-actions">
+              <button class="btn btn-sm btn-primary" @click="handlePrintTechnicalReport(printTarget)" :disabled="isModalActionLoading">
+                🖨️ Print
+              </button>
+              <button class="btn btn-sm btn-outline" @click="handleDownloadTechnicalReport(printTarget)" :disabled="isModalActionLoading">
+                📥 PDF
+              </button>
+            </div>
+          </div>
+
+          <!-- 4. Surat Jalan (Delivery Order) - If Delivery Job -->
           <div v-if="isDeliveryJob(printTarget)" class="doc-option-card">
             <div class="doc-option-left">
               <div class="doc-badge-do">DO</div>
@@ -719,27 +853,22 @@ async function handleDownloadRowJob(job: any) {
             </div>
           </div>
 
-          <!-- 3. Laporan Servis (Service Report) - If Service Report Linked -->
-          <div v-if="getLinkedServiceReport(printTarget)" class="doc-option-card">
+          <!-- 5. Surat Perintah Kerja (Job Order / SPK) - Referensi Penugasan -->
+          <div class="doc-option-card" style="opacity: 0.85;">
             <div class="doc-option-left">
-              <div class="doc-badge-sr">SR</div>
+              <div class="doc-badge-spk">SPK</div>
               <div>
-                <div class="doc-title">Laporan Servis (Service Report)</div>
+                <div class="doc-title">Surat Perintah Kerja (Job Order)</div>
                 <div class="doc-desc">
-                  Formulir hasil perbaikan mesin, counter meter, sparepart, dan checklist teknikal.
-                </div>
-                <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center; font-size: 12px;">
-                  <label><input type="radio" value="technical" v-model="srPrintType" /> Technical</label>
-                  <label><input type="radio" value="copier" v-model="srPrintType" /> Copier</label>
-                  <label><input type="radio" value="all" v-model="srPrintType" /> All Forms</label>
+                  Surat penugasan teknisi resmi, jadwal, detail unit/mesin, uraian tugas, dan blok tanda tangan.
                 </div>
               </div>
             </div>
             <div class="doc-option-actions">
-              <button class="btn btn-sm btn-primary" @click="handlePrintSR(printTarget)" :disabled="isModalActionLoading">
+              <button class="btn btn-sm btn-primary" @click="handlePrintSPK(printTarget)" :disabled="isModalActionLoading">
                 🖨️ Print
               </button>
-              <button class="btn btn-sm btn-outline" @click="handleDownloadSR(printTarget)" :disabled="isModalActionLoading">
+              <button class="btn btn-sm btn-outline" @click="handleDownloadSPK(printTarget)" :disabled="isModalActionLoading">
                 📥 PDF
               </button>
             </div>
@@ -928,7 +1057,7 @@ async function handleDownloadRowJob(job: any) {
   flex: 1;
 }
 
-.doc-badge-spk, .doc-badge-do, .doc-badge-sr {
+.doc-badge-spk, .doc-badge-do, .doc-badge-sr, .doc-badge-history, .doc-badge-copier, .doc-badge-tech {
   padding: 4px 8px;
   border-radius: 6px;
   font-weight: 700;
@@ -937,9 +1066,24 @@ async function handleDownloadRowJob(job: any) {
   letter-spacing: 0.5px;
 }
 
+.doc-badge-history {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.doc-badge-copier {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.doc-badge-tech {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
 .doc-badge-spk {
-  background: #e0e7ff;
-  color: #3730a3;
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .doc-badge-do {
