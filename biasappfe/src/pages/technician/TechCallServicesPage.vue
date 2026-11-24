@@ -22,9 +22,14 @@ const {
   jobOrders,
   deliveryOrders,
   serviceReports,
+  technicians,
   getTechnicianIdByUser,
+  findTechnician,
   findCustomer,
-  findUnit } = useMasterStore()
+  findUnit,
+  findBrand,
+  findProduct,
+} = useMasterStore()
 
 onMounted(() => {
   ensureResourcesLoaded(route.path)

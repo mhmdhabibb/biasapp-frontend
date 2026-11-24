@@ -39,6 +39,7 @@ const {
   findCustomer,
   findUnit,
   findProduct,
+  findTechnician,
   getTechnicianIdByUser, refreshInBackground, refreshOnly } = useMasterStore()
 
 const serviceId = String(route.params.id)
