@@ -43,7 +43,36 @@ const {
 
 const serviceId = String(route.params.id)
 const directJobData = ref<any>(null)
-const job = computed(() => directJobData.value || jobOrders.value.find(j => String(j.id) === serviceId))
+const job = computed(() => {
+  if (directJobData.value) return directJobData.value
+  const foundJo = jobOrders.value.find(j => String(j.id) === serviceId)
+  if (foundJo) return foundJo
+  const foundSr = serviceReports.value.find(sr => String(sr.id) === serviceId)
+  if (foundSr) {
+    const isCopier = String(foundSr.service_type || '').toLowerCase() === 'copier'
+    return {
+      id: foundSr.id,
+      job_order_no: foundSr.report_no || `SR-${foundSr.id}`,
+      job_type: isCopier ? 'copier' : (foundSr.service_type || 'service'),
+      status: foundSr.status || 'completed',
+      technician_id: foundSr.technician_id,
+      technician: foundSr.technician || findTechnician(foundSr.technician_id),
+      scheduled_date: foundSr.service_date || foundSr.created_at,
+      service_date: foundSr.service_date,
+      instructions: foundSr.machine_problem || foundSr.repair_action || '',
+      problem_description: foundSr.machine_problem,
+      customer_id: foundSr.customer_id,
+      customer: foundSr.customer || findCustomer(foundSr.customer_id),
+      unit_id: foundSr.unit_id,
+      unit: foundSr.unit || findUnit(foundSr.unit_id),
+      service_report_id: foundSr.id,
+      service_report: foundSr,
+      is_adapted_sr: true,
+      is_copier: isCopier,
+    }
+  }
+  return null
+})
 
 function hasDeliveryOrder(j: any): boolean {
   if (!j) return false
@@ -74,7 +103,7 @@ const serviceReportFromStore = computed(() => {
   if (isSurveyJob.value) return null
   const directSr = directJobData.value?.service_report || directJobData.value?.ServiceReport
   if (directSr) return directSr
-  return serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id))
+  return serviceReports.value.find(sr => String(sr.job_order_id) === String(job.value?.id) || String(sr.id) === serviceId)
 })
 const fullServiceReportData = ref<any>(null)
 

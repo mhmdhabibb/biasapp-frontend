@@ -34,16 +34,73 @@ useAutoRefresh(15000, ["jobOrders", "deliveryOrders", "serviceReports", "technic
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
+const isSuperAdminOrAdmin = computed(() => {
+  const role = String(currentUser.value?.role || '').toLowerCase()
+  return role === 'superadmin' || role === 'admin' || role === 'director' || role === 'manager'
+})
 
-// My Jobs menampilkan seluruh penugasan teknisi (service, delivery, maintenance, survey, visit, dll)
+// My Jobs menampilkan seluruh penugasan teknisi (service, delivery, maintenance, survey, visit, dan service reports)
 const myJobs = computed(() => {
-  return jobOrders.value.filter(j => String(j.technician_id) === String(myTechId.value))
+  const techId = myTechId.value
+  const isAdmin = isSuperAdminOrAdmin.value
+
+  // 1. Job Orders
+  const filteredJOs = jobOrders.value.filter((j: any) => {
+    if (isAdmin) return true
+    if (!techId) return !j.technician_id
+    return String(j.technician_id) === String(techId)
+  })
+
+  // Track service_report_id already present in jobOrders to avoid duplicates
+  const existingSrIds = new Set<string>()
+  for (const j of filteredJOs) {
+    if (j.service_report_id) existingSrIds.add(String(j.service_report_id))
+    if (j.service_report?.id) existingSrIds.add(String(j.service_report.id))
+  }
+
+  // 2. Service Reports dari Service History (repair, copier, maintenance)
+  const additionalSRs = (serviceReports.value || []).filter((sr: any) => {
+    if (existingSrIds.has(String(sr.id))) return false
+    if (isAdmin) return true
+    if (!techId) return true
+    return String(sr.technician_id) === String(techId) || !sr.technician_id
+  }).map((sr: any) => {
+    const isCopier = String(sr.service_type || '').toLowerCase() === 'copier'
+    return {
+      id: sr.id,
+      job_order_no: sr.report_no || `SR-${sr.id}`,
+      job_type: isCopier ? 'copier' : (sr.service_type || 'service'),
+      status: sr.status || 'completed',
+      technician_id: sr.technician_id,
+      technician: sr.technician || findTechnician(sr.technician_id),
+      scheduled_date: sr.service_date || sr.created_at,
+      created_at: sr.created_at,
+      service_date: sr.service_date,
+      instructions: sr.machine_problem || sr.repair_action || '',
+      problem_description: sr.machine_problem,
+      customer_id: sr.customer_id,
+      customer: sr.customer || findCustomer(sr.customer_id),
+      unit_id: sr.unit_id,
+      unit: sr.unit || findUnit(sr.unit_id),
+      service_report_id: sr.id,
+      service_report: sr,
+      is_adapted_sr: true,
+      is_copier: isCopier,
+    }
+  })
+
+  return [...filteredJOs, ...additionalSRs].sort((a: any, b: any) => {
+    const da = new Date(jobDate(a)).getTime() || 0
+    const db = new Date(jobDate(b)).getTime() || 0
+    return db - da
+  })
 })
 
 const filterType = ref('')
 const filterTypeOptions = [
   { value: '', label: 'All Types' },
   { value: 'service', label: 'Service' },
+  { value: 'copier', label: 'Copier' },
   { value: 'delivery', label: 'Delivery' },
   { value: 'maintenance', label: 'Maintenance' },
   { value: 'survey', label: 'Survey' },
@@ -58,6 +115,7 @@ const filterServiceNo = ref('')
 
 function isDeliveryJob(job: any): boolean {
   if (!job) return false
+  if (job.is_adapted_sr) return false
   if (job.delivery_order_id) return true
   if (String(job.job_type || '').toLowerCase() === 'delivery') return true
   const d = job.delivery_order
@@ -76,6 +134,7 @@ function getJobTypeBadgeClass(job: any): string {
   const jt = String(job.job_type || '').toLowerCase()
   if (jt === 'survey' || isSurveyJob(job)) return 'badge-warning'
   if (jt === 'delivery' || isDeliveryJob(job)) return 'badge-info'
+  if (jt === 'copier' || isJobCopier(job)) return 'badge-warning'
   if (jt === 'maintenance') return 'badge-success'
   if (jt === 'visit') return 'badge-primary'
   if (jt === 'meter_reading') return 'badge-secondary'
@@ -87,9 +146,11 @@ function getJobTypeLabel(job: any): string {
   const jt = String(job.job_type || '').toLowerCase()
   if (jt === 'survey' || isSurveyJob(job)) return 'SURVEY'
   if (jt === 'delivery' || isDeliveryJob(job)) return 'DELIVERY'
+  if (jt === 'copier' || isJobCopier(job)) return 'COPIER'
   if (jt === 'maintenance') return 'MAINTENANCE'
   if (jt === 'visit') return 'VISIT'
   if (jt === 'meter_reading') return 'METER READING'
+  if (jt === 'repair') return 'SERVICE'
   return (job.job_type || 'SERVICE').toUpperCase()
 }
 
@@ -175,6 +236,7 @@ function jobDate(job: any): string {
   if (!job) return ''
   return (
     job.scheduled_date ||
+    job.service_date ||
     job.delivery_order?.delivery_date ||
     job.survey?.scheduled_date ||
     job.service_report?.service_date ||
@@ -251,7 +313,12 @@ const filteredJobs = computed(() => {
       } else if (filterType.value === 'survey') {
         if (!isSurveyJob(job) && jt !== 'survey') return false
       } else if (filterType.value === 'visit') {
-        if (jt !== 'visit' && !String(job.job_order_no || '').startsWith('JOV')) return false
+        if (jt !== 'visit' && !String(job.job_order_no || '').startsWith('JOV') && !String(job.job_order_no || '').startsWith('CPR')) return false
+      } else if (filterType.value === 'copier') {
+        if (!isJobCopier(job) && jt !== 'copier') return false
+      } else if (filterType.value === 'service') {
+        if (isDeliveryJob(job) || isSurveyJob(job) || isJobCopier(job)) return false
+        if (jt !== 'service' && jt !== 'repair' && jt !== 'service_call') return false
       } else {
         if (jt !== filterType.value) return false
       }
@@ -430,6 +497,7 @@ function isJobCopier(job: any): boolean {
 
 function getPrintableServiceReport(job: any) {
   if (!job) return null
+  if (job.is_adapted_sr && job.service_report) return job.service_report
   const linked = getLinkedServiceReport(job)
   if (linked) return linked
 
