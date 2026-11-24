@@ -1154,8 +1154,25 @@ const CSS = `
     .page:last-child { page-break-after: auto; break-after: auto; }
   }
   body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 20px; color: #000; background: #fff; }
-  .page { margin-bottom: 24px; }
-  .page:last-child { margin-bottom: 0; }
+  .page {
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-bottom: 24px;
+  }
+  .page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+    margin-bottom: 0;
+  }
+  .html2pdf__page-break {
+    page-break-after: always;
+    break-after: page;
+    height: 0;
+    display: block;
+    clear: both;
+  }
   .container { max-width: 800px; margin: 0 auto; border: 2px solid #000; box-sizing: border-box; }
   .header-table { width: 100%; border-collapse: collapse; }
   .header-table td { padding: 10px; }
@@ -1199,7 +1216,7 @@ const CSS = `
 `;
 
 function wrapDocument(pages: string[], autoPrint: boolean): string {
-  const body = pages.map((p) => `<div class="page">${p}</div>`).join("\n");
+  const body = pages.map((p) => `<div class="page">${p}</div>`).join('\n<div class="html2pdf__page-break"></div>\n');
   const printScript = autoPrint
     ? `<script>window.onload = function() { setTimeout(function() { window.print(); }, 500); }<\/script>`
     : "";
@@ -1304,7 +1321,7 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
   try {
     const { default: html2pdf } = await import("html2pdf.js");
     const container = document.createElement("div");
-    container.innerHTML = `<style>${CSS}</style>` + pages.map((p) => `<div class="page">${p}</div>`).join("\n");
+    container.innerHTML = `<style>${CSS}</style>` + pages.map((p) => `<div class="page">${p}</div>`).join('\n<div class="html2pdf__page-break"></div>\n');
 
     const reportNo = (fullItem.report_no || `SR-${fullItem.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
     const opt: any = {
@@ -1313,7 +1330,7 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
       image: { type: "jpeg", quality: 0.95 },
       html2canvas: { scale: 1.75, useCORS: true, logging: false },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"] },
+      pagebreak: { mode: ["css", "legacy"], after: [".page", ".html2pdf__page-break"] },
     };
 
     await html2pdf().set(opt).from(container).save();
