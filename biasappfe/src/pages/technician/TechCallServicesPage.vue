@@ -9,7 +9,6 @@ import { useToast } from '@/composables/useToast'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
-import { printDeliveryOrder, downloadDeliveryOrderPdf } from '@/utils/printDeliveryOrder'
 import { printServiceReport, downloadServiceReportPdf, type ReportType } from '@/utils/printReport'
 import { isCopierReport } from '@/utils/copierReport'
 import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
@@ -37,12 +36,21 @@ useAutoRefresh(15000, ["jobOrders", "serviceReports", "technicians", "customers"
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
 
-// Backend service_type enum: regular, repair, maintenance, installation,
-// emergency, meter_reading. Call service = anything that is not a scheduled
-// maintenance or meter-reading job.
+// My Jobs menampilkan seluruh penugasan teknisi (service, delivery, maintenance, survey, visit, dll)
 const myJobs = computed(() => {
-  return jobOrders.value.filter(j => String(j.technician_id) === String(myTechId.value) && j.job_type !== 'maintenance' && j.job_type !== 'meter_reading')
+  return jobOrders.value.filter(j => String(j.technician_id) === String(myTechId.value))
 })
+
+const filterType = ref('')
+const filterTypeOptions = [
+  { value: '', label: 'All Types' },
+  { value: 'service', label: 'Service' },
+  { value: 'delivery', label: 'Delivery' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'survey', label: 'Survey' },
+  { value: 'visit', label: 'Visit' },
+  { value: 'meter_reading', label: 'Meter Reading' },
+]
 
 const filterStatus = ref('')
 const filterDate = ref('')
@@ -59,6 +67,51 @@ function isDeliveryJob(job: any): boolean {
 function isSurveyJob(job: any): boolean {
   if (!job) return false
   return job.job_type === 'survey' || !!job.survey_id || !!job.survey
+}
+
+function getJobTypeBadgeClass(job: any): string {
+  if (!job) return 'badge-secondary'
+  const jt = String(job.job_type || '').toLowerCase()
+  if (jt === 'survey' || isSurveyJob(job)) return 'badge-warning'
+  if (jt === 'delivery' || isDeliveryJob(job)) return 'badge-info'
+  if (jt === 'maintenance') return 'badge-success'
+  if (jt === 'visit') return 'badge-primary'
+  if (jt === 'meter_reading') return 'badge-secondary'
+  return 'badge-primary'
+}
+
+function getJobTypeLabel(job: any): string {
+  if (!job) return '-'
+  const jt = String(job.job_type || '').toLowerCase()
+  if (jt === 'survey' || isSurveyJob(job)) return 'SURVEY'
+  if (jt === 'delivery' || isDeliveryJob(job)) return 'DELIVERY'
+  if (jt === 'maintenance') return 'MAINTENANCE'
+  if (jt === 'visit') return 'VISIT'
+  if (jt === 'meter_reading') return 'METER READING'
+  return (job.job_type || 'SERVICE').toUpperCase()
+}
+
+function getJobUnitDisplay(job: any): string {
+  if (!job) return '-'
+  if (isSurveyJob(job)) {
+    return job.survey?.recommended_model || job.survey?.unit?.model || 'Survey Lokasi'
+  }
+  const directUnit = job.unit?.model || job.service_report?.unit?.model || job.service_request?.unit?.model
+  if (directUnit) return directUnit
+  const uid = jobUnitId(job)
+  if (uid) {
+    const uName = getUnitName(uid)
+    if (uName && uName !== '-') return uName
+  }
+  if (job.delivery_order?.items?.length) {
+    const itemWithUnit = job.delivery_order.items.find((i: any) => i.unit?.model || i.unit_id)
+    if (itemWithUnit?.unit?.model) return itemWithUnit.unit.model
+    if (itemWithUnit?.unit_id) {
+      const uName = getUnitName(itemWithUnit.unit_id)
+      if (uName && uName !== '-') return uName
+    }
+  }
+  return '-'
 }
 
 function jobCustomerId(job: any) {
@@ -169,6 +222,19 @@ function onCustomDateChange() {
 const filteredJobs = computed(() => {
   return myJobs.value.filter(job => {
     if (filterStatus.value && job.status !== filterStatus.value) return false
+
+    if (filterType.value) {
+      const jt = String(job.job_type || '').toLowerCase()
+      if (filterType.value === 'delivery') {
+        if (!isDeliveryJob(job) && jt !== 'delivery') return false
+      } else if (filterType.value === 'survey') {
+        if (!isSurveyJob(job) && jt !== 'survey') return false
+      } else if (filterType.value === 'visit') {
+        if (jt !== 'visit' && !String(job.job_order_no || '').startsWith('JOV')) return false
+      } else {
+        if (jt !== filterType.value) return false
+      }
+    }
     
     // Timezone-safe date filtering
     const jd = jobDate(job)
@@ -442,39 +508,17 @@ async function handleDownloadTechnicalReport(job: any) {
   else toast.error('Gagal mendownload Technical Report Form PDF')
 }
 
-// ── 4. Surat Jalan (DO) ──
-async function handlePrintDO(job: any) {
-  toast.info('Membuka dialog cetak Surat Jalan...')
-  await printDeliveryOrder(job.delivery_order || { id: job.delivery_order_id })
-}
-
-async function handleDownloadDO(job: any) {
-  isModalActionLoading.value = true
-  toast.info('Menyiapkan Surat Jalan PDF...')
-  const ok = await downloadDeliveryOrderPdf(job.delivery_order || { id: job.delivery_order_id })
-  isModalActionLoading.value = false
-  if (ok) toast.success('Surat Jalan PDF berhasil didownload')
-  else toast.error('Gagal mendownload Surat Jalan PDF')
-}
-
 async function handleDownloadRowJob(job: any) {
   if (downloadingJobId.value) return
   downloadingJobId.value = job.id
   try {
-    if (isDeliveryJob(job)) {
-      toast.info('Menyiapkan Surat Jalan PDF...')
-      const ok = await downloadDeliveryOrderPdf(job.delivery_order || { id: job.delivery_order_id })
-      if (ok) toast.success('Surat Jalan PDF berhasil didownload')
-      else toast.error('Gagal mendownload Surat Jalan PDF')
-    } else {
-      const isCopier = isJobCopier(job)
-      const report = getPrintableServiceReport(job)
-      const reportType: ReportType = isCopier ? 'copier' : 'history'
-      toast.info(`Menyiapkan ${isCopier ? 'Copier Service Report' : 'Service History'} PDF...`)
-      const ok = await downloadServiceReportPdf(report, reportType)
-      if (ok) toast.success('PDF berhasil didownload')
-      else toast.error('Gagal mendownload PDF')
-    }
+    const isCopier = isJobCopier(job)
+    const report = getPrintableServiceReport(job)
+    const reportType: ReportType = isCopier ? 'copier' : 'history'
+    toast.info(`Menyiapkan ${isCopier ? 'Copier Service Report' : 'Service History'} PDF...`)
+    const ok = await downloadServiceReportPdf(report, reportType)
+    if (ok) toast.success('PDF berhasil didownload')
+    else toast.error('Gagal mendownload PDF')
   } catch (e) {
     console.error('Download row job error:', e)
     toast.error('Terjadi kesalahan saat download PDF')
@@ -553,6 +597,10 @@ async function handleDownloadRowJob(job: any) {
           </div>
         </div>
         <div class="form-group mb-0">
+          <label class="form-label">Type</label>
+          <CustomSelect v-model="filterType" class="form-select" :options="filterTypeOptions" />
+        </div>
+        <div class="form-group mb-0">
           <label class="form-label">Status</label>
           <CustomSelect v-model="filterStatus" class="form-select" :options="filterStatusOptions" />
         </div>
@@ -577,8 +625,8 @@ async function handleDownloadRowJob(job: any) {
             <tr v-for="job in paginatedJobs" :key="job.id">
               <td><strong>{{ jobRefNo(job) }}</strong></td>
               <td>
-                <span class="badge" :class="isSurveyJob(job) ? 'badge-warning' : isDeliveryJob(job) ? 'badge-info' : 'badge-primary'">
-                  {{ isSurveyJob(job) ? 'SURVEY' : isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE' }}
+                <span class="badge" :class="getJobTypeBadgeClass(job)">
+                  {{ getJobTypeLabel(job) }}
                 </span>
               </td>
               <td>
@@ -587,7 +635,7 @@ async function handleDownloadRowJob(job: any) {
                   📍 {{ getJobAddress(job) }}
                 </div>
               </td>
-              <td>{{ isSurveyJob(job) ? (job.survey?.recommended_model || job.survey?.unit?.model || 'Survey Lokasi') : isDeliveryJob(job) ? '-' : (job.service_report?.unit?.model || job.service_request?.unit?.model || getUnitName(jobUnitId(job))) }}</td>
+              <td>{{ getJobUnitDisplay(job) }}</td>
               <td>
                 <span v-if="jobDate(job)" class="scheduled-date-cell">
                   {{ new Date(jobDate(job)).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) }}
@@ -666,9 +714,9 @@ async function handleDownloadRowJob(job: any) {
               <span class="m-label">Installation Address</span>
               <span class="m-val text-muted">📍 {{ getJobAddress(job) }}</span>
             </div>
-            <div class="m-row" v-if="!isDeliveryJob(job)">
+            <div class="m-row">
               <span class="m-label">Unit</span>
-              <span class="m-val">{{ getUnitName(jobUnitId(job)) }}</span>
+              <span class="m-val">{{ getJobUnitDisplay(job) }}</span>
             </div>
             <div class="m-row">
               <span class="m-label">Scheduled Date</span>
@@ -677,8 +725,8 @@ async function handleDownloadRowJob(job: any) {
           </div>
 
           <div class="mobile-job-footer">
-            <span class="badge" :class="isSurveyJob(job) ? 'badge-warning' : isDeliveryJob(job) ? 'badge-info' : 'badge-primary'">
-              {{ isSurveyJob(job) ? 'SURVEY' : isDeliveryJob(job) ? 'DELIVERY' : 'SERVICE' }}
+            <span class="badge" :class="getJobTypeBadgeClass(job)">
+              {{ getJobTypeLabel(job) }}
             </span>
             <div class="mobile-actions">
               <button class="btn btn-sm btn-outline-primary" @click.stop="openPrintModal(job)">
@@ -732,8 +780,8 @@ async function handleDownloadRowJob(job: any) {
           <div class="target-info-details">
             <div class="target-info-title-row">
               <span class="target-info-no">{{ jobRefNo(printTarget) }}</span>
-              <span class="badge" :class="isSurveyJob(printTarget) ? 'badge-warning' : isDeliveryJob(printTarget) ? 'badge-info' : 'badge-primary'">
-                {{ isSurveyJob(printTarget) ? 'SURVEY' : isDeliveryJob(printTarget) ? 'DELIVERY' : 'SERVICE' }}
+              <span class="badge" :class="getJobTypeBadgeClass(printTarget)">
+                {{ getJobTypeLabel(printTarget) }}
               </span>
               <span v-if="isJobCopier(printTarget)" class="badge" style="background: rgba(14, 165, 233, 0.15); color: #0284c7; font-weight: 600;">
                 COPIER
@@ -745,7 +793,7 @@ async function handleDownloadRowJob(job: any) {
             <div class="target-info-sub">
               <strong>{{ printTarget.survey?.customer?.company_name || printTarget.service_report?.customer?.company_name || printTarget.service_request?.customer?.company_name || printTarget.delivery_order?.customer?.company_name || getCustomerName(jobCustomerId(printTarget)) }}</strong>
               &bull;
-              {{ isSurveyJob(printTarget) ? (printTarget.survey?.recommended_model || 'Survey Lokasi') : isDeliveryJob(printTarget) ? 'Delivery Unit / Barang' : (getUnitName(jobUnitId(printTarget))) }}
+              {{ getJobUnitDisplay(printTarget) }}
             </div>
           </div>
         </div>
@@ -811,27 +859,6 @@ async function handleDownloadRowJob(job: any) {
                 🖨️ Print
               </button>
               <button class="btn btn-sm btn-outline" @click="handleDownloadTechnicalReport(printTarget)" :disabled="isModalActionLoading">
-                📥 PDF
-              </button>
-            </div>
-          </div>
-
-          <!-- 4. Surat Jalan (Delivery Order) - If Delivery Job -->
-          <div v-if="isDeliveryJob(printTarget)" class="doc-option-card">
-            <div class="doc-option-left">
-              <div class="doc-badge-do">DO</div>
-              <div>
-                <div class="doc-title">Surat Jalan (Delivery Order)</div>
-                <div class="doc-desc">
-                  Surat bukti serah terima unit / barang resmi PT. BIAS SURYA TEKNOLOGI dengan tanda tangan penerima.
-                </div>
-              </div>
-            </div>
-            <div class="doc-option-actions">
-              <button class="btn btn-sm btn-primary" @click="handlePrintDO(printTarget)" :disabled="isModalActionLoading">
-                🖨️ Print
-              </button>
-              <button class="btn btn-sm btn-outline" @click="handleDownloadDO(printTarget)" :disabled="isModalActionLoading">
                 📥 PDF
               </button>
             </div>
