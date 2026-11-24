@@ -94,6 +94,7 @@ interface ReportCtx {
   dateStr: string;
   contract: any;
   isCopier: boolean;
+  isComputer: boolean;
   isSparepart?: boolean;
 }
 
@@ -279,6 +280,15 @@ function buildCtx(item: any): ReportCtx {
     contract:
       masterStore.findContractItem(item.contract_item_id) || contractByUnit,
     isCopier: !!u.is_copier || (u.model || '').toLowerCase().includes('copier') || (item.service_type || '').toLowerCase() === 'copier',
+    isComputer:
+      !!u.is_computer ||
+      !!item.is_computer ||
+      (u.model || '').toLowerCase().includes('computer') ||
+      (u.model || '').toLowerCase().includes('pc') ||
+      (u.model || '').toLowerCase().includes('laptop') ||
+      (u.model || '').toLowerCase().includes('notebook') ||
+      (u.model || '').toLowerCase().startsWith('nb ') ||
+      (u.model || '').toLowerCase().includes('desktop'),
     isSparepart: !!item.is_sparepart || !!(doi?.product_id || doi?.product || item.product_id || (!u.id && !doi?.unit_id && (doi?.model || doi?.name || item.model))),
   };
 }
@@ -441,7 +451,7 @@ function testedCompleteTableHtml(item: any): string {
 }
 
 function formatMachineProblem(item: any): string {
-  const prob = (item.machine_problem || "").trim();
+  const prob = (item.machine_problem || item.problem || "").trim();
   if (!prob || /scheduled.*(?:meter|rental|copier).*visit/i.test(prob)) {
     if (/bulan\s+[a-z]+/i.test(prob)) {
       return prob;
@@ -620,7 +630,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
       <div class="title-bar" style="font-size: 22px;">Technical Report Form</div>
       <table class="meta-table">
         <tr>
-          <td>PRODUCT TYPES : ${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td>
+          <td>PRODUCT TYPES : ${ctx.isComputer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : "Printer / Non-Photocopy"}</td>
           <td class="right-col">DATE : ${ctx.dateStr}</td>
         </tr>
      
@@ -698,7 +708,7 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
       <div class="section-title">PRODUCT DETAIL</div>
       <table class="data-table">
         <tr><td class="label-col">Brand</td><td class="val-col">${ctx.brandName || ctx.brand?.name || "-"}</td></tr>
-        <tr><td class="label-col">Product Type</td><td class="val-col">${ctx.u.is_computer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : ctx.isSparepart ? "Sparepart / Consumable" : "Printer / Non-Photocopy"}</td></tr>
+        <tr><td class="label-col">Product Type</td><td class="val-col">${ctx.isComputer ? "Computer/Desktop" : ctx.isCopier ? "Photocopy" : ctx.isSparepart ? "Sparepart / Consumable" : "Printer / Non-Photocopy"}</td></tr>
         <tr><td class="label-col">Model/Type</td><td class="val-col">${ctx.modelName || "-"}</td></tr>
         <tr><td class="label-col">Serial Number</td><td class="val-col">${ctx.serialNo || "-"}</td></tr>
         <tr><td class="label-col" style="min-height: 38px;">Problem</td><td class="val-col">${formatMachineProblem(item) || "-"}</td></tr>
@@ -1055,7 +1065,14 @@ function buildSubItemReport(baseReport: any, subItem: any, index: number, total:
   const serialNo = subUnit?.serial_no || subItem.serial_no || '-';
 
   const isCopier = !!subUnit?.is_copier || (rawModel || '').toLowerCase().includes('copier');
-  const isComputer = !!subUnit?.is_computer || (rawModel || '').toLowerCase().includes('computer') || (rawModel || '').toLowerCase().includes('pc');
+  const isComputer =
+    !!subUnit?.is_computer ||
+    (rawModel || '').toLowerCase().includes('computer') ||
+    (rawModel || '').toLowerCase().includes('pc') ||
+    (rawModel || '').toLowerCase().includes('laptop') ||
+    (rawModel || '').toLowerCase().includes('notebook') ||
+    (rawModel || '').toLowerCase().startsWith('nb ') ||
+    (rawModel || '').toLowerCase().includes('desktop');
   const isSparepart = !subUnit && (!!subProd || !!subItem.product_id || (!subItem.unit_id && !subUnit));
 
   const baseRef = baseReport.report_no || baseReport.job_order_no || baseReport.do_number || (baseReport.id ? `SR-${baseReport.id}` : '-');
@@ -1076,10 +1093,12 @@ function buildSubItemReport(baseReport: any, subItem: any, index: number, total:
     brand_name: subBrand?.name || subUnit?.brand?.name || '',
     model,
     serial_no: serialNo,
-    machine_problem: baseReport.machine_problem || (baseReport.delivery_order?.do_number || baseReport.do_number ? `Pengantaran: ${rawModel}${qtyStr}` : ''),
-    remarks: subItem.notes || subItem.remarks || baseReport.remarks || '-',
+    machine_problem: baseReport.machine_problem || baseReport.problem || (baseReport.delivery_order?.do_number || baseReport.do_number ? `Pengantaran: ${rawModel}${qtyStr}` : ''),
+    remarks: subItem.notes || subItem.remarks || baseReport.remarks || baseReport.action || '-',
+    action_taken: baseReport.action_taken || baseReport.action || '-',
     delivery_order_items: [subItem],
     is_copier: isCopier,
+    is_computer: isComputer,
     is_sparepart: isSparepart,
   };
 }

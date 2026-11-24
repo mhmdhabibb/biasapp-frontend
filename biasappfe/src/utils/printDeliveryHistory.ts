@@ -1,7 +1,5 @@
 // @ts-nocheck
-import { useMasterStore } from "@/composables/useMasterStore";
-import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
-import { api } from "@/services/api";
+import { printServiceReport, downloadServiceReportPdf } from "@/utils/printReport";
 
 /** DO dianggap punya service history bila teknisi sudah mengisi formnya. */
 export function hasDeliveryHistory(d: any): boolean {
@@ -15,235 +13,20 @@ export function hasDeliveryHistory(d: any): boolean {
   return false;
 }
 
-function esc(v: unknown): string {
-  return String(v ?? "-").replace(/[&<>"']/g, (c) => {
-    const map: Record<string, string> = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    };
-    return map[c] ?? c;
-  });
-}
-
 /**
- * Cetak SERVICE HISTORY untuk delivery order (pekerjaan instalasi/
- * pengiriman yang dikerjakan teknisi via Job Order delivery).
- * Sumber data: field service-history di delivery_orders
- * (problem, action, time_in/out, tested/completed, signatures).
+ * Cetak SERVICE HISTORY untuk delivery order.
+ * Menggunakan sistem form Service History terpadu:
+ * jika unit/item di DO lebih dari 1, otomatis dicetak terpisah (1 halaman per unit/SN).
  */
 export async function printDeliveryServiceHistory(item: any): Promise<boolean> {
   if (!item) return false;
+  return printServiceReport(item, "history");
+}
 
-  // Open window synchronously to avoid popup blocker
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) return false;
-
-  let fullItem = item;
-  if (
-    item.id &&
-    (!item.customer_signature ||
-      !item.technician_signature ||
-      item.customer_signature === "signed" ||
-      item.technician_signature === "signed" ||
-      item.photo_before === "has_photo")
-  ) {
-    try {
-      const res: any = await api.get(`/delivery-orders/${item.id}`);
-      fullItem = res.data?.data ?? res.data ?? item;
-    } catch (e) {
-      console.warn("Failed to fetch full delivery order details for printing:", e);
-    }
-  }
-
-  const { findCustomer, findUnit, findBrand, findTechnician, findUnitType } =
-    useMasterStore();
-
-  const customer: any = findCustomer(fullItem.customer_id) || {};
-  const firstLine: any = (fullItem.delivery_order_items || [])[0] || {};
-  
-  let u: any = {};
-  let brand: any = {};
-  let utype: any = {};
-  
-  if (firstLine.unit_id) {
-    u = firstLine.unit || findUnit(firstLine.unit_id) || {};
-    brand = findBrand(u.brand_id) || {};
-    utype = findUnitType(u.unit_type_id) || {};
-  } else if (firstLine.brand_id || firstLine.unit_type_id || firstLine.model) {
-    brand = findBrand(firstLine.brand_id) || {};
-    utype = findUnitType(firstLine.unit_type_id) || {};
-    u = { model: firstLine.model, serial_no: firstLine.serial_no };
-  }
-
-  const tech: any = findTechnician(fullItem.technician_id) || {};
-
-  const custName = customer.company_name || customer.name || "-";
-  const custPhone = customer.phone || "-";
-  const picName = customer.pic_name || "-";
-  const dateStr = fullItem.delivery_date
-    ? new Date(fullItem.delivery_date).toLocaleDateString("en-GB")
-    : "-";
-  const itemsCount = (fullItem.delivery_order_items || []).length;
-  const itemsList = (fullItem.delivery_order_items || [])
-    .map((line: any, i: number) => {
-      const lu: any = line.unit || findUnit(line.unit_id) || {};
-      const label = lu.model || line.product?.name || "Item";
-      const sn = lu.serial_no ? ` (${lu.serial_no})` : "";
-      return `${i + 1}. ${esc(label)}${esc(sn)} x${line.qty || 1}`;
-    })
-    .join("<br>");
-
-  const html = `
-    <html>
-      <head>
-        <title>Service History - ${esc(custName)}</title>
-        <style>
-          @media print {
-            @page { margin: 10mm; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-          body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 10px; color: #000; }
-          .container { max-width: 800px; margin: 0 auto; border: 2px solid #000; box-sizing: border-box; }
-
-          .header-table { width: 100%; border-collapse: collapse; }
-          .header-table td { padding: 10px; }
-          .logo-col { width: 100px; vertical-align: middle; border-bottom: 2px solid #000; }
-          .info-col { text-align: right; vertical-align: middle; border-bottom: 2px solid #000; }
-
-          .logo { width: 70px; height: 70px; }
-          .company-name { font-size: 20px; font-weight: bold; color: #3399ff; margin: 0; }
-          .tagline { font-size: 14px; font-style: italic; font-weight: bold; margin: 0; }
-          .address { font-size: 9px; font-weight: bold; margin-top: 5px; }
-
-          .title-bar { background-color: #000; color: #fff; text-align: center; font-size: 22px; font-weight: bold; padding: 5px; }
-
-          .meta-table { width: 100%; border-collapse: collapse; font-weight: bold; }
-          .meta-table td { border-bottom: 2px solid #000; padding: 5px; }
-
-          .section-title { background-color: #2b579a; color: #fff; text-align: center; font-size: 14px; font-weight: bold; padding: 4px; border-bottom: 2px solid #000; }
-
-          .data-table { width: 100%; border-collapse: collapse; font-weight: bold; font-size: 11px; }
-          .data-table td { border-bottom: 1px solid #000; padding: 5px 8px; vertical-align: top; }
-          .data-table tr:last-child td { border-bottom: 2px solid #000; }
-          .data-table .label-col { width: 30%; border-right: 1px solid #000; }
-          .data-table .val-col { width: 70%; }
-
-          .bottom-table { width: 100%; border-collapse: collapse; font-weight: bold; font-size: 11px; }
-          .bottom-table td { padding: 4px 8px; border-bottom: 1px solid #000; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <table class="header-table">
-            <tr>
-              <td class="logo-col">
-                <img src="${BIAS_LOGO_DATA_URL}" class="logo"  alt="BiAS Logo" />
-              </td>
-              <td class="info-col">
-                <div class="company-name">PT. BIAS SURYA TEKNOLOGI</div>
-                <div class="tagline">The shape of smart</div>
-                <div class="address">
-                  Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia<br>
-                  Phone: +62811 704 5657  Email: admin@biasbst.com<br>
-                  Website: www.biassuryateknologi.com
-                </div>
-              </td>
-            </tr>
-          </table>
-
-          <div class="title-bar">SERVICE HISTORY</div>
-
-          <table class="meta-table">
-            <tr>
-              <td style="width: 30%; border-right: 1px solid #000;">Date</td>
-              <td>${esc(dateStr)}</td>
-            </tr>
-          </table>
-
-          <div class="section-title">CUSTOMER DETAIL</div>
-          <table class="data-table">
-            <tr><td class="label-col">Company Name</td><td class="val-col">${esc(custName)}</td></tr>
-            <tr><td class="label-col">Customer Type</td><td class="val-col">${esc(String(fullItem.customer_category || customer.category || "Corporate"))}</td></tr>
-            <tr><td class="label-col">Project Name</td><td class="val-col">${esc(fullItem.project_name || "-")}</td></tr>
-            <tr><td class="label-col">Address</td><td class="val-col">${esc(customer.address || "-")}</td></tr>
-            <tr><td class="label-col">Installation Address</td><td class="val-col">${esc(fullItem.delivery_address || "-")}</td></tr>
-            <tr><td class="label-col">Phone</td><td class="val-col">${esc(custPhone)}</td></tr>
-            <tr><td class="label-col">Person in Charge</td><td class="val-col">${esc(picName)}</td></tr>
-          </table>
-
-          <div class="section-title">PRODUCT DETAIL</div>
-          <table class="data-table">
-            <tr><td class="label-col">Brand</td><td class="val-col">${esc(brand?.name || "-")}</td></tr>
-            <tr><td class="label-col">Product Types</td><td class="val-col">${esc(utype?.name || (u.is_computer ? "Computer/Desktop" : "Photocopy"))}</td></tr>
-            <tr><td class="label-col">Model/Type</td><td class="val-col">${esc(u.model || "-")}</td></tr>
-            <tr><td class="label-col">Serial Number</td><td class="val-col">${esc(u.serial_no || "-")}</td></tr>
-            <tr><td class="label-col">Warranty</td><td class="val-col">${esc(firstLine.warranty_status || "-")}</td></tr>
-            <tr><td class="label-col">Warranty expired date</td><td class="val-col">${firstLine.warranty_expired_date ? new Date(firstLine.warranty_expired_date).toLocaleDateString("en-GB") : "-"}</td></tr>
-            ${
-              itemsCount > 1
-                ? `<tr><td class="label-col">Items (${itemsCount})</td><td class="val-col">${itemsList}</td></tr>`
-                : ""
-            }
-            <tr><td class="label-col" style="height: 50px;">Problem</td><td class="val-col">${esc(fullItem.problem || "")}</td></tr>
-            <tr><td class="label-col" style="height: 50px;">Remarks</td><td class="val-col">${esc(fullItem.action || fullItem.notes || firstLine.remarks || "")}</td></tr>
-          </table>
-
-          <table class="bottom-table">
-            <tr>
-              <td style="width: 30%;">
-
-              </td>
-              <td>
-                <div style="display: flex;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Tested</div><div style="padding: 2px;">${fullItem.is_tested ? "YES" : "NO"}</div>
-                </div>
-                <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Complete</div><div style="padding: 2px;">${fullItem.is_completed ? "YES" : "NO"}</div>
-                </div>
-                <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time in</div><div style="padding: 2px;">${esc(fullItem.time_in || "")}</div>
-                </div>
-                <div style="display: flex; border-top: 1px solid #000;">
-                  <div style="width: 80px; border-right: 1px solid #000; padding: 2px;">Time Out</div><div style="padding: 2px;">${esc(fullItem.time_out || "")}</div>
-                </div>
-              </td>
-            </tr>
-          </table>
-
-
-          <div style="border-top: 2px solid #000; padding: 10px 20px 24px; font-weight: bold;">
-            <div style="display: flex; justify-content: space-between; gap: 48px;">
-              <div style="flex: 1; text-align: center;">
-                <div>TESTED ${fullItem.is_tested ? "YES" : "NO"}</div>
-                <div style="height: 70px; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid #000; margin-top: 8px; overflow: hidden;">
-                  ${fullItem.technician_signature ? '<img src="' + fullItem.technician_signature + '" style="max-height: 68px; max-width: 100%; object-fit: contain; display: block;" />' : ""}
-                </div>
-                <div style="margin-top: 6px;">${esc(fullItem.technician_name || tech.name || tech.full_name || tech.user?.name || "")}</div>
-                <div style="font-weight: normal; font-size: 10px;">Technician</div>
-              </div>
-              <div style="flex: 1; text-align: center;">
-                <div>COMPLETE ${fullItem.is_completed ? "YES" : "NO"}</div>
-                <div style="height: 70px; display: flex; align-items: flex-end; justify-content: center; border-bottom: 1px solid #000; margin-top: 8px; overflow: hidden;">
-                  ${fullItem.customer_signature ? '<img src="' + fullItem.customer_signature + '" style="max-height: 68px; max-width: 100%; object-fit: contain; display: block;" />' : ""}
-                </div>
-                <div style="margin-top: 6px;">${esc(fullItem.customer_name || picName || "")}</div>
-                <div style="font-weight: normal; font-size: 10px;">Customer</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <script>
-          window.onload = function() {
-            setTimeout(function() { window.print(); }, 500);
-          }
-        <\/script>
-      </body>
-    </html>
-  `;
-  printWindow.document.write(html);
-  printWindow.document.close();
-  return true;
+/**
+ * Download PDF SERVICE HISTORY untuk delivery order.
+ */
+export async function downloadDeliveryServiceHistoryPdf(item: any): Promise<boolean> {
+  if (!item) return false;
+  return downloadServiceReportPdf(item, "history");
 }
