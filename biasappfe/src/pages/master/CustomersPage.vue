@@ -286,10 +286,196 @@ const activeFilteredCustomerHistory = computed(() => {
   return customerHistory.value.filter((item) => getItemTarget(item).id === selectedTargetTab.value)
 })
 
+const historyMainTab = ref<'jobs' | 'items'>('jobs')
+const itemCategoryFilter = ref<'all' | 'purchased' | 'rented' | 'requested'>('all')
+
+interface CustomerItemEntry {
+  key: string
+  date: string
+  category: 'purchased' | 'rented' | 'requested'
+  categoryLabel: string
+  refNo: string
+  itemKind: 'unit' | 'product'
+  itemKindLabel: string
+  name: string
+  qty: number
+  status: string
+}
+
+const customerItems = computed<CustomerItemEntry[]>(() => {
+  if (!historyModalCustomer.value) return []
+  const cid = String(historyModalCustomer.value.id)
+  const list: CustomerItemEntry[] = []
+
+  // 1. Dibeli (Sales)
+  const salesList = ((masterStore.sales as any)?.value || []) as any[]
+  for (const sale of salesList) {
+    if (String(sale.customer_id) !== cid) continue
+    const sItems = sale.sale_items || sale.items || []
+    for (let idx = 0; idx < sItems.length; idx++) {
+      const si = sItems[idx]
+      if (si.unit_id || si.unit) {
+        const u = si.unit || masterStore.findUnit(si.unit_id)
+        const name = u
+          ? `${masterStore.formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}`
+          : `Unit (${si.unit_id})`
+        list.push({
+          key: `sale_u_${sale.id}_${idx}`,
+          date: sale.sale_date || sale.created_at || '',
+          category: 'purchased',
+          categoryLabel: 'Dibeli',
+          refNo: sale.sale_no || `SLS-${sale.id}`,
+          itemKind: 'unit',
+          itemKindLabel: 'Unit / Mesin',
+          name,
+          qty: si.qty || 1,
+          status: (sale.status || '-').toUpperCase(),
+        })
+      } else if (si.product_id || si.product || si.item_name || si.model) {
+        const p = si.product || (si.product_id ? masterStore.findProduct(si.product_id) : null)
+        const name = p
+          ? masterStore.formatProductDisplayName(p)
+          : (si.item_name || si.model || 'Produk / Consumable')
+        list.push({
+          key: `sale_p_${sale.id}_${idx}`,
+          date: sale.sale_date || sale.created_at || '',
+          category: 'purchased',
+          categoryLabel: 'Dibeli',
+          refNo: sale.sale_no || `SLS-${sale.id}`,
+          itemKind: 'product',
+          itemKindLabel: 'Produk / Consumable',
+          name,
+          qty: si.qty || 1,
+          status: (sale.status || '-').toUpperCase(),
+        })
+      }
+    }
+  }
+
+  // 2. Disewa (Rents + ContractItems fallback)
+  const rentedUnitIds = new Set<string>()
+  const rentsList = ((masterStore as any).rents?.value || []) as any[]
+  for (const rental of rentsList) {
+    if (String(rental.customer_id) !== cid) continue
+    const rItems = rental.rental_items || rental.items || []
+    for (let idx = 0; idx < rItems.length; idx++) {
+      const ri = rItems[idx]
+      if (ri.unit_id || ri.unit) {
+        const uId = String(ri.unit_id || ri.unit?.id || '')
+        if (uId) rentedUnitIds.add(uId)
+        const u = ri.unit || masterStore.findUnit(ri.unit_id)
+        const name = u
+          ? `${masterStore.formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}`
+          : `Unit (${ri.unit_id})`
+        list.push({
+          key: `rent_u_${rental.id}_${idx}`,
+          date: rental.start_date || rental.created_at || '',
+          category: 'rented',
+          categoryLabel: 'Disewa',
+          refNo: rental.rental_no || rental.contract_no || `RNT-${rental.id}`,
+          itemKind: 'unit',
+          itemKindLabel: 'Unit / Mesin',
+          name,
+          qty: ri.qty || 1,
+          status: (rental.status || '-').toUpperCase(),
+        })
+      } else if (ri.product_id || ri.product || ri.item_name) {
+        const p = ri.product || (ri.product_id ? masterStore.findProduct(ri.product_id) : null)
+        const name = p
+          ? masterStore.formatProductDisplayName(p)
+          : (ri.item_name || 'Produk / Consumable')
+        list.push({
+          key: `rent_p_${rental.id}_${idx}`,
+          date: rental.start_date || rental.created_at || '',
+          category: 'rented',
+          categoryLabel: 'Disewa',
+          refNo: rental.rental_no || rental.contract_no || `RNT-${rental.id}`,
+          itemKind: 'product',
+          itemKindLabel: 'Produk / Consumable',
+          name,
+          qty: ri.qty || 1,
+          status: (rental.status || '-').toUpperCase(),
+        })
+      }
+    }
+  }
+
+  const ciList = ((masterStore.contractItems as any)?.value || []) as any[]
+  for (const ci of ciList) {
+    if (String(ci.customer_id) !== cid) continue
+    const uId = String(ci.unit_id || '')
+    if (uId && rentedUnitIds.has(uId)) continue
+    if (uId) rentedUnitIds.add(uId)
+    const u = (ci as any).unit || (ci.unit_id ? masterStore.findUnit(ci.unit_id) : null)
+    const name = u
+      ? `${masterStore.formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}`
+      : `Unit (${ci.unit_id || '-'})`
+    list.push({
+      key: `ci_${ci.id}`,
+      date: ci.start_date || ci.created_at || '',
+      category: 'rented',
+      categoryLabel: 'Disewa',
+      refNo: ci.contract_no || `CTR-${ci.id}`,
+      itemKind: 'unit',
+      itemKindLabel: 'Unit / Mesin',
+      name,
+      qty: 1,
+      status: (ci.status || '-').toUpperCase(),
+    })
+  }
+
+  // 3. Direquest (Sparepart / Consumable Requests)
+  const spReqs = ((masterStore.sparepartRequests as any)?.value || []) as any[]
+  for (const req of spReqs) {
+    const reqCid = req.customer_id || req.service_report?.customer_id || req.sale?.customer_id || req.rental?.customer_id
+    if (String(reqCid) !== cid) continue
+    const p = req.product || (req.product_id ? masterStore.findProduct(req.product_id) : null)
+    const u = req.unit || (req.unit_id ? masterStore.findUnit(req.unit_id) : null)
+    const name = p
+      ? masterStore.formatProductDisplayName(p)
+      : (req.item_name || (u ? `${masterStore.formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}` : 'Sparepart / Consumable'))
+    list.push({
+      key: `req_${req.id}`,
+      date: req.created_at || '',
+      category: 'requested',
+      categoryLabel: 'Direquest',
+      refNo: req.request_no || `REQ-${req.id}`,
+      itemKind: (!p && !req.product_id && u) ? 'unit' : 'product',
+      itemKindLabel: (!p && !req.product_id && u) ? 'Unit / Mesin' : 'Produk / Consumable',
+      name,
+      qty: req.qty || 1,
+      status: (req.status || '-').toUpperCase(),
+    })
+  }
+
+  return list.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
+})
+
+const purchasedItemsCount = computed(() => customerItems.value.filter(i => i.category === 'purchased').length)
+const rentedItemsCount = computed(() => customerItems.value.filter(i => i.category === 'rented').length)
+const requestedItemsCount = computed(() => customerItems.value.filter(i => i.category === 'requested').length)
+
+const filteredCustomerItems = computed(() => {
+  if (itemCategoryFilter.value === 'all') return customerItems.value
+  return customerItems.value.filter(i => i.category === itemCategoryFilter.value)
+})
+
 async function openHistory(customer: Customer) {
   historyModalCustomer.value = customer
+  historyMainTab.value = 'jobs'
   selectedTargetTab.value = 'all'
-  await masterStore.refreshOnly(['serviceReports', 'deliveryOrders', 'technicians', 'units', 'products'])
+  itemCategoryFilter.value = 'all'
+  await masterStore.refreshOnly([
+    'serviceReports',
+    'deliveryOrders',
+    'technicians',
+    'units',
+    'products',
+    'sales',
+    'rents',
+    'contractItems',
+    'sparepartRequests',
+  ])
 }
 
 function getHistoryTechnicianName(item: any): string {
@@ -554,10 +740,32 @@ function goToForm(item: any) {
     />
 
     <FormModal :open="!!historyModalCustomer" :title="'Riwayat Pekerjaan: ' + (historyModalCustomer?.company_name || historyModalCustomer?.name || '')" max-width="1000px" @close="historyModalCustomer = null">
-      <div v-if="customerHistory.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
-        Belum ada riwayat pengerjaan untuk customer ini.
+      <!-- Top-Level Modal Tabs -->
+      <div style="display: flex; gap: 8px; border-bottom: 1px solid var(--color-border-light); padding-bottom: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="historyMainTab === 'jobs' ? 'btn-primary' : 'btn-outline'"
+          @click="historyMainTab = 'jobs'"
+        >
+          Riwayat Pekerjaan ({{ customerHistory.length }})
+        </button>
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="historyMainTab === 'items' ? 'btn-primary' : 'btn-outline'"
+          @click="historyMainTab = 'items'"
+        >
+          Produk &amp; Consumable ({{ customerItems.length }})
+        </button>
       </div>
-      <div v-else>
+
+      <!-- TAB 1: Riwayat Pekerjaan -->
+      <div v-if="historyMainTab === 'jobs'">
+        <div v-if="customerHistory.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
+          Belum ada riwayat pengerjaan untuk customer ini.
+        </div>
+        <div v-else>
         <!-- Filter Tabs separated into Unit vs Product -->
         <div class="history-filter-container mb-3" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; border-bottom: 1px solid var(--color-border-light); padding-bottom: 14px;">
           <!-- Global / All Tab -->
@@ -679,6 +887,93 @@ function goToForm(item: any) {
               </tr>
             </tbody>
           </table>
+        </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: Produk & Consumable (Dibeli / Disewa / Direquest) -->
+      <div v-else-if="historyMainTab === 'items'">
+        <div v-if="customerItems.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
+          Belum ada data produk atau consumable yang dibeli, disewa, atau direquest untuk customer ini.
+        </div>
+        <div v-else>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid var(--color-border-light); padding-bottom: 12px;">
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="itemCategoryFilter === 'all' ? 'btn-primary' : 'btn-outline'"
+              @click="itemCategoryFilter = 'all'"
+            >
+              Semua ({{ customerItems.length }})
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="itemCategoryFilter === 'purchased' ? 'btn-primary' : 'btn-outline'"
+              @click="itemCategoryFilter = 'purchased'"
+            >
+              Dibeli ({{ purchasedItemsCount }})
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="itemCategoryFilter === 'rented' ? 'btn-primary' : 'btn-outline'"
+              @click="itemCategoryFilter = 'rented'"
+            >
+              Disewa ({{ rentedItemsCount }})
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm"
+              :class="itemCategoryFilter === 'requested' ? 'btn-primary' : 'btn-outline'"
+              @click="itemCategoryFilter = 'requested'"
+            >
+              Direquest ({{ requestedItemsCount }})
+            </button>
+          </div>
+
+          <div class="table-scroll" style="max-height: 400px; overflow-y: auto;">
+            <table class="data-table" style="width: 100%; text-align: left; border-collapse: collapse;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--color-border-light);">
+                  <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tanggal</th>
+                  <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Kategori</th>
+                  <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">No. Referensi</th>
+                  <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Tipe</th>
+                  <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Nama Produk / Unit</th>
+                  <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Qty</th>
+                  <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="entry in filteredCustomerItems" :key="entry.key" style="border-bottom: 1px solid var(--color-border-light); font-size: 13px;">
+                  <td style="padding: 10px 12px; white-space: nowrap;">{{ entry.date ? new Date(entry.date).toLocaleDateString('en-GB') : '-' }}</td>
+                  <td style="padding: 10px 12px; white-space: nowrap;">
+                    <span
+                      class="badge"
+                      :style="entry.category === 'purchased'
+                        ? 'background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;'
+                        : entry.category === 'rented'
+                          ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;'
+                          : 'background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe;'"
+                      style="font-size: 11px; font-weight: 600;"
+                    >
+                      {{ entry.categoryLabel }}
+                    </span>
+                  </td>
+                  <td style="padding: 10px 12px; font-weight: 500; white-space: nowrap;">{{ entry.refNo }}</td>
+                  <td style="padding: 10px 12px; white-space: nowrap; font-size: 12px; color: var(--color-text-muted);">{{ entry.itemKindLabel }}</td>
+                  <td style="padding: 10px 12px; font-weight: 500;">{{ entry.name }}</td>
+                  <td style="padding: 10px 12px; white-space: nowrap;">{{ entry.qty }}</td>
+                  <td style="padding: 10px 12px; white-space: nowrap;">
+                    <span class="badge badge-secondary" style="font-size: 11px;">
+                      {{ entry.status.replace('_', ' ') }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
       <template #footer>
