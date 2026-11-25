@@ -51,7 +51,10 @@ async function fetchData() {
   }
 }
 
-onMounted(fetchData)
+onMounted(async () => {
+  await fetchData()
+  void ensureNeededResources(['serviceReports', 'deliveryOrders'])
+})
 
 const columns: TableColumn[] = [
   { key: 'company_name', label: 'Customer' },
@@ -168,13 +171,23 @@ async function handleDelete() {
 
 const historyModalCustomer = ref<Customer | null>(null)
 
+function isHistoryDeliveryOrder(doItem: any): boolean {
+  return (
+    doItem.do_type === 'service' ||
+    !!doItem.is_completed ||
+    !!doItem.is_tested ||
+    !!doItem.action ||
+    !!doItem.customer_signature ||
+    !!doItem.technician_signature
+  )
+}
+
 const customerHistory = computed(() => {
   if (!historyModalCustomer.value) return []
   const cid = historyModalCustomer.value.id
   const srs = (masterStore.serviceReports.value as any[]).filter((sr) => String(sr.customer_id) === String(cid)).map(x => ({...x, _type: 'service'}))
   const dos = (masterStore.deliveryOrders.value as any[]).filter((do_item) =>
-    String(do_item.customer_id) === String(cid) &&
-    (do_item.do_type === 'service' || !!do_item.is_completed || !!do_item.is_tested || !!do_item.action || !!do_item.customer_signature || !!do_item.technician_signature)
+    String(do_item.customer_id) === String(cid) && isHistoryDeliveryOrder(do_item)
   ).map(x => ({...x, _type: 'delivery'}))
   
   return [...srs, ...dos].sort((a, b) => {
@@ -644,10 +657,24 @@ function getHistoryProblem(item: any): string {
   return '-'
 }
 
+const customerHistoryCountMap = computed(() => {
+  const map = new Map<string, number>()
+  for (const sr of (masterStore.serviceReports.value as any[]) || []) {
+    if (sr.customer_id == null) continue
+    const k = String(sr.customer_id)
+    map.set(k, (map.get(k) || 0) + 1)
+  }
+  for (const doItem of (masterStore.deliveryOrders.value as any[]) || []) {
+    if (doItem.customer_id == null || !isHistoryDeliveryOrder(doItem)) continue
+    const k = String(doItem.customer_id)
+    map.set(k, (map.get(k) || 0) + 1)
+  }
+  return map
+})
+
 function getCustomerHistoryCount(cid: any) {
-  const srs = (masterStore.serviceReports.value as any[]).filter(sr => String(sr.customer_id) === String(cid)).length
-  const dos = (masterStore.deliveryOrders.value as any[]).filter(do_item => String(do_item.customer_id) === String(cid) && do_item.do_type === 'service').length
-  return srs + dos
+  if (cid == null) return 0
+  return customerHistoryCountMap.value.get(String(cid)) || 0
 }
 
 function goToForm(item: any) {
