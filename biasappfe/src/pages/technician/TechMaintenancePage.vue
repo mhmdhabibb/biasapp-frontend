@@ -3,6 +3,7 @@
 import PageHeader from '@/components/ui/PageHeader.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useAuth } from '@/composables/useAuth'
+import { isTechnicianAssignedToJob } from '@/utils/jobTechnician'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
@@ -45,7 +46,7 @@ const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || n
 
 const myJobs = computed(() =>
   jobOrders.value.filter(j =>
-    String(j.technician_id) === String(myTechId.value) &&
+    isTechnicianAssignedToJob(j, myTechId.value) &&
     (j.job_type === 'maintenance' ||
       j.job_type === 'maintenance_visit' ||
       (j.job_type === 'service' &&

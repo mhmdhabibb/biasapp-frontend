@@ -750,6 +750,25 @@ const filteredTechs = computed(() => {
   );
 });
 
+function getJobMemberTechIds(j: any): string[] {
+  if (!j) return [];
+  const leadId = String(j.technician_id || "");
+  const ids = new Set<string>();
+  if (Array.isArray(j.member_technician_ids)) {
+    for (const id of j.member_technician_ids) {
+      if (id && String(id) !== leadId) ids.add(String(id));
+    }
+  }
+  if (Array.isArray(j.job_order_technicians)) {
+    for (const jt of j.job_order_technicians) {
+      if (jt?.role === "member" && jt.technician_id && String(jt.technician_id) !== leadId) {
+        ids.add(String(jt.technician_id));
+      }
+    }
+  }
+  return Array.from(ids);
+}
+
 // Normalisasi pencocokan ID teknisi agar fleksibel
 function getJobsForTech(techId: string | number): any[] {
   const techObj = ((technicians.value as any[]) || []).find(
@@ -774,10 +793,13 @@ function getJobsForTech(techId: string | number): any[] {
         j.technician?.user_id ||
         "";
       const userVal = j.technician?.user?.id || "";
-      return (
+      if (
         validTechIds.has(String(techIdVal)) ||
         (userVal !== "" && validTechIds.has(String(userVal)))
-      );
+      ) {
+        return true;
+      }
+      return getJobMemberTechIds(j).some((mid) => validTechIds.has(String(mid)));
     })
     .map((j: any) => {
       let doObj = j.delivery_order;
@@ -1063,7 +1085,8 @@ function isTechnicianBusy(technicianId: string | number) {
 
   const hasSameDayJob = jobOrders.value.some(
     (job: any) =>
-      validTechIds.has(String(job.technician_id || "")) &&
+      (validTechIds.has(String(job.technician_id || "")) ||
+        getJobMemberTechIds(job).some((mid) => validTechIds.has(String(mid)))) &&
       dateKey(job.scheduled_date) === targetDate &&
       !isTerminalStatus(job.status),
   );
@@ -1242,12 +1265,35 @@ function onDragLeave() {
 
 const showAssignModal = ref(false);
 const assignTarget = ref<{ task: any; techId: string | number } | null>(null);
+const assignMemberTechIds = ref<string[]>([]);
 const assignDeliveryDate = ref("");
 const assignScheduledDate = ref("");
 const assignVisitDate = ref("");
 const assignSignature = ref("");
 const isAssigning = ref(false);
 const sigFileInput = ref<HTMLInputElement | null>(null);
+
+function toggleMemberTech(techId: string | number) {
+  const id = String(techId);
+  if (assignTarget.value && String(assignTarget.value.techId) === id) return;
+  const idx = assignMemberTechIds.value.indexOf(id);
+  if (idx >= 0) {
+    assignMemberTechIds.value.splice(idx, 1);
+  } else {
+    assignMemberTechIds.value.push(id);
+  }
+}
+
+watch(
+  () => assignTarget.value?.techId,
+  (newLead) => {
+    if (newLead != null) {
+      assignMemberTechIds.value = assignMemberTechIds.value.filter(
+        (id) => String(id) !== String(newLead),
+      );
+    }
+  },
+);
 
 function handleSignatureFileUpload(ev: Event) {
   const target = ev.target as HTMLInputElement;
@@ -1296,6 +1342,7 @@ async function onDrop(techId: string | number) {
   dragOverTechId.value = null;
 
   assignTarget.value = { task: { ...draggedRequest }, techId };
+  assignMemberTechIds.value = [];
 
   if (draggedRequest.taskType === "do") {
     assignDeliveryDate.value = toLocalDatetimeStr(
@@ -1326,6 +1373,7 @@ async function onDrop(techId: string | number) {
 function cancelAssign() {
   showAssignModal.value = false;
   assignTarget.value = null;
+  assignMemberTechIds.value = [];
   assignSignature.value = "";
   if (sigFileInput.value) sigFileInput.value.value = "";
 }
@@ -1342,6 +1390,9 @@ async function confirmAssign() {
 
   isAssigning.value = true;
   const { task, techId } = assignTarget.value;
+  const memberIds = assignMemberTechIds.value.filter(
+    (id) => String(id) !== String(techId),
+  );
   const assignerName = authStore.currentUser.value?.name || "Admin/CS";
 
   if (task.taskType === "visit") {
@@ -1355,6 +1406,7 @@ async function confirmAssign() {
 
     const payload = {
       technician_id: techId,
+      member_technician_ids: memberIds,
       scheduled_date: dateObj.toISOString(),
       status: "scheduled",
       assigner_signature: assignSignature.value,
@@ -1376,6 +1428,7 @@ async function confirmAssign() {
     if (task.is_jo) {
       const payload = {
         technician_id: techId,
+        member_technician_ids: memberIds,
         scheduled_date: new Date(assignScheduledDate.value).toISOString(),
         status: "scheduled",
         assigner_signature: assignSignature.value,
@@ -1398,6 +1451,7 @@ async function confirmAssign() {
         job_order_no: `JO-${Date.now().toString().slice(-6)}`,
         service_request_id: task.id,
         technician_id: techId,
+        member_technician_ids: memberIds,
         scheduled_date: new Date(assignScheduledDate.value).toISOString(),
         instructions: task.problem_description || "Rutin Maintenance",
         assigner_signature: assignSignature.value,
@@ -1427,6 +1481,7 @@ async function confirmAssign() {
       const scheduledIso = new Date(assignDeliveryDate.value).toISOString();
       const payload = {
         technician_id: techId,
+        member_technician_ids: memberIds,
         scheduled_date: scheduledIso,
         status: "scheduled",
         assigner_signature: assignSignature.value,
@@ -1458,6 +1513,7 @@ async function confirmAssign() {
         delivery_order_id: task.id,
         job_type: "delivery",
         technician_id: techId,
+        member_technician_ids: memberIds,
         scheduled_date: scheduledIso,
         instructions: task.notes || `Delivery ${doNumber || ""}`.trim(),
         assigner_signature: assignSignature.value,
@@ -1488,6 +1544,7 @@ async function confirmAssign() {
     if (existingJob) {
       const payload = {
         technician_id: techId,
+        member_technician_ids: memberIds,
         scheduled_date: new Date(assignScheduledDate.value).toISOString(),
         status: "scheduled",
         assigner_signature: assignSignature.value,
@@ -1510,6 +1567,7 @@ async function confirmAssign() {
         job_order_no: `JO-${Date.now().toString().slice(-6)}`,
         service_request_id: task.id,
         technician_id: techId,
+        member_technician_ids: memberIds,
         scheduled_date: new Date(assignScheduledDate.value).toISOString(),
         instructions: task.problem_description || "Please check the unit",
         assigner_signature: assignSignature.value,
@@ -2612,6 +2670,27 @@ async function handleDeleteTech() {
                   <span>{{ visitUnitLabel(job) }}</span>
                 </div>
 
+                <!-- Team Role Badge (Kepala / Anggota) -->
+                <div
+                  v-if="getJobMemberTechIds(job).length > 0"
+                  style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px;"
+                >
+                  <span
+                    v-if="String(job.technician_id) === String(t.id)"
+                    class="badge"
+                    style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 600;"
+                  >
+                    Kepala (+{{ getJobMemberTechIds(job).length }} Anggota)
+                  </span>
+                  <span
+                    v-else
+                    class="badge"
+                    style="background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 10px; font-weight: 600;"
+                  >
+                    Anggota (Kepala: {{ technicianLabel(job.technician_id) }})
+                  </span>
+                </div>
+
                 <!-- Date & Job Type -->
                 <div class="ac-row muted" style="margin-top: 4px">
                   <svg
@@ -2684,9 +2763,24 @@ async function handleDeleteTech() {
 
         <div class="detail-grid">
           <div class="detail-item">
-            <span class="detail-label">Technician</span>
+            <span class="detail-label">{{
+              getJobMemberTechIds(selectedJob).length > 0
+                ? "Kepala Teknisi"
+                : "Technician"
+            }}</span>
             <span class="detail-value">{{
               technicianLabel(selectedJob.technician_id)
+            }}</span>
+          </div>
+          <div
+            class="detail-item"
+            v-if="getJobMemberTechIds(selectedJob).length > 0"
+          >
+            <span class="detail-label">Anggota Teknisi</span>
+            <span class="detail-value">{{
+              getJobMemberTechIds(selectedJob)
+                .map((id) => technicianLabel(id))
+                .join(", ")
             }}</span>
           </div>
           <div class="detail-item">
@@ -3107,10 +3201,22 @@ async function handleDeleteTech() {
             }}</span>
           </div>
           <div class="assign-info-row">
-            <span class="assign-label">Technician</span>
-            <span class="assign-value">{{
-              technicianLabel(assignTarget.techId)
-            }}</span>
+            <span class="assign-label">Kepala Teknisi</span>
+            <span class="assign-value">
+              <select
+                v-model="assignTarget.techId"
+                class="form-input"
+                style="padding: 4px 8px; font-size: 13px; height: auto;"
+              >
+                <option
+                  v-for="tech in technicians"
+                  :key="tech.id"
+                  :value="tech.id"
+                >
+                  {{ techName(tech) }}
+                </option>
+              </select>
+            </span>
           </div>
           <div
             class="assign-info-row"
@@ -3124,6 +3230,43 @@ async function handleDeleteTech() {
               "-"
             }}</span>
           </div>
+        </div>
+
+        <!-- Anggota Teknisi (Multi-Assign) -->
+        <div class="form-group mt-md" style="margin-top: 14px;">
+          <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Anggota Teknisi (Opsional)</span>
+            <span style="font-size: 11px; font-weight: 400; color: var(--color-text-muted);">
+              {{ assignMemberTechIds.length }} dipilih
+            </span>
+          </label>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border: 1px solid var(--color-border-light, #e2e8f0); border-radius: 8px; background: var(--color-surface-sunken, #f8fafc); max-height: 150px; overflow-y: auto;">
+            <label
+              v-for="tech in technicians.filter((t: any) => String(t.id) !== String(assignTarget?.techId))"
+              :key="'mem-' + tech.id"
+              style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; cursor: pointer; border: 1px solid;"
+              :style="assignMemberTechIds.includes(String(tech.id))
+                ? 'background: #eff6ff; color: #1d4ed8; border-color: #93c5fd; font-weight: 600;'
+                : 'background: #fff; color: var(--color-text); border-color: #e2e8f0;'"
+            >
+              <input
+                type="checkbox"
+                :checked="assignMemberTechIds.includes(String(tech.id))"
+                @change="toggleMemberTech(tech.id)"
+                style="margin: 0; cursor: pointer;"
+              />
+              <span>{{ techName(tech) }}</span>
+            </label>
+            <span
+              v-if="technicians.filter((t: any) => String(t.id) !== String(assignTarget?.techId)).length === 0"
+              style="font-size: 12px; color: var(--color-text-muted);"
+            >
+              Tidak ada teknisi lain yang tersedia.
+            </span>
+          </div>
+          <p class="assign-hint" style="margin-top: 6px;">
+            Hanya <strong>Kepala Teknisi</strong> yang dapat memberikan tanda tangan laporan. Job ini juga akan masuk ke daftar kerja &amp; report seluruh anggota yang dipilih.
+          </p>
         </div>
 
         <div

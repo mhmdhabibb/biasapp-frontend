@@ -11,6 +11,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { printServiceReport, downloadServiceReportPdf, type ReportType } from '@/utils/printReport'
 import { isCopierReport } from '@/utils/copierReport'
+import { isTechnicianAssignedToJob, isLeadTechnicianForJob, getJobMemberTechIds } from '@/utils/jobTechnician'
 import * as XLSX from 'xlsx'
 
 const router = useRouter()
@@ -53,7 +54,7 @@ const myJobs = computed(() => {
   const filteredJOs = jobOrders.value.filter((j: any) => {
     if (isAdmin) return true
     if (!techId) return !j.technician_id
-    return String(j.technician_id) === String(techId)
+    return isTechnicianAssignedToJob(j, techId)
   })
 
   // Track service_report_id already present in jobOrders to avoid duplicates
@@ -747,9 +748,20 @@ async function handleDownloadRowJob(job: any) {
             <tr v-for="job in paginatedJobs" :key="job.id">
               <td><strong>{{ jobRefNo(job) }}</strong></td>
               <td>
-                <span class="badge" :class="getJobTypeBadgeClass(job)">
-                  {{ getJobTypeLabel(job) }}
-                </span>
+                <div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+                  <span class="badge" :class="getJobTypeBadgeClass(job)">
+                    {{ getJobTypeLabel(job) }}
+                  </span>
+                  <span
+                    v-if="getJobMemberTechIds(job).length > 0 && myTechId"
+                    class="badge"
+                    :style="isLeadTechnicianForJob(job, myTechId)
+                      ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px;'
+                      : 'background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 10px;'"
+                  >
+                    {{ isLeadTechnicianForJob(job, myTechId) ? `Kepala (+${getJobMemberTechIds(job).length})` : 'Anggota' }}
+                  </span>
+                </div>
               </td>
               <td>
                 <div class="font-semibold">{{ job.survey?.customer?.company_name || job.service_report?.customer?.company_name || job.service_request?.customer?.company_name || job.delivery_order?.customer?.company_name || getCustomerName(jobCustomerId(job)) }}</div>

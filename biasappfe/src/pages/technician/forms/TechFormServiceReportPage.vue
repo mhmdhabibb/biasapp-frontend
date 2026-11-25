@@ -16,7 +16,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { currentUser } = useAuth()
-const { serviceReports, products, findCustomer, findTechnician, refreshInBackground, ensureResourcesLoaded } = useMasterStore()
+const { serviceReports, jobOrders, products, findCustomer, findTechnician, getTechnicianIdByUser, refreshInBackground, ensureResourcesLoaded } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
@@ -27,6 +27,17 @@ const job = computed(() => {
   )
 })
 const realServiceReportId = computed(() => reportRecord.value?.id || job.value?.id || serviceId)
+const isLeadTech = computed(() => {
+  if (normalizeRole(currentUser.value?.role) !== 'technician') return true
+  const myTechId = getTechnicianIdByUser(currentUser.value?.id || null)
+  const linkedJo = (jobOrders.value || []).find((j: any) =>
+    String(j.id) === String(job.value?.job_order_id || serviceId) ||
+    String(j.service_report_id) === String(realServiceReportId.value)
+  )
+  const leadId = linkedJo?.technician_id || job.value?.technician_id
+  if (!myTechId || !leadId) return true
+  return String(leadId) === String(myTechId)
+})
 const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
 
 const form = ref({
@@ -480,12 +491,15 @@ async function saveSignatures() {
             <div class="signature-field">
               <label class="form-label">Technician Name</label>
               <input v-model="form.technician_name" type="text" class="form-input" readonly disabled>
-              <label class="form-label mt-sm">Technician Signature <span class="text-danger">*</span></label>
-              <SignaturePad v-model="form.technician_signature" height="180px" />
+              <label class="form-label mt-sm">Technician Signature <span v-if="isLeadTech" class="text-danger">*</span></label>
+              <SignaturePad v-if="isLeadTech" v-model="form.technician_signature" height="180px" />
+              <div v-else style="padding: 14px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; font-size: 12px; color: #475569;">
+                🔒 Anda ditugaskan sebagai <strong>Anggota Teknisi</strong>. Tanda tangan teknisi hanya dapat diberikan oleh <strong>Kepala Teknisi</strong>.
+              </div>
             </div>
             <div class="step-actions">
               <button class="btn btn-outline" :disabled="isSaving" @click="currentStep = 2">Back</button>
-              <button class="btn btn-primary" :disabled="isSaving" @click="saveSignatures">
+              <button v-if="isLeadTech" class="btn btn-primary" :disabled="isSaving" @click="saveSignatures">
                 {{ isSaving ? 'Saving...' : 'Save & Complete Form' }}
               </button>
             </div>

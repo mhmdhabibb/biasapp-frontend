@@ -4,6 +4,7 @@ import DashboardSkeleton from "@/components/ui/DashboardSkeleton.vue";
 import { useAuth } from "@/composables/useAuth";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
+import { isTechnicianAssignedToJob } from "@/utils/jobTechnician";
 import { usePermission } from "@/composables/usePermission";
 import { useDemoMode } from "@/composables/useDemoMode";
 import CreateJobModal from "./CreateJobModal.vue";
@@ -97,7 +98,7 @@ const pendingSparepartCount = computed(() =>
 const myJobs = computed(() => {
   const techId = myTechnician.value?.id;
   if (!techId) return [];
-  return jobOrders.value.filter((j) => j.technician_id === techId);
+  return jobOrders.value.filter((j) => isTechnicianAssignedToJob(j, techId));
 });
 
 function getJobScheduledDate(job: any): string {

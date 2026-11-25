@@ -15,7 +15,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { currentUser } = useAuth()
-const { serviceReports, contractItems, monthlyMeterReadings, findUnit, findCustomer, findTechnician, findProduct, refreshInBackground } = useMasterStore()
+const { serviceReports, jobOrders, contractItems, monthlyMeterReadings, findUnit, findCustomer, findTechnician, findProduct, getTechnicianIdByUser, refreshInBackground } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
@@ -26,6 +26,17 @@ const job = computed(() => {
   )
 })
 const realServiceReportId = computed(() => reportRecord.value?.id || job.value?.id || serviceId)
+const isLeadTech = computed(() => {
+  if (normalizeRole(currentUser.value?.role) !== 'technician') return true
+  const myTechId = getTechnicianIdByUser(currentUser.value?.id || null)
+  const linkedJo = (jobOrders.value || []).find((j: any) =>
+    String(j.id) === String(job.value?.job_order_id || serviceId) ||
+    String(j.service_report_id) === String(realServiceReportId.value)
+  )
+  const leadId = linkedJo?.technician_id || job.value?.technician_id
+  if (!myTechId || !leadId) return true
+  return String(leadId) === String(myTechId)
+})
 const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
 
 const unit = computed(() => {
@@ -946,11 +957,14 @@ async function saveForm() {
 
               <div class="form-group">
                 <div class="flex justify-between items-center mb-xs">
-                  <label class="form-label font-medium m-0">Technician Signature <span class="text-danger">*</span></label>
+                  <label class="form-label font-medium m-0">Technician Signature <span v-if="isLeadTech" class="text-danger">*</span></label>
                   <span class="text-xs text-muted">Tanda tangan digital</span>
                 </div>
-                <div class="sig-pad-box">
+                <div v-if="isLeadTech" class="sig-pad-box">
                   <SignaturePad v-model="form.technician_signature" height="150px" />
+                </div>
+                <div v-else style="padding: 14px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; font-size: 12px; color: #475569;">
+                  🔒 Anda ditugaskan sebagai <strong>Anggota Teknisi</strong>. Tanda tangan teknisi hanya dapat diberikan oleh <strong>Kepala Teknisi</strong>.
                 </div>
               </div>
             </div>
@@ -959,7 +973,7 @@ async function saveForm() {
       </div>
 
       <!-- Action Button Submit -->
-      <div class="action-footer mt-xl mb-xl">
+      <div v-if="isLeadTech" class="action-footer mt-xl mb-xl">
         <button
           type="button"
           class="btn btn-primary btn-submit-report"

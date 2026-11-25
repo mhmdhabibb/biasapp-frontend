@@ -13,6 +13,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { hasDeliveryHistory } from '@/utils/printDeliveryHistory'
+import { isTechnicianAssignedToJob, isLeadTechnicianForJob } from '@/utils/jobTechnician'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { normalizeRole } from '@/router/role-access'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
@@ -195,8 +196,14 @@ function isRenderablePhoto(val: any): boolean {
   return s.startsWith('data:image') || s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')
 }
 
+const isLeadTech = computed(() => {
+  if (userRole.value !== 'technician') return true
+  if (!job.value || !myTechId.value) return true
+  return isLeadTechnicianForJob(job.value, myTechId.value)
+})
+
 watchEffect(() => {
-  if (userRole.value === 'technician' && job.value && myTechId.value && String(job.value.technician_id) !== String(myTechId.value)) {
+  if (userRole.value === 'technician' && job.value && myTechId.value && !isTechnicianAssignedToJob(job.value, myTechId.value)) {
     toast.error('Unauthorized or Service Not Found')
     router.replace('/technician/dashboard')
   }
@@ -1402,9 +1409,12 @@ function handleSurveyPhoto(e: Event) {
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Technician Name</label>
               <input v-model="doForm.technician_name" type="text" class="form-input" readonly disabled>
-              <label class="form-label mt-sm">Technician Signature <span v-if="isEditable" class="text-danger">*</span></label>
-              <div :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+              <label class="form-label mt-sm">Technician Signature <span v-if="isEditable && isLeadTech" class="text-danger">*</span></label>
+              <div v-if="isLeadTech" :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
                 <SignaturePad v-model="doForm.technician_signature" height="150px" />
+              </div>
+              <div v-else style="padding: 14px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; font-size: 12px; color: #475569;">
+                🔒 Anda ditugaskan sebagai <strong>Anggota Teknisi</strong>. Tanda tangan teknisi hanya dapat diberikan oleh <strong>Kepala Teknisi</strong>.
               </div>
             </div>
             <div class="form-group" style="flex: 1;">
@@ -1420,7 +1430,7 @@ function handleSurveyPhoto(e: Event) {
             <button v-if="canManageDo" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
               {{ isSavingDoForm ? 'Saving...' : 'Save Draft' }}
             </button>
-            <button v-if="canManageDo" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
+            <button v-if="canManageDo && isLeadTech" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
               {{ isSavingDoForm ? 'Saving...' : (isDeliveryFormCompleted ? '✅ Complete Delivery' : '🔒 Complete Form First') }}
             </button>
           </div>

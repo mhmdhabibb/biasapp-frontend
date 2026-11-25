@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useMasterStore } from "@/composables/useMasterStore";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import { getJobMemberTechIds } from "@/utils/jobTechnician";
 import biasLogoUrl from "@/assets/bias-logo.png";
 import { api } from "@/services/api";
 
@@ -426,10 +427,19 @@ export async function getJobOrderHtml(job: any, autoPrint: boolean = false): Pro
                   </td>
                 </tr>
                 <tr>
-                  <td class="td-label">Teknisi Tugas</td>
+                  <td class="td-label">${getJobMemberTechIds(fullJob).length > 0 ? 'Kepala Teknisi' : 'Teknisi Tugas'}</td>
                   <td class="td-colon">:</td>
                   <td class="td-val font-semibold">${techName} (${techPhone})</td>
                 </tr>
+                ${getJobMemberTechIds(fullJob).length > 0 ? `
+                <tr>
+                  <td class="td-label">Anggota Tim</td>
+                  <td class="td-colon">:</td>
+                  <td class="td-val">${getJobMemberTechIds(fullJob).map((mid) => {
+                    const mt: any = masterStore.findTechnician(mid) || {};
+                    return mt?.user?.name || mt?.name || mid;
+                  }).join(', ')}</td>
+                </tr>` : ''}
               </table>
             </div>
 

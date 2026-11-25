@@ -5,6 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { isCopierReport } from '@/utils/copierReport'
+import { isTechnicianAssignedToJob } from '@/utils/jobTechnician'
 import { printServiceReport, type ReportType } from '@/utils/printReport'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
@@ -123,11 +124,14 @@ onUnmounted(() => {
 const copierDrafts = computed(() => {
   const myTechId = getTechnicianIdByUser(currentUser.value?.id || null)
   if (!myTechId) return []
-  return serviceReports.value.filter((r: any) =>
-    isCopierReport(r) &&
-    String(r.status || '').toLowerCase() !== 'completed' &&
-    String(r.technician_id || '') === String(myTechId),
-  ).sort((a: any, b: any) =>
+  return serviceReports.value.filter((r: any) => {
+    if (!isCopierReport(r) || String(r.status || '').toLowerCase() === 'completed') return false
+    if (String(r.technician_id || '') === String(myTechId)) return true
+    const linkedJo = (masterStore.jobOrders.value || []).find((j: any) =>
+      String(j.id) === String(r.job_order_id) || String(j.service_report_id) === String(r.id)
+    )
+    return linkedJo ? isTechnicianAssignedToJob(linkedJo, myTechId) : false
+  }).sort((a: any, b: any) =>
     String(b.service_date || b.created_at || '').localeCompare(
       String(a.service_date || a.created_at || ''),
     ),
