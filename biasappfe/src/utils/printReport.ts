@@ -648,7 +648,7 @@ function technicalReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col">Project Name</td><td class="val-col"> ${item.project_name || "-"}</td></tr>
         <tr><td class="label-col">Address</td><td class="val-col"> ${ctx.custAddress}</td></tr>
         <tr><td class="label-col">Phone</td><td class="val-col"> ${ctx.custPhone}</td></tr>
-        <tr><td class="label-col">Personnel Incharges</td><td class="val-col"> ${ctx.picName}</td></tr>
+        <tr><td class="label-col">Person In Charge</td><td class="val-col"> ${ctx.picName}</td></tr>
       </table>
       <div class="section-title">PRODUCT DETAIL</div>
       <table class="data-table">
@@ -709,7 +709,7 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
         <tr><td class="label-col">Project Name</td><td class="val-col">${item.project_name || "-"}</td></tr>
         <tr><td class="label-col">Address</td><td class="val-col">${ctx.custAddress}</td></tr>
         <tr><td class="label-col">Phone</td><td class="val-col">${ctx.custPhone}</td></tr>
-        <tr><td class="label-col">Personnel Incharge</td><td class="val-col">${ctx.picName}</td></tr>
+        <tr><td class="label-col">Person In Charge</td><td class="val-col">${ctx.picName}</td></tr>
       </table>
       <div class="section-title">PRODUCT DETAIL</div>
       <table class="data-table">
