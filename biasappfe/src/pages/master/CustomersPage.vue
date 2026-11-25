@@ -460,22 +460,60 @@ const filteredCustomerItems = computed(() => {
   return customerItems.value.filter(i => i.category === itemCategoryFilter.value)
 })
 
+const isHistoryLoading = ref(false)
+const isItemsLoading = ref(false)
+
+async function ensureNeededResources(names: string[]) {
+  const loaded = masterStore.loadedResources?.value
+  const missing = loaded ? names.filter((n) => !loaded.has(n)) : names
+  if (missing.length > 0) {
+    await masterStore.refreshOnly(missing)
+  }
+}
+
 async function openHistory(customer: Customer) {
   historyModalCustomer.value = customer
   historyMainTab.value = 'jobs'
   selectedTargetTab.value = 'all'
   itemCategoryFilter.value = 'all'
-  await masterStore.refreshOnly([
-    'serviceReports',
-    'deliveryOrders',
-    'technicians',
-    'units',
-    'products',
-    'sales',
-    'rents',
-    'contractItems',
-    'sparepartRequests',
-  ])
+
+  const jobResources = ['serviceReports', 'deliveryOrders', 'technicians', 'units', 'products']
+  const loaded = masterStore.loadedResources?.value
+  const missingJobs = loaded ? jobResources.filter((n) => !loaded.has(n)) : jobResources
+
+  if (missingJobs.length > 0) {
+    isHistoryLoading.value = true
+    try {
+      await masterStore.refreshOnly(missingJobs)
+    } finally {
+      isHistoryLoading.value = false
+    }
+  }
+
+  // Preload data Produk & Consumable di background tanpa memblokir tampilan Riwayat Pekerjaan
+  const itemResources = ['sales', 'rents', 'contractItems', 'sparepartRequests']
+  const missingItems = loaded ? itemResources.filter((n) => !loaded.has(n)) : itemResources
+  if (missingItems.length > 0) {
+    isItemsLoading.value = true
+    masterStore.refreshOnly(missingItems).finally(() => {
+      isItemsLoading.value = false
+    })
+  }
+}
+
+async function switchToItemsTab() {
+  historyMainTab.value = 'items'
+  const itemResources = ['sales', 'rents', 'contractItems', 'sparepartRequests', 'units', 'products']
+  const loaded = masterStore.loadedResources?.value
+  const missing = loaded ? itemResources.filter((n) => !loaded.has(n)) : itemResources
+  if (missing.length > 0) {
+    isItemsLoading.value = true
+    try {
+      await ensureNeededResources(missing)
+    } finally {
+      isItemsLoading.value = false
+    }
+  }
 }
 
 function getHistoryTechnicianName(item: any): string {
@@ -754,7 +792,7 @@ function goToForm(item: any) {
           type="button"
           class="btn btn-sm"
           :class="historyMainTab === 'items' ? 'btn-primary' : 'btn-outline'"
-          @click="historyMainTab = 'items'"
+          @click="switchToItemsTab"
         >
           Produk &amp; Consumable ({{ customerItems.length }})
         </button>
@@ -762,7 +800,10 @@ function goToForm(item: any) {
 
       <!-- TAB 1: Riwayat Pekerjaan -->
       <div v-if="historyMainTab === 'jobs'">
-        <div v-if="customerHistory.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
+        <div v-if="isHistoryLoading && customerHistory.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
+          Memuat riwayat pengerjaan...
+        </div>
+        <div v-else-if="customerHistory.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
           Belum ada riwayat pengerjaan untuk customer ini.
         </div>
         <div v-else>
@@ -893,7 +934,10 @@ function goToForm(item: any) {
 
       <!-- TAB 2: Produk & Consumable (Dibeli / Disewa / Direquest) -->
       <div v-else-if="historyMainTab === 'items'">
-        <div v-if="customerItems.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
+        <div v-if="isItemsLoading && customerItems.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
+          Memuat data produk &amp; consumable...
+        </div>
+        <div v-else-if="customerItems.length === 0" class="text-center p-xl text-muted" style="padding: 40px 0;">
           Belum ada data produk atau consumable yang dibeli, disewa, atau direquest untuk customer ini.
         </div>
         <div v-else>
