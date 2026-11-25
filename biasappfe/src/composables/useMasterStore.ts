@@ -134,7 +134,7 @@ const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   "/master/roles": ["roles"],
   "/master/permissions": ["permissions"],
   "/master/modules": ["modules"],
-  "/master/customers": ["customers"],
+  "/master/customers": ["customers", "serviceReports", "deliveryOrders"],
   "/master/technicians": ["technicians"],
   "/master/unit-types": ["unitTypes"],
   "/master/brands": ["brands"],

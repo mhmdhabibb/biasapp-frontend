@@ -52,8 +52,10 @@ async function fetchData() {
 }
 
 onMounted(async () => {
-  await fetchData()
-  void ensureNeededResources(['serviceReports', 'deliveryOrders'])
+  await Promise.all([
+    fetchData(),
+    ensureNeededResources(['serviceReports', 'deliveryOrders']),
+  ])
 })
 
 const columns: TableColumn[] = [
