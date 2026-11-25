@@ -172,7 +172,10 @@ const customerHistory = computed(() => {
   if (!historyModalCustomer.value) return []
   const cid = historyModalCustomer.value.id
   const srs = (masterStore.serviceReports.value as any[]).filter((sr) => String(sr.customer_id) === String(cid)).map(x => ({...x, _type: 'service'}))
-  const dos = (masterStore.deliveryOrders.value as any[]).filter((do_item) => String(do_item.customer_id) === String(cid) && do_item.do_type === 'service').map(x => ({...x, _type: 'delivery'}))
+  const dos = (masterStore.deliveryOrders.value as any[]).filter((do_item) =>
+    String(do_item.customer_id) === String(cid) &&
+    (do_item.do_type === 'service' || !!do_item.is_completed || !!do_item.is_tested || !!do_item.action || !!do_item.customer_signature || !!do_item.technician_signature)
+  ).map(x => ({...x, _type: 'delivery'}))
   
   return [...srs, ...dos].sort((a, b) => {
     const da = new Date(a.service_date || a.delivery_date || 0)
@@ -190,7 +193,46 @@ interface HistoryTarget {
   badge: string
 }
 
-function getItemTarget(item: any): HistoryTarget {
+function resolveDeliveryLineTarget(line: any): HistoryTarget | null {
+  if (!line) return null
+  if (line.unit_id) {
+    const masterUnit = masterStore.findUnit(line.unit_id)
+    const u = line.unit ? { ...(masterUnit || {}), ...line.unit, id: line.unit.id || masterUnit?.id || line.unit_id } : masterUnit
+    const uId = u?.id || line.unit_id || (u?.serial_no ? `sn_${u.serial_no}` : (u?.model ? `model_${u.model}` : 'unknown'))
+    const label = u ? `${u.model || u.name || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}` : `${line.model || 'Unit'}${line.serial_no ? ` (${line.serial_no})` : ''}`
+    return {
+      id: `unit_${uId}`,
+      name: label,
+      kind: 'unit',
+      badge: 'Unit / Mesin'
+    }
+  }
+  if (line.product_id) {
+    const p = line.product || masterStore.findProduct(line.product_id)
+    const pId = p?.id || line.product_id || (p?.code ? `code_${p.code}` : (p?.name ? `name_${p.name}` : 'unknown'))
+    return {
+      id: `prod_${pId}`,
+      name: p?.name || 'Produk / Sparepart',
+      kind: 'product',
+      badge: 'Produk / Sparepart'
+    }
+  }
+  if (line.model) {
+    const label = `${line.model}${line.serial_no ? ` (${line.serial_no})` : ''}`
+    const isExternalUnit = !!(line.brand_id || line.unit_type_id || line.serial_no)
+    const extKey = line.serial_no ? `sn_${line.serial_no}` : `model_${line.model}`
+    return {
+      id: isExternalUnit ? `unit_ext_${extKey}` : `prod_ext_${line.model}`,
+      name: label,
+      kind: isExternalUnit ? 'unit' : 'product',
+      badge: isExternalUnit ? 'Unit (External)' : 'Produk'
+    }
+  }
+  return null
+}
+
+function getItemTargets(item: any): HistoryTarget[] {
+  const targets: HistoryTarget[] = []
   if (item._type === 'service') {
     const unitId = item.unit_id || item.unit?.id
     const masterUnit = unitId ? masterStore.findUnit(unitId) : null
@@ -198,68 +240,66 @@ function getItemTarget(item: any): HistoryTarget {
     if (u) {
       const uId = u.id || item.unit_id || (u.serial_no ? `sn_${u.serial_no}` : (u.model ? `model_${u.model}` : 'unknown'))
       const label = `${u.model || u.name || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}`
-      return {
+      targets.push({
         id: `unit_${uId}`,
         name: label,
         kind: 'unit',
         badge: 'Unit / Mesin'
+      })
+    } else if (unitId) {
+      targets.push({
+        id: `unit_${unitId}`,
+        name: `Unit (${unitId})`,
+        kind: 'unit',
+        badge: 'Unit / Mesin'
+      })
+    }
+    const spareparts = item.service_spareparts || item.spareparts || []
+    for (const sp of spareparts) {
+      if (sp.product_id || sp.product) {
+        const p = sp.product || masterStore.findProduct(sp.product_id)
+        const pId = p?.id || sp.product_id
+        if (pId) {
+          targets.push({
+            id: `prod_${pId}`,
+            name: p?.name || sp.item_name || 'Produk / Sparepart',
+            kind: 'product',
+            badge: 'Produk / Sparepart'
+          })
+        }
       }
     }
-    return {
-      id: unitId ? `unit_${unitId}` : 'other',
-      name: unitId ? `Unit (${unitId})` : 'Tanpa Unit',
-      kind: 'unit',
-      badge: 'Unit / Mesin'
+    if (targets.length === 0) {
+      targets.push({ id: 'other', name: 'Tanpa Unit', kind: 'other', badge: '-' })
     }
+    return targets
   } else if (item._type === 'delivery') {
     const doi = item.delivery_order_items || []
-    if (doi.length > 0) {
-      const first = doi[0]
-      if (first.unit_id) {
-        const masterUnit = masterStore.findUnit(first.unit_id)
-        const u = first.unit ? { ...(masterUnit || {}), ...first.unit, id: first.unit.id || masterUnit?.id || first.unit_id } : masterUnit
-        const uId = u?.id || first.unit_id || (u?.serial_no ? `sn_${u.serial_no}` : (u?.model ? `model_${u.model}` : 'unknown'))
-        const label = u ? `${u.model || u.name || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}` : `${first.model || 'Unit'}${first.serial_no ? ` (${first.serial_no})` : ''}`
-        return {
-          id: `unit_${uId}`,
-          name: label,
-          kind: 'unit',
-          badge: 'Unit / Mesin'
-        }
-      }
-      if (first.product_id) {
-        const p = first.product || masterStore.findProduct(first.product_id)
-        const pId = p?.id || first.product_id || (p?.code ? `code_${p.code}` : (p?.name ? `name_${p.name}` : 'unknown'))
-        return {
-          id: `prod_${pId}`,
-          name: p?.name || 'Produk / Sparepart',
-          kind: 'product',
-          badge: 'Produk / Sparepart'
-        }
-      }
-      if (first.model) {
-        const label = `${first.model}${first.serial_no ? ` (${first.serial_no})` : ''}`
-        const isExternalUnit = !!(first.brand_id || first.unit_type_id || first.serial_no)
-        const extKey = first.serial_no ? `sn_${first.serial_no}` : `model_${first.model}`
-        return {
-          id: isExternalUnit ? `unit_ext_${extKey}` : `prod_ext_${first.model}`,
-          name: label,
-          kind: isExternalUnit ? 'unit' : 'product',
-          badge: isExternalUnit ? 'Unit (External)' : 'Produk'
-        }
-      }
+    for (const line of doi) {
+      const t = resolveDeliveryLineTarget(line)
+      if (t) targets.push(t)
     }
   }
-  return { id: 'other', name: 'Lainnya / Tanpa Item', kind: 'other', badge: '-' }
+  if (targets.length === 0) {
+    targets.push({ id: 'other', name: 'Lainnya / Tanpa Item', kind: 'other', badge: '-' })
+  }
+  return targets
+}
+
+function getItemTarget(item: any): HistoryTarget {
+  return getItemTargets(item)[0]
 }
 
 const unitTabs = computed(() => {
   const map = new Map<string, { id: string; name: string; count: number }>()
   for (const item of customerHistory.value) {
-    const t = getItemTarget(item)
-    if (t.kind === 'unit') {
-      if (!map.has(t.id)) map.set(t.id, { id: t.id, name: t.name, count: 0 })
-      map.get(t.id)!.count++
+    const seen = new Set<string>()
+    for (const t of getItemTargets(item)) {
+      if (t.kind === 'unit' && !seen.has(t.id)) {
+        seen.add(t.id)
+        if (!map.has(t.id)) map.set(t.id, { id: t.id, name: t.name, count: 0 })
+        map.get(t.id)!.count++
+      }
     }
   }
   return Array.from(map.values())
@@ -268,22 +308,25 @@ const unitTabs = computed(() => {
 const productTabs = computed(() => {
   const map = new Map<string, { id: string; name: string; count: number }>()
   for (const item of customerHistory.value) {
-    const t = getItemTarget(item)
-    if (t.kind === 'product') {
-      if (!map.has(t.id)) map.set(t.id, { id: t.id, name: t.name, count: 0 })
-      map.get(t.id)!.count++
+    const seen = new Set<string>()
+    for (const t of getItemTargets(item)) {
+      if (t.kind === 'product' && !seen.has(t.id)) {
+        seen.add(t.id)
+        if (!map.has(t.id)) map.set(t.id, { id: t.id, name: t.name, count: 0 })
+        map.get(t.id)!.count++
+      }
     }
   }
   return Array.from(map.values())
 })
 
 const otherItemsCount = computed(() => {
-  return customerHistory.value.filter(item => getItemTarget(item).kind === 'other').length
+  return customerHistory.value.filter(item => getItemTargets(item).some(t => t.kind === 'other')).length
 })
 
 const activeFilteredCustomerHistory = computed(() => {
   if (selectedTargetTab.value === 'all') return customerHistory.value
-  return customerHistory.value.filter((item) => getItemTarget(item).id === selectedTargetTab.value)
+  return customerHistory.value.filter((item) => getItemTargets(item).some(t => t.id === selectedTargetTab.value))
 })
 
 const historyMainTab = ref<'jobs' | 'items'>('jobs')
@@ -291,6 +334,8 @@ const itemCategoryFilter = ref<'all' | 'purchased' | 'rented' | 'requested'>('al
 
 interface CustomerItemEntry {
   key: string
+  targetId: string
+  serviceReportId?: string | number | null
   date: string
   category: 'purchased' | 'rented' | 'requested'
   categoryLabel: string
@@ -316,11 +361,13 @@ const customerItems = computed<CustomerItemEntry[]>(() => {
       const si = sItems[idx]
       if (si.unit_id || si.unit) {
         const u = si.unit || masterStore.findUnit(si.unit_id)
+        const uId = u?.id || si.unit_id
         const name = u
           ? `${masterStore.formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}`
           : `Unit (${si.unit_id})`
         list.push({
           key: `sale_u_${sale.id}_${idx}`,
+          targetId: `unit_${uId}`,
           date: sale.sale_date || sale.created_at || '',
           category: 'purchased',
           categoryLabel: 'Dibeli',
@@ -333,11 +380,13 @@ const customerItems = computed<CustomerItemEntry[]>(() => {
         })
       } else if (si.product_id || si.product || si.item_name || si.model) {
         const p = si.product || (si.product_id ? masterStore.findProduct(si.product_id) : null)
+        const pId = p?.id || si.product_id
         const name = p
           ? masterStore.formatProductDisplayName(p)
           : (si.item_name || si.model || 'Produk / Consumable')
         list.push({
           key: `sale_p_${sale.id}_${idx}`,
+          targetId: pId ? `prod_${pId}` : `prod_ext_${si.item_name || si.model}`,
           date: sale.sale_date || sale.created_at || '',
           category: 'purchased',
           categoryLabel: 'Dibeli',
@@ -369,6 +418,7 @@ const customerItems = computed<CustomerItemEntry[]>(() => {
           : `Unit (${ri.unit_id})`
         list.push({
           key: `rent_u_${rental.id}_${idx}`,
+          targetId: `unit_${uId}`,
           date: rental.start_date || rental.created_at || '',
           category: 'rented',
           categoryLabel: 'Disewa',
@@ -381,11 +431,13 @@ const customerItems = computed<CustomerItemEntry[]>(() => {
         })
       } else if (ri.product_id || ri.product || ri.item_name) {
         const p = ri.product || (ri.product_id ? masterStore.findProduct(ri.product_id) : null)
+        const pId = p?.id || ri.product_id
         const name = p
           ? masterStore.formatProductDisplayName(p)
           : (ri.item_name || 'Produk / Consumable')
         list.push({
           key: `rent_p_${rental.id}_${idx}`,
+          targetId: pId ? `prod_${pId}` : `prod_ext_${ri.item_name}`,
           date: rental.start_date || rental.created_at || '',
           category: 'rented',
           categoryLabel: 'Disewa',
@@ -412,6 +464,7 @@ const customerItems = computed<CustomerItemEntry[]>(() => {
       : `Unit (${ci.unit_id || '-'})`
     list.push({
       key: `ci_${ci.id}`,
+      targetId: `unit_${uId}`,
       date: ci.start_date || ci.created_at || '',
       category: 'rented',
       categoryLabel: 'Disewa',
@@ -431,17 +484,23 @@ const customerItems = computed<CustomerItemEntry[]>(() => {
     if (String(reqCid) !== cid) continue
     const p = req.product || (req.product_id ? masterStore.findProduct(req.product_id) : null)
     const u = req.unit || (req.unit_id ? masterStore.findUnit(req.unit_id) : null)
+    const isUnitReq = !p && !req.product_id && !!u
+    const targetId = isUnitReq
+      ? `unit_${u?.id || req.unit_id}`
+      : (p?.id || req.product_id ? `prod_${p?.id || req.product_id}` : `prod_ext_${req.item_name || req.id}`)
     const name = p
       ? masterStore.formatProductDisplayName(p)
       : (req.item_name || (u ? `${masterStore.formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}` : 'Sparepart / Consumable'))
     list.push({
       key: `req_${req.id}`,
+      targetId,
+      serviceReportId: req.service_report_id || req.service_report?.id || null,
       date: req.created_at || '',
       category: 'requested',
       categoryLabel: 'Direquest',
       refNo: req.request_no || `REQ-${req.id}`,
-      itemKind: (!p && !req.product_id && u) ? 'unit' : 'product',
-      itemKindLabel: (!p && !req.product_id && u) ? 'Unit / Mesin' : 'Produk / Consumable',
+      itemKind: isUnitReq ? 'unit' : 'product',
+      itemKindLabel: isUnitReq ? 'Unit / Mesin' : 'Produk / Consumable',
       name,
       qty: req.qty || 1,
       status: (req.status || '-').toUpperCase(),
@@ -450,6 +509,21 @@ const customerItems = computed<CustomerItemEntry[]>(() => {
 
   return list.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
 })
+
+function getRelatedHistoryForItem(entry: CustomerItemEntry): any[] {
+  return customerHistory.value.filter((h) => {
+    if (entry.serviceReportId && h._type === 'service' && String(h.id) === String(entry.serviceReportId)) {
+      return true
+    }
+    return getItemTargets(h).some((t) => t.id === entry.targetId)
+  })
+}
+
+function jumpToItemHistory(entry: CustomerItemEntry) {
+  historyMainTab.value = 'jobs'
+  const matchesTargetTab = unitTabs.value.some(t => t.id === entry.targetId) || productTabs.value.some(t => t.id === entry.targetId)
+  selectedTargetTab.value = matchesTargetTab ? entry.targetId : 'all'
+}
 
 const purchasedItemsCount = computed(() => customerItems.value.filter(i => i.category === 'purchased').length)
 const rentedItemsCount = computed(() => customerItems.value.filter(i => i.category === 'rented').length)
@@ -987,6 +1061,7 @@ function goToForm(item: any) {
                   <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Nama Produk / Unit</th>
                   <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Qty</th>
                   <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Status</th>
+                  <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Riwayat Pekerjaan</th>
                 </tr>
               </thead>
               <tbody>
@@ -1013,6 +1088,19 @@ function goToForm(item: any) {
                     <span class="badge badge-secondary" style="font-size: 11px;">
                       {{ entry.status.replace('_', ' ') }}
                     </span>
+                  </td>
+                  <td style="padding: 10px 12px; white-space: nowrap;">
+                    <template v-if="getRelatedHistoryForItem(entry).length > 0">
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline"
+                        style="font-size: 11px; padding: 3px 8px; color: #2563eb; border-color: #bfdbfe; background: #eff6ff;"
+                        @click="jumpToItemHistory(entry)"
+                      >
+                        Lihat {{ getRelatedHistoryForItem(entry).length }} Riwayat →
+                      </button>
+                    </template>
+                    <span v-else class="text-muted" style="font-size: 12px;">Belum ada</span>
                   </td>
                 </tr>
               </tbody>
