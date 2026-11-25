@@ -1027,9 +1027,51 @@ function handleSubmit() {
 }
 
 function openDelete(item: ServiceReport) { deletingItem.value = item; showConfirm.value = true }
-function handleDelete() {
-  if (deletingItem.value) data.value = data.value.filter(d => d.id !== deletingItem.value!.id)
+async function handleDelete() {
+  if (deletingItem.value) {
+    try {
+      await resources.remove('serviceReports', String(deletingItem.value.id))
+      await masterStore.refreshOnly(['serviceReports'], true)
+      toast.success('Service report berhasil dihapus!')
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal menghapus service report!')
+    }
+  }
   showConfirm.value = false
+}
+
+// ---- Delete Delivery History ----
+const showConfirmDO = ref(false)
+const deletingDO = ref<any>(null)
+function openDeleteDO(item: any) { deletingDO.value = item; showConfirmDO.value = true }
+async function handleDeleteDO() {
+  if (deletingDO.value) {
+    try {
+      await resources.remove('deliveryOrders', String(deletingDO.value.id))
+      await masterStore.refreshOnly(['deliveryOrders'], true)
+      toast.success('Delivery history berhasil dihapus!')
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal menghapus delivery history!')
+    }
+  }
+  showConfirmDO.value = false
+}
+
+// ---- Delete Sparepart Request ----
+const showConfirmSPR = ref(false)
+const deletingSPR = ref<any>(null)
+function openDeleteSPR(item: any) { deletingSPR.value = item; showConfirmSPR.value = true }
+async function handleDeleteSPR() {
+  if (deletingSPR.value) {
+    try {
+      await resources.remove('sparepartRequests', String(deletingSPR.value.id))
+      await masterStore.refreshOnly(['sparepartRequests'], true)
+      toast.success('Sparepart request berhasil dihapus!')
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal menghapus sparepart request!')
+    }
+  }
+  showConfirmSPR.value = false
 }
 
 function customerName(id: any): string {
@@ -1286,6 +1328,12 @@ function printTable() {
             <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
           </svg>
         </button>
+        <button v-if="can('delivery_order:delete')" class="action-btn action-btn--delete" title="Delete" @click="openDeleteDO(row)" style="width: 36px; height: 36px;">
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+          </svg>
+        </button>
       </template>
     </DataTable>
     <DataTable v-if="activeTab === 'sparepart'" :columns="sprColumns" :data="filteredSparepartRequests" search-placeholder="Search sparepart requests...">
@@ -1338,10 +1386,21 @@ function printTable() {
               </svg>
             </button>
           </template>
+          <button
+            v-if="can('sparepart_request:delete')"
+            class="action-btn action-btn--delete"
+            title="Delete"
+            @click="openDeleteSPR(row)"
+            style="width: 36px; height: 36px;"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+            </svg>
+          </button>
         </div>
       </template>
     </DataTable>
-
     <!-- SR Detail Modal -->
     <FormModal :open="showSrDetail" :title="srDetailItem ? `Detail ${srDetailItem.report_no || srDetailItem.service_report_no}` : 'Detail Service Report'" max-width="640px" @close="showSrDetail = false">
       <div v-if="isLoadingDetail" class="text-center py-lg text-muted">
@@ -1788,6 +1847,8 @@ function printTable() {
       </div>
     </FormModal>
     <ConfirmDialog :open="showConfirm" title="Delete Service Report" :message="`Are you sure you want to delete report '${deletingItem?.report_no || (deletingItem as any)?.service_report_no}'?`" @close="showConfirm = false" @confirm="handleDelete" />
+    <ConfirmDialog :open="showConfirmDO" title="Delete Delivery History" :message="`Hapus delivery history '${deletingDO?.do_number}'?`" @close="showConfirmDO = false" @confirm="handleDeleteDO" />
+    <ConfirmDialog :open="showConfirmSPR" title="Delete Sparepart Request" :message="`Hapus sparepart request ini?`" @close="showConfirmSPR = false" @confirm="handleDeleteSPR" />
 
     <!-- Print Modal -->
     <FormModal :open="printModalOpen" title="Print Service Report" max-width="580px" @close="printModalOpen = false" @submit="handleConfirmPrint">
