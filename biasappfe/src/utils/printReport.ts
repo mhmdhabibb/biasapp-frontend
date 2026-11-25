@@ -1187,6 +1187,13 @@ const CSS = `
   .pdf-root .page {
     margin-bottom: 0;
   }
+  /* Kompensasi offset baseline teks html2canvas agar jarak atas-bawah di PDF sama persis dengan Print */
+  .pdf-root .title-bar { padding: 3px 5px 8px; }
+  .pdf-root .section-title { padding: 2px 4px 7px; }
+  .pdf-root .meta-table td { padding: 3px 6px 7px; vertical-align: middle; }
+  .pdf-root .data-table td { padding: 3px 8px 7px; vertical-align: middle; }
+  .pdf-root .tested-table td { padding: 2px 6px 6px; vertical-align: middle; }
+  .pdf-root .bottom-table td { padding: 3px 8px 7px; }
   .page:last-child {
     page-break-after: auto;
     break-after: auto;
