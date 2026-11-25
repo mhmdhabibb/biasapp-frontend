@@ -32,6 +32,9 @@ export function isDeliveryOrderItem(item: any): boolean {
 
 export function needsFullReportFetch(item: any): boolean {
   if (!item || !item.id) return false;
+  if (isDeliveryOrderItem(item) && (!isImageSrc(item.customer_signature) || !isImageSrc(item.technician_signature))) {
+    return true;
+  }
   return (
     item.customer_signature === 'signed' ||
     item.technician_signature === 'signed' ||
@@ -48,8 +51,12 @@ export function needsFullReportFetch(item: any): boolean {
 
 export async function fetchFullServiceReport(item: any): Promise<any> {
   if (!item?.id) return item;
+  const isDO = isDeliveryOrderItem(item);
+  const missingSig =
+    !isImageSrc(item.customer_signature) || !isImageSrc(item.technician_signature);
   const needsFetch =
     needsFullReportFetch(item) ||
+    (isDO && missingSig) ||
     item.photo_before === 'has_photo' ||
     item.photo_progress === 'has_photo' ||
     item.photo_after === 'has_photo' ||
@@ -60,7 +67,6 @@ export async function fetchFullServiceReport(item: any): Promise<any> {
   if (!needsFetch) return item;
 
   try {
-    const isDO = isDeliveryOrderItem(item);
     const endpoint = isDO
       ? `/delivery-orders/${item.id}`
       : `/service-reports/${item.id}`;
@@ -723,7 +729,7 @@ function serviceReportBody(item: any, ctx: ReportCtx): string {
               Unit telah diperiksa dan diuji coba sesuai standar operasional PT. BIAS SURYA TEKNOLOGI.
             </div>
           </td>
-          <td style="width: 50%;">
+          <td style="width: 50%; padding: 0;">
             <table class="tested-table">
               <tr><td class="tt-label">Tested</td><td class="tt-val">${item.is_tested ? "YES" : "NO"}</td></tr>
               <tr><td class="tt-label">Complete</td><td class="tt-val">${item.is_completed ? "YES" : "NO"}</td></tr>
@@ -1153,7 +1159,22 @@ const CSS = `
     .page { page-break-after: always; break-after: page; margin: 0; padding: 0; }
     .page:last-child { page-break-after: auto; break-after: auto; }
   }
-  body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 12px; color: #000; background: #fff; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; line-height: 1.35; margin: 0; padding: 12px; color: #000; background: #fff; }
+  .pdf-root {
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+    color: #000 !important;
+    background: #fff !important;
+    margin: 0;
+    padding: 0;
+  }
+  .pdf-root table, .pdf-root td, .pdf-root th, .pdf-root div, .pdf-root span {
+    font-family: Arial, Helvetica, sans-serif;
+    line-height: 1.35;
+    letter-spacing: normal;
+    box-sizing: border-box;
+  }
   .page {
     page-break-after: always;
     break-after: page;
@@ -1163,17 +1184,13 @@ const CSS = `
     box-sizing: border-box;
     margin-bottom: 24px;
   }
+  .pdf-root .page {
+    margin-bottom: 0;
+  }
   .page:last-child {
     page-break-after: auto;
     break-after: auto;
     margin-bottom: 0;
-  }
-  .html2pdf__page-break {
-    page-break-after: always;
-    break-after: page;
-    height: 0;
-    display: block;
-    clear: both;
   }
   .container { width: 100%; max-width: 790px; margin: 0 auto; border: 2px solid #000; box-sizing: border-box; background: #fff; }
   .header-table { width: 100%; border-collapse: collapse; }
@@ -1204,10 +1221,10 @@ const CSS = `
   .bottom-table td { padding: 4px 8px; border-bottom: 1px solid #000; vertical-align: top; }
   .kv { display: flex; }
   .kv-k { width: 80px; }
-  .tested-table { width: 100%; border-collapse: collapse; font-weight: normal; }
-  .tested-table td { border-bottom: 1px solid #000; padding: 2px 4px; }
+  .tested-table { width: 100%; border-collapse: separate; border-spacing: 0; font-weight: normal; font-size: 11px; }
+  .tested-table td { border-bottom: 1px solid #000; padding: 3px 6px; vertical-align: middle; line-height: 1.35; }
   .tested-table tr:last-child td { border-bottom: none; }
-  .tested-table .tt-label { width: 40%; border-right: 1px solid #000; font-weight: bold; }
+  .tested-table .tt-label { width: 42%; border-right: 1px solid #000; font-weight: bold; }
   .tested-table .tt-val { padding-left: 8px; }
   .signature-block { display: flex; justify-content: space-between; padding: 12px 24px 20px; font-weight: bold; text-align: center; }
   .sig-side { width: 44%; }
@@ -1218,7 +1235,7 @@ const CSS = `
 `;
 
 function wrapDocument(pages: string[], autoPrint: boolean): string {
-  const body = pages.map((p) => `<div class="page">${p}</div>`).join('\n<div class="html2pdf__page-break"></div>\n');
+  const body = pages.map((p) => `<div class="page">${p}</div>`).join('\n');
   const printScript = autoPrint
     ? `<script>window.onload = function() { setTimeout(function() { window.print(); }, 500); }<\/script>`
     : "";
@@ -1311,7 +1328,8 @@ export function getServiceReportFormHtml(item: any, type?: ReportType): string {
 }
 
 export async function downloadServiceReportPdf(item: any, type?: ReportType): Promise<boolean> {
-  const fullItem = (item?.id && needsFullReportFetch(item))
+  await ensureMasterDataLoaded();
+  const fullItem = (item?.id && (needsFullReportFetch(item) || (isDeliveryOrderItem(item) && (!isImageSrc(item.customer_signature) || !isImageSrc(item.technician_signature)))))
     ? await fetchFullServiceReport(item)
     : item;
 
@@ -1323,16 +1341,17 @@ export async function downloadServiceReportPdf(item: any, type?: ReportType): Pr
   try {
     const { default: html2pdf } = await import("html2pdf.js");
     const container = document.createElement("div");
-    container.innerHTML = `<style>${CSS}</style>` + pages.map((p) => `<div class="page">${p}</div>`).join('\n<div class="html2pdf__page-break"></div>\n');
+    container.className = "pdf-root";
+    container.innerHTML = `<style>${CSS}</style>` + pages.map((p) => `<div class="page">${p}</div>`).join('\n');
 
-    const reportNo = (fullItem.report_no || `SR-${fullItem.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
+    const reportNo = (fullItem.report_no || fullItem.do_number || `SR-${fullItem.id || 'doc'}`).replace(/[\/\\?%*:|"<>]/g, '_');
     const opt: any = {
       margin: [8, 8, 8, 8],
       filename: `Laporan_Servis_${reportNo}.pdf`,
       image: { type: "jpeg", quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, logging: false },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"], after: [".page", ".html2pdf__page-break"] },
+      pagebreak: { mode: ["css"] },
     };
 
     await html2pdf().set(opt).from(container).save();

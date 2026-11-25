@@ -526,6 +526,21 @@ function getPrintableServiceReport(job: any) {
   }
 
   const isDelivery = isDeliveryJob(job)
+  if (isDelivery && d) {
+    return {
+      ...d,
+      id: d.id,
+      do_number: d.do_number || jobRefNo(job),
+      customer_id: custId || d.customer_id || cust?.id,
+      customer: cust,
+      delivery_order_items: dItems,
+      technician_id: d.technician_id || job.technician_id,
+      technician: job.technician || d.technician,
+      technician_name: d.technician_name || job.technician?.user?.name || job.technician?.name || '',
+      job_order: job,
+    }
+  }
+
   const isCopier = !isDelivery && isJobCopier(job)
 
   return {
