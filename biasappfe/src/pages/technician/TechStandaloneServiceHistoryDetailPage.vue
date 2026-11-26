@@ -17,8 +17,7 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
-import { printServiceReport, type ReportType } from '@/utils/printReport'
-import { normalizeRole } from '@/router/role-access'
+import { isTechnicianAssignedToJob, getJobMemberTechIds, isLeadTechnicianForJob, isMemberTechnicianForJob } from '@/utils/jobTechnician'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -391,20 +390,56 @@ const isSuperadminOrAdmin = computed(() => {
   return r === 'superadmin' || r === 'admin'
 })
 
+const linkedJob = computed(() => {
+  return ((store.jobOrders?.value || []) as any[]).find((j: any) =>
+    String(j.delivery_order_id) === String(item.value?.id)
+  ) || null
+})
+
+const memberTechIds = computed(() => {
+  return linkedJob.value ? getJobMemberTechIds(linkedJob.value) : []
+})
+
+const isMemberTech = computed(() => {
+  if (currentUser.value?.role !== 'technician' && !isTechnician.value) return false
+  if (!myTechId.value) return false
+  if (linkedJob.value) {
+    return isMemberTechnicianForJob(linkedJob.value, myTechId.value)
+  }
+  return false
+})
+
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
   const r = String(currentUser.value?.role || '').trim().toLowerCase()
   if (r === 'superadmin' || r === 'admin') return true
   if (r === 'technician') {
+    // If technician is an assigned member in a team job (>1 technicians), editing is handled by lead
+    if (isMemberTech.value) return false
     const dTechId = item.value?.technician_id ? String(item.value.technician_id) : ''
     const tId = myTechId.value ? String(myTechId.value) : ''
     const uId = currentUser.value?.id ? String(currentUser.value.id) : ''
-    if (dTechId) {
-      return dTechId === tId || dTechId === uId
+    if (dTechId && (dTechId === tId || dTechId === uId)) {
+      return true
     }
-    return true
+    if (linkedJob.value && isTechnicianAssignedToJob(linkedJob.value, tId)) {
+      return true
+    }
+    return !dTechId
   }
   return false
+})
+
+const isLeadTech = computed(() => {
+  const r = String(currentUser.value?.role || '').trim().toLowerCase()
+  if (r === 'superadmin' || r === 'admin') return true
+  if (linkedJob.value) {
+    return isLeadTechnicianForJob(linkedJob.value, myTechId.value)
+  }
+  const dTechId = item.value?.technician_id ? String(item.value.technician_id) : ''
+  const tId = myTechId.value ? String(myTechId.value) : ''
+  const uId = currentUser.value?.id ? String(currentUser.value.id) : ''
+  return !dTechId || dTechId === tId || dTechId === uId
 })
 
 const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
@@ -495,6 +530,10 @@ function initFormRefresh(overrideData?: any) {
 }
 
 function confirmCompleteForm() {
+  if (!isLeadTech.value) {
+    toast.warning('Tanda tangan dan penyelesaian pekerjaan hanya dapat dilakukan oleh Kepala Teknisi.')
+    return
+  }
   if (!isCompleted.value) {
     toast.warning('Lengkapi dulu: 1 produk + action + tanda tangan + foto awal.')
     return
@@ -682,7 +721,18 @@ onMounted(async () => {
         <div class="info-item"><span class="info-label">Alamat</span><span class="info-value">{{ item.delivery_address || item.rental?.installation_address || item.sale?.installation_address || customer?.address || '-' }}</span></div>
         <div class="info-item"><span class="info-label">PIC & Kontak</span><span class="info-value">{{ item.recipient_name || customer?.pic_name || '-' }} ({{ item.recipient_phone || customer?.phone || '-' }})</span></div>
         <div class="info-item"><span class="info-label">Tanggal</span><span class="info-value">{{ item.delivery_date ? new Date(item.delivery_date).toLocaleDateString('en-GB') : '-' }}</span></div>
-        <div class="info-item"><span class="info-label">Teknisi Bertugas</span><span class="info-value font-bold">{{ store.findTechnician(item.technician_id)?.user?.name || store.findTechnician(item.technician_id)?.name || item.technician_name || '-' }}</span></div>
+        <div class="info-item">
+          <span class="info-label">Kepala Teknisi</span>
+          <span class="info-value font-bold">{{ store.findTechnician(item.technician_id)?.user?.name || store.findTechnician(item.technician_id)?.name || item.technician_name || '-' }}</span>
+        </div>
+        <div class="info-item" v-if="memberTechIds.length > 0">
+          <span class="info-label">Anggota Teknisi</span>
+          <div class="info-value" style="display: flex; flex-wrap: wrap; gap: 4px;">
+            <span v-for="mid in memberTechIds" :key="mid" class="badge" style="background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 11px;">
+              {{ store.findTechnician(mid)?.user?.name || store.findTechnician(mid)?.name || mid }}
+            </span>
+          </div>
+        </div>
         <div v-if="item.notes" class="info-item"><span class="info-label">Catatan CS</span><span class="info-value">{{ item.notes }}</span></div>
       </div>
     </div>
@@ -702,7 +752,21 @@ onMounted(async () => {
         </button>
       </div>
 
+      <div v-else-if="isTechnician && isMemberTech && isPending" class="text-center py-xl">
+        <div class="alert alert-info" style="display: inline-block; max-width: 500px; text-align: left;">
+          ⏳ Menunggu <strong>Kepala Teknisi ({{ store.findTechnician(linkedJob?.technician_id || item?.technician_id)?.user?.name || 'Lead' }})</strong> memulai pengerjaan. Status akan otomatis diperbarui saat pekerjaan dimulai.
+        </div>
+      </div>
+
       <template v-else>
+
+      <div v-if="isMemberTech" class="alert alert-info mb-md" style="display: flex; align-items: flex-start; gap: 8px;">
+        <span style="font-size: 1.2rem;">ℹ️</span>
+        <div>
+          <strong>Penugasan Tim:</strong> Anda ditugaskan sebagai <strong>Anggota Teknisi</strong> pada pekerjaan ini (Kepala: <strong>{{ store.findTechnician(linkedJob?.technician_id || item?.technician_id)?.user?.name || 'Lead' }}</strong>).<br>
+          Seluruh pengisian form, dokumentasi foto, dan tanda tangan dilakukan oleh Kepala Teknisi. Pekerjaan ini otomatis tercatat di Riwayat Pekerjaan Anda.
+        </div>
+      </div>
 
       <div class="items-box mb-lg">
         <div class="items-head">
@@ -813,9 +877,21 @@ onMounted(async () => {
         <div class="form-group" style="flex: 1;">
           <label class="form-label">Technician Name</label>
           <input v-model="form.technician_name" type="text" class="form-input" readonly disabled />
-          <label class="form-label mt-sm">Technician Signature <span v-if="isEditable" class="text-danger">*</span></label>
-          <div :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+          <div v-if="!isLeadTech && (item?.technician_id || linkedJob?.technician_id)" style="margin-top: 4px; display: inline-flex; align-items: center; gap: 4px;" class="badge badge-warning">
+            Anggota (Kepala: {{ findTechnician(linkedJob?.technician_id || item?.technician_id)?.user?.name || findTechnician(linkedJob?.technician_id || item?.technician_id)?.name || 'Lead' }})
+          </div>
+          <label class="form-label mt-sm">Technician Signature <span v-if="isLeadTech" class="text-danger">*</span></label>
+          <div v-if="isLeadTech" :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
             <SignaturePad v-model="form.technician_signature" height="150px" />
+          </div>
+          <div v-else>
+            <div v-if="form.technician_signature" style="border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px; text-align: center; background: #fff;">
+              <img :src="form.technician_signature" alt="Technician Signature" style="max-height: 120px;" />
+              <div class="text-xs text-muted mt-xs">Ditandatangani oleh Kepala Teknisi ({{ findTechnician(linkedJob?.technician_id || item?.technician_id)?.user?.name || 'Lead' }})</div>
+            </div>
+            <div v-else style="padding: 20px; text-align: center; background: var(--color-bg-secondary, #f8f9fa); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 13px;">
+              🔒 Anda ditugaskan sebagai <strong>Anggota Teknisi</strong>. Tanda tangan teknisi hanya dapat diberikan oleh <strong>Kepala Teknisi ({{ findTechnician(linkedJob?.technician_id || item?.technician_id)?.user?.name || 'Lead' }})</strong>.
+            </div>
           </div>
         </div>
         <div class="form-group" style="flex: 1;">
@@ -836,6 +912,9 @@ onMounted(async () => {
         <button v-if="canManageDo" class="btn btn-primary" style="flex: 2;" :disabled="isSaving || !isCompleted" @click="confirmCompleteForm">
           {{ isSaving ? 'Menyimpan...' : (isCompleted ? '✅ Selesaikan' : '🔒 Lengkapi Form Dulu') }}
         </button>
+        <div v-if="isMemberTech" class="alert alert-info" style="flex: 100%; margin-top: var(--space-md); font-size: 13px;">
+          ℹ️ Anda bertugas sebagai <strong>Anggota Teknisi</strong>. Pengisian form dan penyelesaian dilakukan oleh <strong>Kepala Teknisi ({{ store.findTechnician(linkedJob?.technician_id || item?.technician_id)?.user?.name || 'Lead' }})</strong>.
+        </div>
       </div>
       <div v-if="isEditable && isPending" class="mt-md text-center">
         <button class="btn btn-sm btn-outline btn-danger" :disabled="isSaving" @click="removeForm">

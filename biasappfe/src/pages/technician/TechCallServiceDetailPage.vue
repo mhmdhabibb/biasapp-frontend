@@ -12,8 +12,7 @@ import { useDemoMode } from '@/composables/useDemoMode'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
-import { hasDeliveryHistory } from '@/utils/printDeliveryHistory'
-import { isTechnicianAssignedToJob, isLeadTechnicianForJob } from '@/utils/jobTechnician'
+import { isTechnicianAssignedToJob, isLeadTechnicianForJob, getJobMemberTechIds, isMemberTechnicianForJob } from '@/utils/jobTechnician'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { normalizeRole } from '@/router/role-access'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
@@ -160,10 +159,28 @@ const isBlockedByScheduleDate = computed(() => {
 // ── Delivery jobs (JO dari delivery order) ──
 const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].includes(String(job.value?.status || '').toLowerCase()) || !!job.value?.is_completed)
 
+const isLeadTech = computed(() => {
+  if (userRole.value !== 'technician') return true
+  if (!job.value || !myTechId.value) return true
+  return isLeadTechnicianForJob(job.value, myTechId.value)
+})
+
+const isMemberTech = computed(() => {
+  if (userRole.value !== 'technician') return false
+  if (!job.value || !myTechId.value) return false
+  return isMemberTechnicianForJob(job.value, myTechId.value)
+})
+
 const isEditable = computed(() => {
   if (isDeliveredOrCompleted.value) return false
   if (isBlockedByScheduleDate.value) return false
-  return userRole.value === 'technician' || userRole.value === 'admin'
+  if (userRole.value === 'admin' || userRole.value === 'superadmin') return true
+  if (userRole.value === 'technician') {
+    // If technician is an assigned member in a team job (>1 technicians), editing is handled by lead
+    if (isMemberTech.value) return false
+    return true
+  }
+  return false
 })
 const canManageSr = computed(() => isEditable.value && (can('service_report:update') || isTechnician.value || isSuperadminOrAdmin.value))
 const canManageDo = computed(() => isEditable.value && (can('delivery_order:update') || isTechnician.value || isSuperadminOrAdmin.value))
@@ -195,12 +212,6 @@ function isRenderablePhoto(val: any): boolean {
   if (!s || s === 'has_photo' || s === 'null' || s === 'undefined') return false
   return s.startsWith('data:image') || s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/')
 }
-
-const isLeadTech = computed(() => {
-  if (userRole.value !== 'technician') return true
-  if (!job.value || !myTechId.value) return true
-  return isLeadTechnicianForJob(job.value, myTechId.value)
-})
 
 watchEffect(() => {
   if (userRole.value === 'technician' && job.value && myTechId.value && !isTechnicianAssignedToJob(job.value, myTechId.value)) {
@@ -587,6 +598,10 @@ async function saveServiceJobDraft() {
 
 function initCompleteDeliveryJob() {
   if (!job.value || !deliveryOrder.value) return
+  if (!isLeadTech.value) {
+    toast.warning('Tanda tangan dan penyelesaian pekerjaan hanya dapat dilakukan oleh Kepala Teknisi.')
+    return
+  }
   if (!isDeliveryFormCompleted.value) {
     toast.warning('Please complete the service history form first (action, foto, tested, completed + signatures).')
     return
@@ -1239,6 +1254,18 @@ function handleSurveyPhoto(e: Event) {
             <span class="info-value">{{ resolvedScheduledDate ? new Date(resolvedScheduledDate).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-' }}</span>
           </div>
           <div class="info-item">
+            <span class="info-label">Kepala Teknisi</span>
+            <span class="info-value font-bold">{{ findTechnician(job?.technician_id)?.user?.name || findTechnician(job?.technician_id)?.name || '-' }}</span>
+          </div>
+          <div class="info-item" v-if="getJobMemberTechIds(job).length > 0">
+            <span class="info-label">Anggota Teknisi</span>
+            <div class="info-value" style="display: flex; flex-wrap: wrap; gap: 4px;">
+              <span v-for="mid in getJobMemberTechIds(job)" :key="mid" class="badge" style="background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 11px;">
+                {{ findTechnician(mid)?.user?.name || findTechnician(mid)?.name || mid }}
+              </span>
+            </div>
+          </div>
+          <div class="info-item">
             <span class="info-label">DO Status</span>
             <span class="badge" :class="'badge-' + (deliveryOrder?.status === 'delivered' ? 'success' : deliveryOrder?.status === 'in_transit' ? 'info' : deliveryOrder?.status === 'draft' ? 'secondary' : 'warning')">
               {{ String(deliveryOrder?.status || '-').toUpperCase().replace('_', ' ') }}
@@ -1284,11 +1311,22 @@ function handleSurveyPhoto(e: Event) {
       <div class="card p-lg">
         <h2 class="card-title mb-md">Service History Form</h2>
 
+        <div v-if="isMemberTech" class="alert alert-info mb-md" style="display: flex; align-items: flex-start; gap: 8px;">
+          <span style="font-size: 1.2rem;">ℹ️</span>
+          <div>
+            <strong>Penugasan Tim:</strong> Anda ditugaskan sebagai <strong>Anggota Teknisi</strong> pada pekerjaan ini (Kepala: <strong>{{ findTechnician(job?.technician_id)?.user?.name || findTechnician(job?.technician_id)?.name || 'Lead' }}</strong>).<br>
+            Seluruh pengisian form, dokumentasi foto, dan tanda tangan dilakukan oleh Kepala Teknisi. Pekerjaan ini otomatis tercatat di Riwayat Pekerjaan Anda.
+          </div>
+        </div>
+
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
           <p class="mb-lg text-muted">You have not accepted this delivery yet.</p>
-          <button v-if="canManageDo" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="initAcceptDeliveryJob">
+          <button v-if="!isMemberTech && canManageDo" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" :disabled="isSavingDoForm" @click="initAcceptDeliveryJob">
             {{ isSavingDoForm ? 'Accepting...' : 'Accept Delivery Job' }}
           </button>
+          <div v-else-if="isMemberTech" class="alert alert-info" style="display: inline-block; max-width: 500px; text-align: left;">
+            ⏳ Menunggu <strong>Kepala Teknisi ({{ findTechnician(job.technician_id)?.user?.name || findTechnician(job.technician_id)?.name || 'Lead' }})</strong> memulai pengerjaan. Status akan otomatis diperbarui saat pekerjaan dimulai.
+          </div>
         </div>
 
         <div v-else-if="job.status === 'in_progress' || job.status === 'draft'">
@@ -1409,12 +1447,21 @@ function handleSurveyPhoto(e: Event) {
             <div class="form-group" style="flex: 1;">
               <label class="form-label">Technician Name</label>
               <input v-model="doForm.technician_name" type="text" class="form-input" readonly disabled>
-              <label class="form-label mt-sm">Technician Signature <span v-if="isEditable && isLeadTech" class="text-danger">*</span></label>
-              <div v-if="isLeadTech" :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+              <div v-if="!isLeadTech && job?.technician_id" style="margin-top: 4px; display: inline-flex; align-items: center; gap: 4px;" class="badge badge-warning">
+                Anggota (Kepala: {{ findTechnician(job.technician_id)?.user?.name || findTechnician(job.technician_id)?.name || 'Lead' }})
+              </div>
+              <label class="form-label mt-sm">Technician Signature <span v-if="isLeadTech" class="text-danger">*</span></label>
+              <div v-if="isLeadTech">
                 <SignaturePad v-model="doForm.technician_signature" height="150px" />
               </div>
-              <div v-else style="padding: 14px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc; font-size: 12px; color: #475569;">
-                🔒 Anda ditugaskan sebagai <strong>Anggota Teknisi</strong>. Tanda tangan teknisi hanya dapat diberikan oleh <strong>Kepala Teknisi</strong>.
+              <div v-else class="sig-pad-placeholder">
+                <div v-if="doForm.technician_signature" style="border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px; text-align: center; background: #fff;">
+                  <img :src="doForm.technician_signature" alt="Technician Signature" style="max-height: 120px;" />
+                  <div class="text-xs text-muted mt-xs">Ditandatangani oleh Kepala Teknisi ({{ findTechnician(job?.technician_id)?.user?.name || 'Lead' }})</div>
+                </div>
+                <div v-else style="padding: 24px; text-align: center; background: var(--color-bg-secondary, #f8f9fa); border: 1px dashed var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-muted);">
+                  🔒 Anda ditugaskan sebagai <strong>Anggota Teknisi</strong>. Tanda tangan teknisi hanya dapat diberikan oleh <strong>Kepala Teknisi ({{ findTechnician(job?.technician_id)?.user?.name || 'Lead' }})</strong>.
+                </div>
               </div>
             </div>
             <div class="form-group" style="flex: 1;">
@@ -1430,9 +1477,12 @@ function handleSurveyPhoto(e: Event) {
             <button v-if="canManageDo" class="btn btn-outline" style="flex: 1; padding: var(--space-md);" :disabled="isSavingDoForm" @click="saveDeliveryForm()">
               {{ isSavingDoForm ? 'Saving...' : 'Save Draft' }}
             </button>
-            <button v-if="canManageDo && isLeadTech" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
+            <button v-if="canManageDo" class="btn btn-primary" style="flex: 2; padding: var(--space-md); font-size: 16px;" :disabled="isSavingDoForm || !isDeliveryFormCompleted" @click="initCompleteDeliveryJob">
               {{ isSavingDoForm ? 'Saving...' : (isDeliveryFormCompleted ? '✅ Complete Delivery' : '🔒 Complete Form First') }}
             </button>
+            <div v-if="isMemberTech" class="alert alert-info" style="flex: 100%; margin: 0; font-size: 13px;">
+              ℹ️ Anda bertugas sebagai <strong>Anggota Teknisi</strong>. Pengisian form dan penyelesaian pekerjaan dilakukan oleh <strong>Kepala Teknisi ({{ findTechnician(job?.technician_id)?.user?.name || findTechnician(job?.technician_id)?.name || 'Lead' }})</strong>.
+            </div>
           </div>
         </div>
 

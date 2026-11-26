@@ -39,3 +39,14 @@ export function isLeadTechnicianForJob(
   if (!job || !techId) return true;
   return String(job.technician_id || "") === String(techId);
 }
+
+export function isMemberTechnicianForJob(
+  job: any,
+  techId: string | number | null | undefined,
+): boolean {
+  if (!job || !techId) return false;
+  const tid = String(techId);
+  const leadId = String(job.technician_id || "");
+  if (leadId === tid) return false;
+  return getJobMemberTechIds(job).includes(tid);
+}

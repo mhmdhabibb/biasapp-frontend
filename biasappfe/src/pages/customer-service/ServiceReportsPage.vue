@@ -18,6 +18,7 @@ import { api } from '@/services/api'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import { printDeliveryOrder } from '@/utils/printDeliveryOrder'
 import { printPurchaseOrder } from '@/utils/printPurchaseOrder'
+import { getJobMemberTechIds } from '@/utils/jobTechnician'
 import type { TableColumn, ServiceReport, SparepartRequest } from '@/types'
 
 const { can } = usePermission()
@@ -32,6 +33,7 @@ const { currentUser } = useAuth()
 const {
   serviceReports: data,
   deliveryOrders,
+  jobOrders,
   contractItems,
   customers,
   technicians,
@@ -825,6 +827,47 @@ function getSrUnitName(item: any): string {
   return '-'
 }
 
+function findJobOrderForDO(doId: string | number): any {
+  if (!doId) return null
+  return (jobOrders.value || []).find((j: any) =>
+    String(j.delivery_order_id || j.delivery_order?.id || '') === String(doId)
+  ) || null
+}
+
+function getDoLeadTechId(d: any): string | number | null {
+  if (!d) return null
+  const jo = findJobOrderForDO(d.id)
+  return jo?.technician_id || d.technician_id || null
+}
+
+function getDoMemberTechNames(d: any): string[] {
+  if (!d) return []
+  const jo = findJobOrderForDO(d.id)
+  if (!jo) return []
+  return getJobMemberTechIds(jo).map((id: string) => technicianName(id)).filter(Boolean)
+}
+
+function findJobOrderForSR(srId: string | number): any {
+  if (!srId) return null
+  return (jobOrders.value || []).find((j: any) =>
+    String(j.service_report_id || j.service_report?.id || '') === String(srId) ||
+    String(j.id || '') === String(srId)
+  ) || null
+}
+
+function getSrLeadTechId(r: any): string | number | null {
+  if (!r) return null
+  const jo = findJobOrderForSR(r.id) || findJobOrderForSR(r.job_order_id)
+  return jo?.technician_id || r.technician_id || null
+}
+
+function getSrMemberTechNames(r: any): string[] {
+  if (!r) return []
+  const jo = findJobOrderForSR(r.id) || findJobOrderForSR(r.job_order_id)
+  if (!jo) return []
+  return getJobMemberTechIds(jo).map((id: string) => technicianName(id)).filter(Boolean)
+}
+
 const columns: TableColumn[] = [
   { key: 'report_no', label: 'Report No.' },
   { key: 'customer_id', label: 'Customer' },
@@ -1299,7 +1342,14 @@ function printTable() {
       </template>
       <template #cell-customer_id="{ value }">{{ customerName(value as any) }}</template>
       <template #cell-do_type="{ value }">{{ doTypeLabel(value) }}</template>
-      <template #cell-technician_id="{ value }">{{ technicianName(value) }}</template>
+      <template #cell-technician_id="{ value, row }">
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span>{{ technicianName(getDoLeadTechId(row) || value) }}</span>
+          <span v-if="getDoMemberTechNames(row).length > 0" class="badge" style="background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 9.5px; width: fit-content;">
+            +{{ getDoMemberTechNames(row).length }} Anggota
+          </span>
+        </div>
+      </template>
       <template #cell-delivery_date="{ value }">{{ value ? new Date(value).toLocaleDateString('en-GB') : '-' }}</template>
       <template #cell-status="{ value }">
         <span :class="value === 'delivered' ? 'badge badge-success' : value === 'in_transit' ? 'badge badge-info' : 'badge badge-neutral'">
@@ -1421,8 +1471,22 @@ function printTable() {
             <strong>{{ customerName(srDetailItem.customer_id) }}</strong>
           </div>
           <div class="detail-field">
-            <span>Technician</span>
-            <strong>{{ technicianName(srDetailItem.technician_id) }}</strong>
+            <span>Kepala Teknisi (Lead)</span>
+            <strong style="display: flex; align-items: center; gap: 6px;">
+              {{ technicianName(getSrLeadTechId(srDetailItem)) || '-' }}
+              <span v-if="getSrLeadTechId(srDetailItem)" class="badge" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 600;">
+                Kepala
+              </span>
+            </strong>
+          </div>
+          <div class="detail-field">
+            <span>Anggota Teknisi</span>
+            <div v-if="getSrMemberTechNames(srDetailItem).length > 0" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;">
+              <span v-for="name in getSrMemberTechNames(srDetailItem)" :key="name" class="badge" style="background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 10px; font-weight: 600;">
+                {{ name }}
+              </span>
+            </div>
+            <strong v-else style="color: var(--color-text-muted); font-weight: normal;">-</strong>
           </div>
           <div class="detail-field">
             <span>Product / Unit</span>
@@ -1570,8 +1634,22 @@ function printTable() {
             <strong>{{ customerName(doDetailItem.customer_id) }}</strong>
           </div>
           <div class="detail-field">
-            <span>Technician</span>
-            <strong>{{ technicianName(doDetailItem.technician_id) }}</strong>
+            <span>Kepala Teknisi (Lead)</span>
+            <strong style="display: flex; align-items: center; gap: 6px;">
+              {{ technicianName(getDoLeadTechId(doDetailItem)) || '-' }}
+              <span v-if="getDoLeadTechId(doDetailItem)" class="badge" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 600;">
+                Kepala
+              </span>
+            </strong>
+          </div>
+          <div class="detail-field">
+            <span>Anggota Teknisi</span>
+            <div v-if="getDoMemberTechNames(doDetailItem).length > 0" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;">
+              <span v-for="name in getDoMemberTechNames(doDetailItem)" :key="name" class="badge" style="background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 10px; font-weight: 600;">
+                {{ name }}
+              </span>
+            </div>
+            <strong v-else style="color: var(--color-text-muted); font-weight: normal;">-</strong>
           </div>
           <div class="detail-field">
             <span>Delivery Date</span>
@@ -1672,7 +1750,10 @@ function printTable() {
               </div>
               <div v-else style="height: 80px; text-align: center; color: var(--color-text-muted); display: flex; align-items: center; justify-content: center;">(No Signature)</div>
               <div style="border-bottom: 1px solid #000; margin: 8px auto; width: 80%;"></div>
-              <div style="text-align: center; font-weight: 500;">{{ doDetailItem.technician_name || '-' }}</div>
+              <div style="text-align: center; font-weight: 500;">{{ doDetailItem.technician_name || technicianName(getDoLeadTechId(doDetailItem)) || '-' }}</div>
+              <div v-if="getDoMemberTechNames(doDetailItem).length > 0" style="text-align: center; font-size: 11px; color: var(--color-text-muted); margin-top: 4px;">
+                Anggota: {{ getDoMemberTechNames(doDetailItem).join(', ') }}
+              </div>
             </div>
 
             <div style="border: 1px solid var(--color-border-light); padding: 12px; border-radius: 8px;">

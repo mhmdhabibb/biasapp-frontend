@@ -279,13 +279,62 @@ function getDeductionSummary(item: any, type: 'bw' | 'color'): string {
   return `Deduksi: -${tot.toLocaleString()} (${parts.join(', ')})`
 }
 
-function getDetailGross(item: any, mode: 'bw' | 'color'): number {
+function getDetailGross(item: any, mode: 'bw' | 'color', isDouble: boolean = false): number {
   if (!item) return 0
-  const gross = mode === 'bw' ? Number(item.gross_counter_bw || 0) : Number(item.gross_counter_color || 0)
-  if (gross > 0) return gross
-  const akhir = mode === 'bw' ? Number(item.counter_akhir_bw || 0) : Number(item.counter_akhir_color || 0)
-  const deduct = getItemDeductions(item).reduce((s, d) => s + (mode === 'bw' ? d.bw : d.color), 0)
-  return akhir + deduct
+  if (!isDouble) {
+    const gross = mode === 'bw' ? Number(item.gross_counter_bw || 0) : Number(item.gross_counter_color || 0)
+    if (gross > 0) return gross
+    const akhir = mode === 'bw' ? Number(item.counter_akhir_bw || 0) : Number(item.counter_akhir_color || 0)
+    const deduct = getItemDeductions(item).reduce((s, d) => s + (mode === 'bw' ? d.bw : d.color), 0)
+    return akhir + deduct
+  } else {
+    const gross = mode === 'bw' ? Number(item.gross_counter_bw_double || 0) : Number(item.gross_counter_color_double || 0)
+    if (gross > 0) return gross
+    const akhir = mode === 'bw' ? Number(item.counter_akhir_bw_double || 0) : Number(item.counter_akhir_color_double || 0)
+    const deduct = getItemDeductions(item).reduce((s, d) => s + (mode === 'bw' ? d.bw_double : d.color_double), 0)
+    return akhir + deduct
+  }
+}
+
+function getDetailTotalDeduction(item: any, mode: 'bw' | 'color', isDouble: boolean = false): number {
+  if (!item) return 0
+  const deducts = getItemDeductions(item)
+  if (!isDouble) {
+    return deducts.reduce((s, d) => s + (mode === 'bw' ? Number(d.bw || 0) : Number(d.color || 0)), 0)
+  }
+  return deducts.reduce((s, d) => s + (mode === 'bw' ? Number(d.bw_double || 0) : Number(d.color_double || 0)), 0)
+}
+
+function getDetailAkhir(item: any, mode: 'bw' | 'color', isDouble: boolean = false): number {
+  if (!item) return 0
+  if (!isDouble) {
+    const val = mode === 'bw' ? Number(item.counter_akhir_bw) : Number(item.counter_akhir_color)
+    if (Number.isFinite(val) && val > 0) return val
+    const gross = getDetailGross(item, mode, false)
+    const ded = getDetailTotalDeduction(item, mode, false)
+    return Math.max(0, gross - ded)
+  } else {
+    const val = mode === 'bw' ? Number(item.counter_akhir_bw_double) : Number(item.counter_akhir_color_double)
+    if (Number.isFinite(val) && val > 0) return val
+    const gross = getDetailGross(item, mode, true)
+    const ded = getDetailTotalDeduction(item, mode, true)
+    return Math.max(0, gross - ded)
+  }
+}
+
+function getDetailUsage(item: any, mode: 'bw' | 'color', isDouble: boolean = false): number {
+  if (!item) return 0
+  if (!isDouble) {
+    const usage = mode === 'bw' ? item.pemakaian_bw_dasar : item.pemakaian_color_dasar
+    if (usage !== undefined && usage !== null && Number.isFinite(Number(usage))) return Number(usage)
+    const akhir = getDetailAkhir(item, mode, false)
+    const awal = mode === 'bw' ? Number(item.counter_awal_bw || 0) : Number(item.counter_awal_color || 0)
+    return Math.max(0, akhir - awal)
+  } else {
+    const akhir = getDetailAkhir(item, mode, true)
+    const awal = mode === 'bw' ? Number(item.counter_awal_bw_double || 0) : Number(item.counter_awal_color_double || 0)
+    return Math.max(0, akhir - awal)
+  }
 }
 
 function autoSyncPrinterPaperSizes(unitId?: string, inv?: any) {
@@ -1096,6 +1145,19 @@ async function handleAutoFetchMeter() {
         }
 
         onGrossOrDeductionChange()
+      } else {
+        // Metode Great: HANYA 1-Sided, reset 2-sided dan gross/deduksi
+        form.start_meter_bw_double = 0
+        form.end_meter_bw_double = 0
+        form.start_meter_color_double = 0
+        form.end_meter_color_double = 0
+        form.gross_meter_bw = 0
+        form.gross_meter_color = 0
+        form.gross_meter_bw_double = 0
+        form.gross_meter_color_double = 0
+        form.a3_meter_bw = 0
+        form.a3_meter_color = 0
+        form.paper_deductions = []
       }
 
       const srcText = payload.source === 'technician_monthly_readings'
@@ -1149,8 +1211,15 @@ function switchModalType(type: 'atlas' | 'great') {
     form.customer_id = greatCust ? greatCust.id : ''
     form.gross_meter_bw = 0
     form.gross_meter_color = 0
+    form.gross_meter_bw_double = 0
+    form.gross_meter_color_double = 0
+    form.start_meter_bw_double = 0
+    form.start_meter_color_double = 0
+    form.end_meter_bw_double = 0
+    form.end_meter_color_double = 0
     form.a3_meter_bw = 0
     form.a3_meter_color = 0
+    form.paper_deductions = []
   }
 
   form.unit_id = ''
@@ -1178,6 +1247,7 @@ function openAddModal(type?: 'atlas' | 'great') {
   } else {
     const greatCust = (customers.value || []).find((c: any) => getCustomerName(c).toLowerCase().includes('great'))
     form.customer_id = greatCust ? greatCust.id : ''
+    form.paper_deductions = []
   }
 
   form.unit_id = ''
@@ -2113,8 +2183,7 @@ function printGreatSlip(item: any) {
     const totalBW = Number.isFinite(Number(item.total_bw)) ? Number(item.total_bw) : Math.round((bwPemakaian + allocBW) * 100) / 100
     const totalCol = Number.isFinite(Number(item.total_color)) ? Number(item.total_color) : allocCol
 
-    const hasDouble = (Number(item.counter_akhir_bw_double || item.counter_awal_bw_double || item.gross_counter_bw_double) > 0) ||
-                      (Number(item.counter_akhir_color_double || item.counter_awal_color_double || item.gross_counter_color_double) > 0)
+    const hasDouble = false
     const bwDblAwal = Number(item.counter_awal_bw_double || 0)
     const bwDblGross = Number(item.gross_counter_bw_double || 0)
     const bwDblAkhir = Number(item.counter_akhir_bw_double || bwDblGross)
@@ -3329,7 +3398,8 @@ async function exportExcel() {
             <div class="counter-col">
               <div class="counter-col-title">BLACK & WHITE (BW)</div>
               
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <!-- ATLAS: Awal BW 1-Sided & 2-Sided (Keduanya selalu ada) -->
+              <div v-if="form.customer_type === 'atlas'" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div class="form-group">
                   <label class="form-label">Awal BW (1-Sided)</label>
                   <input
@@ -3350,7 +3420,18 @@ async function exportExcel() {
                 </div>
               </div>
 
-              <!-- KHUSUS ATLAS: Gross & Deduksi Kertas Multi-Ukuran -->
+              <!-- GREAT: Awal BW HANYA 1-Sided -->
+              <div v-else class="form-group">
+                <label class="form-label">Awal BW</label>
+                <input
+                  v-model.number="form.start_meter_bw"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                />
+              </div>
+
+              <!-- KHUSUS ATLAS: Gross & Deduksi Kertas Multi-Ukuran (1-Sided & 2-Sided) -->
               <template v-if="form.customer_type === 'atlas'">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                   <div class="form-group">
@@ -3423,10 +3504,11 @@ async function exportExcel() {
                 </div>
               </template>
 
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <!-- ATLAS: Akhir BW (1-S) & (2-S) -->
+              <div v-if="form.customer_type === 'atlas'" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div class="form-group">
                   <label class="form-label">
-                    {{ form.customer_type === 'atlas' ? 'Akhir BW (1-S)' : 'Akhir BW (1-S)' }}
+                    Akhir BW (1-S)
                   </label>
                   <input
                     v-model.number="form.end_meter_bw"
@@ -3435,13 +3517,13 @@ async function exportExcel() {
                     class="form-input"
                     style="font-weight: 700; color: #1e3a8a;"
                   />
-                  <small v-if="form.customer_type === 'atlas' && (form.gross_meter_bw > 0 || totalDeductionBW > 0)" class="text-muted" style="font-size: 10px;">
+                  <small v-if="form.gross_meter_bw > 0 || totalDeductionBW > 0" class="text-muted" style="font-size: 10px;">
                     = {{ form.gross_meter_bw }} - {{ totalDeductionBW }}
                   </small>
                 </div>
                 <div class="form-group">
                   <label class="form-label">
-                    {{ form.customer_type === 'atlas' ? 'Akhir BW (2-S)' : 'Akhir BW (2-S)' }}
+                    Akhir BW (2-S)
                   </label>
                   <input
                     v-model.number="form.end_meter_bw_double"
@@ -3450,15 +3532,28 @@ async function exportExcel() {
                     class="form-input"
                     style="font-weight: 700; color: #1e3a8a;"
                   />
-                  <small v-if="form.customer_type === 'atlas' && (form.gross_meter_bw_double > 0 || totalDeductionBWDouble > 0)" class="text-muted" style="font-size: 10px;">
+                  <small v-if="form.gross_meter_bw_double > 0 || totalDeductionBWDouble > 0" class="text-muted" style="font-size: 10px;">
                     = {{ form.gross_meter_bw_double }} - {{ totalDeductionBWDouble }}
                   </small>
                 </div>
               </div>
 
+              <!-- GREAT: Akhir BW HANYA 1-Sided -->
+              <div v-else class="form-group">
+                <label class="form-label">Akhir BW</label>
+                <input
+                  v-model.number="form.end_meter_bw"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                  style="font-weight: 700; color: #1e3a8a;"
+                />
+              </div>
+
               <div class="counter-calc-badge">
                 <span>Pemakaian Dasar BW:</span>
-                <strong>{{ calcBaseUsageBW.toLocaleString() }} (1-S) | {{ calcBaseUsageBWDouble.toLocaleString() }} (2-S)</strong>
+                <strong v-if="form.customer_type === 'atlas'">{{ calcBaseUsageBW.toLocaleString() }} (1-S) | {{ calcBaseUsageBWDouble.toLocaleString() }} (2-S)</strong>
+                <strong v-else>{{ calcBaseUsageBW.toLocaleString() }} Lembar</strong>
               </div>
             </div>
 
@@ -3466,7 +3561,8 @@ async function exportExcel() {
             <div class="counter-col">
               <div class="counter-col-title color-title">COLOR (CL)</div>
               
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <!-- ATLAS: Awal Color 1-Sided & 2-Sided (Keduanya selalu ada) -->
+              <div v-if="form.customer_type === 'atlas'" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div class="form-group">
                   <label class="form-label">Awal Color (1-Sided)</label>
                   <input
@@ -3485,6 +3581,17 @@ async function exportExcel() {
                     class="form-input"
                   />
                 </div>
+              </div>
+
+              <!-- GREAT: Awal Color HANYA 1-Sided -->
+              <div v-else class="form-group">
+                <label class="form-label">Awal Color</label>
+                <input
+                  v-model.number="form.start_meter_color"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                />
               </div>
 
               <!-- KHUSUS ATLAS: Gross & Deduksi Kertas Multi-Ukuran -->
@@ -3560,10 +3667,11 @@ async function exportExcel() {
                 </div>
               </template>
 
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <!-- ATLAS: Akhir Color (1-S) & (2-S) -->
+              <div v-if="form.customer_type === 'atlas'" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div class="form-group">
                   <label class="form-label">
-                    {{ form.customer_type === 'atlas' ? 'Akhir Color (1-S)' : 'Akhir Color (1-S)' }}
+                    Akhir Color (1-S)
                   </label>
                   <input
                     v-model.number="form.end_meter_color"
@@ -3572,13 +3680,13 @@ async function exportExcel() {
                     class="form-input"
                     style="font-weight: 700; color: #1e3a8a;"
                   />
-                  <small v-if="form.customer_type === 'atlas' && (form.gross_meter_color > 0 || totalDeductionColor > 0)" class="text-muted" style="font-size: 10px;">
+                  <small v-if="form.gross_meter_color > 0 || totalDeductionColor > 0" class="text-muted" style="font-size: 10px;">
                     = {{ form.gross_meter_color }} - {{ totalDeductionColor }}
                   </small>
                 </div>
                 <div class="form-group">
                   <label class="form-label">
-                    {{ form.customer_type === 'atlas' ? 'Akhir Color (2-S)' : 'Akhir Color (2-S)' }}
+                    Akhir Color (2-S)
                   </label>
                   <input
                     v-model.number="form.end_meter_color_double"
@@ -3587,15 +3695,28 @@ async function exportExcel() {
                     class="form-input"
                     style="font-weight: 700; color: #1e3a8a;"
                   />
-                  <small v-if="form.customer_type === 'atlas' && (form.gross_meter_color_double > 0 || totalDeductionColorDouble > 0)" class="text-muted" style="font-size: 10px;">
+                  <small v-if="form.gross_meter_color_double > 0 || totalDeductionColorDouble > 0" class="text-muted" style="font-size: 10px;">
                     = {{ form.gross_meter_color_double }} - {{ totalDeductionColorDouble }}
                   </small>
                 </div>
               </div>
 
+              <!-- GREAT: Akhir Color HANYA 1-Sided -->
+              <div v-else class="form-group">
+                <label class="form-label">Akhir Color</label>
+                <input
+                  v-model.number="form.end_meter_color"
+                  type="number"
+                  min="0"
+                  class="form-input"
+                  style="font-weight: 700; color: #1e3a8a;"
+                />
+              </div>
+
               <div class="counter-calc-badge color-calc-badge">
                 <span>Pemakaian Dasar Color:</span>
-                <strong>{{ calcBaseUsageColor.toLocaleString() }} (1-S) | {{ calcBaseUsageColorDouble.toLocaleString() }} (2-S)</strong>
+                <strong v-if="form.customer_type === 'atlas'">{{ calcBaseUsageColor.toLocaleString() }} (1-S) | {{ calcBaseUsageColorDouble.toLocaleString() }} (2-S)</strong>
+                <strong v-else>{{ calcBaseUsageColor.toLocaleString() }} Lembar</strong>
               </div>
             </div>
           </div>
@@ -3630,7 +3751,7 @@ async function exportExcel() {
             </thead>
             <tbody>
               <tr>
-                <td><strong>BW (1-Sided)</strong></td>
+                <td><strong>{{ form.customer_type === 'atlas' ? 'BW (1-Sided)' : 'BW' }}</strong></td>
                 <td>{{ Number(form.start_meter_bw || 0).toLocaleString() }}</td>
                 <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_bw || 0).toLocaleString() }}</td>
                 <template v-if="form.customer_type === 'atlas'">
@@ -3644,7 +3765,8 @@ async function exportExcel() {
                 <td>{{ Number(form.end_meter_bw || 0).toLocaleString() }}</td>
                 <td class="cell-highlight">{{ calcBaseUsageBW.toLocaleString() }}</td>
               </tr>
-              <tr v-if="form.gross_meter_bw_double > 0 || form.end_meter_bw_double > 0 || totalDeductionBWDouble > 0 || form.start_meter_bw_double > 0">
+              <!-- Baris BW (2-Sided) SELALU ADA untuk Atlas, TIDAK PERNAH untuk Great -->
+              <tr v-if="form.customer_type === 'atlas'">
                 <td><strong>BW (2-Sided)</strong></td>
                 <td>{{ Number(form.start_meter_bw_double || 0).toLocaleString() }}</td>
                 <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_bw_double || 0).toLocaleString() }}</td>
@@ -3660,7 +3782,7 @@ async function exportExcel() {
                 <td class="cell-highlight">{{ calcBaseUsageBWDouble.toLocaleString() }}</td>
               </tr>
               <tr>
-                <td><strong>COLOR (1-Sided)</strong></td>
+                <td><strong>{{ form.customer_type === 'atlas' ? 'COLOR (1-Sided)' : 'COLOR' }}</strong></td>
                 <td>{{ Number(form.start_meter_color || 0).toLocaleString() }}</td>
                 <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_color || 0).toLocaleString() }}</td>
                 <template v-if="form.customer_type === 'atlas'">
@@ -3674,7 +3796,8 @@ async function exportExcel() {
                 <td>{{ Number(form.end_meter_color || 0).toLocaleString() }}</td>
                 <td class="cell-highlight">{{ calcBaseUsageColor.toLocaleString() }}</td>
               </tr>
-              <tr v-if="form.gross_meter_color_double > 0 || form.end_meter_color_double > 0 || totalDeductionColorDouble > 0 || form.start_meter_color_double > 0">
+              <!-- Baris COLOR (2-Sided) SELALU ADA untuk Atlas, TIDAK PERNAH untuk Great -->
+              <tr v-if="form.customer_type === 'atlas'">
                 <td><strong>COLOR (2-Sided)</strong></td>
                 <td>{{ Number(form.start_meter_color_double || 0).toLocaleString() }}</td>
                 <td v-if="form.customer_type === 'atlas'">{{ Number(form.gross_meter_color_double || 0).toLocaleString() }}</td>
@@ -3805,85 +3928,133 @@ async function exportExcel() {
             </div>
           </div>
 
-          <!-- Counter Summary -->
-          <div class="detail-table-wrap">
-            <table class="detail-table">
+          <!-- Counter Summary (Excel Replica Table matching Gambar 2) -->
+          <div class="excel-preview-card full-width">
+            <div class="excel-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="3" y1="9" x2="21" y2="9"></line>
+                <line x1="9" y1="21" x2="9" y2="9"></line>
+              </svg>
+              <span>Preview Kalkulasi Lembar Pemakaian ({{ isAtlas(detailItem) ? 'Atlas Copco' : 'PT Great Eastern' }} &bull; Rumus Alokasi {{ Number(detailItem.percentage_bw || 88) }}% : {{ Number(detailItem.percentage_color || 12) }}%)</span>
+            </div>
+
+            <table class="excel-table">
               <thead>
                 <tr>
-                  <th>Tipe</th>
-                  <th class="text-right">Counter Awal</th>
-                  <th v-if="isAtlas(detailItem)" class="text-right">Gross Mesin</th>
-                  <th v-if="isAtlas(detailItem)" class="text-right">Deduksi A3</th>
-                  <th class="text-right">Counter Akhir</th>
-                  <th class="text-right">Pemakaian Dasar</th>
+                  <th>Item</th>
+                  <th>Counter Awal</th>
+                  <th v-if="isAtlas(detailItem)">Gross Mesin</th>
+                  <template v-if="isAtlas(detailItem)">
+                    <th v-for="pd in getItemDeductions(detailItem)" :key="'detail-th-pd-' + pd.name">
+                      Deduksi {{ pd.name }}
+                    </th>
+                    <th v-if="getItemDeductions(detailItem).length > 1">Total Deduksi</th>
+                  </template>
+                  <th>Counter Akhir</th>
+                  <th class="cell-highlight">Pemakaian</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td><strong>Black &amp; White (BW)</strong></td>
-                  <td class="text-right">{{ Number(detailItem.counter_awal_bw || 0).toLocaleString('id-ID') }}</td>
-                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.gross_counter_bw || 0).toLocaleString('id-ID') }}</td>
-                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.a3_counter_bw || 0).toLocaleString('id-ID') }}</td>
-                  <td class="text-right">{{ Number(detailItem.counter_akhir_bw || 0).toLocaleString('id-ID') }}</td>
-                  <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_bw_dasar || 0).toLocaleString('id-ID') }}</td>
+                  <td><strong>{{ isAtlas(detailItem) ? 'BW (1-Sided)' : 'BW' }}</strong></td>
+                  <td>{{ Number(detailItem.counter_awal_bw || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)">{{ getDetailGross(detailItem, 'bw', false).toLocaleString('id-ID') }}</td>
+                  <template v-if="isAtlas(detailItem)">
+                    <td v-for="pd in getItemDeductions(detailItem)" :key="'detail-td-bw-' + pd.name">
+                      {{ Number(pd.bw || 0).toLocaleString('id-ID') }}
+                    </td>
+                    <td v-if="getItemDeductions(detailItem).length > 1" style="font-weight: 600;">
+                      {{ getDetailTotalDeduction(detailItem, 'bw', false).toLocaleString('id-ID') }}
+                    </td>
+                  </template>
+                  <td>{{ getDetailAkhir(detailItem, 'bw', false).toLocaleString('id-ID') }}</td>
+                  <td class="cell-highlight">{{ getDetailUsage(detailItem, 'bw', false).toLocaleString('id-ID') }}</td>
                 </tr>
-                <tr v-if="Number(detailItem.counter_akhir_bw_double || detailItem.counter_awal_bw_double || detailItem.gross_counter_bw_double) > 0">
-                  <td class="text-indigo-800 font-medium">↳ BW (2-Sided)</td>
-                  <td class="text-right">{{ Number(detailItem.counter_awal_bw_double || 0).toLocaleString('id-ID') }}</td>
-                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.gross_counter_bw_double || 0).toLocaleString('id-ID') }}</td>
-                  <td v-if="isAtlas(detailItem)" class="text-right">-</td>
-                  <td class="text-right">{{ Number(detailItem.counter_akhir_bw_double || detailItem.gross_counter_bw_double || 0).toLocaleString('id-ID') }}</td>
-                  <td class="text-right font-medium text-indigo-700">{{ Math.max(0, Number(detailItem.counter_akhir_bw_double || detailItem.gross_counter_bw_double || 0) - Number(detailItem.counter_awal_bw_double || 0)).toLocaleString('id-ID') }}</td>
+
+                <!-- Baris BW (2-Sided) SELALU ADA untuk Atlas, TIDAK PERNAH untuk Great -->
+                <tr v-if="isAtlas(detailItem)">
+                  <td><strong>BW (2-Sided)</strong></td>
+                  <td>{{ Number(detailItem.counter_awal_bw_double || 0).toLocaleString('id-ID') }}</td>
+                  <td>{{ getDetailGross(detailItem, 'bw', true).toLocaleString('id-ID') }}</td>
+                  <td v-for="pd in getItemDeductions(detailItem)" :key="'detail-td-bw-dbl-' + pd.name">
+                    {{ Number(pd.bw_double || 0).toLocaleString('id-ID') }}
+                  </td>
+                  <td v-if="getItemDeductions(detailItem).length > 1" style="font-weight: 600;">
+                    {{ getDetailTotalDeduction(detailItem, 'bw', true).toLocaleString('id-ID') }}
+                  </td>
+                  <td>{{ getDetailAkhir(detailItem, 'bw', true).toLocaleString('id-ID') }}</td>
+                  <td class="cell-highlight">{{ getDetailUsage(detailItem, 'bw', true).toLocaleString('id-ID') }}</td>
                 </tr>
+
                 <tr>
-                  <td><strong>Color (CL)</strong></td>
-                  <td class="text-right">{{ Number(detailItem.counter_awal_color || 0).toLocaleString('id-ID') }}</td>
-                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.gross_counter_color || 0).toLocaleString('id-ID') }}</td>
-                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.a3_counter_color || 0).toLocaleString('id-ID') }}</td>
-                  <td class="text-right">{{ Number(detailItem.counter_akhir_color || 0).toLocaleString('id-ID') }}</td>
-                  <td class="text-right font-bold text-slate-800">{{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }}</td>
+                  <td><strong>{{ isAtlas(detailItem) ? 'COLOR (1-Sided)' : 'COLOR' }}</strong></td>
+                  <td>{{ Number(detailItem.counter_awal_color || 0).toLocaleString('id-ID') }}</td>
+                  <td v-if="isAtlas(detailItem)">{{ getDetailGross(detailItem, 'color', false).toLocaleString('id-ID') }}</td>
+                  <template v-if="isAtlas(detailItem)">
+                    <td v-for="pd in getItemDeductions(detailItem)" :key="'detail-td-col-' + pd.name">
+                      {{ Number(pd.color || 0).toLocaleString('id-ID') }}
+                    </td>
+                    <td v-if="getItemDeductions(detailItem).length > 1" style="font-weight: 600;">
+                      {{ getDetailTotalDeduction(detailItem, 'color', false).toLocaleString('id-ID') }}
+                    </td>
+                  </template>
+                  <td>{{ getDetailAkhir(detailItem, 'color', false).toLocaleString('id-ID') }}</td>
+                  <td class="cell-highlight">{{ getDetailUsage(detailItem, 'color', false).toLocaleString('id-ID') }}</td>
                 </tr>
-                <tr v-if="Number(detailItem.counter_akhir_color_double || detailItem.counter_awal_color_double || detailItem.gross_counter_color_double) > 0">
-                  <td class="text-indigo-800 font-medium">↳ Color (2-Sided)</td>
-                  <td class="text-right">{{ Number(detailItem.counter_awal_color_double || 0).toLocaleString('id-ID') }}</td>
-                  <td v-if="isAtlas(detailItem)" class="text-right">{{ Number(detailItem.gross_counter_color_double || 0).toLocaleString('id-ID') }}</td>
-                  <td v-if="isAtlas(detailItem)" class="text-right">-</td>
-                  <td class="text-right">{{ Number(detailItem.counter_akhir_color_double || detailItem.gross_counter_color_double || 0).toLocaleString('id-ID') }}</td>
-                  <td class="text-right font-medium text-indigo-700">{{ Math.max(0, Number(detailItem.counter_akhir_color_double || detailItem.gross_counter_color_double || 0) - Number(detailItem.counter_awal_color_double || 0)).toLocaleString('id-ID') }}</td>
+
+                <!-- Baris COLOR (2-Sided) SELALU ADA untuk Atlas, TIDAK PERNAH untuk Great -->
+                <tr v-if="isAtlas(detailItem)">
+                  <td><strong>COLOR (2-Sided)</strong></td>
+                  <td>{{ Number(detailItem.counter_awal_color_double || 0).toLocaleString('id-ID') }}</td>
+                  <td>{{ getDetailGross(detailItem, 'color', true).toLocaleString('id-ID') }}</td>
+                  <td v-for="pd in getItemDeductions(detailItem)" :key="'detail-td-col-dbl-' + pd.name">
+                    {{ Number(pd.color_double || 0).toLocaleString('id-ID') }}
+                  </td>
+                  <td v-if="getItemDeductions(detailItem).length > 1" style="font-weight: 600;">
+                    {{ getDetailTotalDeduction(detailItem, 'color', true).toLocaleString('id-ID') }}
+                  </td>
+                  <td>{{ getDetailAkhir(detailItem, 'color', true).toLocaleString('id-ID') }}</td>
+                  <td class="cell-highlight">{{ getDetailUsage(detailItem, 'color', true).toLocaleString('id-ID') }}</td>
                 </tr>
               </tbody>
             </table>
-          </div>
 
-          <!-- Formula Breakdown (Rumus Alokasi 88% : 12%) -->
-          <div v-if="Number(detailItem.percentage_bw || (detailItem.customer_type === 'atlas' || detailItem.customer_type === 'great' ? 88 : 0)) > 0" class="detail-formula-box">
-            <div class="detail-formula-title">Perhitungan Alokasi Lembar ({{ Number(detailItem.percentage_bw || 88) }}% : {{ Number(detailItem.percentage_color || 12) }}%)</div>
-            <div class="detail-formula-item">
-              <div class="item-calc">
-                <strong>BW:</strong> {{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }} &times; {{ Number(detailItem.percentage_bw || 88) }}% = {{ Number(detailItem.allocation_bw || (Number(detailItem.pemakaian_color_dasar || 0) * 0.88)).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} + {{ Number(detailItem.pemakaian_bw_dasar || 0).toLocaleString('id-ID') }}
+            <!-- Formula Breakdown (matching Gambar 2) -->
+            <div v-if="Number(detailItem.percentage_bw || (isAtlas(detailItem) || isGreat(detailItem) ? 88 : 0)) > 0" class="formula-breakdown">
+              <div class="formula-row">
+                <span class="formula-label">BW :</span>
+                <span class="formula-calc">
+                  {{ getDetailUsage(detailItem, 'color', false).toLocaleString('id-ID') }} &times; {{ Number(detailItem.percentage_bw || 88) }}% = <strong>{{ Number(detailItem.allocation_bw || (getDetailUsage(detailItem, 'color', false) * (Number(detailItem.percentage_bw || 88) / 100))).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong> + {{ getDetailUsage(detailItem, 'bw', false).toLocaleString('id-ID') }} =
+                </span>
+                <span class="formula-result bw-res">
+                  {{ Number(detailItem.total_bw || (getDetailUsage(detailItem, 'bw', false) + Number(detailItem.allocation_bw || (getDetailUsage(detailItem, 'color', false) * (Number(detailItem.percentage_bw || 88) / 100))))).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} Lembar
+                </span>
               </div>
-              <div class="item-total text-green-700">
-                <strong>{{ Number(detailItem.total_bw || (Number(detailItem.pemakaian_bw_dasar || 0) + (Number(detailItem.pemakaian_color_dasar || 0) * 0.88))).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong> Lembar BW
+
+              <div class="formula-row">
+                <span class="formula-label">CL :</span>
+                <span class="formula-calc">
+                  {{ getDetailUsage(detailItem, 'color', false).toLocaleString('id-ID') }} &times; {{ Number(detailItem.percentage_color || 12) }}% =
+                </span>
+                <span class="formula-result cl-res">
+                  {{ Number(detailItem.total_color || Number(detailItem.allocation_color || (getDetailUsage(detailItem, 'color', false) * (Number(detailItem.percentage_color || 12) / 100)))).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }} Lembar
+                </span>
               </div>
             </div>
-            <div class="detail-formula-item mt-2">
-              <div class="item-calc">
-                <strong>CL:</strong> {{ Number(detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }} &times; {{ Number(detailItem.percentage_color || 12) }}% =
+            <div v-else class="formula-breakdown">
+              <div class="formula-row">
+                <span class="formula-label">BW :</span>
+                <span class="formula-result bw-res">
+                  {{ Number(detailItem.total_bw || getDetailUsage(detailItem, 'bw', false)).toLocaleString('id-ID') }} Lembar
+                </span>
               </div>
-              <div class="item-total text-blue-700">
-                <strong>{{ Number(detailItem.total_color || (Number(detailItem.pemakaian_color_dasar || 0) * 0.12)).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</strong> Lembar Color
+              <div class="formula-row">
+                <span class="formula-label">CL :</span>
+                <span class="formula-result cl-res">
+                  {{ Number(detailItem.total_color || getDetailUsage(detailItem, 'color', false)).toLocaleString('id-ID') }} Lembar
+                </span>
               </div>
-            </div>
-          </div>
-          <div v-else class="detail-formula-box">
-            <div class="detail-formula-title">Perhitungan Lembar Standar (100% Murni)</div>
-            <div class="detail-formula-item">
-              <div class="item-calc">Total Lembar BW:</div>
-              <div class="item-total text-green-700"><strong>{{ Number(detailItem.total_bw || detailItem.pemakaian_bw_dasar || 0).toLocaleString('id-ID') }}</strong> Lembar</div>
-            </div>
-            <div class="detail-formula-item mt-2">
-              <div class="item-calc">Total Lembar Color:</div>
-              <div class="item-total text-blue-700"><strong>{{ Number(detailItem.total_color || detailItem.pemakaian_color_dasar || 0).toLocaleString('id-ID') }}</strong> Lembar</div>
             </div>
           </div>
 

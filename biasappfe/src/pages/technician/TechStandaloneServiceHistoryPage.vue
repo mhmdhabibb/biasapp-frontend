@@ -14,6 +14,7 @@ import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import { api } from '@/services/api'
+import { isTechnicianAssignedToJob, getJobMemberTechIds, isLeadTechnicianForJob } from '@/utils/jobTechnician'
 
 const router = useRouter()
 const route = useRoute()
@@ -64,7 +65,12 @@ function isMyStandalone(d: any): boolean {
   const userId = currentUser.value?.id ? String(currentUser.value.id) : ''
   const dTechId = d?.technician_id ? String(d.technician_id) : ''
   if (!techId && !userId) return false
-  return (techId && dTechId === techId) || (userId && dTechId === userId)
+  if ((techId && dTechId === techId) || (userId && dTechId === userId)) return true
+  const jo = findJobOrderForDO(d?.id)
+  if (jo && isTechnicianAssignedToJob(jo, techId)) {
+    return true
+  }
+  return false
 }
 
 const standaloneList = computed(() => {
@@ -389,7 +395,19 @@ async function saveAssign() {
                   </div>
                 </div>
               </td>
-              <td class="td-nowrap">{{ techName(row.technician_id) }}</td>
+              <td class="td-nowrap">
+                <div>{{ techName(row.technician_id) }}</div>
+                <div v-if="findJobOrderForDO(row.id) && getJobMemberTechIds(findJobOrderForDO(row.id)).length > 0" style="margin-top: 3px;">
+                  <span
+                    class="badge"
+                    :style="isLeadTechnicianForJob(findJobOrderForDO(row.id), myTechId)
+                      ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px;'
+                      : 'background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 10px;'"
+                  >
+                    {{ isLeadTechnicianForJob(findJobOrderForDO(row.id), myTechId) ? `Kepala (+${getJobMemberTechIds(findJobOrderForDO(row.id)).length})` : 'Anggota' }}
+                  </span>
+                </div>
+              </td>
               <td>
                 <template v-if="findJobOrderForDO(row.id)">
                   <span class="badge badge-primary jo-badge">
@@ -483,7 +501,19 @@ async function saveAssign() {
             </div>
             <div class="m-row">
               <span class="m-label">Technician:</span>
-              <span class="m-val">{{ techName(row.technician_id) }}</span>
+              <span class="m-val">
+                {{ techName(row.technician_id) }}
+                <span
+                  v-if="findJobOrderForDO(row.id) && getJobMemberTechIds(findJobOrderForDO(row.id)).length > 0"
+                  class="badge"
+                  style="margin-left: 4px; font-size: 10px;"
+                  :style="isLeadTechnicianForJob(findJobOrderForDO(row.id), myTechId)
+                    ? 'background: #eff6ff; color: #1d4ed8;'
+                    : 'background: #f5f3ff; color: #6d28d9;'"
+                >
+                  {{ isLeadTechnicianForJob(findJobOrderForDO(row.id), myTechId) ? 'Kepala' : 'Anggota' }}
+                </span>
+              </span>
             </div>
             <div class="m-row">
               <span class="m-label">Items:</span>
