@@ -770,8 +770,11 @@ export function useMasterStore() {
     userId: number | string | null,
   ): string | null {
     if (!userId) return null;
+    const uidStr = String(userId);
     const tech = (store.technicians || []).find(
-      (t: any) => t.user_id == userId,
+      (t: any) =>
+        String(t.user_id || "") === uidStr ||
+        (t.user && String(t.user.id || "") === uidStr),
     );
     return tech ? String(tech.id) : null;
   }

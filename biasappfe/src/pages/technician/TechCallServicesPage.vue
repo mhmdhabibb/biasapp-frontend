@@ -40,20 +40,16 @@ useAutoRefresh(15000, ["jobOrders", "deliveryOrders", "serviceReports", "technic
 
 // service_report.technician_id references technicians.id, not users.id
 const myTechId = computed(() => getTechnicianIdByUser(currentUser.value?.id || null))
-const isSuperAdminOrAdmin = computed(() => {
-  const role = String(currentUser.value?.role || '').toLowerCase()
-  return role === 'superadmin' || role === 'admin' || role === 'director' || role === 'manager'
-})
 
-// My Jobs menampilkan seluruh penugasan teknisi (service, delivery, maintenance, survey, visit, dan service reports)
+// My Jobs hanya menampilkan seluruh penugasan untuk teknisi yang sedang login (baik sebagai Kepala maupun Anggota)
 const myJobs = computed(() => {
   const techId = myTechId.value
-  const isAdmin = isSuperAdminOrAdmin.value
 
-  // 1. Job Orders
+  // Jika user yang login tidak memiliki akun teknisi / bukan teknisi, jangan tampilkan job
+  if (!techId) return []
+
+  // 1. Job Orders yang di-assign ke teknisi yang login (sebagai Kepala maupun Anggota)
   const filteredJOs = jobOrders.value.filter((j: any) => {
-    if (isAdmin) return true
-    if (!techId) return !j.technician_id
     return isTechnicianAssignedToJob(j, techId)
   })
 
@@ -64,12 +60,10 @@ const myJobs = computed(() => {
     if (j.service_report?.id) existingSrIds.add(String(j.service_report.id))
   }
 
-  // 2. Service Reports dari Service History (repair, copier, maintenance)
+  // 2. Service Reports yang di-assign khusus ke teknisi yang login
   const additionalSRs = (serviceReports.value || []).filter((sr: any) => {
     if (existingSrIds.has(String(sr.id))) return false
-    if (isAdmin) return true
-    if (!techId) return true
-    return String(sr.technician_id) === String(techId) || !sr.technician_id
+    return String(sr.technician_id || '') === String(techId)
   }).map((sr: any) => {
     const isCopier = String(sr.service_type || '').toLowerCase() === 'copier'
     return {
