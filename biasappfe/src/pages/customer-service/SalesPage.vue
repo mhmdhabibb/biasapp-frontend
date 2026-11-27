@@ -262,67 +262,6 @@ onMounted(() => {
   window.addEventListener("bias:data-mutated", silentRefresh);
 });
 
-// Prefill from survey (Buat Sale Baru)
-let lastPrefillKey = "";
-function applySurveyPrefill() {
-  const qCust = route.query.customer_id ? String(route.query.customer_id) : "";
-  const qUnit = route.query.unit_id ? String(route.query.unit_id) : "";
-  if (!qCust) return;
-  const currentKey = `${qCust}_${qUnit}`;
-  if (lastPrefillKey === currentKey) return;
-  if (!customers.value || (customers.value as any[]).length === 0) return;
-  lastPrefillKey = currentKey;
-  openAdd();
-  form.customer_id = qCust;
-  const qPrice = route.query.price ? Number(route.query.price) : 0;
-  if (qUnit) {
-    const foundU = (units.value as any[]).find(
-      (u: any) => String(u.id) === String(qUnit),
-    );
-    const initialPrice =
-      qPrice > 0 ? qPrice : foundU && foundU.price ? Number(foundU.price) : 0;
-    saleItems.value = [
-      {
-        product_id: null as any,
-        unit_id: qUnit,
-        _combined_id: `U_${qUnit}`,
-        qty: 1,
-        unit_price: initialPrice,
-        subtotal: initialPrice,
-        is_computer: false,
-        specs: {
-          cpu: "",
-          ram: "",
-          storage: "",
-          storage_type: "",
-          os: "",
-          vga: "",
-          office: "",
-        },
-        description: "",
-      },
-    ];
-  } else if (qPrice > 0 && saleItems.value[0]) {
-    saleItems.value[0].unit_price = qPrice;
-    saleItems.value[0].subtotal = qPrice;
-  }
-}
-
-watch(
-  () => route.query.customer_id,
-  (newVal) => {
-    if (newVal) lastPrefillKey = "";
-  },
-);
-
-watch(
-  [() => route.query.customer_id, () => route.query.unit_id, customers, units],
-  () => {
-    applySurveyPrefill();
-  },
-  { immediate: true },
-);
-
 watch(
   () => form.customer_id,
   (newCustId) => {
@@ -1297,6 +1236,184 @@ function openAdd() {
   showModal.value = true;
 }
 
+const combinedItemOptions = computed(() => {
+  const opts: { value: string; label: string }[] = [];
+  products.value.forEach((p) => {
+    opts.push({
+      value: `P_${p.id}`,
+      label: `[Product] ${formatProductDisplayName(p)}`,
+    });
+  });
+
+  const groupedUnits: { [key: string]: any[] } = {};
+  units.value
+    .filter((u) => u.status !== "sold")
+    .forEach((u) => {
+      const key = formatUnitDisplayName(u);
+      if (!groupedUnits[key]) {
+        groupedUnits[key] = [];
+      }
+      groupedUnits[key].push(u);
+    });
+
+  Object.values(groupedUnits).forEach((group) => {
+    if (group.length === 1) {
+      const u = group[0];
+      opts.push({
+        value: `U_${u.id}`,
+        label: `[Unit] ${formatUnitDisplayName(u)} ${u.serial_no ? "(SN: " + u.serial_no + ")" : ""}`,
+      });
+    } else if (group.length > 1) {
+      const u = group[0];
+      opts.push({
+        value: `U_${u.id}`,
+        label: `[Unit] ${formatUnitDisplayName(u)}`,
+      });
+    }
+  });
+
+  return opts;
+});
+
+// Prefill from survey (Buat Sale Baru) - placed after form, saleItems, currentStep, openAdd, and combinedItemOptions are initialized
+let lastPrefillKey = "";
+function applySurveyPrefill() {
+  const qCust = route.query.customer_id ? String(route.query.customer_id) : "";
+  const qUnit = route.query.unit_id ? String(route.query.unit_id) : "";
+  const qModel = route.query.recommended_model
+    ? String(route.query.recommended_model).trim()
+    : "";
+  if (!qCust) return;
+  const currentKey = `${qCust}_${qUnit}_${qModel}`;
+  if (lastPrefillKey === currentKey) return;
+  if (!customers.value || (customers.value as any[]).length === 0) return;
+  if ((qUnit || qModel) && (!units.value || (units.value as any[]).length === 0)) {
+    return;
+  }
+  lastPrefillKey = currentKey;
+  openAdd();
+  form.customer_id = qCust;
+  if (route.query.installation_address) {
+    form.installation_address = String(route.query.installation_address);
+  }
+  const qPrice = route.query.price ? Number(route.query.price) : 0;
+
+  let resolvedCombinedId: string | null = null;
+  let resolvedUnitId: string | null = null;
+  let resolvedProductId: any = null;
+  let resolvedUnitPrice = qPrice;
+
+  if (qUnit) {
+    const foundU = (units.value as any[]).find(
+      (u: any) => String(u.id) === String(qUnit),
+    );
+    const directOpt = combinedItemOptions.value.find(
+      (o) => o.value === `U_${qUnit}`,
+    );
+    if (directOpt) {
+      resolvedCombinedId = directOpt.value;
+      resolvedUnitId = qUnit;
+    } else if (foundU) {
+      // If multiple units share the same display name, combinedItemOptions only exposes the group representative
+      const targetName = formatUnitDisplayName(foundU);
+      const groupOpt = combinedItemOptions.value.find((o) => {
+        if (!o.value.startsWith("U_")) return false;
+        const optUnitId = o.value.replace("U_", "");
+        const optUnit = (units.value as any[]).find(
+          (u: any) => String(u.id) === String(optUnitId),
+        );
+        return optUnit && formatUnitDisplayName(optUnit) === targetName;
+      });
+      if (groupOpt) {
+        resolvedCombinedId = groupOpt.value;
+        resolvedUnitId = groupOpt.value.replace("U_", "");
+      } else {
+        resolvedCombinedId = `U_${qUnit}`;
+        resolvedUnitId = qUnit;
+      }
+    } else {
+      resolvedCombinedId = `U_${qUnit}`;
+      resolvedUnitId = qUnit;
+    }
+    if (resolvedUnitPrice <= 0 && foundU && foundU.price) {
+      resolvedUnitPrice = Number(foundU.price);
+    }
+  } else if (qModel) {
+    const lowerModel = qModel.toLowerCase();
+    const matchedOpt = combinedItemOptions.value.find((o) =>
+      o.label.toLowerCase().includes(lowerModel),
+    );
+    if (matchedOpt) {
+      resolvedCombinedId = matchedOpt.value;
+      if (matchedOpt.value.startsWith("U_")) {
+        resolvedUnitId = matchedOpt.value.replace("U_", "");
+        const foundU = (units.value as any[]).find(
+          (u: any) => String(u.id) === String(resolvedUnitId),
+        );
+        if (resolvedUnitPrice <= 0 && foundU?.price) {
+          resolvedUnitPrice = Number(foundU.price);
+        }
+      } else if (matchedOpt.value.startsWith("P_")) {
+        resolvedProductId = matchedOpt.value.replace("P_", "");
+        const foundP = (products.value as any[]).find(
+          (p: any) => String(p.id) === String(resolvedProductId),
+        );
+        if (resolvedUnitPrice <= 0 && foundP?.price) {
+          resolvedUnitPrice = Number(foundP.price);
+        }
+      }
+    }
+  }
+
+  if (resolvedCombinedId) {
+    saleItems.value = [
+      {
+        product_id: resolvedProductId,
+        unit_id: resolvedUnitId,
+        _combined_id: resolvedCombinedId,
+        qty: 1,
+        unit_price: resolvedUnitPrice,
+        subtotal: resolvedUnitPrice,
+        is_computer: false,
+        specs: {
+          cpu: "",
+          ram: "",
+          storage: "",
+          storage_type: "",
+          os: "",
+          vga: "",
+          office: "",
+        },
+        description: "",
+      },
+    ];
+  } else if (qPrice > 0 && saleItems.value[0]) {
+    saleItems.value[0].unit_price = qPrice;
+    saleItems.value[0].subtotal = qPrice;
+  }
+}
+
+watch(
+  () => route.query.customer_id,
+  (newVal) => {
+    if (newVal) lastPrefillKey = "";
+  },
+);
+
+watch(
+  [
+    () => route.query.customer_id,
+    () => route.query.unit_id,
+    () => route.query.recommended_model,
+    customers,
+    units,
+  ],
+  () => {
+    applySurveyPrefill();
+  },
+  { immediate: true },
+);
+
 function openView(item: any) {
   viewingItem.value = item;
   showDetail.value = true;
@@ -1951,45 +2068,6 @@ function printReceipt(item: any, existingWindow?: Window | null) {
     printWindow.document.close();
   }
 }
-
-const combinedItemOptions = computed(() => {
-  const opts: { value: string; label: string }[] = [];
-  products.value.forEach((p) => {
-    opts.push({
-      value: `P_${p.id}`,
-      label: `[Product] ${formatProductDisplayName(p)}`,
-    });
-  });
-
-  const groupedUnits: { [key: string]: any[] } = {};
-  units.value
-    .filter((u) => u.status !== "sold")
-    .forEach((u) => {
-      const key = formatUnitDisplayName(u);
-      if (!groupedUnits[key]) {
-        groupedUnits[key] = [];
-      }
-      groupedUnits[key].push(u);
-    });
-
-  Object.values(groupedUnits).forEach((group) => {
-    if (group.length === 1) {
-      const u = group[0];
-      opts.push({
-        value: `U_${u.id}`,
-        label: `[Unit] ${formatUnitDisplayName(u)} ${u.serial_no ? "(SN: " + u.serial_no + ")" : ""}`,
-      });
-    } else if (group.length > 1) {
-      const u = group[0];
-      opts.push({
-        value: `U_${u.id}`,
-        label: `[Unit] ${formatUnitDisplayName(u)}`,
-      });
-    }
-  });
-
-  return opts;
-});
 </script>
 <template>
   <div>

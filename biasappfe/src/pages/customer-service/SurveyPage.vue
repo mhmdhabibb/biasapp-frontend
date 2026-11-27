@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // @ts-nocheck
-import { ref, reactive, computed, onMounted, watch } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
+import DateTime24Input from "@/components/ui/DateTime24Input.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
@@ -50,12 +51,17 @@ const customerOptions = computed(() =>
   })),
 );
 
-const unitOptions = computed(() =>
-  (units.value as any[]).map((u: any) => ({
-    value: u.id,
-    label: `${u.model || u.name} (SN: ${u.serial_no})`,
-  })),
-);
+const unitOptions = computed(() => {
+  const grouped = new Map<string, any>();
+  (units.value as any[]).forEach((u: any) => {
+    const label = String(u.model || u.name || "-").trim();
+    const existing = grouped.get(label);
+    if (!existing || String(u.id) === String(form.unit_id || "")) {
+      grouped.set(label, { value: u.id, label });
+    }
+  });
+  return Array.from(grouped.values());
+});
 
 const technicianOptions = computed(() => [
   { value: "", label: "-- Belum Ditugaskan / Pilih Nanti --" },
@@ -115,8 +121,8 @@ const selectedUnitHasPrice = computed(() => {
   return !!(found && found.price != null && Number(found.price) > 0);
 });
 
-async function fetchData() {
-  if (data.value.length === 0) {
+async function fetchData(silent = false) {
+  if (!silent && data.value.length === 0) {
     isLoading.value = true;
   }
   try {
@@ -135,7 +141,7 @@ async function fetchData() {
         _customer: r.customer?.company_name || r.customer?.name || "-",
         _technician: techName || (r.technician_id ? `Teknisi Terpilih` : "-"),
         _scheduled_date: r.scheduled_date ? new Date(r.scheduled_date).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "-",
-        _unit: r.unit ? `${r.unit.model || r.unit.name} (SN: ${r.unit.serial_no})` : (r.recommended_model ? `Rekomendasi: ${r.recommended_model}` : "-"),
+        _unit: r.unit ? `${r.unit.model || r.unit.name}` : (r.recommended_model ? `Rekomendasi: ${r.recommended_model}` : "-"),
         _field_findings: hasFindings ? "Sudah Survey" : "Belum Survey",
         _hasFindings: hasFindings,
       };
@@ -248,7 +254,8 @@ async function handleSubmit() {
       toast.success("Survey berhasil dibuat" + (form.technician_id ? " dan Job Order teknisi otomatis dibuat!" : "."));
     }
     showModal.value = false;
-    await fetchData();
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
+    await fetchData(true);
   } catch (e: any) {
     toast.error("Gagal menyimpan survey: " + (e?.message || "Error"));
   }
@@ -264,7 +271,8 @@ async function handleDelete() {
   try {
     await resources.surveys.remove(String(deletingItem.value.id));
     toast.success("Survey deleted.");
-    await fetchData();
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
+    await fetchData(true);
   } catch (e: any) {
     toast.error("Gagal menghapus survey: " + (e?.message || "Error"));
   } finally {
@@ -277,6 +285,7 @@ async function handleNextSurvey(item: any) {
   try {
     isLoading.value = true;
     await resources.surveys.update(String(item.id), { status: "matched", result: "matched" });
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
     toast.success("Survey disetujui. Mengarahkan ke form Sale...");
     createSaleFromSurvey(item);
   } catch (e: any) {
@@ -294,7 +303,8 @@ async function cancelSurvey(item: any) {
     isLoading.value = true;
     await resources.surveys.update(String(item.id), { status: "cancelled", result: "not_matched" });
     toast.success("Survey dibatalkan.");
-    await fetchData();
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
+    await fetchData(true);
   } catch (e: any) {
     toast.error("Gagal membatalkan survey: " + (e?.message || "Error"));
   } finally {
@@ -314,7 +324,20 @@ function createSaleFromSurvey(item: any) {
   if (item.customer_id) q.set("customer_id", String(item.customer_id));
   if (item.unit_id) q.set("unit_id", String(item.unit_id));
   if (item.price != null && Number(item.price) > 0) q.set("price", String(item.price));
+  if (item.survey_address) q.set("installation_address", String(item.survey_address));
+  if (item.recommended_model) q.set("recommended_model", String(item.recommended_model));
   router.push(`/customer-service/sales?${q.toString()}`);
+}
+
+let surveyTimer: ReturnType<typeof setInterval> | null = null;
+function silentRefresh() {
+  if (showModal.value || showConfirm.value || showDetailModal.value) return;
+  void fetchData(true);
+}
+function onVisibilityChange() {
+  if (document.visibilityState === "visible") {
+    silentRefresh();
+  }
 }
 
 onMounted(() => {
@@ -323,6 +346,20 @@ onMounted(() => {
     ensureResourcesLoaded("/customer-service/surveys"),
     fetchData(),
   ]);
+  surveyTimer = setInterval(silentRefresh, 15000);
+  window.addEventListener("focus", silentRefresh);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("bias:data-mutated", silentRefresh);
+});
+
+onUnmounted(() => {
+  if (surveyTimer) {
+    clearInterval(surveyTimer);
+    surveyTimer = null;
+  }
+  window.removeEventListener("focus", silentRefresh);
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+  window.removeEventListener("bias:data-mutated", silentRefresh);
 });
 </script>
 
@@ -344,8 +381,29 @@ onMounted(() => {
         </span>
       </template>
       <template #cell-status="{ value }">
-        <span class="badge" :class="value === 'matched' ? 'badge-success' : value === 'cancelled' ? 'badge-danger' : 'badge-warning'">
-          {{ value === 'matched' ? 'Cocok (Matched)' : value === 'cancelled' ? 'Batal' : 'Pending' }}
+        <span
+          class="badge"
+          :class="
+            value === 'matched'
+              ? 'badge-success'
+              : value === 'cancelled'
+                ? 'badge-danger'
+                : value === 'in_progress'
+                  ? 'badge-info'
+                  : 'badge-warning'
+          "
+        >
+          {{
+            value === 'matched'
+              ? 'Cocok (Matched)'
+              : value === 'cancelled'
+                ? 'Batal'
+                : value === 'in_progress'
+                  ? 'In Progress'
+                  : value === 'completed'
+                    ? 'Menunggu Keputusan'
+                    : 'Pending'
+          }}
         </span>
       </template>
       <template #cell-_field_findings="{ row }">
@@ -358,8 +416,8 @@ onMounted(() => {
         <button class="btn btn-sm btn-outline" title="Lihat Detail Survey" @click="openDetail(row)">
           Detail
         </button>
-        <!-- Status pending: tampilkan tombol Next dan Cancel -->
-        <template v-if="row.status === 'pending' || (!row.status && row.result === 'pending')">
+        <!-- Tampilkan tombol Next dan Cancel hanya jika teknisi sudah selesai survey (status completed) atau survey belum ditugaskan ke teknisi -->
+        <template v-if="row.status === 'completed' || ((row.status === 'pending' || (!row.status && row.result === 'pending')) && (!row.technician_id || row._hasFindings || !!row.completed_at))">
           <button class="btn btn-sm btn-primary" title="Lanjut ke Sale" @click="handleNextSurvey(row)">
             Next
           </button>
@@ -419,8 +477,8 @@ onMounted(() => {
           <p class="text-xs text-muted mt-1">Saat teknisi dipilih, Job Order survey akan otomatis muncul di aplikasi teknisi.</p>
         </div>
         <div class="form-group mt-2">
-          <label class="form-label">Tanggal & Waktu Jadwal Survey</label>
-          <input v-model="form.scheduled_date" type="datetime-local" class="form-input" />
+          <label class="form-label">Tanggal &amp; Waktu Jadwal Survey</label>
+          <DateTime24Input v-model="form.scheduled_date" />
         </div>
       </div>
 
@@ -439,11 +497,6 @@ onMounted(() => {
           class="form-input"
           placeholder="Opsional — Masukkan nominal harga jika ingin ditentukan"
         />
-      </div>
-
-      <div class="form-group mt-3">
-        <label class="form-label">Status</label>
-        <CustomSelect v-model="form.status" :options="statusOptions" placeholder="-- Select Status --" />
       </div>
 
       <div class="form-group mt-3">
