@@ -691,6 +691,7 @@ async function saveForm() {
       }
     }
     await api.patch(`/service-reports/${realServiceReportId.value}`, {
+      customer_category: customerType.value,
       meter_reading_before: legacyBefore,
       meter_reading_after: legacyAfter,
       meter_reading_color_before: legacyColorBefore,

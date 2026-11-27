@@ -15,6 +15,7 @@ import { resources } from '@/services/resource.service'
 import { isTechnicianAssignedToJob, isLeadTechnicianForJob, getJobMemberTechIds, isMemberTechnicianForJob } from '@/utils/jobTechnician'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { hasDeliveryHistory } from '@/utils/printDeliveryHistory'
+import { compressSurveyImage, downloadSurveyAttachment, formatFileSize, isImageFile, MAX_SURVEY_FILE_BYTES, normalizeSurveyPhotos, uploadSurveyAttachments } from '@/utils/surveyFiles'
 import { normalizeRole } from '@/router/role-access'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -1027,20 +1028,38 @@ async function handleDeleteStandalone() {
 // --- Survey Job Handler State & Logic ---
 const surveyForm = ref({
   recommended_model: '',
-  photo_location: '',
+  photo_locations: [] as string[],
+  attachments: [] as any[],
   technician_notes: '',
 })
+const pendingSurveyFiles = ref<File[]>([])
+const removedAttachmentIds = ref<string[]>([])
+const lastSyncedSurveyKey = ref('')
 const isSavingSurvey = ref(false)
 
-watchEffect(() => {
-  if (isSurveyJob.value && surveyData.value) {
-    const s = surveyData.value
-    surveyForm.value = {
-      recommended_model: s.recommended_model || s.unit?.model || '',
-      photo_location: s.photo_location || '',
-      technician_notes: s.technician_notes || '',
-    }
+function syncSurveyFormFromData(force = false) {
+  if (!isSurveyJob.value || !surveyData.value) return
+  const s = surveyData.value
+  const syncKey = `${s.id || ''}:${s.updated_at || ''}`
+  if (!force && lastSyncedSurveyKey.value === syncKey) return
+  lastSyncedSurveyKey.value = syncKey
+  surveyForm.value = {
+    recommended_model: s.recommended_model || s.unit?.model || '',
+    photo_locations: normalizeSurveyPhotos(s),
+    attachments: Array.isArray(s.attachments) ? [...s.attachments] : [],
+    technician_notes: s.technician_notes || '',
   }
+  pendingSurveyFiles.value = []
+  removedAttachmentIds.value = []
+}
+
+watchEffect(() => {
+  syncSurveyFormFromData(false)
+})
+
+const visibleSurveyAttachments = computed(() => {
+  const removed = new Set(removedAttachmentIds.value)
+  return (surveyForm.value.attachments || []).filter((a: any) => !removed.has(String(a.id)))
 })
 
 async function acceptSurveyJob() {
@@ -1059,23 +1078,38 @@ async function acceptSurveyJob() {
   }
 }
 
-async function completeSurveyJob() {
+async function persistSurveyData(markCompleted: boolean) {
   isSavingSurvey.value = true
   try {
     const sid = surveyData.value?.id || job.value?.survey_id
     if (sid) {
       await api.put(`/surveys/${sid}`, {
         recommended_model: surveyForm.value.recommended_model,
-        photo_location: surveyForm.value.photo_location,
+        photo_locations: surveyForm.value.photo_locations,
+        photo_location: surveyForm.value.photo_locations[0] || '',
         technician_notes: surveyForm.value.technician_notes,
-        status: 'completed',
+        ...(markCompleted ? { status: 'completed' } : {}),
       })
+      for (const attId of removedAttachmentIds.value) {
+        await api.delete(`/surveys/${sid}/attachments/${attId}`).catch(() => {})
+      }
+      if (pendingSurveyFiles.value.length > 0) {
+        await uploadSurveyAttachments(String(sid), pendingSurveyFiles.value)
+      }
     }
-    await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
+    if (markCompleted) {
+      await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
+      toast.success('Survey lapangan berhasil diselesaikan!')
+    } else {
+      toast.success('Draft hasil survey berhasil disimpan!')
+    }
     window.dispatchEvent(new CustomEvent('bias:data-mutated'))
-    toast.success('Survey lapangan berhasil diselesaikan!')
+    lastSyncedSurveyKey.value = ''
     await fetchDirectJob()
-    router.push('/technician/call-services')
+    syncSurveyFormFromData(true)
+    if (markCompleted) {
+      router.push('/technician/call-services')
+    }
   } catch (err: any) {
     toast.error(err.message || 'Gagal menyelesaikan survey')
   } finally {
@@ -1083,36 +1117,78 @@ async function completeSurveyJob() {
   }
 }
 
-function handleSurveyPhoto(e: Event) {
+async function handleSurveyPhoto(e: Event) {
   const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.onload = (ev) => {
-    const img = new Image()
-    img.onload = () => {
-      let width = img.width
-      let height = img.height
-      const max = 1024
-      if (width > height && width > max) {
-        height = Math.round(height * (max / width))
-        width = max
-      } else if (height > max) {
-        width = Math.round(width * (max / height))
-        height = max
-      }
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.drawImage(img, 0, 0, width, height)
-        surveyForm.value.photo_location = canvas.toDataURL('image/jpeg', 0.8)
-      }
+  const files = Array.from(input.files || [])
+  if (!files.length) return
+  for (const file of files) {
+    if (!isImageFile(file)) {
+      toast.error(`File "${file.name}" bukan gambar. Gunakan form dokumen di bawah untuk file selain gambar.`)
+      continue
     }
-    img.src = ev.target?.result as string
+    try {
+      const dataUrl = await compressSurveyImage(file)
+      surveyForm.value.photo_locations.push(dataUrl)
+    } catch (err: any) {
+      toast.error(err?.message || `Gagal memproses foto ${file.name}`)
+    }
   }
-  reader.readAsDataURL(file)
+  input.value = ''
+}
+
+function removeSurveyPhoto(index: number) {
+  surveyForm.value.photo_locations.splice(index, 1)
+}
+
+function handleSurveyNonImageFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  if (!files.length) return
+  for (const file of files) {
+    if (isImageFile(file)) {
+      toast.error(`File "${file.name}" bertipe gambar. Silakan unggah melalui form Dokumentasi Foto di atas.`)
+      continue
+    }
+    if (file.size <= 0) {
+      toast.error(`File "${file.name}" kosong.`)
+      continue
+    }
+    if (file.size > MAX_SURVEY_FILE_BYTES) {
+      toast.error(`Ukuran file "${file.name}" melebihi batas 15MB.`)
+      continue
+    }
+    pendingSurveyFiles.value.push(file)
+  }
+  input.value = ''
+}
+
+function removePendingSurveyFile(index: number) {
+  pendingSurveyFiles.value.splice(index, 1)
+}
+
+function markExistingAttachmentRemoved(attachmentId: string) {
+  if (!removedAttachmentIds.value.includes(attachmentId)) {
+    removedAttachmentIds.value.push(attachmentId)
+  }
+}
+
+function previewPendingFile(file: File) {
+  const url = URL.createObjectURL(file)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = file.name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function handleDownloadSavedAttachment(att: any) {
+  const sid = surveyData.value?.id || job.value?.survey_id
+  if (!sid) return
+  try {
+    await downloadSurveyAttachment(String(sid), att)
+  } catch (err: any) {
+    toast.error(err?.message || 'Gagal mengunduh file lampiran')
+  }
 }
 </script>
 
@@ -1209,25 +1285,123 @@ function handleSurveyPhoto(e: Event) {
           </div>
 
           <div class="form-group mb-lg">
-            <label class="form-label font-bold">Dokumentasi Foto Lokasi Survey</label>
-            <div v-if="surveyForm.photo_location" style="position: relative; max-width: 280px; margin-bottom: 8px;">
-              <img :src="surveyForm.photo_location" alt="Foto Lokasi" style="width: 100%; height: 160px; object-fit: cover; border-radius: 6px; cursor: pointer;" @click="servicePhotoZoom = surveyForm.photo_location" />
-              <button v-if="isEditable && job.status !== 'completed'" type="button" class="btn btn-danger btn-xs" style="position: absolute; top: 4px; right: 4px;" @click="surveyForm.photo_location = ''">✕ Hapus</button>
+            <label class="form-label font-bold">Dokumentasi Foto Lokasi Survey (Multi Upload)</label>
+            <div
+              v-if="surveyForm.photo_locations.length > 0"
+              style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 10px;"
+            >
+              <div
+                v-for="(photo, idx) in surveyForm.photo_locations"
+                :key="idx"
+                style="position: relative; border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden;"
+              >
+                <img
+                  :src="photo"
+                  :alt="`Foto Lokasi ${idx + 1}`"
+                  style="width: 100%; height: 130px; object-fit: cover; cursor: pointer; display: block;"
+                  @click="servicePhotoZoom = photo"
+                />
+                <button
+                  v-if="isEditable && job.status !== 'completed'"
+                  type="button"
+                  class="btn btn-danger btn-xs"
+                  style="position: absolute; top: 4px; right: 4px;"
+                  @click="removeSurveyPhoto(idx)"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
-            <div v-if="isEditable && job.status !== 'completed' && !surveyForm.photo_location" style="display: flex; gap: 8px;">
+            <div v-if="isEditable && job.status !== 'completed'" style="display: flex; gap: 8px; flex-wrap: wrap;">
               <label class="btn btn-outline" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
                 📷 Ambil Foto
-                <input type="file" accept="image/*" capture="environment" style="display: none;" @change="handleSurveyPhoto" />
+                <input type="file" accept="image/*" capture="environment" multiple style="display: none;" @change="handleSurveyPhoto" />
               </label>
               <label class="btn btn-outline" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
-                📁 Pilih File
-                <input type="file" accept="image/*" style="display: none;" @change="handleSurveyPhoto" />
+                📁 Pilih Foto (Multi)
+                <input type="file" accept="image/*" multiple style="display: none;" @change="handleSurveyPhoto" />
               </label>
             </div>
           </div>
 
-          <div v-if="isEditable && job.status !== 'completed'" class="pt-md" style="border-top: 1px solid var(--color-border-light);">
-            <button class="btn btn-primary w-full" style="padding: 12px; font-size: 16px; font-weight: bold;" :disabled="isSavingSurvey" @click="completeSurveyJob">
+          <div class="form-group mb-lg">
+            <label class="form-label font-bold">Upload File / Dokumen Pendukung (Selain Gambar)</label>
+            <p class="text-xs text-muted mb-2" style="margin-top: -2px;">
+              Mendukung PDF, Word, Excel, PowerPoint, TXT, CSV, ZIP/RAR, dll. (selain gambar, maks. 15MB per file, multi upload).
+            </p>
+
+            <div
+              v-if="visibleSurveyAttachments.length > 0 || pendingSurveyFiles.length > 0"
+              style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;"
+            >
+              <div
+                v-for="att in visibleSurveyAttachments"
+                :key="att.id"
+                style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface-sunken);"
+              >
+                <div style="min-width: 0; flex: 1;">
+                  <div class="text-sm font-medium" style="word-break: break-word;">📎 {{ att.file_name }}</div>
+                  <div class="text-xs text-muted">{{ formatFileSize(att.file_size) }} &bull; {{ att.mime_type || 'Dokumen' }}</div>
+                </div>
+                <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                  <button type="button" class="btn btn-xs btn-outline" @click="handleDownloadSavedAttachment(att)">
+                    ⬇ Unduh
+                  </button>
+                  <button
+                    v-if="isEditable && job.status !== 'completed'"
+                    type="button"
+                    class="btn btn-xs btn-danger"
+                    @click="markExistingAttachmentRemoved(String(att.id))"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <div
+                v-for="(file, idx) in pendingSurveyFiles"
+                :key="`${file.name}-${idx}`"
+                style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px dashed var(--color-primary); border-radius: 6px; background: rgba(59, 130, 246, 0.05);"
+              >
+                <div style="min-width: 0; flex: 1;">
+                  <div class="text-sm font-medium" style="word-break: break-word;">📄 {{ file.name }} <span class="badge badge-info" style="margin-left: 4px; font-size: 10px;">Baru</span></div>
+                  <div class="text-xs text-muted">{{ formatFileSize(file.size) }} &bull; {{ file.type || 'Dokumen' }}</div>
+                </div>
+                <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                  <button type="button" class="btn btn-xs btn-outline" @click="previewPendingFile(file)">
+                    ⬇ Cek
+                  </button>
+                  <button
+                    v-if="isEditable && job.status !== 'completed'"
+                    type="button"
+                    class="btn btn-xs btn-danger"
+                    @click="removePendingSurveyFile(idx)"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="isEditable && job.status !== 'completed'" style="display: flex; gap: 8px;">
+              <label class="btn btn-outline" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                📄 Pilih Dokumen (Non-Gambar, Multi)
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.dwg,application/*,text/*"
+                  style="display: none;"
+                  @change="handleSurveyNonImageFiles"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div v-if="isEditable && job.status !== 'completed'" class="pt-md" style="border-top: 1px solid var(--color-border-light); display: flex; gap: 10px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-outline" style="flex: 1; padding: 12px; font-weight: 600;" :disabled="isSavingSurvey" @click="persistSurveyData(false)">
+              {{ isSavingSurvey ? 'Menyimpan...' : '💾 Simpan Draft' }}
+            </button>
+            <button type="button" class="btn btn-primary" style="flex: 2; padding: 12px; font-size: 16px; font-weight: bold;" :disabled="isSavingSurvey" @click="persistSurveyData(true)">
               {{ isSavingSurvey ? 'Menyimpan...' : '✔ Complete Survey' }}
             </button>
           </div>

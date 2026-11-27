@@ -14,25 +14,38 @@ import { useRoute } from "vue-router";
 
 const toast = useToast();
 const { can } = usePermission();
-const route = useRoute()
-const { ensureResourcesLoaded } = useMasterStore()
-const { customers, units, products, sales, brands, findProduct, findUnit, findCustomer, getUnitsByCustomer, getContractsByCustomer, deliveryOrders, formatUnitDisplayName, formatProductDisplayName } =
-  useMasterStore();
+const route = useRoute();
+const { ensureResourcesLoaded } = useMasterStore();
+const {
+  customers,
+  units,
+  products,
+  sales,
+  brands,
+  findProduct,
+  findUnit,
+  findCustomer,
+  getUnitsByCustomer,
+  getContractsByCustomer,
+  deliveryOrders,
+  formatUnitDisplayName,
+  formatProductDisplayName,
+} = useMasterStore();
 
 const columns: TableColumn[] = [
-  { key: "request_no", label: "Request No" },
-  { key: "_company_name", label: "Company" },
-  { key: "_pic_name", label: "PIC Name" },
-  { key: "request_date", label: "Request Date" },
-  { key: "status", label: "Status" },
+  { key: "request_no", label: "Request No", width: "160px" },
+  { key: "_company_name", label: "Company", wrap: true },
+  { key: "_pic_name", label: "PIC Name", width: "150px" },
+  { key: "request_date", label: "Request Date", width: "130px" },
+  { key: "status", label: "Status", width: "120px" },
 ];
 
 const externalColumns: TableColumn[] = [
-  { key: "request_no", label: "Request No" },
-  { key: "_company_name", label: "Company" },
-  { key: "_external_unit", label: "Unit Luar" },
-  { key: "request_date", label: "Request Date" },
-  { key: "status", label: "Status" },
+  { key: "request_no", label: "Request No", width: "160px" },
+  { key: "_company_name", label: "Company", wrap: true },
+  { key: "_external_unit", label: "Unit Luar", width: "160px", wrap: true },
+  { key: "request_date", label: "Request Date", width: "130px" },
+  { key: "status", label: "Status", width: "120px" },
 ];
 
 const serviceRequests = ref<any[]>([]);
@@ -78,8 +91,14 @@ const brandSelectOptions = computed(() => [
 const externalBrandSelect = ref<string | null>(null);
 
 const externalTypeOptions = [
-  { value: "legacy_rental", label: "Rental yang sudah berjalan sebelum ada sistem" },
-  { value: "external_purchase", label: "Unit dibeli dari toko lain (service di tempat kita)" },
+  {
+    value: "legacy_rental",
+    label: "Rental yang sudah berjalan sebelum ada sistem",
+  },
+  {
+    value: "external_purchase",
+    label: "Unit dibeli dari toko lain (service di tempat kita)",
+  },
 ];
 
 const externalTypeFilter = ref<string>("all");
@@ -143,6 +162,11 @@ const form = reactive({
   external_type: "legacy_rental",
 });
 
+const selectedCustomerCategory = computed(() => {
+  if (!form.customer_id) return "";
+  return (findCustomer(form.customer_id as any) as any)?.category || "Corporate";
+});
+
 watch(externalBrandSelect, (val) => {
   if (!val) {
     form.external_brand = "";
@@ -162,13 +186,16 @@ const externalRequests = computed(() => {
   let list = serviceRequests.value.filter((r: any) => r.is_external);
   if (externalTypeFilter.value !== "all") {
     list = list.filter(
-      (r: any) => (r.external_type || "legacy_rental") === externalTypeFilter.value,
+      (r: any) =>
+        (r.external_type || "legacy_rental") === externalTypeFilter.value,
     );
   }
   return list;
 });
 const displayedRequests = computed(() =>
-  listTab.value === "internal" ? internalRequests.value : externalRequests.value,
+  listTab.value === "internal"
+    ? internalRequests.value
+    : externalRequests.value,
 );
 
 const filteredCustomerRentalUnits = computed(() => {
@@ -176,7 +203,8 @@ const filteredCustomerRentalUnits = computed(() => {
   if (productSourceFilter.value === "all") return list;
   return list.filter((u: any) => {
     if (productSourceFilter.value === "unit") return u.itemType === "unit";
-    if (productSourceFilter.value === "product") return u.itemType === "product";
+    if (productSourceFilter.value === "product")
+      return u.itemType === "product";
     return u.source === productSourceFilter.value;
   });
 });
@@ -216,7 +244,9 @@ function externalUnitLabel(row: any): string {
   if (!row?.is_external) return "-";
   const parts = [row.external_brand, row.external_model].filter(Boolean);
   const base = parts.length > 0 ? parts.join(" ") : "External Unit";
-  return row.external_serial_no ? `${base} (SN: ${row.external_serial_no})` : base;
+  return row.external_serial_no
+    ? `${base} (SN: ${row.external_serial_no})`
+    : base;
 }
 
 async function submitExternalRequest() {
@@ -233,6 +263,7 @@ async function submitExternalRequest() {
   const payload = {
     request_no: form.request_no,
     customer_id: form.customer_id,
+    customer_category: selectedCustomerCategory.value || "Corporate",
     unit_id: null,
     is_external: true,
     external_brand: form.external_brand,
@@ -246,7 +277,9 @@ async function submitExternalRequest() {
   };
   try {
     await apiRequest({
-      url: isEditing.value ? `/service-requests/${editId.value}` : "/service-requests",
+      url: isEditing.value
+        ? `/service-requests/${editId.value}`
+        : "/service-requests",
       method: isEditing.value ? "PATCH" : "POST",
       data: payload,
     });
@@ -272,8 +305,14 @@ function handleModalSubmit() {
 // Fetch all rentals to know which units are rented by which customer
 async function fetchRentals() {
   try {
-    const data = await api.get<any>("/rents?limit=200&order_by=created_at&order_dir=desc");
-    const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+    const data = await api.get<any>(
+      "/rents?limit=200&order_by=created_at&order_dir=desc",
+    );
+    const list = Array.isArray(data?.data)
+      ? data.data
+      : Array.isArray(data)
+        ? data
+        : [];
     rentalsData.value = list;
   } catch (e) {
     console.warn("Could not fetch rentals for unit list", e);
@@ -298,7 +337,10 @@ const customerRentalUnits = computed(() => {
 
   // 1. From rental items (units rented + consumables/spareparts)
   for (const rental of rentalsData.value) {
-    if (String(rental.customer_id) === cid && (rental.rental_items || rental.items)) {
+    if (
+      String(rental.customer_id) === cid &&
+      (rental.rental_items || rental.items)
+    ) {
       const rItems = rental.rental_items || rental.items || [];
       for (const item of rItems) {
         if (item.unit_id) {
@@ -373,7 +415,9 @@ const customerRentalUnits = computed(() => {
               si.product_id,
               (sale as any).id,
             );
-            const pName = prod ? formatProductDisplayName(prod) : ("Product ID: " + si.product_id);
+            const pName = prod
+              ? formatProductDisplayName(prod)
+              : "Product ID: " + si.product_id;
             unitMap.set(key, {
               id: si.product_id,
               label: `[Consumable/Sparepart] ${pName} (Qty: ${si.qty || 1})`,
@@ -388,7 +432,7 @@ const customerRentalUnits = computed(() => {
   }
 
   // 3. From delivery orders (delivered machines and consumables/spareparts for this customer)
-  for (const delivery of (deliveryOrders.value as any[])) {
+  for (const delivery of deliveryOrders.value as any[]) {
     if (String(delivery.customer_id) === cid && delivery.delivery_order_items) {
       for (const item of delivery.delivery_order_items) {
         if (item.unit_id) {
@@ -563,7 +607,7 @@ const deliveredItemIds = computed(() => {
       for (const contract of getContractsByCustomer(form.customer_id)) {
         if (
           String((contract as any).contract_id) ===
-          String(delivery.contract_id) &&
+            String(delivery.contract_id) &&
           (contract as any).unit_id
         ) {
           unitIds.add(String((contract as any).unit_id));
@@ -653,7 +697,9 @@ async function handleSubmit() {
   const payload = {
     request_no: form.request_no,
     customer_id: form.customer_id,
-    unit_id: form.unit_ids.length > 0 && form.unit_ids?.[0] ? form.unit_ids[0] : null,
+    customer_category: selectedCustomerCategory.value || "Corporate",
+    unit_id:
+      form.unit_ids.length > 0 && form.unit_ids?.[0] ? form.unit_ids[0] : null,
     project_name: form.project_name,
     problem_description: form.problem_description,
     request_date: new Date(form.request_date).toISOString(),
@@ -661,7 +707,9 @@ async function handleSubmit() {
 
   try {
     await apiRequest({
-      url: isEditing.value ? `/service-requests/${editId.value}` : "/service-requests",
+      url: isEditing.value
+        ? `/service-requests/${editId.value}`
+        : "/service-requests",
       method: isEditing.value ? "PATCH" : "POST",
       data: payload,
     });
@@ -707,7 +755,11 @@ async function handleAssignSubmit() {
   };
 
   try {
-    await apiRequest({ url: "/service-requests", method: "POST", data: payload });
+    await apiRequest({
+      url: "/service-requests",
+      method: "POST",
+      data: payload,
+    });
     toast.success("Technician assigned successfully! Job order created.");
     showAssignModal.value = false;
     fetchRequests(); // To maybe refresh status if backend updates SR status automatically
@@ -726,8 +778,7 @@ const relatedReports = computed(() => {
   const jobIds = requestJobs.map((j) => String(j.id));
   // Copier report punya list tersendiri — tidak ditampilkan di sini.
   return serviceReports.value.filter(
-    (sr) =>
-      jobIds.includes(String(sr.job_order_id)) && !isCopierReport(sr),
+    (sr) => jobIds.includes(String(sr.job_order_id)) && !isCopierReport(sr),
   );
 });
 
@@ -741,26 +792,28 @@ function openAdd() {
 function openEdit(row: any) {
   isEditing.value = true;
   editId.value = row.id;
-  formTab.value = row.is_external ? 'external' : 'internal';
+  formTab.value = row.is_external ? "external" : "internal";
   Object.assign(form, {
     request_no: row.request_no,
     customer_id: row.customer_id,
     unit_ids: row.unit_id ? [row.unit_id] : [],
-    project_name: row.project_name || '',
-    problem_description: row.problem_description || '',
-    request_date: row.request_date ? new Date(row.request_date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
-    external_brand: row.external_brand || '',
-    external_model: row.external_model || '',
-    external_serial_no: row.external_serial_no || '',
-    external_note: row.external_note || '',
-    external_type: row.external_type || 'legacy_rental',
+    project_name: row.project_name || "",
+    problem_description: row.problem_description || "",
+    request_date: row.request_date
+      ? new Date(row.request_date).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10),
+    external_brand: row.external_brand || "",
+    external_model: row.external_model || "",
+    external_serial_no: row.external_serial_no || "",
+    external_note: row.external_note || "",
+    external_type: row.external_type || "legacy_rental",
   });
   externalBrandSelect.value = row.external_brand;
   showModal.value = true;
 }
 
 async function confirmDelete(row: any) {
-  if (!confirm('Are you sure you want to delete this service request?')) return;
+  if (!confirm("Are you sure you want to delete this service request?")) return;
   try {
     await api.delete(`/service-requests/${row.id}`);
     toast.success("Service request deleted!");
@@ -775,11 +828,11 @@ function openDetail(row: any) {
   showRequestDetailModal.value = true;
 }
 
-let srTimer: any = null
+let srTimer: any = null;
 async function silentRefresh() {
-  if (showModal.value || showRequestDetailModal.value) return
+  if (showModal.value || showRequestDetailModal.value) return;
   try {
-    await fetchRequests()
+    await fetchRequests();
   } catch {}
 }
 
@@ -795,98 +848,229 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
-  srTimer = setInterval(silentRefresh, 30000)
-  window.addEventListener('focus', silentRefresh)
-  window.addEventListener('bias:data-mutated', silentRefresh)
+  srTimer = setInterval(silentRefresh, 30000);
+  window.addEventListener("focus", silentRefresh);
+  window.addEventListener("bias:data-mutated", silentRefresh);
 });
 
 onUnmounted(() => {
-  if (srTimer) clearInterval(srTimer)
-  window.removeEventListener('focus', silentRefresh)
-  window.removeEventListener('bias:data-mutated', silentRefresh)
-})
+  if (srTimer) clearInterval(srTimer);
+  window.removeEventListener("focus", silentRefresh);
+  window.removeEventListener("bias:data-mutated", silentRefresh);
+});
 </script>
 
 <template>
   <div>
-    <PageHeader title="Service Request Management" button-label="Log Complaint" permission="service_request:create"
-      @add="openAdd" />
+    <PageHeader
+      title="Service Request Management"
+      button-label="Log Complaint"
+      permission="service_request:create"
+      @add="openAdd"
+    />
 
-    <div class="sr-tabs sr-tabs--page" role="tablist" aria-label="Filter daftar service request">
-      <button type="button" role="tab" class="sr-tab" :class="{ 'sr-tab--active': listTab === 'internal' }"
-        :aria-selected="listTab === 'internal'" @click="listTab = 'internal'">
+    <div
+      class="sr-tabs sr-tabs--page"
+      role="tablist"
+      aria-label="Filter daftar service request"
+    >
+      <button
+        type="button"
+        role="tab"
+        class="sr-tab"
+        :class="{ 'sr-tab--active': listTab === 'internal' }"
+        :aria-selected="listTab === 'internal'"
+        @click="listTab = 'internal'"
+      >
         Unit Internal ({{ internalRequests.length }})
       </button>
-      <button type="button" role="tab" class="sr-tab" :class="{ 'sr-tab--active': listTab === 'external' }"
-        :aria-selected="listTab === 'external'" @click="listTab = 'external'">
+      <button
+        type="button"
+        role="tab"
+        class="sr-tab"
+        :class="{ 'sr-tab--active': listTab === 'external' }"
+        :aria-selected="listTab === 'external'"
+        @click="listTab = 'external'"
+      >
         Unit Luar / Eksternal ({{ externalRequests.length }})
       </button>
     </div>
 
-    <DataTable :columns="tableColumns" :data="displayedRequests" :loading="isLoading"
-       :search-placeholder="listTab === 'internal' ? 'Search complaints...' : 'Search external complaints...'">
-       <template #toolbar>
-         <div v-if="listTab === 'external'" style="display: flex; align-items: center; gap: 8px;">
-           <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Tipe Pembelian:</label>
-           <select v-model="externalTypeFilter" class="form-select" style="min-width: 200px; height: 36px; padding: 0 10px; font-size: 13px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface, #fff); color: var(--color-text); cursor: pointer;">
-             <option value="all">Semua</option>
-             <option value="legacy_rental">Rental lama (sebelum sistem)</option>
-             <option value="external_purchase">Beli dari toko lain</option>
-           </select>
-         </div>
-       </template>
-       <template #cell-request_date="{ value }">{{
+    <DataTable
+      :columns="tableColumns"
+      :data="displayedRequests"
+      :loading="isLoading"
+      :search-placeholder="
+        listTab === 'internal'
+          ? 'Search complaints...'
+          : 'Search external complaints...'
+      "
+    >
+      <template #toolbar>
+        <div
+          v-if="listTab === 'external'"
+          style="display: flex; align-items: center; gap: 8px"
+        >
+          <label
+            style="
+              font-size: 12px;
+              font-weight: 600;
+              color: var(--color-text-muted);
+              white-space: nowrap;
+            "
+            >Tipe Pembelian:</label
+          >
+          <select
+            v-model="externalTypeFilter"
+            class="form-select"
+            style="
+              min-width: 200px;
+              height: 36px;
+              padding: 0 10px;
+              font-size: 13px;
+              border-radius: 6px;
+              border: 1px solid var(--color-border);
+              background: var(--color-surface, #fff);
+              color: var(--color-text);
+              cursor: pointer;
+            "
+          >
+            <option value="all">Semua</option>
+            <option value="legacy_rental">Rental lama (sebelum sistem)</option>
+            <option value="external_purchase">Beli dari toko lain</option>
+          </select>
+        </div>
+      </template>
+      <template #cell-request_date="{ value }">{{
         new Date(value).toLocaleDateString("en-GB")
       }}</template>
-       <template #cell-request_no="{ value, row }">
-         <span class="mono">{{ value }}</span>
-         <span v-if="row?.is_external" class="unit-source-badge badge-external"
-           title="Unit di luar milik perusahaan">Eksternal</span>
-         <span v-if="row?.is_external" class="unit-source-badge"
-           :class="(row?.external_type || 'legacy_rental') === 'external_purchase' ? 'badge-outside' : 'badge-running'"
-           :title="(row?.external_type || 'legacy_rental') === 'external_purchase' ? 'Unit dibeli dari toko lain' : 'Rental yang sudah berjalan sebelum ada sistem'">
-           {{ (row?.external_type || 'legacy_rental') === 'external_purchase' ? 'Beli Toko Lain' : 'Rental Lama' }}
-         </span>
-       </template>
+      <template #cell-request_no="{ value, row }">
+        <span class="mono">{{ value }}</span>
+        <span
+          v-if="row?.is_external"
+          class="unit-source-badge badge-external"
+          title="Unit di luar milik perusahaan"
+          >Eksternal</span
+        >
+        <span
+          v-if="row?.is_external"
+          class="unit-source-badge"
+          :class="
+            (row?.external_type || 'legacy_rental') === 'external_purchase'
+              ? 'badge-outside'
+              : 'badge-running'
+          "
+          :title="
+            (row?.external_type || 'legacy_rental') === 'external_purchase'
+              ? 'Unit dibeli dari toko lain'
+              : 'Rental yang sudah berjalan sebelum ada sistem'
+          "
+        >
+          {{
+            (row?.external_type || "legacy_rental") === "external_purchase"
+              ? "Beli Toko Lain"
+              : "Rental Lama"
+          }}
+        </span>
+      </template>
       <template #cell-status="{ value }">
-        <span class="badge" :class="value === 'assigned' || value === 'in_progress'
-          ? 'badge-success'
-          : 'badge-warning'
-          ">
+        <span
+          class="badge"
+          :class="
+            value === 'assigned' || value === 'in_progress'
+              ? 'badge-success'
+              : 'badge-warning'
+          "
+        >
           {{ value.toUpperCase() }}
         </span>
       </template>
       <template #actions="{ row }">
-        <button class="action-btn" title="View Detail" @click="openDetail(row)"
-          style="color: var(--color-primary); border-color: transparent">
-          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button
+          class="action-btn"
+          title="View Detail"
+          @click="openDetail(row)"
+          style="color: var(--color-primary); border-color: transparent"
+        >
+          <svg
+            class="action-icon"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
         </button>
-        <button v-if="can('service_request:update') && (row.status === 'pending' || row.status === 'assigned')"
-          class="action-btn" title="Edit" @click="openEdit(row)"
-          style="color: var(--color-warning); border-color: transparent">
-          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+        <button
+          v-if="
+            can('service_request:update') &&
+            (row.status === 'pending' || row.status === 'assigned')
+          "
+          class="action-btn"
+          title="Edit"
+          @click="openEdit(row)"
+          style="color: var(--color-warning); border-color: transparent"
+        >
+          <svg
+            class="action-icon"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
+            ></path>
+            <path
+              d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+            ></path>
           </svg>
         </button>
-        <button v-if="can('service_request:delete') && (row.status === 'pending' || row.status === 'assigned')"
-          class="action-btn" title="Delete" @click="confirmDelete(row)"
-          style="color: var(--color-danger); border-color: transparent">
-          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button
+          v-if="
+            can('service_request:delete') &&
+            (row.status === 'pending' || row.status === 'assigned')
+          "
+          class="action-btn"
+          title="Delete"
+          @click="confirmDelete(row)"
+          style="color: var(--color-danger); border-color: transparent"
+        >
+          <svg
+            class="action-icon"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            <path
+              d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+            ></path>
           </svg>
         </button>
       </template>
     </DataTable>
 
-    <FormModal :open="showRequestDetailModal" title="Service Request Details" @close="showRequestDetailModal = false">
+    <FormModal
+      :open="showRequestDetailModal"
+      title="Service Request Details"
+      @close="showRequestDetailModal = false"
+    >
       <div v-if="selectedRequest">
         <!-- Info Cards -->
         <div class="detail-info-grid">
@@ -913,26 +1097,39 @@ onUnmounted(() => {
             <span class="detail-info-value">{{
               selectedRequest.request_date
                 ? new Date(selectedRequest.request_date).toLocaleDateString(
-                  "en-GB",
-                )
+                    "en-GB",
+                  )
                 : "-"
             }}</span>
           </div>
         </div>
 
         <!-- Problem Description -->
-        <div v-if="selectedRequest.is_external" class="detail-problem-box"
-          style="border-left-color: var(--color-warning, #d97706)">
-          <span class="detail-info-label" style="display: block; margin-bottom: 6px">Unit Luar / Eksternal</span>
+        <div
+          v-if="selectedRequest.is_external"
+          class="detail-problem-box"
+          style="border-left-color: var(--color-warning, #d97706)"
+        >
+          <span
+            class="detail-info-label"
+            style="display: block; margin-bottom: 6px"
+            >Unit Luar / Eksternal</span
+          >
           <p class="detail-problem-text">
             {{ externalUnitLabel(selectedRequest) }}
-            <span v-if="selectedRequest.external_note"> — {{ selectedRequest.external_note }}</span>
+            <span v-if="selectedRequest.external_note">
+              — {{ selectedRequest.external_note }}</span
+            >
           </p>
         </div>
 
         <!-- Problem Description -->
         <div class="detail-problem-box">
-          <span class="detail-info-label" style="display: block; margin-bottom: 6px">Complaint / Problem</span>
+          <span
+            class="detail-info-label"
+            style="display: block; margin-bottom: 6px"
+            >Complaint / Problem</span
+          >
           <p class="detail-problem-text">
             {{ selectedRequest.problem_description || "-" }}
           </p>
@@ -940,9 +1137,19 @@ onUnmounted(() => {
 
         <!-- History -->
         <div class="detail-section-header">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+            />
             <polyline points="14 2 14 8 20 8" />
           </svg>
           Service Report History
@@ -952,7 +1159,11 @@ onUnmounted(() => {
           No service reports for this request yet.
         </div>
         <div v-else class="detail-report-list">
-          <div v-for="rep in relatedReports" :key="rep.id" class="detail-report-row">
+          <div
+            v-for="rep in relatedReports"
+            :key="rep.id"
+            class="detail-report-row"
+          >
             <div class="detail-report-main">
               <span class="detail-report-no mono">{{
                 rep.report_no || rep.service_report_no || "-"
@@ -967,15 +1178,29 @@ onUnmounted(() => {
               }}</span>
             </div>
             <div class="detail-report-actions">
-              <span :class="rep.status === 'completed'
-                ? 'badge badge-success'
-                : 'badge badge-info'
-                ">
+              <span
+                :class="
+                  rep.status === 'completed'
+                    ? 'badge badge-success'
+                    : 'badge badge-info'
+                "
+              >
                 {{ rep.status === "completed" ? "Completed" : rep.status }}
               </span>
-              <button class="detail-look-btn" @click="$router.push(`/shared/service-reports/${rep.id}`)">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round">
+              <button
+                class="detail-look-btn"
+                @click="$router.push(`/shared/service-reports/${rep.id}`)"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
@@ -987,17 +1212,38 @@ onUnmounted(() => {
       </div>
     </FormModal>
 
-    <FormModal :open="showModal" :title="isEditing ? 'Edit Service Request' : 'Log Complaint (Service Request)'" max-width="580px" @close="showModal = false"
-      @submit="handleModalSubmit">
-      <div class="sr-tabs sr-tabs--modal" role="tablist" aria-label="Jenis unit service request">
-        <button type="button" role="tab" class="sr-tab sr-tab--segment"
-          :class="{ 'sr-tab--segment-active': formTab === 'internal' }" :aria-selected="formTab === 'internal'"
-          @click="formTab = 'internal'">
+    <FormModal
+      :open="showModal"
+      :title="
+        isEditing ? 'Edit Service Request' : 'Log Complaint (Service Request)'
+      "
+      max-width="580px"
+      @close="showModal = false"
+      @submit="handleModalSubmit"
+    >
+      <div
+        class="sr-tabs sr-tabs--modal"
+        role="tablist"
+        aria-label="Jenis unit service request"
+      >
+        <button
+          type="button"
+          role="tab"
+          class="sr-tab sr-tab--segment"
+          :class="{ 'sr-tab--segment-active': formTab === 'internal' }"
+          :aria-selected="formTab === 'internal'"
+          @click="formTab = 'internal'"
+        >
           Unit Internal
         </button>
-        <button type="button" role="tab" class="sr-tab sr-tab--segment"
-          :class="{ 'sr-tab--segment-active': formTab === 'external' }" :aria-selected="formTab === 'external'"
-          @click="formTab = 'external'">
+        <button
+          type="button"
+          role="tab"
+          class="sr-tab sr-tab--segment"
+          :class="{ 'sr-tab--segment-active': formTab === 'external' }"
+          :aria-selected="formTab === 'external'"
+          @click="formTab = 'external'"
+        >
           Unit Luar / Eksternal
         </button>
       </div>
@@ -1012,17 +1258,44 @@ onUnmounted(() => {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Request Number</label>
-          <input v-model="form.request_no" type="text" readonly class="form-input" required />
+          <input
+            v-model="form.request_no"
+            type="text"
+            readonly
+            class="form-input"
+            required
+          />
         </div>
         <div class="form-group">
           <label class="form-label">Received Date</label>
-          <input v-model="form.request_date" type="date" class="form-input" required />
+          <input
+            v-model="form.request_date"
+            type="date"
+            class="form-input"
+            required
+          />
         </div>
       </div>
 
       <div class="form-group mt-3">
         <label class="form-label">Customer</label>
-        <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" />
+        <CustomSelect
+          v-model="form.customer_id"
+          :options="customerOptions"
+          placeholder="-- Select Customer --"
+        />
+      </div>
+
+      <div v-if="form.customer_id" class="form-group mt-3">
+        <label class="form-label">Customer Type</label>
+        <input
+          :value="selectedCustomerCategory"
+          type="text"
+          class="form-input"
+          readonly
+          disabled
+          title="Otomatis mengikuti tipe Customer yang dipilih"
+        />
       </div>
 
       <div v-show="formTab === 'internal'" class="form-group mt-3">
@@ -1030,24 +1303,58 @@ onUnmounted(() => {
         <div v-if="!form.customer_id" class="field-placeholder">
           Select a customer first
         </div>
-        <div v-else-if="customerRentalUnits.length === 0" class="field-placeholder">
-          Belum ada unit mesin, consumable, atau sparepart tercatat untuk customer ini.
+        <div
+          v-else-if="customerRentalUnits.length === 0"
+          class="field-placeholder"
+        >
+          Belum ada unit mesin, consumable, atau sparepart tercatat untuk
+          customer ini.
         </div>
         <div v-else>
-          <div v-if="!hasDeliveredUnit" class="field-placeholder field-placeholder--warn">
+          <div
+            v-if="!hasDeliveredUnit"
+            class="field-placeholder field-placeholder--warn"
+          >
             Belum ada barang yang dikirim (delivered) untuk customer ini —
-            service request baru bisa dibuat setelah barang/DO diterima customer.
+            service request baru bisa dibuat setelah barang/DO diterima
+            customer.
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-            <label style="font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap;">Filter Product:</label>
-            <select v-model="productSourceFilter" class="form-select" style="min-width: 180px; height: 34px; padding: 0 10px; font-size: 12px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface, #fff); color: var(--color-text); cursor: pointer;">
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              margin-bottom: 8px;
+            "
+          >
+            <label
+              style="
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--color-text-muted);
+                white-space: nowrap;
+              "
+              >Filter Product:</label
+            >
+            <select
+              v-model="productSourceFilter"
+              class="form-select"
+              style="
+                min-width: 180px;
+                height: 34px;
+                padding: 0 10px;
+                font-size: 12px;
+                border-radius: 6px;
+                border: 1px solid var(--color-border);
+                background: var(--color-surface, #fff);
+                color: var(--color-text);
+                cursor: pointer;
+              "
+            >
               <option value="all">Semua</option>
               <option value="unit">Unit / Mesin</option>
               <option value="product">Consumable / Sparepart</option>
               <option value="rental">Rental</option>
-              <option value="sale">Purchased</option>
-              <option value="delivery">Delivered</option>
-              <option value="contract">Contract</option>
             </select>
           </div>
           <div class="unit-checkbox-list">
@@ -1056,7 +1363,11 @@ onUnmounted(() => {
               :key="u.id"
               class="unit-checkbox-item"
               :class="{ 'unit-disabled': !u.delivered }"
-              :title="!u.delivered ? 'Barang ini belum bisa dipilih karena belum melakukan pengantaran (status belum delivered)' : ''"
+              :title="
+                !u.delivered
+                  ? 'Barang ini belum bisa dipilih karena belum melakukan pengantaran (status belum delivered)'
+                  : ''
+              "
               @click="!u.delivered ? $event.preventDefault() : null"
             >
               <input
@@ -1065,25 +1376,50 @@ onUnmounted(() => {
                 v-model="form.unit_ids"
                 :disabled="!u.delivered"
               />
-              <span class="unit-checkbox-label" :style="!u.delivered ? 'color: var(--color-text-muted); cursor: not-allowed;' : ''">{{ u.label }}</span>
+              <span
+                class="unit-checkbox-label"
+                :style="
+                  !u.delivered
+                    ? 'color: var(--color-text-muted); cursor: not-allowed;'
+                    : ''
+                "
+                >{{ u.label }}</span
+              >
               <span
                 v-if="!u.delivered"
                 class="delivery-badge delivery-pending"
-                :title="u.doStatus ? `Status DO: ${u.doStatus}` : 'Belum ada pengantaran/DO untuk barang ini'"
-              >
-                Belum Dikirim{{ u.doStatus && u.doStatus !== 'belum dikirim' && u.doStatus !== '-' ? ` (${u.doStatus})` : '' }}
-              </span>
-              <span class="unit-source-badge" :class="u.itemType === 'product'
-                ? 'badge-product'
-                : u.source === 'rental'
-                  ? 'badge-rental'
-                  : u.source === 'sale'
-                    ? 'badge-sale'
-                    : u.source === 'delivery'
-                      ? 'badge-delivery'
-                      : 'badge-contract'
+                :title="
+                  u.doStatus
+                    ? `Status DO: ${u.doStatus}`
+                    : 'Belum ada pengantaran/DO untuk barang ini'
                 "
-                :style="u.itemType === 'product' ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd;' : ''"
+              >
+                Belum Dikirim{{
+                  u.doStatus &&
+                  u.doStatus !== "belum dikirim" &&
+                  u.doStatus !== "-"
+                    ? ` (${u.doStatus})`
+                    : ""
+                }}
+              </span>
+              <span
+                class="unit-source-badge"
+                :class="
+                  u.itemType === 'product'
+                    ? 'badge-product'
+                    : u.source === 'rental'
+                      ? 'badge-rental'
+                      : u.source === 'sale'
+                        ? 'badge-sale'
+                        : u.source === 'delivery'
+                          ? 'badge-delivery'
+                          : 'badge-contract'
+                "
+                :style="
+                  u.itemType === 'product'
+                    ? 'background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd;'
+                    : ''
+                "
               >
                 {{
                   u.itemType === "product"
@@ -1097,11 +1433,18 @@ onUnmounted(() => {
                           : "Contract Unit"
                 }}
               </span>
-              <span v-if="u.warranty?.active" class="warranty-badge warranty-active"
-                :title="`Warranty until ${u.warranty.endDate}`">
+              <span
+                v-if="u.warranty?.active"
+                class="warranty-badge warranty-active"
+                :title="`Warranty until ${u.warranty.endDate}`"
+              >
                 ✓ Warranty
               </span>
-              <span v-else class="warranty-badge warranty-none" title="No active warranty — charges will apply">
+              <span
+                v-else
+                class="warranty-badge warranty-none"
+                title="No active warranty — charges will apply"
+              >
                 Billable
               </span>
             </label>
@@ -1115,38 +1458,72 @@ onUnmounted(() => {
           Select a customer first
         </div>
         <div v-else class="external-unit-panel">
-          <div class="form-group" style="margin-bottom: 10px;">
+          <div class="form-group" style="margin-bottom: 10px">
             <label class="form-label form-label-sm">Tipe Pembelian</label>
-            <CustomSelect v-model="form.external_type" :options="externalTypeOptions"
-              placeholder="-- Pilih Tipe Pembelian --" />
+            <CustomSelect
+              v-model="form.external_type"
+              :options="externalTypeOptions"
+              placeholder="-- Pilih Tipe Pembelian --"
+            />
           </div>
           <div class="form-row external-unit-fields">
             <div class="form-group external-brand-field">
               <label class="form-label form-label-sm">Brand / Merek</label>
-              <CustomSelect v-model="externalBrandSelect" :options="brandSelectOptions"
-                placeholder="-- Pilih Brand --" />
-              <input v-if="isExternalBrandOther" v-model="form.external_brand" type="text"
-                class="form-input external-brand-custom" placeholder="Ketik nama brand (cth. Kyocera)" />
+              <CustomSelect
+                v-model="externalBrandSelect"
+                :options="brandSelectOptions"
+                placeholder="-- Pilih Brand --"
+              />
+              <input
+                v-if="isExternalBrandOther"
+                v-model="form.external_brand"
+                type="text"
+                class="form-input external-brand-custom"
+                placeholder="Ketik nama brand (cth. Kyocera)"
+              />
             </div>
             <div class="form-group">
               <label class="form-label form-label-sm">Model / Tipe</label>
-              <input v-model="form.external_model" type="text" class="form-input" placeholder="cth. imageRUNNER 2525" />
+              <input
+                v-model="form.external_model"
+                type="text"
+                class="form-input"
+                placeholder="cth. imageRUNNER 2525"
+              />
             </div>
           </div>
           <div class="form-row external-unit-fields">
             <div class="form-group">
               <label class="form-label form-label-sm">Serial Number</label>
-              <input v-model="form.external_serial_no" @input="form.external_serial_no = ($event.target as HTMLInputElement).value.toUpperCase()" type="text" class="form-input text-uppercase"
-                placeholder="Opsional — auto-generate bila kosong" />
+              <input
+                v-model="form.external_serial_no"
+                @input="
+                  form.external_serial_no = (
+                    $event.target as HTMLInputElement
+                  ).value.toUpperCase()
+                "
+                type="text"
+                class="form-input text-uppercase"
+                placeholder="Opsional — auto-generate bila kosong"
+              />
             </div>
             <div class="form-group">
-              <label class="form-label form-label-sm">Lokasi / Keterangan</label>
-              <input v-model="form.external_note" type="text" class="form-input"
-                placeholder="cth. lantai 2, ruang arsip" />
+              <label class="form-label form-label-sm"
+                >Lokasi / Keterangan</label
+              >
+              <input
+                v-model="form.external_note"
+                type="text"
+                class="form-input"
+                placeholder="cth. lantai 2, ruang arsip"
+              />
             </div>
           </div>
           <div class="external-unit-meta">
-            <span class="warranty-badge warranty-none" title="Unit luar tidak ter-cover warranty internal">
+            <span
+              class="warranty-badge warranty-none"
+              title="Unit luar tidak ter-cover warranty internal"
+            >
               Billable
             </span>
             <span class="external-unit-meta-text">
@@ -1158,14 +1535,23 @@ onUnmounted(() => {
 
       <div class="form-group mt-3">
         <label class="form-label">Project Name</label>
-        <input v-model="form.project_name" type="text" class="form-input"
-          placeholder="e.g. Pemeliharaan Printer Kantor A" />
+        <input
+          v-model="form.project_name"
+          type="text"
+          class="form-input"
+          placeholder="e.g. Pemeliharaan Printer Kantor A"
+        />
       </div>
 
       <div class="form-group mt-3">
-        <label class="form-label">Complaint Description (Problem) <span class="text-danger">*</span></label>
-        <textarea v-model="form.problem_description" class="form-input" rows="4"
-          placeholder="Describe the complaint in detail" required></textarea>
+        <label class="form-label">Complaint Description (Problem)</label>
+        <textarea
+          v-model="form.problem_description"
+          class="form-input"
+          rows="4"
+          placeholder="Describe the complaint in detail"
+          required
+        ></textarea>
       </div>
 
       <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">
@@ -1173,26 +1559,42 @@ onUnmounted(() => {
       </div>
     </FormModal>
 
-    <FormModal :open="showAssignModal" title="Assign Technician (Create Job Order)" @close="showAssignModal = false"
-      @submit="handleAssignSubmit">
+    <FormModal
+      :open="showAssignModal"
+      title="Assign Technician (Create Job Order)"
+      @close="showAssignModal = false"
+      @submit="handleAssignSubmit"
+    >
       <div class="form-group mt-3">
         <label class="form-label">Select Technician</label>
-        <CustomSelect v-model="assignForm.technician_id" :options="technicianOptions"
-          placeholder="-- Select Technician --" />
+        <CustomSelect
+          v-model="assignForm.technician_id"
+          :options="technicianOptions"
+          placeholder="-- Select Technician --"
+        />
       </div>
       <div class="form-group mt-3">
         <label class="form-label">Assignment Date</label>
-        <input v-model="assignForm.scheduled_date" type="date" class="form-input" required />
+        <input
+          v-model="assignForm.scheduled_date"
+          type="date"
+          class="form-input"
+          required
+        />
       </div>
       <div class="form-group mt-3">
         <label class="form-label">Instructions / Notes for Technician</label>
-        <textarea v-model="assignForm.instructions" class="form-input" rows="4" required></textarea>
+        <textarea
+          v-model="assignForm.instructions"
+          class="form-input"
+          rows="4"
+          required
+        ></textarea>
       </div>
       <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">
         Saving data...
       </div>
     </FormModal>
-
   </div>
 </template>
 
@@ -1329,7 +1731,7 @@ onUnmounted(() => {
   gap: 10px;
 }
 
-.external-unit-fields+.external-unit-fields {
+.external-unit-fields + .external-unit-fields {
   margin-top: 10px;
 }
 

@@ -346,7 +346,13 @@ async function completeJob() {
     return
   }
 
+    const custForCat: any = findCustomer(customerId)
     const reportPayload = {
+      customer_category:
+        custForCat?.category ||
+        selectedJob.value?.customer_category ||
+        selectedJob.value?.customer?.category ||
+        'Corporate',
       machine_problem: jobProblem(selectedJob.value),
       repair_action: form.value.repair_action,
       time_in: form.value.work_start,
@@ -498,6 +504,10 @@ async function completeJob() {
               <div class="mf-info-field">
                 <span class="mf-info-label">Customer</span>
                 <span class="mf-info-value">{{ getCustomerName(jobCustomerId(selectedJob)) }}</span>
+              </div>
+              <div class="mf-info-field">
+                <span class="mf-info-label">Customer Type</span>
+                <span class="mf-info-value">{{ (findCustomer(jobCustomerId(selectedJob)) as any)?.category || selectedJob?.customer_category || selectedJob?.customer?.category || 'Corporate' }}</span>
               </div>
               <div class="mf-info-field">
                 <span class="mf-info-label">Product / Unit</span>

@@ -11,6 +11,7 @@ import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { resources } from "@/services/resource.service";
+import { downloadSurveyAttachment, formatFileSize, normalizeSurveyPhotos } from "@/utils/surveyFiles";
 import { useRouter } from "vue-router";
 import type { TableColumn } from "@/types";
 
@@ -134,7 +135,9 @@ async function fetchData(silent = false) {
         : [];
     const formatted = (list as any[]).map((r: any) => {
       const techName = r.technician?.user?.name || r.technician?.name;
-      const hasFindings = !!(r.electrical_condition || r.access_condition || r.recommended_model || r.photo_location || r.technician_notes);
+      const hasAttachments = Array.isArray(r.attachments) && r.attachments.length > 0;
+      const hasMultiPhotos = Array.isArray(r.photo_locations) && r.photo_locations.length > 0;
+      const hasFindings = !!(r.electrical_condition || r.access_condition || r.recommended_model || r.photo_location || hasMultiPhotos || hasAttachments || r.technician_notes);
       return {
         ...r,
         price: r.price != null ? r.price : (r.unit?.price != null ? r.unit.price : null),
@@ -315,6 +318,15 @@ async function cancelSurvey(item: any) {
 function openZoom(photo: string) {
   if (photo && photo !== 'has_photo') {
     zoomPhoto.value = photo;
+  }
+}
+
+async function handleDownloadSurveyAttachment(att: any) {
+  if (!selectedDetailItem.value?.id) return;
+  try {
+    await downloadSurveyAttachment(String(selectedDetailItem.value.id), att);
+  } catch (e: any) {
+    toast.error("Gagal mengunduh file: " + (e?.message || "Error"));
   }
 }
 
@@ -533,21 +545,44 @@ onUnmounted(() => {
             <span class="text-xs text-muted block">Catatan Tambahan Teknisi:</span>
             <p class="text-sm mt-1" style="white-space: pre-line;">{{ selectedDetailItem.technician_notes || '-' }}</p>
           </div>
-          <div v-if="selectedDetailItem.photo_location && selectedDetailItem.photo_location !== 'has_photo'">
-            <span class="text-xs text-muted block mb-1">Dokumentasi Foto Lokasi Survey:</span>
-            <div
-              style="cursor: pointer; max-width: 260px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border); box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
-              @click="openZoom(selectedDetailItem.photo_location)"
-              title="Klik untuk melihat foto ukuran penuh"
-            >
-              <img :src="selectedDetailItem.photo_location" alt="Foto Lokasi" style="width: 100%; height: 160px; object-fit: cover; display: block;" />
-              <div style="background: rgba(15, 23, 42, 0.75); color: #fff; font-size: 11px; text-align: center; padding: 5px 8px; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                <span>🔍</span> <span>Klik untuk perbesar</span>
+          <div v-if="normalizeSurveyPhotos(selectedDetailItem).length > 0" class="mb-sm">
+            <span class="text-xs text-muted block mb-1">Dokumentasi Foto Lokasi Survey ({{ normalizeSurveyPhotos(selectedDetailItem).length }}):</span>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px;">
+              <div
+                v-for="(photo, idx) in normalizeSurveyPhotos(selectedDetailItem)"
+                :key="idx"
+                style="cursor: pointer; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border); box-shadow: 0 1px 3px rgba(0,0,0,0.1);"
+                @click="openZoom(photo)"
+                title="Klik untuk melihat foto ukuran penuh"
+              >
+                <img :src="photo" :alt="`Foto Lokasi ${idx + 1}`" style="width: 100%; height: 130px; object-fit: cover; display: block;" />
+                <div style="background: rgba(15, 23, 42, 0.75); color: #fff; font-size: 11px; text-align: center; padding: 4px 6px;">
+                  🔍 Perbesar
+                </div>
               </div>
             </div>
           </div>
-          <div v-else-if="selectedDetailItem.photo_location === 'has_photo' || isLoadingDetail" class="text-xs text-muted p-2" style="background: var(--color-surface-sunken); border-radius: 4px; display: inline-flex; align-items: center; gap: 6px;">
+          <div v-else-if="selectedDetailItem.photo_location === 'has_photo' || isLoadingDetail" class="text-xs text-muted p-2 mb-sm" style="background: var(--color-surface-sunken); border-radius: 4px; display: inline-flex; align-items: center; gap: 6px;">
             <span>⏳ Memuat foto survey...</span>
+          </div>
+
+          <div v-if="Array.isArray(selectedDetailItem.attachments) && selectedDetailItem.attachments.length > 0" class="mt-2">
+            <span class="text-xs text-muted block mb-1">Dokumen / File Pendukung (Selain Gambar) ({{ selectedDetailItem.attachments.length }}):</span>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div
+                v-for="att in selectedDetailItem.attachments"
+                :key="att.id"
+                style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface-sunken);"
+              >
+                <div style="min-width: 0; flex: 1;">
+                  <div class="text-sm font-medium" style="word-break: break-word;">📎 {{ att.file_name }}</div>
+                  <div class="text-xs text-muted">{{ formatFileSize(att.file_size) }} &bull; {{ att.mime_type || 'Dokumen' }}</div>
+                </div>
+                <button type="button" class="btn btn-xs btn-outline" @click="handleDownloadSurveyAttachment(att)">
+                  ⬇ Unduh
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

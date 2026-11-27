@@ -439,7 +439,11 @@ async function submitCreateRentalDO() {
   if (!targetRentalForDO.value || isSubmittingDO.value) return;
   isSubmittingDO.value = true;
   try {
+    const custForDO =
+      targetRentalForDO.value?.customer ||
+      findCustomer(targetRentalForDO.value?.customer_id);
     const payload = {
+      customer_category: custForDO?.category || "Corporate",
       do_number: doForm.do_number ? doForm.do_number.trim() : undefined,
       project_name: doForm.project_name
         ? doForm.project_name.trim()
@@ -4260,6 +4264,18 @@ function isExpired(row: any): boolean {
         />
       </div>
 
+      <div v-if="form.customer_id" class="form-group">
+        <label class="form-label">Customer Type</label>
+        <input
+          :value="(findCustomer(form.customer_id) as any)?.category || 'Corporate'"
+          type="text"
+          class="form-input"
+          readonly
+          disabled
+          title="Otomatis mengikuti tipe Customer yang dipilih"
+        />
+      </div>
+
       <div class="form-row">
         <div class="form-group">
           <label for="start-date" class="form-label">{{
@@ -5387,6 +5403,13 @@ function isExpired(row: any): boolean {
               targetRentalForDO.customer?.company_name ||
               "Customer"
             }}
+            <span class="badge badge-info" style="margin-left: 6px;">
+              {{
+                findCustomer(targetRentalForDO.customer_id)?.category ||
+                targetRentalForDO.customer?.category ||
+                "Corporate"
+              }}
+            </span>
           </div>
           <div style="font-size: 0.85rem; color: var(--color-text-muted)">
             Periode:

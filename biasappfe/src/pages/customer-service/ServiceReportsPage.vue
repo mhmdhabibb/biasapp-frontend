@@ -1809,6 +1809,10 @@ function printTable() {
         <label for="sr-customer" class="form-label">Customer</label>
         <CustomSelect id="sr-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
+      <div v-if="form.customer_id" class="form-group">
+        <label class="form-label">Customer Type</label>
+        <input :value="(findCustomer(form.customer_id as any) as any)?.category || 'Corporate'" type="text" class="form-input" readonly disabled title="Otomatis mengikuti tipe Customer yang dipilih" />
+      </div>
       <div class="form-group">
         <label class="form-label">Unit / Machine</label>
         <CustomSelect v-model="form.unit_id" :options="unitOptions" placeholder="-- Select Unit --" class="form-select" />

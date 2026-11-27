@@ -142,6 +142,12 @@ const unitOptions = computed(() => {
   })
 })
 
+const selectedCustomerCategory = computed(() => {
+  if (!form.value.customer_id) return '-'
+  const c = store.findCustomer(form.value.customer_id)
+  return (c as any)?.category || 'Corporate'
+})
+
 import { watch } from 'vue'
 watch(() => form.value.customer_id, async (newVal, oldVal) => {
   if (oldVal !== null) form.value.unit_id = null
@@ -261,6 +267,7 @@ async function submitForm() {
       const srPayload = {
         request_no: `MT-${Date.now().toString().slice(-6)}`,
         customer_id: form.value.customer_id,
+        customer_category: selectedCustomerCategory.value === '-' ? 'Corporate' : selectedCustomerCategory.value,
         unit_id: form.value.unit_id || null,
         project_name: form.value.project_name,
         problem_description: `[MAINTENANCE_VISIT] ${form.value.problem || form.value.instructions}`,
@@ -274,6 +281,7 @@ async function submitForm() {
         const joPayload = {
           job_order_no: form.value.job_order_no,
           service_request_id: srId,
+          customer_category: selectedCustomerCategory.value === '-' ? 'Corporate' : selectedCustomerCategory.value,
           scheduled_date: scheduledIso,
           instructions: form.value.instructions,
           job_type: 'maintenance_visit',
@@ -429,7 +437,10 @@ async function exportToExcel() {
         <div style="font-weight: 500; font-size: 16px; color: var(--color-primary); margin-bottom: 12px;">{{ form.job_order_no }}</div>
         
         <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-muted); margin-bottom: 4px;">Customer</div>
-        <div style="font-weight: 500; margin-bottom: 12px;">{{ form.customer_name }}</div>
+        <div style="font-weight: 500; margin-bottom: 12px;">
+          {{ form.customer_name }}
+          <span v-if="form.customer_id" class="badge badge-info" style="margin-left: 6px;">{{ selectedCustomerCategory }}</span>
+        </div>
         
         <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-text-muted); margin-bottom: 4px;">Unit</div>
         <div style="font-weight: 500;">{{ form.unit_name }}</div>
@@ -438,6 +449,10 @@ async function exportToExcel() {
       <div class="form-group" v-if="!form.id">
         <label class="form-label">Customer</label>
         <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
+      </div>
+      <div class="form-group" v-if="!form.id && form.customer_id">
+        <label class="form-label">Customer Type</label>
+        <input :value="selectedCustomerCategory" type="text" class="form-input" readonly disabled title="Customer type otomatis mengikuti data Customer" />
       </div>
        <div class="form-group" v-if="!form.id">
         <label class="form-label">Unit / Machine (opsional, bisa diisi teknisi)</label>

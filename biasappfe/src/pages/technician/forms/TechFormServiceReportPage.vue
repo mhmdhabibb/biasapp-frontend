@@ -232,6 +232,7 @@ async function saveRepairAction() {
   isSaving.value = true
   try {
     await api.patch(`/service-reports/${realServiceReportId.value}`, {
+      customer_category: customerType.value,
       repair_action: form.value.repair_action,
       photo_before: form.value.photo_before,
       photo_progress: form.value.photo_progress,
@@ -314,6 +315,7 @@ async function saveSignatures() {
   isSaving.value = true
   try {
     await api.patch(`/service-reports/${realServiceReportId.value}`, {
+      customer_category: customerType.value,
       customer_signature: form.value.customer_signature,
       technician_signature: form.value.technician_signature,
       customer_name: form.value.customer_name,

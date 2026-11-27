@@ -298,6 +298,7 @@ async function saveForm() {
   try {
     if (!(await saveSpareparts())) return
     await api.patch(`/service-reports/${realServiceReportId.value}`, {
+      customer_category: customerType.value,
       remarks: form.value.remarks,
       notes: form.value.notes,
       is_tested: form.value.is_tested,
