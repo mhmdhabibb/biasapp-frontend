@@ -36,8 +36,9 @@ export function isLeadTechnicianForJob(
   job: any,
   techId: string | number | null | undefined,
 ): boolean {
-  if (!job || !techId) return true;
-  return String(job.technician_id || "") === String(techId);
+  if (!job || !techId) return false;
+  if (!job.technician_id) return true;
+  return String(job.technician_id) === String(techId);
 }
 
 export function isMemberTechnicianForJob(

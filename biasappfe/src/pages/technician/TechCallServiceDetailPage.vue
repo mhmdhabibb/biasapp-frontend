@@ -161,7 +161,7 @@ const isDeliveredOrCompleted = computed(() => ['delivered', 'completed'].include
 
 const isLeadTech = computed(() => {
   if (userRole.value !== 'technician') return true
-  if (!job.value || !myTechId.value) return true
+  if (!job.value || !myTechId.value) return false
   return isLeadTechnicianForJob(job.value, myTechId.value)
 })
 
@@ -176,9 +176,8 @@ const isEditable = computed(() => {
   if (isBlockedByScheduleDate.value) return false
   if (userRole.value === 'admin' || userRole.value === 'superadmin') return true
   if (userRole.value === 'technician') {
-    // If technician is an assigned member in a team job (>1 technicians), editing is handled by lead
-    if (isMemberTech.value) return false
-    return true
+    // Only the lead technician (Kepala) can fill/edit a job; members and other technicians are read-only
+    return isLeadTech.value
   }
   return false
 })
@@ -1046,6 +1045,11 @@ watchEffect(() => {
 async function acceptSurveyJob() {
   try {
     await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
+    const sid = surveyData.value?.id || job.value?.survey_id
+    if (sid) {
+      await api.put(`/surveys/${sid}`, { status: 'in_progress' }).catch(() => {})
+    }
+    window.dispatchEvent(new CustomEvent('bias:data-mutated'))
     toast.success('Job survey diterima! Status: In Progress.')
     await fetchDirectJob()
   } catch (e: any) {
@@ -1062,9 +1066,11 @@ async function completeSurveyJob() {
         recommended_model: surveyForm.value.recommended_model,
         photo_location: surveyForm.value.photo_location,
         technician_notes: surveyForm.value.technician_notes,
+        status: 'completed',
       })
     }
     await api.patch(`/job-orders/${job.value.id}`, { status: 'completed', completed_at: new Date().toISOString() })
+    window.dispatchEvent(new CustomEvent('bias:data-mutated'))
     toast.success('Survey lapangan berhasil diselesaikan!')
     await fetchDirectJob()
     router.push('/technician/call-services')
@@ -1175,8 +1181,15 @@ function handleSurveyPhoto(e: Event) {
       <div class="card p-lg">
         <h2 class="card-title mb-md">Form Laporan Survey Lapangan</h2>
 
+        <div v-if="isMemberTech" class="alert alert-info mb-md" style="display: flex; align-items: flex-start; gap: 8px;">
+          <span>ℹ️</span>
+          <div>
+            <strong>Mode Anggota Tim (Read-Only):</strong> Anda ditugaskan sebagai anggota teknisi. Hanya Kepala Teknisi yang dapat mengisi dan menyelesaikan form survey ini.
+          </div>
+        </div>
+
         <div v-if="job.status === 'assigned' || job.status === 'pending' || job.status === 'scheduled'" class="text-center py-xl">
-          <p class="mb-lg text-muted">Anda belum menerima job survey ini.</p>
+          <p class="mb-lg text-muted">{{ isMemberTech ? 'Menunggu Kepala Teknisi menerima job survey ini.' : 'Anda belum menerima job survey ini.' }}</p>
           <button v-if="isEditable" class="btn btn-primary" style="padding: var(--space-md) var(--space-xl); font-size: 16px;" @click="acceptSurveyJob">
             Terima Job Survey
           </button>
@@ -1185,21 +1198,21 @@ function handleSurveyPhoto(e: Event) {
         <div v-else>
           <div class="form-group mb-md">
             <label class="form-label font-bold">Rekomendasi Tipe Unit / Mesin Yang Pas</label>
-            <input v-model="surveyForm.recommended_model" type="text" class="form-input" placeholder="cth: Canon iR-ADV DX 4725i / Kyocera TaskAlfa 3212i" :disabled="job.status === 'completed'" />
+            <input v-model="surveyForm.recommended_model" type="text" class="form-input" placeholder="cth: Canon iR-ADV DX 4725i / Kyocera TaskAlfa 3212i" :disabled="!isEditable || job.status === 'completed'" />
           </div>
 
           <div class="form-group mb-md">
             <label class="form-label font-bold">Catatan Hasil Survey</label>
-            <textarea v-model="surveyForm.technician_notes" class="form-textarea" rows="3" placeholder="Catatan teknis lainnya dari hasil kunjungan lapangan..." :disabled="job.status === 'completed'"></textarea>
+            <textarea v-model="surveyForm.technician_notes" class="form-textarea" rows="3" placeholder="Catatan teknis lainnya dari hasil kunjungan lapangan..." :disabled="!isEditable || job.status === 'completed'"></textarea>
           </div>
 
           <div class="form-group mb-lg">
             <label class="form-label font-bold">Dokumentasi Foto Lokasi Survey</label>
             <div v-if="surveyForm.photo_location" style="position: relative; max-width: 280px; margin-bottom: 8px;">
               <img :src="surveyForm.photo_location" alt="Foto Lokasi" style="width: 100%; height: 160px; object-fit: cover; border-radius: 6px; cursor: pointer;" @click="servicePhotoZoom = surveyForm.photo_location" />
-              <button v-if="job.status !== 'completed'" type="button" class="btn btn-danger btn-xs" style="position: absolute; top: 4px; right: 4px;" @click="surveyForm.photo_location = ''">✕ Hapus</button>
+              <button v-if="isEditable && job.status !== 'completed'" type="button" class="btn btn-danger btn-xs" style="position: absolute; top: 4px; right: 4px;" @click="surveyForm.photo_location = ''">✕ Hapus</button>
             </div>
-            <div v-if="job.status !== 'completed' && !surveyForm.photo_location" style="display: flex; gap: 8px;">
+            <div v-if="isEditable && job.status !== 'completed' && !surveyForm.photo_location" style="display: flex; gap: 8px;">
               <label class="btn btn-outline" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
                 📷 Ambil Foto
                 <input type="file" accept="image/*" capture="environment" style="display: none;" @change="handleSurveyPhoto" />
@@ -1211,12 +1224,12 @@ function handleSurveyPhoto(e: Event) {
             </div>
           </div>
 
-          <div v-if="job.status !== 'completed'" class="pt-md" style="border-top: 1px solid var(--color-border-light);">
+          <div v-if="isEditable && job.status !== 'completed'" class="pt-md" style="border-top: 1px solid var(--color-border-light);">
             <button class="btn btn-primary w-full" style="padding: 12px; font-size: 16px; font-weight: bold;" :disabled="isSavingSurvey" @click="completeSurveyJob">
               {{ isSavingSurvey ? 'Menyimpan...' : '✔ Complete Survey' }}
             </button>
           </div>
-          <div v-else class="alert alert-success mt-md" style="padding: 10px; border-radius: 6px; font-size: 13px;">
+          <div v-else-if="job.status === 'completed'" class="alert alert-success mt-md" style="padding: 10px; border-radius: 6px; font-size: 13px;">
             ✓ Job survey ini telah diselesaikan. Hasil survey sudah tersinkronisasi ke CS.
           </div>
         </div>

@@ -30,12 +30,13 @@ const realServiceReportId = computed(() => reportRecord.value?.id || job.value?.
 const isLeadTech = computed(() => {
   if (normalizeRole(currentUser.value?.role) !== 'technician') return true
   const myTechId = getTechnicianIdByUser(currentUser.value?.id || null)
+  if (!myTechId) return false
   const linkedJo = (jobOrders.value || []).find((j: any) =>
     String(j.id) === String(job.value?.job_order_id || serviceId) ||
     String(j.service_report_id) === String(realServiceReportId.value)
   )
   const leadId = linkedJo?.technician_id || job.value?.technician_id
-  if (!myTechId || !leadId) return true
+  if (!leadId) return true
   return String(leadId) === String(myTechId)
 })
 const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
@@ -423,9 +424,12 @@ async function saveSignatures() {
               </div>
             </div>
 
-            <button class="btn btn-primary w-full mt-lg" :disabled="isSaving" @click="saveRepairAction">
+            <button v-if="isLeadTech" class="btn btn-primary w-full mt-lg" :disabled="isSaving" @click="saveRepairAction">
               {{ isSaving ? 'Saving...' : 'Save & Continue to Sparepart' }}
             </button>
+            <div v-else class="alert alert-info mt-lg" style="font-size: 13px;">
+              Mode Anggota Tim (Read-Only): Hanya Kepala Teknisi yang dapat mengisi dan menyimpan form ini.
+            </div>
           </section>
 
           <section v-else-if="currentStep === 2" key="spareparts" class="step-panel">
@@ -473,7 +477,7 @@ async function saveSignatures() {
             </div>
             <div class="step-actions">
               <button class="btn btn-outline" :disabled="isSaving" @click="currentStep = 1">Back</button>
-              <button class="btn btn-primary" :disabled="isSaving" @click="saveSparepartsAndContinue">
+              <button v-if="isLeadTech" class="btn btn-primary" :disabled="isSaving" @click="saveSparepartsAndContinue">
                 {{ isSaving ? 'Saving...' : form.spareparts.length ? 'Save & Continue' : 'Skip & Continue' }}
               </button>
             </div>

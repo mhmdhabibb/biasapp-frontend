@@ -29,12 +29,13 @@ const realServiceReportId = computed(() => reportRecord.value?.id || job.value?.
 const isLeadTech = computed(() => {
   if (normalizeRole(currentUser.value?.role) !== 'technician') return true
   const myTechId = getTechnicianIdByUser(currentUser.value?.id || null)
+  if (!myTechId) return false
   const linkedJo = (jobOrders.value || []).find((j: any) =>
     String(j.id) === String(job.value?.job_order_id || serviceId) ||
     String(j.service_report_id) === String(realServiceReportId.value)
   )
   const leadId = linkedJo?.technician_id || job.value?.technician_id
-  if (!myTechId || !leadId) return true
+  if (!leadId) return true
   return String(leadId) === String(myTechId)
 })
 const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')

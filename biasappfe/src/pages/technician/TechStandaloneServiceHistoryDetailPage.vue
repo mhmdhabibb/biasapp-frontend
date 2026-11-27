@@ -414,8 +414,8 @@ const isEditable = computed(() => {
   const r = String(currentUser.value?.role || '').trim().toLowerCase()
   if (r === 'superadmin' || r === 'admin') return true
   if (r === 'technician') {
-    // If technician is an assigned member in a team job (>1 technicians), editing is handled by lead
-    if (isMemberTech.value) return false
+    // Only the lead technician (Kepala) can fill/edit; members and other technicians are read-only
+    if (!isLeadTech.value) return false
     const dTechId = item.value?.technician_id ? String(item.value.technician_id) : ''
     const tId = myTechId.value ? String(myTechId.value) : ''
     const uId = currentUser.value?.id ? String(currentUser.value.id) : ''
