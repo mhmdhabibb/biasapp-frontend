@@ -2,6 +2,7 @@
 import FormModal from "@/components/ui/FormModal.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
+import DateTime24Input from "@/components/ui/DateTime24Input.vue";
 import SignaturePad from "@/components/ui/SignaturePad.vue";
 import { useAuthStore } from "@/stores/auth.store";
 import { useMasterStore } from "@/composables/useMasterStore";
@@ -163,6 +164,7 @@ function extractArray(res: any): any[] {
 const jobOrders = ref<any[]>([]);
 const serviceRequests = ref<any[]>([]);
 const deliveryOrders = ref<any[]>([]);
+const surveys = ref<any[]>([]);
 const activeTab = ref("do");
 const draggedTask = ref<any | null>(null);
 
@@ -172,7 +174,7 @@ const unassignedPerPage = 8;
 const searchTech = ref("");
 const dragOverTechId = ref<string | number | null>(null);
 
-const jobTypeFilter = ref<"all" | "sr" | "do" | "visit" | "maintenance">("all");
+const jobTypeFilter = ref<"all" | "sr" | "do" | "visit" | "maintenance" | "survey">("all");
 const VISIT_JOB_TYPES = ["visit", "meter_reading"];
 const VISIT_TERMINAL = ["completed", "done", "cancelled", "canceled"];
 
@@ -198,26 +200,34 @@ async function fetchJobOrders(silent = false) {
     const rawList = extractArray(res);
 
     jobOrders.value = rawList.map((j: any) => {
+      const isSurvey =
+        j.job_type === "survey" ||
+        !!j.survey_id ||
+        !!j.survey;
       const isDelivery =
-        j.job_type === "delivery" ||
-        !!j.delivery_order_id ||
-        !!j.delivery_order;
+        !isSurvey &&
+        (j.job_type === "delivery" ||
+          !!j.delivery_order_id ||
+          !!j.delivery_order);
       const isMaintenance =
-        j.job_type === "maintenance" ||
-        j.job_type === "maintenance_visit" ||
-        String(j.job_order_no || "").startsWith("MT-") ||
-        ((j.job_type === "service" || !j.job_type) &&
-          (j.instructions?.includes("Rutin Maintenance") ||
-            j.service_request?.problem_description?.includes(
-              "[MAINTENANCE_VISIT]",
-            )));
+        !isSurvey &&
+        (j.job_type === "maintenance" ||
+          j.job_type === "maintenance_visit" ||
+          String(j.job_order_no || "").startsWith("MT-") ||
+          ((j.job_type === "service" || !j.job_type) &&
+            (j.instructions?.includes("Rutin Maintenance") ||
+              j.service_request?.problem_description?.includes(
+                "[MAINTENANCE_VISIT]",
+              ))));
       const isVisit =
+        !isSurvey &&
         !isMaintenance &&
         (j.job_type === "visit" ||
           VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase()));
 
       const sr = j.service_request || null;
       const srpt = j.service_report || null;
+      const surv = j.survey || null;
       let doObj = j.delivery_order || null;
       const doTargetId = j.delivery_order_id || doObj?.id;
       if (doTargetId) {
@@ -236,12 +246,15 @@ async function fetchJobOrders(silent = false) {
         sr?.customer ||
         doObj?.customer ||
         srpt?.customer ||
+        surv?.customer ||
         j.customer ||
+        (surv?.customer_id ? findCustomer(surv.customer_id) : null) ||
         (doObj?.customer_id ? findCustomer(doObj.customer_id) : null) ||
         null;
 
       let taskType = "sr";
-      if (isDelivery) taskType = "do";
+      if (isSurvey) taskType = "survey";
+      else if (isDelivery) taskType = "do";
       else if (isMaintenance) taskType = "maintenance";
       else if (isVisit) taskType = "visit";
 
@@ -261,7 +274,9 @@ async function fetchJobOrders(silent = false) {
         do_number: doNum || j.do_number,
         service_request_no: isDelivery
           ? doNum || j.job_order_no || "-"
-          : sr?.request_no || srpt?.report_no || j.job_order_no || "-",
+          : isSurvey
+            ? surv?.survey_no || j.job_order_no || "-"
+            : sr?.request_no || srpt?.report_no || j.job_order_no || "-",
         customer_name:
           customer?.company_name ||
           customer?.name ||
@@ -369,11 +384,13 @@ async function loadAllData(silent = false) {
       api.get<any>("/job-orders/?page=1&limit=100", false, true),
       api.get<any>("/service-requests/?page=1&limit=100", false, true),
       masterStore.refreshOnly(["serviceReports", "technicians", "customers"]),
+      api.get<any>("/surveys/?page=1&limit=100", false, true),
     ]);
 
     const doRes = results[0].status === "fulfilled" ? results[0].value : null;
     const joRes = results[1].status === "fulfilled" ? results[1].value : null;
     const srRes = results[2].status === "fulfilled" ? results[2].value : null;
+    const survRes = results[4].status === "fulfilled" ? results[4].value : null;
 
     if (!joRes && results[1].status === "rejected") {
       throw (results[1] as PromiseRejectedResult).reason;
@@ -388,26 +405,34 @@ async function loadAllData(silent = false) {
 
     const rawJos = extractArray(joRes);
     const mappedJos = rawJos.map((j: any) => {
+      const isSurvey =
+        j.job_type === "survey" ||
+        !!j.survey_id ||
+        !!j.survey;
       const isDelivery =
-        j.job_type === "delivery" ||
-        !!j.delivery_order_id ||
-        !!j.delivery_order;
+        !isSurvey &&
+        (j.job_type === "delivery" ||
+          !!j.delivery_order_id ||
+          !!j.delivery_order);
       const isMaintenance =
-        j.job_type === "maintenance" ||
-        j.job_type === "maintenance_visit" ||
-        String(j.job_order_no || "").startsWith("MT-") ||
-        ((j.job_type === "service" || !j.job_type) &&
-          (j.instructions?.includes("Rutin Maintenance") ||
-            j.service_request?.problem_description?.includes(
-              "[MAINTENANCE_VISIT]",
-            )));
+        !isSurvey &&
+        (j.job_type === "maintenance" ||
+          j.job_type === "maintenance_visit" ||
+          String(j.job_order_no || "").startsWith("MT-") ||
+          ((j.job_type === "service" || !j.job_type) &&
+            (j.instructions?.includes("Rutin Maintenance") ||
+              j.service_request?.problem_description?.includes(
+                "[MAINTENANCE_VISIT]",
+              ))));
       const isVisit =
+        !isSurvey &&
         !isMaintenance &&
         (j.job_type === "visit" ||
           VISIT_JOB_TYPES.includes(String(j.job_type || "").toLowerCase()));
 
       const sr = j.service_request || null;
       const srpt = j.service_report || null;
+      const surv = j.survey || null;
       let doObj = j.delivery_order || null;
       const doTargetId = j.delivery_order_id || doObj?.id;
       if (doTargetId) {
@@ -424,12 +449,15 @@ async function loadAllData(silent = false) {
         sr?.customer ||
         doObj?.customer ||
         srpt?.customer ||
+        surv?.customer ||
         j.customer ||
+        (surv?.customer_id ? findCustomer(surv.customer_id) : null) ||
         (doObj?.customer_id ? findCustomer(doObj.customer_id) : null) ||
         null;
 
       let taskType = "sr";
-      if (isDelivery) taskType = "do";
+      if (isSurvey) taskType = "survey";
+      else if (isDelivery) taskType = "do";
       else if (isMaintenance) taskType = "maintenance";
       else if (isVisit) taskType = "visit";
 
@@ -449,7 +477,9 @@ async function loadAllData(silent = false) {
         do_number: doNum || j.do_number,
         service_request_no: isDelivery
           ? doNum || j.job_order_no || "-"
-          : sr?.request_no || srpt?.report_no || j.job_order_no || "-",
+          : isSurvey
+            ? surv?.survey_no || j.job_order_no || "-"
+            : sr?.request_no || srpt?.report_no || j.job_order_no || "-",
         customer_name:
           customer?.company_name ||
           customer?.name ||
@@ -459,6 +489,7 @@ async function loadAllData(silent = false) {
           "-",
         problem:
           sr?.problem_description ||
+          surv?.remarks ||
           doObj?.notes ||
           j.notes ||
           srpt?.machine_problem ||
@@ -471,6 +502,7 @@ async function loadAllData(silent = false) {
     deliveryOrders.value = filteredDos;
     jobOrders.value = mappedJos;
     serviceRequests.value = extractArray(srRes);
+    surveys.value = extractArray(survRes);
   } catch (err) {
     console.error("Failed to load kanban data", err);
     if (!silent) toast.error("Gagal memuat job orders.");
@@ -714,11 +746,55 @@ const unassignedMaintenance = computed<any[]>(() => {
   );
 });
 
+const unassignedSurveys = computed<any[]>(() => {
+  const assignedSurveyIds = new Set(
+    jobOrders.value
+      .filter((j: any) => !!j.technician_id && (j.survey_id || j.survey?.id))
+      .map((j: any) => String(j.survey_id || j.survey?.id))
+      .filter(Boolean),
+  );
+  const q = searchUnassigned.value.toLowerCase();
+  return surveys.value
+    .filter((s: any) => {
+      const st = String(s.status || "").toLowerCase();
+      if (["matched", "completed", "cancelled", "canceled"].includes(st)) {
+        return false;
+      }
+      if (s.technician_id) return false;
+      if (assignedSurveyIds.has(String(s.id))) return false;
+      const cust =
+        s.customer ||
+        (s.customer_id ? findCustomer(s.customer_id) : null) ||
+        null;
+      const custName = cust?.company_name || cust?.name || s.customer_name || "";
+      if (!q) return true;
+      return (
+        String(s.survey_no || "").toLowerCase().includes(q) ||
+        String(custName).toLowerCase().includes(q)
+      );
+    })
+    .map((s: any) => {
+      const cust =
+        s.customer ||
+        (s.customer_id ? findCustomer(s.customer_id) : null) ||
+        null;
+      return {
+        ...s,
+        customer: cust,
+        taskType: "survey",
+        service_request_no: s.survey_no || "-",
+        customer_name: cust?.company_name || cust?.name || s.customer_name || "-",
+        problem: s.remarks || s.recommended_model || "Survey lokasi & kebutuhan unit",
+      };
+    });
+});
+
 const displayedUnassigned = computed<any[]>(() => {
   if (activeTab.value === "sr") return unassignedRequests.value;
   if (activeTab.value === "do") return unassignedDeliveries.value;
   if (activeTab.value === "visit") return unassignedVisits.value;
   if (activeTab.value === "maintenance") return unassignedMaintenance.value;
+  if (activeTab.value === "survey") return unassignedSurveys.value;
   return [];
 });
 
@@ -866,9 +942,12 @@ function getJobsForTech(techId: string | number): any[] {
   return [...jobs, ...dos, ...visits];
 }
 
-function getJobKind(job: any): "sr" | "do" | "visit" | "maintenance" {
-  if (job?.taskType === "maintenance") return "maintenance";
+function getJobKind(job: any): "sr" | "do" | "visit" | "maintenance" | "survey" {
   const jt = String(job?.job_type || "").toLowerCase();
+  if (job?.taskType === "survey" || jt === "survey" || !!job?.survey_id || !!job?.survey) {
+    return "survey";
+  }
+  if (job?.taskType === "maintenance") return "maintenance";
   const joNo = String(job?.job_order_no || "").toUpperCase();
   const isMaintenance =
     jt === "maintenance" ||
@@ -902,13 +981,15 @@ function jobTypeLabel(kind: string) {
       return "Visits";
     case "maintenance":
       return "Maintenance";
+    case "survey":
+      return "Surveys";
     default:
       return "jobs";
   }
 }
 
 const jobTypeCounts = computed(() => {
-  const counts = { all: 0, sr: 0, do: 0, visit: 0, maintenance: 0 };
+  const counts = { all: 0, sr: 0, do: 0, visit: 0, maintenance: 0, survey: 0 };
   const seen = new Set<string>();
   for (const t of (technicians.value as any[]) || []) {
     if (!t?.id) continue;
@@ -1144,6 +1225,8 @@ function jobDeliveryDate(job: any): string {
 
 function getTaskAddress(task: any): string {
   return (
+    task?.survey_address ||
+    task?.survey?.survey_address ||
     task?.delivery_order?.delivery_address ||
     task?.delivery_address ||
     task?.delivery_order?.installation_address ||
@@ -1358,7 +1441,7 @@ async function onDrop(techId: string | number) {
       d.setDate(25);
     }
     assignVisitDate.value = toLocalDatetimeStr(d);
-  } else if (draggedRequest.taskType === "maintenance") {
+  } else if (draggedRequest.taskType === "maintenance" || draggedRequest.taskType === "survey") {
     assignScheduledDate.value = toLocalDatetimeStr(
       draggedRequest.scheduled_date || new Date().toISOString(),
     );
@@ -1467,6 +1550,60 @@ async function confirmAssign() {
       } catch (error) {
         toast.error("Failed to assign maintenance job order");
       }
+    }
+  } else if (task.taskType === "survey") {
+    const scheduledIso = new Date(assignScheduledDate.value).toISOString();
+    const existingJob = jobOrders.value.find(
+      (j: any) =>
+        !j.technician_id &&
+        String(j.survey_id || j.survey?.id || "") === String(task.id),
+    );
+    try {
+      if (existingJob) {
+        await apiRequest({
+          url: `/job-orders/${existingJob.id}`,
+          method: "PUT",
+          data: {
+            technician_id: techId,
+            member_technician_ids: memberIds,
+            scheduled_date: scheduledIso,
+            status: "scheduled",
+            assigner_signature: assignSignature.value,
+            assigner_name: assignerName,
+          },
+        });
+      } else {
+        await apiRequest({
+          url: `/job-orders`,
+          method: "POST",
+          data: {
+            job_order_no: task.survey_no || `JOS-${Date.now().toString().slice(-6)}`,
+            job_type: "survey",
+            survey_id: task.id,
+            technician_id: techId,
+            member_technician_ids: memberIds,
+            scheduled_date: scheduledIso,
+            instructions:
+              task.remarks ||
+              `Survey lokasi & kebutuhan unit untuk ${task.customer_name || "Customer"}`,
+            assigner_signature: assignSignature.value,
+            assigner_name: assignerName,
+          },
+        });
+      }
+      await apiRequest({
+        url: `/surveys/${task.id}`,
+        method: "PUT",
+        data: {
+          technician_id: techId,
+          scheduled_date: scheduledIso,
+        },
+      }).catch(() => {});
+      invalidateCache();
+      await loadAllData();
+      toast.success("Survey successfully assigned to technician.");
+    } catch (error) {
+      toast.error(toast.fromError(error, "Failed to assign survey"));
     }
   } else if (task.taskType === "do") {
     const doNumber =
@@ -1767,7 +1904,8 @@ async function handleDeleteTech() {
             unassignedRequests.length +
             unassignedDeliveries.length +
             unassignedVisits.length +
-            unassignedMaintenance.length
+            unassignedMaintenance.length +
+            unassignedSurveys.length
           }}</span>
           <span class="summary-label">Unassigned</span>
         </div>
@@ -1846,6 +1984,20 @@ async function handleDeleteTech() {
             @click="activeTab = 'maintenance'"
           >
             Maintenance ({{ unassignedMaintenance.length }})
+          </button>
+          <button
+            class="btn btn-sm"
+            :class="activeTab === 'survey' ? 'btn-primary' : 'btn-outline'"
+            style="
+              flex: 1 1 calc(50% - 8px);
+              padding: 4px;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            "
+            @click="activeTab = 'survey'"
+          >
+            Surveys ({{ unassignedSurveys.length }})
           </button>
         </div>
 
@@ -2233,6 +2385,93 @@ async function handleDeleteTech() {
                   </div>
                 </template>
 
+                <!-- Surveys -->
+                <template v-else-if="req.taskType === 'survey'">
+                  <div class="card-customer">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path
+                        d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+                      />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    <span>{{
+                      req.customer?.company_name ||
+                      req.customer?.name ||
+                      req.customer_name ||
+                      "-"
+                    }}</span>
+                  </div>
+
+                  <div class="card-address" v-if="getTaskAddress(req)">
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path
+                        d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"
+                      />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span>{{ getTaskAddress(req) }}</span>
+                  </div>
+
+                  <div
+                    class="card-type"
+                    style="
+                      margin-top: 4px;
+                      display: flex;
+                      align-items: center;
+                      gap: 6px;
+                      font-size: 11px;
+                      color: var(--color-text-muted);
+                    "
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M9 11l3 3L22 4" />
+                      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                    </svg>
+                    <span style="font-weight: 500; color: var(--color-primary)"
+                      >Survey</span
+                    >
+                  </div>
+
+                  <div
+                    class="problem-text"
+                    style="
+                      margin-top: 6px;
+                      font-size: 11px;
+                      color: var(--color-text-secondary);
+                    "
+                    v-if="req.remarks || req.problem"
+                  >
+                    {{ req.remarks || req.problem }}
+                  </div>
+                </template>
+
                 <!-- Service Requests -->
                 <template v-else>
                   <div class="card-customer">
@@ -2413,6 +2652,15 @@ async function handleDeleteTech() {
               @click="jobTypeFilter = 'maintenance'"
             >
               Maintenance ({{ jobTypeCounts.maintenance }})
+            </button>
+            <button
+              class="btn btn-sm"
+              :class="
+                jobTypeFilter === 'survey' ? 'btn-primary' : 'btn-outline'
+              "
+              @click="jobTypeFilter = 'survey'"
+            >
+              Surveys ({{ jobTypeCounts.survey }})
             </button>
           </div>
         </div>
@@ -3182,7 +3430,9 @@ async function handleDeleteTech() {
           ? 'Assign Delivery Order'
           : assignTarget?.task?.taskType === 'visit'
             ? 'Assign Visit'
-            : 'Assign Service Request'
+            : assignTarget?.task?.taskType === 'survey'
+              ? 'Assign Survey'
+              : 'Assign Service Request'
       "
       max-width="480px"
       @close="cancelAssign"
@@ -3276,13 +3526,9 @@ async function handleDeleteTech() {
           <label class="form-label"
             >Delivery Date <span class="text-danger">*</span></label
           >
-          <input
-            type="datetime-local"
-            v-model="assignDeliveryDate"
-            class="form-input"
-          />
+          <DateTime24Input v-model="assignDeliveryDate" />
           <p class="assign-hint">
-            Atur tanggal dan waktu pengantaran. Default: tanggal DO yang sudah
+            Atur tanggal dan waktu pengantaran (format 24 jam). Default: tanggal DO yang sudah
             ada.
           </p>
         </div>
@@ -3294,15 +3540,13 @@ async function handleDeleteTech() {
           <label class="form-label"
             >Visit Date <span class="text-danger">*</span></label
           >
-          <input
-            type="datetime-local"
+          <DateTime24Input
             v-model="assignVisitDate"
             :min="visitMinDate"
             :max="visitMaxDate"
-            class="form-input"
           />
           <p class="assign-hint">
-            Atur tanggal kunjungan teknisi untuk pengisian copier report.
+            Atur tanggal kunjungan teknisi untuk pengisian copier report (format 24 jam).
             <strong class="text-danger"
               >Hanya bisa dijadwalkan pada tanggal 25 s.d 31 setiap
               bulannya.</strong
@@ -3314,13 +3558,9 @@ async function handleDeleteTech() {
           <label class="form-label"
             >Scheduled Date <span class="text-danger">*</span></label
           >
-          <input
-            type="datetime-local"
-            v-model="assignScheduledDate"
-            class="form-input"
-          />
+          <DateTime24Input v-model="assignScheduledDate" />
           <p class="assign-hint">
-            Atur tanggal dan waktu penjadwalan servis. Default: hari ini.
+            Atur tanggal dan waktu penjadwalan servis (format 24 jam). Default: hari ini.
           </p>
         </div>
 
