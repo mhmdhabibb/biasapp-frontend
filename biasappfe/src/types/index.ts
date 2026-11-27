@@ -215,6 +215,15 @@ export interface ContractItemRate {
   rate_per_page_color: number;
 }
 
+export interface SurveyAttachment {
+  id: string;
+  survey_id: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  created_at: string;
+}
+
 export interface Survey {
   id: string;
   survey_no: string;
@@ -224,6 +233,11 @@ export interface Survey {
   result: string;
   status: string;
   remarks?: string;
+  recommended_model?: string;
+  photo_location?: string;
+  photo_locations?: string[];
+  attachments?: SurveyAttachment[];
+  technician_notes?: string;
   created_at: string;
   updated_at: string;
 }
@@ -232,6 +246,7 @@ export interface ServiceRequest {
   id: string;
   request_no: string;
   customer_id: string | null;
+  customer_category?: 'Corporate' | 'Government' | string;
   unit_id: string | null;
   problem_description: string;
   status: string;
@@ -250,6 +265,7 @@ export interface JobOrder {
   id: string;
   job_order_no: string;
   job_type: string;
+  customer_category?: 'Corporate' | 'Government' | string;
   service_request_id?: string | null;
   delivery_order_id?: string | null;
   delivery_order?: DeliveryOrder | null;
@@ -273,6 +289,140 @@ export interface JobOrder {
   problem?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SuperadminDashboardStats {
+  master_data: {
+    customers: { total: number; corporate: number; government: number };
+    units: {
+      total: number;
+      available: number;
+      lock: number;
+      rented: number;
+      sold: number;
+      maintenance: number;
+      broken: number;
+      copier: number;
+      computer: number;
+      external: number;
+    };
+    products: {
+      total: number;
+      spareparts: number;
+      computers: number;
+      in_stock: number;
+      low_or_out_of_stock: number;
+    };
+    technicians: { total: number; available: number; inactive: number };
+    contracts: { total: number; active: number; draft: number; expired: number; terminated: number };
+    warranties: { total: number; active: number; expired: number; claimed: number; void: number };
+    reference: {
+      brands: number;
+      unit_types: number;
+      product_categories: number;
+      uoms: number;
+      paper_sizes: number;
+      paper_types: number;
+      suppliers: number;
+      users: number;
+      roles: number;
+    };
+  };
+  service: {
+    service_requests: {
+      total: number;
+      pending: number;
+      assigned: number;
+      in_progress: number;
+      completed: number;
+      cancelled: number;
+      internal: number;
+      external: number;
+    };
+    job_orders: {
+      total: number;
+      scheduled: number;
+      in_progress: number;
+      completed: number;
+      cancelled: number;
+      unassigned: number;
+      sla_breached: number;
+      by_type: {
+        service: number;
+        delivery: number;
+        visit: number;
+        maintenance: number;
+        survey: number;
+      };
+    };
+    service_reports: {
+      total: number;
+      draft: number;
+      pending: number;
+      assigned: number;
+      in_progress: number;
+      completed: number;
+      cancelled: number;
+      corporate: number;
+      government: number;
+      by_type: {
+        regular: number;
+        repair: number;
+        maintenance: number;
+        installation: number;
+        emergency: number;
+        meter_reading: number;
+        copier: number;
+        delivery: number;
+      };
+    };
+    surveys: {
+      total: number;
+      pending: number;
+      assigned: number;
+      in_progress: number;
+      completed: number;
+      cancelled: number;
+    };
+    sparepart_requests: {
+      total: number;
+      pending: number;
+      po_created: number;
+      completed: number;
+      rejected: number;
+    };
+    warranty_claims: {
+      total: number;
+      pending: number;
+      approved: number;
+      completed: number;
+      rejected: number;
+    };
+    delivery_orders: {
+      total: number;
+      pending: number;
+      in_transit: number;
+      delivered: number;
+      completed: number;
+      cancelled: number;
+    };
+    rentals: {
+      total: number;
+      active: number;
+      pending: number;
+      completed: number;
+      cancelled: number;
+    };
+    monthly_trend: Array<{
+      month: string;
+      label: string;
+      service_requests: number;
+      job_orders: number;
+      service_reports: number;
+      completed_reports: number;
+    }>;
+  };
+  generated_at: string;
 }
 
 export interface ServiceReport {
@@ -476,6 +626,60 @@ export interface TableColumn {
   label: string;
   sortable?: boolean;
   width?: string;
+  wrap?: boolean;
+  nowrap?: boolean;
+}
+
+export interface TrackedCustomerSummary {
+  customer_id: string;
+  company_name: string;
+  category: string;
+  pic_name: string;
+  phone: string;
+  email: string;
+  address: string;
+  relation_types: string[];
+  relation_labels: string[];
+  activity_count: number;
+  total_qty: number;
+  latest_status: string;
+  latest_ref_no: string;
+  latest_location?: string;
+  first_interaction?: string | null;
+  last_interaction?: string | null;
+  is_currently_active: boolean;
+}
+
+export interface TrackedActivityItem {
+  id: string;
+  customer_id: string;
+  company_name: string;
+  customer_category: string;
+  relation_type: string;
+  relation_label: string;
+  ref_no: string;
+  record_id: string;
+  date?: string | null;
+  end_date?: string | null;
+  status: string;
+  qty: number;
+  unit_price?: number;
+  location?: string;
+  technician?: string;
+  related_unit?: string;
+  notes?: string;
+}
+
+export interface CustomerTrackingResponse {
+  target_kind: "unit" | "product";
+  target_id: string;
+  target_name: string;
+  target_code: string;
+  total_customers: number;
+  total_activities: number;
+  total_qty: number;
+  customers: TrackedCustomerSummary[];
+  activities: TrackedActivityItem[];
 }
 
 export interface MenuItem {

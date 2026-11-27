@@ -18,6 +18,12 @@ export const allMenuGroups: MenuGroup[] = [
     title: "sidebar.dashboard",
     items: [
       {
+        label: "sidebar.superadmin_dashboard",
+        icon: "grid",
+        route: "/superadmin/dashboard",
+        superadminOnly: true,
+      } as any,
+      {
         label: "sidebar.cs_dashboard",
         icon: "grid",
         route: "/customer-service/dashboard",

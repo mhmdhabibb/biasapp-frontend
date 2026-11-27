@@ -12,6 +12,7 @@
 //     for them): only the technician role may open them.
 // Keep in sync when adding routes.
 export const dashboardRouteNames: string[] = [
+  "superadminDashboard",
   "csDashboard",
   "techDashboard",
   "accDashboard",

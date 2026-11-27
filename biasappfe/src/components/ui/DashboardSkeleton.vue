@@ -1,6 +1,6 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
-  variant?: "customer-service" | "technician" | "accounting";
+  variant?: "customer-service" | "technician" | "accounting" | "superadmin";
 }>(), {
   variant: "customer-service",
 });

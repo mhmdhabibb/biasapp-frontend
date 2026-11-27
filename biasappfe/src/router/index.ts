@@ -1,4 +1,5 @@
 import { useAuth } from "@/composables/useAuth";
+import { useIsSuperadmin } from "@/composables/useHardDelete";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { canView, routeNamesByMenuOrder } from "@/router/permission-map";
 import {
@@ -22,6 +23,7 @@ const router = createRouter({
       redirect: () => {
         const { isAuthenticated, currentUser } = useAuth();
         if (!isAuthenticated.value) return "/login";
+        if (useIsSuperadmin().value) return { name: "superadminDashboard" };
         const role = normalizeRole(currentUser.value?.role);
         const home = homeRouteNameByRole[role];
         return { name: home || "users" };
@@ -33,10 +35,17 @@ const router = createRouter({
       redirect: () => {
         const { isAuthenticated, currentUser } = useAuth();
         if (!isAuthenticated.value) return "/login";
+        if (useIsSuperadmin().value) return { name: "superadminDashboard" };
         const role = normalizeRole(currentUser.value?.role);
         const home = homeRouteNameByRole[role];
         return { name: home || "csDashboard" };
       },
+    },
+    {
+      path: "/superadmin/dashboard",
+      name: "superadminDashboard",
+      meta: { superadminOnly: true },
+      component: () => import("@/pages/superadmin/SuperadminDashboardPage.vue"),
     },
     {
       path: "/master/users",
@@ -373,10 +382,12 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const { isAuthenticated, currentUser } = useAuth();
+  const isSuperadmin = useIsSuperadmin();
   const role = normalizeRole(currentUser.value?.role);
 
   if (to.meta.requiresAuth === false) {
     if (isAuthenticated.value) {
+      if (isSuperadmin.value) return { name: "superadminDashboard" };
       const home = homeRouteNameByRole[role];
       return { name: home || "users" };
     }
@@ -385,6 +396,11 @@ router.beforeEach((to) => {
 
   if (!isAuthenticated.value) {
     return { name: "login" };
+  }
+
+  // Superadmin-only route gate
+  if (to.meta?.superadminOnly && !isSuperadmin.value) {
+    return { name: homeRouteNameByRole[role] || "csDashboard" };
   }
 
   // Role-locked meta routes (e.g. accounting only for stock control)
