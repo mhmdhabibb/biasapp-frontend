@@ -282,22 +282,36 @@ function contractItemForUnit(): any {
   return null
 }
 
+function latestCompletedReadingFor(paperSizeId: string, mode: 'bw' | 'color', ci: any) {
+  const storeReadings: any[] =
+    (monthlyMeterReadings as any)?.value || (monthlyMeterReadings as any) || []
+  const currentSrId = String(realServiceReportId.value || '')
+  const currentDateMs = new Date(
+    job.value?.service_date || job.value?.reading_period || job.value?.created_at || Date.now(),
+  ).getTime()
+  const sized = storeReadings.filter((r: any) => {
+    if (String(r.service_report_id || '') === currentSrId) return false
+    if (ci && String(r.contract_item_id || '') !== String(ci.id)) return false
+    if (String(r.paper_size_id || '') !== String(paperSizeId || '')) return false
+    if (normMeterMode(r.color_mode) !== mode) return false
+    if (num(r.end_meter) <= 0 && num(r.end_meter_double) <= 0) return false
+    const rMs = new Date(r.reading_date || r.created_at || 0).getTime()
+    if (Number.isFinite(currentDateMs) && Number.isFinite(rMs) && rMs > currentDateMs) return false
+    return true
+  })
+  if (sized.length === 0) return null
+  return sized.reduce((prev: any, curr: any) => {
+    const prevDate = new Date(prev.reading_date || prev.created_at || 0).getTime()
+    const currDate = new Date(curr.reading_date || curr.created_at || 0).getTime()
+    return prevDate > currDate ? prev : curr
+  })
+}
+
 // Meter awal untuk kombinasi (ukuran, mode): reading terbaru di store,
 // fallback ke nilai awal kontrak.
 function prevMeterFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): number {
-  const storeReadings: any[] =
-    (monthlyMeterReadings as any)?.value || (monthlyMeterReadings as any) || []
-  const sized = storeReadings.filter((r: any) =>
-    (!ci || String(r.contract_item_id || '') === String(ci.id)) &&
-    String(r.paper_size_id || '') === String(paperSizeId || '') &&
-    normMeterMode(r.color_mode) === mode,
-  )
-  if (sized.length > 0) {
-    const latest = sized.reduce((prev: any, curr: any) => {
-      const prevDate = new Date(prev.reading_date || prev.created_at).getTime()
-      const currDate = new Date(curr.reading_date || curr.created_at).getTime()
-      return prevDate > currDate ? prev : curr
-    })
+  const latest = latestCompletedReadingFor(paperSizeId, mode, ci)
+  if (latest && num(latest.end_meter) > 0) {
     return num(latest.end_meter)
   }
   if (!ci) return 0
@@ -311,22 +325,11 @@ function prevMeterFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): numbe
 }
 
 function prevMeterDoubleFor(paperSizeId: string, mode: 'bw' | 'color', ci: any): number {
-  const storeReadings: any[] =
-    (monthlyMeterReadings as any)?.value || (monthlyMeterReadings as any) || []
-  const sized = storeReadings.filter((r: any) =>
-    (!ci || String(r.contract_item_id || '') === String(ci.id)) &&
-    String(r.paper_size_id || '') === String(paperSizeId || '') &&
-    normMeterMode(r.color_mode) === mode,
-  )
-  if (sized.length > 0) {
-    const latest = sized.reduce((prev: any, curr: any) => {
-      const prevDate = new Date(prev.reading_date || prev.created_at).getTime()
-      const currDate = new Date(curr.reading_date || curr.created_at).getTime()
-      return prevDate > currDate ? prev : curr
-    })
+  const latest = latestCompletedReadingFor(paperSizeId, mode, ci)
+  if (latest) {
     const endDbl = num(latest.end_meter_double) || num(latest.start_meter_double)
     if (endDbl > 0) return endDbl
-    return num(latest.end_meter) || num(latest.start_meter)
+    if (num(latest.end_meter) > 0) return num(latest.end_meter)
   }
   if (!ci) return 0
   if (paperSizeId && Array.isArray((ci as any)?.rates)) {
@@ -356,6 +359,7 @@ const meterSections = computed(() => {
     (sections.get(psId || '-')?.rows || []).some((r) => r.color_mode === mode)
 
   // 1. Readings yang sudah terhubung ke report ini.
+  const isCompletedReport = String(job.value?.status || '').toLowerCase() === 'completed'
   const readings: any[] =
     job.value?.monthly_meter_readings || job.value?.monthlyMeterReadings || []
   for (const r of readings) {
@@ -365,8 +369,13 @@ const meterSections = computed(() => {
       psId,
       r.paper_size?.name || r.paper_size_name || (psId ? `Ukuran ${psId.slice(0, 8)}` : 'Tanpa ukuran'),
     )
-    const before = num(r.start_meter) > 0 ? num(r.start_meter) : prevMeterFor(psId, mode, ci)
-    const beforeDouble = num(r.start_meter_double) > 0 ? num(r.start_meter_double) : (num(r.start_meter) > 0 ? num(r.start_meter) : prevMeterDoubleFor(psId, mode, ci))
+    const prevCompleted = !isCompletedReport ? latestCompletedReadingFor(psId, mode, ci) : null
+    const before = prevCompleted && num(prevCompleted.end_meter) > 0
+      ? num(prevCompleted.end_meter)
+      : (num(r.start_meter) > 0 ? num(r.start_meter) : prevMeterFor(psId, mode, ci))
+    const beforeDouble = prevCompleted && (num(prevCompleted.end_meter_double) > 0 || num(prevCompleted.end_meter) > 0)
+      ? (num(prevCompleted.end_meter_double) || num(prevCompleted.end_meter))
+      : (num(r.start_meter_double) > 0 ? num(r.start_meter_double) : (num(r.start_meter) > 0 ? num(r.start_meter) : prevMeterDoubleFor(psId, mode, ci)))
     sec.rows.push({
       key: `${psId}|${mode}`,
       paper_size_id: psId,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
+import { canView, routeNamesByMenuOrder } from '@/router/permission-map'
 import { homeRouteNameByRole, normalizeRole } from '@/router/role-access'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -37,11 +38,19 @@ async function handleSubmit() {
   if (success) {
     toastSuccess('Login successful')
     const role = normalizeRole(currentUser.value?.role)
+    const perms = currentUser.value?.permissions || []
     const home = homeRouteNameByRole[role]
-    if (home) {
-      router.push({ name: home })
+    let target: any = '/'
+    if (home && canView(home, perms)) {
+      target = { name: home }
     } else {
-      router.push('/')
+      const fallback = routeNamesByMenuOrder.find((name) => canView(name, perms))
+      if (fallback) target = { name: fallback }
+    }
+    try {
+      await router.push(target)
+    } catch {
+      window.location.href = typeof target === 'string' ? target : router.resolve(target).href
     }
   }
 }

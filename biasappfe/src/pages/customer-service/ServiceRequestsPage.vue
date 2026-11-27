@@ -1163,7 +1163,7 @@ onUnmounted(() => {
       </div>
 
       <div class="form-group mt-3">
-        <label class="form-label">Complaint Description (Problem)</label>
+        <label class="form-label">Complaint Description (Problem) <span class="text-danger">*</span></label>
         <textarea v-model="form.problem_description" class="form-input" rows="4"
           placeholder="Describe the complaint in detail" required></textarea>
       </div>

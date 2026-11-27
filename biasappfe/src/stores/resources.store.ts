@@ -39,9 +39,11 @@ export function useResourcesStore() {
           reason instanceof ApiError
             ? reason.message
             : "Failed to load data from the server";
+        data[name] = [];
+        return [];
       }
-      data[name] = [];
-      return [];
+      // On silent/background refresh failure, preserve existing data instead of wiping it out
+      return null;
     } finally {
       if (tracksLoading) loading[name] = false;
     }

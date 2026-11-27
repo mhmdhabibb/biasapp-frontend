@@ -184,7 +184,7 @@ function openCreatePOModal(request: SparepartRequest) {
     }
   ]
 
-  poForm.reason = request.reason || sr?.remarks || 'Penggantian sparepart sesuai rekomendasi teknisi'
+  poForm.reason = request.notes || request.reason || sr?.remarks || 'Penggantian sparepart sesuai rekomendasi teknisi'
   poForm.warehouse_status = 'Pengadaan Baru'
   poForm.special_notes = ''
 
@@ -219,7 +219,7 @@ async function openEditPOModal(request: any) {
   poForm.priority = po?.priority || 'Normal'
   poForm.department = po?.department || 'Technical / Service'
   poForm.requester_name = tech !== '-' ? tech : 'Teknisi'
-  poForm.reason = po?.reason || request.reason || sr?.remarks || 'Penggantian sparepart mesin'
+  poForm.reason = po?.reason || request.notes || request.reason || sr?.remarks || 'Penggantian sparepart mesin'
   poForm.warehouse_status = po?.warehouse_status || 'Pengadaan Baru'
   poForm.special_notes = po?.special_notes || ''
 
@@ -560,7 +560,13 @@ async function handlePrintRequestForm(row: any) {
         <div class="mrf-grid">
           <div class="form-group">
             <label class="form-label">Nomor Form</label>
-            <input v-model="poForm.request_form_no" type="text" class="form-input" placeholder="e.g. Bi-MRF-001" />
+            <input
+              v-model="poForm.request_form_no"
+              type="text"
+              class="form-input"
+              :readonly="!poForm.editing_po_id"
+              :placeholder="poForm.editing_po_id ? 'e.g. Bi-MRF-001' : 'Otomatis (Bi-MRF-xxx)'"
+            />
           </div>
           <div class="form-group">
             <label class="form-label">Tanggal Pengajuan <span class="text-danger">*</span></label>

@@ -89,7 +89,8 @@ const form = ref({
   service_report_id: serviceId,
   product_id: null as any,
   item_name: '',
-  qty: 1
+  qty: 1,
+  notes: ''
 })
 
 watch(() => form.value.product_id, (val) => {
@@ -105,7 +106,8 @@ function openCreate() {
     service_report_id: serviceId || '',
     product_id: null,
     item_name: '',
-    qty: 1
+    qty: 1,
+    notes: ''
   }
   inputMode.value = 'db'
   showForm.value = true
@@ -118,7 +120,8 @@ function openEdit(req: any) {
     service_report_id: req.service_report_id || serviceId || '',
     product_id: req.product_id || null,
     item_name: req.item_name || req.product?.name || '',
-    qty: req.qty || 1
+    qty: req.qty || 1,
+    notes: req.notes || ''
   }
   showForm.value = true
 }
@@ -162,6 +165,8 @@ async function submitRequest() {
   }
 
   if (form.value.qty < 1) return toast.warning('Quantity must be at least 1!')
+  const finalNotes = (form.value.notes || '').trim()
+  if (!finalNotes) return toast.warning('Alasan pengadaan / masalah harus diisi!')
 
   const confirmMsg = editingRequest.value ? 'Simpan perubahan sparepart request?' : 'Submit sparepart request?'
   if (confirm(confirmMsg)) {
@@ -171,7 +176,8 @@ async function submitRequest() {
         technician_id: myTechId.value,
         product_id: finalProductId,
         item_name: finalItemName,
-        qty: Number(form.value.qty)
+        qty: Number(form.value.qty),
+        notes: finalNotes
       }
       if (editingRequest.value) {
         await api.put(`/service-spareparts/${editingRequest.value.id}`, payload)
@@ -187,6 +193,7 @@ async function submitRequest() {
       form.value.product_id = null
       form.value.item_name = ''
       form.value.qty = 1
+      form.value.notes = ''
       showForm.value = false
     } catch (err: any) {
       toast.error(err.message || 'Failed to send sparepart request')
@@ -217,6 +224,7 @@ async function submitRequest() {
               <th>Service No</th>
               <th>Sparepart</th>
               <th>Qty</th>
+              <th>Alasan Pengadaan</th>
               <th>Status</th>
               <th style="width: 120px;">Aksi</th>
             </tr>
@@ -232,6 +240,7 @@ async function submitRequest() {
                 </div>
               </td>
               <td>{{ req.qty }}</td>
+              <td>{{ req.notes || '-' }}</td>
               <td>
                 <span class="badge" :class="req.status === 'completed' || req.status === 'approved' ? 'badge-success' : req.status === 'rejected' ? 'badge-danger' : req.status === 'po_created' ? 'badge-info' : 'badge-warning'">
                   {{ req.status === 'completed' ? 'Completed' : req.status === 'po_created' ? 'PO Created' : req.status || 'pending' }}
@@ -285,6 +294,10 @@ async function submitRequest() {
             <div class="m-row">
               <span class="m-label">Date:</span>
               <span class="m-val">{{ new Date(req.created_at || '').toLocaleDateString('en-GB') }}</span>
+            </div>
+            <div class="m-row" v-if="req.notes">
+              <span class="m-label">Alasan:</span>
+              <span class="m-val">{{ req.notes }}</span>
             </div>
           </div>
 
@@ -378,6 +391,17 @@ async function submitRequest() {
       <div class="form-group">
         <label class="form-label">Quantity <span class="text-danger">*</span></label>
         <input v-model.number="form.qty" type="number" min="1" class="form-input">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Alasan Pengadaan / Masalah <span class="text-danger">*</span></label>
+        <textarea
+          v-model="form.notes"
+          class="form-textarea"
+          rows="3"
+          placeholder="Jelaskan masalah unit atau alasan kebutuhan pengadaan sparepart (misal: fuser film sobek, gear aus, dll)..."
+          required
+        ></textarea>
       </div>
 
       <div class="mt-lg pt-md flex gap-sm" style="border-top: 1px solid var(--color-border-light); display: flex; gap: 8px;">

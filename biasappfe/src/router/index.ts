@@ -419,6 +419,17 @@ router.beforeEach((to) => {
   return true;
 });
 
+router.onError((err, to) => {
+  const msg = String(err?.message || err || "");
+  if (
+    msg.includes("Failed to fetch dynamically imported module") ||
+    msg.includes("Importing a module script failed") ||
+    msg.includes("ChunkLoadError")
+  ) {
+    window.location.assign(to?.fullPath || "/");
+  }
+});
+
 router.afterEach((to) => {
   if (to.meta.requiresAuth !== false) {
     const { ensureResourcesLoaded } = useMasterStore();

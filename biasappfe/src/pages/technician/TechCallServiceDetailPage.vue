@@ -14,6 +14,7 @@ import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { isTechnicianAssignedToJob, isLeadTechnicianForJob, getJobMemberTechIds, isMemberTechnicianForJob } from '@/utils/jobTechnician'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
+import { hasDeliveryHistory } from '@/utils/printDeliveryHistory'
 import { normalizeRole } from '@/router/role-access'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -1045,6 +1046,7 @@ watchEffect(() => {
 async function acceptSurveyJob() {
   try {
     await api.patch(`/job-orders/${job.value.id}`, { status: 'in_progress' })
+    directJobData.value = { ...(directJobData.value || job.value), status: 'in_progress' }
     const sid = surveyData.value?.id || job.value?.survey_id
     if (sid) {
       await api.put(`/surveys/${sid}`, { status: 'in_progress' }).catch(() => {})

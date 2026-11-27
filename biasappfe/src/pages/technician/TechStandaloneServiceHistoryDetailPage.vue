@@ -18,6 +18,7 @@ import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import { isTechnicianAssignedToJob, getJobMemberTechIds, isLeadTechnicianForJob, isMemberTechnicianForJob } from '@/utils/jobTechnician'
+import { normalizeRole } from '@/router/role-access'
 
 const toast = useToast()
 const { can } = usePermission()

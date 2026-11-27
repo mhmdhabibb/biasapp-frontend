@@ -242,14 +242,24 @@ async function fetchJobOrders(silent = false) {
           doObj = { ...fullDo, ...doObj, do_number: fullDo?.do_number || doObj?.do_number };
         }
       }
+      const srptCustomer =
+        srpt?.customer?.company_name || srpt?.customer?.name
+          ? srpt.customer
+          : null;
+      const survCustomer =
+        surv?.customer?.company_name || surv?.customer?.name
+          ? surv.customer
+          : null;
       const customer =
         sr?.customer ||
         doObj?.customer ||
-        srpt?.customer ||
-        surv?.customer ||
+        srptCustomer ||
+        survCustomer ||
         j.customer ||
+        (srpt?.customer_id ? findCustomer(srpt.customer_id) : null) ||
         (surv?.customer_id ? findCustomer(surv.customer_id) : null) ||
         (doObj?.customer_id ? findCustomer(doObj.customer_id) : null) ||
+        (j.customer_id ? findCustomer(j.customer_id) : null) ||
         null;
 
       let taskType = "sr";
@@ -445,14 +455,24 @@ async function loadAllData(silent = false) {
           doObj = { ...fullDo, ...doObj, do_number: fullDo?.do_number || doObj?.do_number };
         }
       }
+      const srptCustomer =
+        srpt?.customer?.company_name || srpt?.customer?.name
+          ? srpt.customer
+          : null;
+      const survCustomer =
+        surv?.customer?.company_name || surv?.customer?.name
+          ? surv.customer
+          : null;
       const customer =
         sr?.customer ||
         doObj?.customer ||
-        srpt?.customer ||
-        surv?.customer ||
+        srptCustomer ||
+        survCustomer ||
         j.customer ||
+        (srpt?.customer_id ? findCustomer(srpt.customer_id) : null) ||
         (surv?.customer_id ? findCustomer(surv.customer_id) : null) ||
         (doObj?.customer_id ? findCustomer(doObj.customer_id) : null) ||
+        (j.customer_id ? findCustomer(j.customer_id) : null) ||
         null;
 
       let taskType = "sr";
@@ -648,24 +668,33 @@ const unassignedDeliveries = computed<any[]>(() => {
 const unassignedVisits = computed<any[]>(() => {
   return jobOrders.value
     .filter((j: any) => j.taskType === "visit" && !j.technician_id)
-    .map((j: any) => ({
-      ...j,
-      taskType: "visit",
-      service_request_no:
-        j.service_request_no ||
-        j.service_report?.report_no ||
-        j.job_order_no ||
-        "-",
-      customer_name:
-        j.customer_name ||
+    .map((j: any) => {
+      const custId = j.customer_id || j.service_report?.customer_id || null;
+      const custObj = custId ? findCustomer(custId) : null;
+      const resolvedCustName =
+        (j.customer_name && j.customer_name !== "-" ? j.customer_name : null) ||
         j.service_report?.customer?.company_name ||
         j.service_report?.customer?.name ||
-        "-",
-      problem:
-        j.service_report?.machine_problem ||
-        j.instructions ||
-        "Scheduled copier meter visit",
-    }))
+        custObj?.company_name ||
+        custObj?.name ||
+        "-";
+      return {
+        ...j,
+        customer_id: custId,
+        customer: j.customer || j.service_report?.customer || custObj || null,
+        taskType: "visit",
+        service_request_no:
+          j.service_request_no ||
+          j.service_report?.report_no ||
+          j.job_order_no ||
+          "-",
+        customer_name: resolvedCustName,
+        problem:
+          j.service_report?.machine_problem ||
+          j.instructions ||
+          "Scheduled copier meter visit",
+      };
+    })
     .filter(
       (v: any) =>
         (v.service_request_no || "")

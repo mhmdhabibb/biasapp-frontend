@@ -180,7 +180,7 @@ export function useMasterStore() {
   ) => {
     return fetchPromise
       .then((items) => {
-        if (items) assignCallback(items);
+        if (Array.isArray(items)) assignCallback(items);
       })
       .catch((err) => {
         console.warn("Failed to fetch data:", err);
@@ -258,7 +258,7 @@ export function useMasterStore() {
         ),
       monthlyMeterReadings: () =>
         safeFetch(
-          fetchAll("monthlyMeterReadings", DROPDOWN_LIMIT),
+          fetchAll("monthlyMeterReadings", 1000),
           (items) => (store.monthlyMeterReadings = items || []),
         ),
       sales: () =>
@@ -278,7 +278,7 @@ export function useMasterStore() {
         ),
       rentalInvoices: () =>
         safeFetch(
-          fetchAll("rentalInvoices", DROPDOWN_LIMIT),
+          fetchAll("rentalInvoices", 1000),
           (items) => (store.rentalInvoices = items || []),
         ),
       salesInvoices: () =>

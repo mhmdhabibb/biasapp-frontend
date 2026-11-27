@@ -2018,7 +2018,9 @@ async function handleSubmit() {
         new CustomEvent("bias:data-mutated", { detail: { path: "/rents" } }),
       );
       toast.success(
-        "Transaksi sewa rental dan Surat Jalan (DO) berhasil dibuat!",
+        form.is_new
+          ? "Transaksi sewa rental dan Surat Jalan (DO) berhasil dibuat!"
+          : "Transaksi sewa rental (sudah berjalan) berhasil dibuat!",
       );
       showModal.value = false;
     }
