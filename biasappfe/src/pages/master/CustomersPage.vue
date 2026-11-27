@@ -59,10 +59,10 @@ onMounted(async () => {
 })
 
 const columns: TableColumn[] = [
-  { key: 'company_name', label: 'Customer' },
-  { key: 'category', label: 'Type' },
-  { key: 'pic_name', label: 'PIC Name' },
-  { key: 'phone', label: 'Phone' },
+  { key: 'company_name', label: 'Customer', wrap: true },
+  { key: 'category', label: 'Type', width: '120px' },
+  { key: 'pic_name', label: 'PIC Name', width: '160px' },
+  { key: 'phone', label: 'Phone', width: '150px' },
 ]
 const showModal = ref(false)
 const showConfirm = ref(false)
@@ -302,7 +302,7 @@ function getItemTargets(item: any): HistoryTarget[] {
 }
 
 function getItemTarget(item: any): HistoryTarget {
-  return getItemTargets(item)[0]
+  return getItemTargets(item)[0] ?? { id: 'other', name: 'Lainnya / Tanpa Item', kind: 'other', badge: '-' }
 }
 
 const unitTabs = computed(() => {
@@ -703,9 +703,9 @@ function goToForm(item: any) {
         <ExcelImportButtons master-key="customer" @imported="fetchData" />
       </template>
       <template #cell-company_name="{ row, value }">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-weight: 500;">{{ value }}</span>
-          <span v-if="(row as any).signature" class="badge" title="Tanda tangan customer sudah tersimpan di profil" style="background: #ecfdf5; color: #059669; font-size: 10px; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; white-space: normal; word-break: break-word; line-height: 1.4;">
+          <span style="font-weight: 500; word-break: break-word;">{{ value }}</span>
+          <span v-if="(row as any).signature" class="badge" title="Tanda tangan customer sudah tersimpan di profil" style="background: #ecfdf5; color: #059669; font-size: 10px; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; white-space: nowrap;">
             ✓ TTD
           </span>
         </div>

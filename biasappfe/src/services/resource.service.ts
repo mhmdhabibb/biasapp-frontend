@@ -81,11 +81,19 @@ export const resources = {
   unitTypes: createResourceService<ResourceRecord>("unit-types"),
   paperSizes: createResourceService<ResourceRecord>("paper-sizes"),
   paperTypes: createResourceService<ResourceRecord>("paper-types"),
-  units: createResourceService<ResourceRecord>("units"),
+  units: {
+    ...createResourceService<ResourceRecord>("units"),
+    getCustomerTracking: (id: string) =>
+      api.get<ApiResponse<any>>(`/units/${encodeURIComponent(id)}/customer-tracking`, false, false),
+  },
   productCategories:
     createResourceService<ResourceRecord>("product-categories"),
   uoms: createResourceService<ResourceRecord>("uoms"),
-  products: createResourceService<ResourceRecord>("products"),
+  products: {
+    ...createResourceService<ResourceRecord>("products"),
+    getCustomerTracking: (id: string) =>
+      api.get<ApiResponse<any>>(`/products/${encodeURIComponent(id)}/customer-tracking`, false, false),
+  },
   contracts: createResourceService<ResourceRecord>("contracts"),
   contractItems: createResourceService<ResourceRecord>("contract-items"),
   rents: createResourceService<ResourceRecord>("rents"),

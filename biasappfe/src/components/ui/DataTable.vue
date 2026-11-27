@@ -21,6 +21,10 @@ const props = withDefaults(
     showHardDelete?: boolean;
     /** Show the view / detail button (emits 'detail') */
     showDetail?: boolean;
+    /** Tooltip text for the detail action button */
+    detailTitle?: string;
+    /** Icon style for the detail action button */
+    detailIcon?: "eye" | "tracking";
     /** Items per page for pagination (default: 10) */
     perPage?: number;
     /** Total pages for server-side pagination */
@@ -43,7 +47,9 @@ const props = withDefaults(
     permission: "",
     showHardDelete: false,
     showDetail: false,
-    perPage: 10,
+    detailTitle: "View Detail",
+    detailIcon: "eye",
+    perPage: 50,
     totalPages: 1,
     currentPage: 1,
     loading: false,
@@ -112,7 +118,7 @@ const showActionsColumn = computed(
 const searchQuery = ref("");
 const internalPage = ref(props.currentPage || 1);
 
-const perPage = computed(() => props.perPage || 10);
+const perPage = computed(() => props.perPage || 50);
 
 const processedData = computed(() => {
   const list = props.data || [];
@@ -255,6 +261,30 @@ const visiblePages = computed(() => {
   }
   return pages;
 });
+
+function isNowrapColumn(col: TableColumn): boolean {
+  if (col.nowrap === true) return true;
+  if (col.wrap === true) return false;
+  const k = (col.key || "").toLowerCase();
+  return (
+    k === "status" ||
+    k === "date" ||
+    k.includes("date") ||
+    k.includes("_at") ||
+    k === "price" ||
+    k === "amount" ||
+    k === "total" ||
+    k === "rate" ||
+    k === "qty" ||
+    k === "stock" ||
+    k === "phone" ||
+    k.includes("phone") ||
+    k === "action" ||
+    k === "actions" ||
+    k === "is_copier" ||
+    k === "is_sparepart"
+  );
+}
 </script>
 
 <template>
@@ -315,7 +345,7 @@ const visiblePages = computed(() => {
             <th
               v-for="col in columns"
               :key="col.key"
-              :style="col.width ? { width: col.width } : {}"
+              :style="col.width ? { width: col.width, minWidth: col.width, maxWidth: col.width } : {}"
             >
               {{ col.label }}
             </th>
@@ -396,7 +426,7 @@ const visiblePages = computed(() => {
             <th
               v-for="col in columns"
               :key="col.key"
-              :style="col.width ? { width: col.width } : {}"
+              :style="col.width ? { width: col.width, minWidth: col.width, maxWidth: col.width } : {}"
             >
               {{ col.label }}
             </th>
@@ -420,7 +450,15 @@ const visiblePages = computed(() => {
               />
             </td>
             <td class="td-num">{{ (currentPage - 1) * perPage + idx + 1 }}</td>
-            <td v-for="col in columns" :key="col.key">
+            <td
+              v-for="col in columns"
+              :key="col.key"
+              :class="{
+                'cell-nowrap': isNowrapColumn(col),
+                'cell-wrap': !isNowrapColumn(col)
+              }"
+              :style="col.width ? { width: col.width, minWidth: col.width } : {}"
+            >
               <slot :name="`cell-${col.key}`" :value="row[col.key]" :row="row" :item="row">
                 <slot :name="`cell(${col.key})`" :value="row[col.key]" :row="row" :item="row">
                   {{ row[col.key] ?? "-" }}
@@ -434,10 +472,28 @@ const visiblePages = computed(() => {
                 <button
                   v-if="showDetail"
                   class="action-btn action-btn--detail"
-                  title="View Detail"
+                  :title="detailTitle || 'View Detail'"
                   @click.stop="$emit('detail', row)"
                 >
                   <svg
+                    v-if="detailIcon === 'tracking'"
+                    class="action-icon"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                  </svg>
+                  <svg
+                    v-else
                     class="action-icon"
                     width="16"
                     height="16"
@@ -594,7 +650,7 @@ const visiblePages = computed(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-base);
-  padding: var(--space-lg);
+  padding: 12px 16px;
   border-bottom: 1px solid var(--color-border-light);
   flex-wrap: wrap;
 }
@@ -707,31 +763,60 @@ const visiblePages = computed(() => {
 
 .data-table {
   width: 100%;
+  max-width: 100%;
   font-size: var(--font-size-sm);
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: auto;
 }
 
 .data-table th {
   position: sticky;
   top: 0;
   z-index: 5;
-  padding: var(--space-md) var(--space-lg);
+  padding: 10px 12px;
   text-align: left;
-  font-weight: var(--font-weight-medium);
+  font-weight: 600;
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: 12px;
   background: var(--color-surface, #ffffff);
   border-bottom: 2px solid var(--color-border-light, #e2e8f0);
   box-shadow: inset 0 -1px 0 var(--color-border-light, #e2e8f0);
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
 .data-table td {
-  padding: var(--space-md) var(--space-lg);
+  padding: 10px 12px;
   border-bottom: 1px solid var(--color-border-light);
   color: var(--color-text);
   vertical-align: middle;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+}
+
+.data-table td.cell-wrap {
+  white-space: normal !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.data-table td.cell-nowrap {
+  white-space: nowrap !important;
+}
+
+/* Ensure flex wrappers inside cells wrap instead of forcing horizontal overflow */
+.data-table td :deep(div) {
+  flex-wrap: wrap;
+}
+
+.data-table td :deep(.badge) {
+  white-space: nowrap;
+}
+
+.data-table td :deep(.mono) {
   white-space: nowrap;
 }
 
@@ -745,30 +830,46 @@ const visiblePages = computed(() => {
 
 .th-num,
 .td-num {
-  width: 48px;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
   text-align: center;
   color: var(--color-text-muted);
+  padding: 10px 6px;
+}
+
+.th-checkbox,
+.td-checkbox {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  text-align: center;
+  padding: 10px 6px;
 }
 
 .th-actions {
-  width: 120px;
+  width: 110px;
+  min-width: 110px;
+  text-align: center;
 }
 
 .td-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  justify-content: center;
+  gap: 6px;
   white-space: nowrap;
+  width: 110px;
 }
 
 .action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   border: none;
   transition:

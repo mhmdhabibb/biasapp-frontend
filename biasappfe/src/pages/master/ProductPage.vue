@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, watch, computed } from "vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
+import CustomerTrackingModal from "@/components/ui/CustomerTrackingModal.vue";
 import DataTable from "@/components/ui/DataTable.vue";
 import PageSkeleton from '@/components/ui/PageSkeleton.vue'
 import ExcelImportButtons from "@/components/ui/ExcelImportButtons.vue";
@@ -19,20 +20,22 @@ import {
 } from "@/types";
 import { useToast } from "@/composables/useToast";
 import { useHardDelete } from '@/composables/useHardDelete';
+import { usePermission } from '@/composables/usePermission';
 import { downloadStyledExcel, NUMFMT_COUNT, NUMFMT_RP, type StyledCell } from "@/utils/exportHelpers";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
 import { formatProductDisplayName } from "@/utils/format";
 
 const toast = useToast();
+const { can } = usePermission();
 
 const columns: TableColumn[] = [
-  { key: "name", label: "Consumable / Sparepart Name" },
-  { key: "sku", label: "SN" },
-  { key: "price", label: "Price" },
-  { key: "stock", label: "Stock" },
-  { key: "category.name", label: "Item" },
-  { key: "uom.name", label: "UOM" },
-  { key: "is_sparepart", label: "Sparepart?" },
+  { key: "name", label: "Consumable / Sparepart Name", wrap: true },
+  { key: "sku", label: "SN", width: "130px" },
+  { key: "price", label: "Price", width: "120px" },
+  { key: "stock", label: "Stock", width: "70px" },
+  { key: "category.name", label: "Item", width: "110px" },
+  { key: "uom.name", label: "UOM", width: "70px" },
+  { key: "is_sparepart", label: "Sparepart?", width: "90px" },
 ];
 
 const data = ref<Product[]>([]);
@@ -108,133 +111,16 @@ onUnmounted(() => {
 });
 
 const showModal = ref(false);
-const showDetailModal = ref(false);
-const detailItem = ref<any>(null);
+const showTrackingModal = ref(false);
+const trackingItem = ref<any>(null);
 const showConfirm = ref(false);
 const editingItem = ref<Product | null>(null);
 const deletingItem = ref<Product | null>(null);
 
-function openDetail(item: any) {
-  detailItem.value = item;
-  showDetailModal.value = true;
+function openTracking(item: any) {
+  trackingItem.value = item;
+  showTrackingModal.value = true;
 }
-
-function getCleanProductSpecsString(item: any): string {
-  if (!item || !item.specs) return "";
-  const raw = item.specs;
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if (!trimmed || trimmed === "{}" || trimmed === "[]") return "";
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      try {
-        const obj = JSON.parse(trimmed);
-        if (obj && typeof obj === "object") {
-          return formatProductSpecsObjectToString(obj);
-        }
-      } catch {}
-    }
-    return trimmed;
-  }
-  if (typeof raw === "object" && raw !== null) {
-    return formatProductSpecsObjectToString(raw);
-  }
-  return "";
-}
-
-function formatProductSpecsObjectToString(obj: Record<string, any>): string {
-  const parts: string[] = [];
-  const storage = obj.storage ? String(obj.storage).trim() : "";
-  const storageType = obj.storage_type ? String(obj.storage_type).trim() : "";
-  const combinedStorage =
-    storage && storageType ? `${storage} ${storageType}` : storage || storageType;
-
-  const keyMap: Record<string, string> = {
-    cpu: "CPU",
-    processor: "Processor",
-    ram: "RAM",
-    os: "OS",
-    vga: "VGA",
-    graphic: "Graphic",
-    office: "Office",
-  };
-
-  for (const [k, v] of Object.entries(obj)) {
-    if (!v || k === "storage_type") continue;
-    const valStr = String(v).trim();
-    if (!valStr) continue;
-
-    if (k === "storage") {
-      parts.push(combinedStorage ? `Storage: ${combinedStorage}` : "");
-      continue;
-    }
-
-    const label =
-      keyMap[k.toLowerCase()] ||
-      k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    if (valStr.toLowerCase().startsWith(label.toLowerCase())) {
-      parts.push(valStr);
-    } else {
-      parts.push(`${label}: ${valStr}`);
-    }
-  }
-
-  return parts.filter(Boolean).join("\n");
-}
-
-interface FormattedProductSpecLine {
-  label?: string;
-  value: string;
-}
-
-const cleanProductSpecsString = computed(() =>
-  getCleanProductSpecsString(detailItem.value),
-);
-
-const parsedProductSpecLines = computed<FormattedProductSpecLine[]>(() => {
-  const str = cleanProductSpecsString.value;
-  if (!str) return [];
-  let rawLines = str
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (rawLines.length === 1) {
-    if (rawLines[0].includes("•")) {
-      rawLines = rawLines[0].split("•").map((s) => s.trim()).filter(Boolean);
-    } else if (rawLines[0].includes(";")) {
-      rawLines = rawLines[0].split(";").map((s) => s.trim()).filter(Boolean);
-    } else if (rawLines[0].includes(",") && rawLines[0].split(",").length >= 3) {
-      rawLines = rawLines[0].split(",").map((s) => s.trim()).filter(Boolean);
-    }
-  }
-
-  return rawLines.map((line) => {
-    const clean = line.replace(/^[-•*]\s*/, "").trim();
-    const colonIdx = clean.indexOf(":");
-    if (colonIdx > 0 && colonIdx < 30) {
-      const label = clean.slice(0, colonIdx).trim();
-      const value = clean.slice(colonIdx + 1).trim();
-      if (value) {
-        return { label, value };
-      }
-    }
-    return { value: clean };
-  });
-});
-
-const isComputerProduct = computed(() => {
-  if (!detailItem.value) return false;
-  if (detailItem.value.is_computer) return true;
-  const cat = (detailItem.value.category?.name || "").toLowerCase();
-  const name = (detailItem.value.name || "").toLowerCase();
-  return (
-    cat.includes("laptop") ||
-    cat.includes("komputer") ||
-    cat.includes("computer") ||
-    cat.includes("pc") ||
-    name.includes("laptop") ||
-    name.includes("pc")
-  );
-});
 const form = reactive({
   name: "",
   sku: "",
@@ -683,15 +569,21 @@ function exportStockPdf() {
       search-placeholder="Search consumable / sparepart..."
       permission="product"
       :show-detail="true"
-      @detail="openDetail"
-      @row-click="openDetail"
+      detail-title="Tracking Customer"
+      detail-icon="tracking"
+      @detail="openTracking"
+      @row-click="openTracking"
       @edit="openEdit"
       @delete="openDelete" :show-hard-delete="hardDelete.isSuperadmin" @hard-delete="hardDelete.open"
     >
       <template #toolbar>
         <ExcelImportButtons master-key="product" @imported="fetchData" />
       </template>
-      <template #cell-name="{ row }">{{ formatProductDisplayName(row) }}</template>
+      <template #cell-name="{ row }">
+        <div style="white-space: normal; word-break: break-word; line-height: 1.4;">
+          {{ formatProductDisplayName(row) }}
+        </div>
+      </template>
       <template #cell-price="{ value }">{{
         formatRupiah(value || 0)
       }}</template>
@@ -924,126 +816,19 @@ function exportStockPdf() {
       </div>
     </FormModal>
 
-    <!-- Detail Modal -->
-    <FormModal
-      :open="showDetailModal"
-      :title="detailItem ? `Detail Consumable / Sparepart - ${detailItem.name || formatProductDisplayName(detailItem)}` : 'Detail Consumable / Sparepart'"
-      max-width="580px"
-      @close="showDetailModal = false"
-    >
-      <div v-if="detailItem" style="display: flex; flex-direction: column; gap: 16px;">
-        <!-- Header badge & status -->
-        <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid var(--color-border-light, #e2e8f0);">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span v-if="detailItem.is_sparepart" class="badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981; font-weight: 600; font-size: 11px; padding: 3px 8px;">
-              Sparepart
-            </span>
-            <span v-else class="badge" style="background: rgba(100, 116, 139, 0.1); color: #64748b; font-weight: 600; font-size: 11px; padding: 3px 8px;">
-              Consumable
-            </span>
-            <span v-if="detailItem.is_computer || isComputerProduct" class="badge" style="font-size: 11px; padding: 3px 8px; background: rgba(99, 102, 241, 0.1); color: #4f46e5;">
-              Computer / Laptop
-            </span>
-          </div>
-          <div style="font-size: 16px; font-weight: 700; color: #16a34a;">
-            {{ formatRupiah(detailItem.price || 0) }}
-          </div>
-        </div>
-
-        <!-- Info Grid -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px;">
-          <div style="grid-column: span 2;">
-            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Name</div>
-            <div style="font-size: 14px; font-weight: 600; color: var(--color-text, #1e293b); margin-top: 2px; word-break: break-word;">
-              {{ detailItem.name || formatProductDisplayName(detailItem) }}
-            </div>
-          </div>
-
-          <div>
-            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">SN (Serial Number) / SKU</div>
-            <div style="font-size: 14px; font-family: monospace; font-weight: 600; color: #0284c7; margin-top: 2px;">
-              {{ detailItem.sku || "-" }}
-            </div>
-          </div>
-
-          <div>
-            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Item / Category</div>
-            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
-              {{ detailItem.category?.name ?? "-" }}
-            </div>
-          </div>
-
-          <div>
-            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">UOM / Satuan</div>
-            <div style="font-size: 14px; color: var(--color-text, #1e293b); margin-top: 2px;">
-              {{ detailItem.uom?.name ?? "-" }}
-            </div>
-          </div>
-
-          <div>
-            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Stock Qty</div>
-            <div style="font-size: 14px; font-weight: 600; color: #2563eb; margin-top: 2px;">
-              {{ (detailItem.stock ?? 0).toLocaleString("id-ID") }} {{ detailItem.uom?.name || "" }}
-            </div>
-          </div>
-
-          <div>
-            <div style="font-size: 11px; font-weight: 600; color: var(--color-text-muted, #64748b); text-transform: uppercase;">Total Nilai Stock</div>
-            <div style="font-size: 14px; font-weight: 600; color: var(--color-text, #1e293b); margin-top: 2px;">
-              {{ formatRupiah((detailItem.price || 0) * (detailItem.stock || 0)) }}
-            </div>
-          </div>
-        </div>
-
-        <!-- Spesifikasi (String text yang rapi) -->
-        <div
-          v-if="cleanProductSpecsString || isComputerProduct"
-          style="padding: 14px 16px; background: var(--color-background-soft, #f8fafc); border-radius: 8px; border: 1px solid var(--color-border-light, #e2e8f0);"
-        >
-          <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--color-text, #1e293b); margin-bottom: 10px;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #0284c7;">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
-            <span>Spesifikasi</span>
-          </div>
-
-          <div v-if="parsedProductSpecLines.length > 0" style="display: flex; flex-direction: column; gap: 8px;">
-            <div
-              v-for="(item, idx) in parsedProductSpecLines"
-              :key="idx"
-              style="display: flex; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.5; color: var(--color-text, #1e293b);"
-            >
-              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #0284c7; flex-shrink: 0; transform: translateY(-2px);"></span>
-              <span v-if="item.label" style="font-weight: 600; color: var(--color-text, #1e293b); min-width: 60px;">
-                {{ item.label }}:
-              </span>
-              <span style="color: var(--color-text, #1e293b);">
-                {{ item.value }}
-              </span>
-            </div>
-          </div>
-
-          <div v-else style="font-size: 13px; color: var(--color-text-muted, #64748b); font-style: italic;">
-            Belum ada data spesifikasi untuk item ini.
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <button type="button" class="btn btn-outline" @click="showDetailModal = false">
-          Close
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary"
-          @click="openEdit(detailItem); showDetailModal = false"
-        >
-          Edit Product
-        </button>
-      </template>
-    </FormModal>
+    <!-- Customer Tracking Modal -->
+    <CustomerTrackingModal
+      :open="showTrackingModal"
+      target-kind="product"
+      :item="trackingItem"
+      :display-title="trackingItem ? formatProductDisplayName(trackingItem) : ''"
+      code-label="SN / SKU"
+      :code-value="trackingItem?.sku || ''"
+      :item-type-label="trackingItem?.category?.name || ''"
+      :can-edit="can('product:update')"
+      @close="showTrackingModal = false"
+      @edit="(item) => { openEdit(item); showTrackingModal = false; }"
+    />
     <ConfirmDialog
       :open="showConfirm"
       title="Delete Consumable / Sparepart"
