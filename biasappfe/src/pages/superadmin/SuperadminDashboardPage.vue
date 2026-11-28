@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/services/api'
-import DashboardSkeleton from '@/components/ui/DashboardSkeleton.vue'
+/* no skeleton on auto-refresh */
 import type { SuperadminDashboardStats } from '@/types'
 import { getCached } from '@/utils/requestCache'
 
@@ -159,9 +159,7 @@ const formattedGeneratedAt = computed(() => {
 </script>
 
 <template>
-  <DashboardSkeleton v-if="isLoading" variant="superadmin" />
-
-  <div v-else class="dashboard-page sa-dashboard">
+  <div class="dashboard-page sa-dashboard">
     <div class="sa-header">
       <div>
         <div class="sa-badge-row">

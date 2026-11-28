@@ -3,7 +3,7 @@
 // Standalone Service History — detail teknisi.
 // CUSTOMER DETAIL: read-only (diisi CS).
 // PRODUCT DETAIL: diisi teknisi (unit/product, problem, action, tested/completed, time, signatures).
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
@@ -100,6 +100,8 @@ function initForm(overrideData?: any) {
   if (!src || (isInit.value && !overrideData)) return
   const now = new Date()
   const nowHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  const masterCustSig = String((customer.value as any)?.signature || src?.customer?.signature || '').trim()
+  const masterCustName = String((customer.value as any)?.pic_name || (customer.value as any)?.company_name || (customer.value as any)?.name || '').trim()
   Object.assign(form, {
     problem: src.problem || '',
     action: src.action || '',
@@ -107,9 +109,9 @@ function initForm(overrideData?: any) {
     time_out: src.time_out || '',
     is_tested: !!src.is_tested,
     is_completed: !!src.is_completed,
-    customer_signature: src.customer_signature || '',
+    customer_signature: masterCustSig || src.customer_signature || '',
     technician_signature: src.technician_signature || '',
-    customer_name: src.customer_name || customer.value?.pic_name || '',
+    customer_name: masterCustName || src.customer_name || '',
     technician_name: src.technician_name || currentUser.value?.name || '',
     photo_before: src.photo_before || '',
     photo_progress: src.photo_progress || '',
@@ -196,7 +198,9 @@ const itemForm = reactive({
   category: 'unit' as 'unit' | 'product',
   source: 'db' as 'db' | 'manual',
   unit_id: null as any,
+  unit_ids: [] as string[],
   product_id: null as any,
+  product_ids: [] as string[],
   brand_id: '' as any,
   manual_brand: '',
   unit_type_id: '' as any,
@@ -241,7 +245,9 @@ async function ensureModalDropdownData() {
 function resetItemEntryFields() {
   Object.assign(itemForm, {
     unit_id: null,
+    unit_ids: [],
     product_id: null,
+    product_ids: [],
     brand_id: '',
     manual_brand: '',
     unit_type_id: '',
@@ -353,12 +359,22 @@ async function refreshCurrentDO() {
 }
 
 async function addItem(keepOpen = false) {
-  if (itemForm.category === 'unit' && itemForm.source === 'db' && !itemForm.unit_id) {
-    toast.warning('Pilih unit dari database terlebih dahulu, atau gunakan tab Input Manual.')
+  const isMultiUnit = itemForm.category === 'unit' && itemForm.source === 'db' && !editingItemId.value
+  const isMultiProduct = itemForm.category === 'product' && itemForm.source === 'db' && !editingItemId.value
+  if (isMultiUnit && itemForm.unit_ids.length === 0) {
+    toast.warning('Pilih minimal satu unit dari database.')
     return
   }
-  if (itemForm.category === 'product' && itemForm.source === 'db' && !itemForm.product_id) {
-    toast.warning('Pilih produk dari database terlebih dahulu, atau gunakan tab Input Manual.')
+  if (isMultiProduct && itemForm.product_ids.length === 0) {
+    toast.warning('Pilih minimal satu produk dari database.')
+    return
+  }
+  if (itemForm.category === 'unit' && itemForm.source === 'db' && editingItemId.value && !itemForm.unit_id) {
+    toast.warning('Pilih unit dari database terlebih dahulu.')
+    return
+  }
+  if (itemForm.category === 'product' && itemForm.source === 'db' && editingItemId.value && !itemForm.product_id) {
+    toast.warning('Pilih produk dari database terlebih dahulu.')
     return
   }
 
@@ -439,10 +455,8 @@ async function addItem(keepOpen = false) {
       ? itemForm.unit_type_id
       : null
 
-    const itemPayload: any = {
+    const basePayload: any = {
       delivery_order_id: id,
-      unit_id: finalUnitId,
-      product_id: itemForm.category === 'product' && itemForm.source === 'db' ? itemForm.product_id : null,
       brand_id: finalBrandId,
       unit_type_id: finalUnitTypeId,
       model: (isManualUnit || isManualProduct || isExternalSavedUnit) ? finalModel : '',
@@ -457,6 +471,7 @@ async function addItem(keepOpen = false) {
     }
 
     const wasEmpty = ((item.value as any)?.delivery_order_items || []).length === 0
+    let addedLabels: string[] = []
 
     if (editingItemId.value && editingItemOriginal.value) {
       const orig = editingItemOriginal.value
@@ -464,8 +479,11 @@ async function addItem(keepOpen = false) {
       const nextKind = isExternalSavedUnit
         ? 'unit'
         : `${itemForm.category}${itemForm.source === 'manual' ? '_manual' : ''}`
-      // Backend Update uses GORM struct Updates (ignores zero/empty values).
-      // Recreate when switching kind or clearing previously non-empty optional fields.
+      const itemPayload = {
+        ...basePayload,
+        unit_id: itemForm.category === 'unit' && itemForm.source === 'db' ? itemForm.unit_id : finalUnitId,
+        product_id: itemForm.category === 'product' && itemForm.source === 'db' ? itemForm.product_id : null,
+      }
       const clearedTextOrFK =
         Boolean(orig.serial_no && !itemPayload.serial_no) ||
         Boolean(orig.remarks && !itemPayload.remarks) ||
@@ -480,12 +498,28 @@ async function addItem(keepOpen = false) {
       } else {
         await resources.deliveryOrderItems.update(editingItemId.value, itemPayload)
       }
+      addedLabels.push(itemLabel(itemPayload))
+    } else if (isMultiUnit) {
+      for (const uid of itemForm.unit_ids) {
+        await resources.deliveryOrderItems.create({ ...basePayload, unit_id: uid, product_id: null })
+        addedLabels.push(itemLabel({ unit_id: uid }))
+      }
+    } else if (isMultiProduct) {
+      for (const pid of itemForm.product_ids) {
+        await resources.deliveryOrderItems.create({ ...basePayload, unit_id: null, product_id: pid })
+        addedLabels.push(itemLabel({ product_id: pid }))
+      }
     } else {
+      const itemPayload = {
+        ...basePayload,
+        unit_id: finalUnitId,
+        product_id: itemForm.category === 'product' && itemForm.source === 'db' ? itemForm.product_id : null,
+      }
       await resources.deliveryOrderItems.create(itemPayload)
+      addedLabels.push(itemLabel(itemPayload))
     }
 
-    const label = itemLabel(itemPayload)
-    // Auto-update project_name only on first item when CS left default placeholder
+    const label = addedLabels[0] || 'Item'
     if (!editingItemId.value && wasEmpty) {
       const curProjectName = String(item.value?.project_name || '').trim()
       const address = item.value?.delivery_address || customer.value?.address || ''
@@ -498,14 +532,14 @@ async function addItem(keepOpen = false) {
     await refreshCurrentDO()
 
     if (keepOpen && !editingItemId.value) {
-      const qtySuffix = itemPayload.qty > 1 ? ` x${itemPayload.qty}` : ''
-      sessionAddedLabels.value.push(`${label}${qtySuffix}`)
+      const qtySuffix = basePayload.qty > 1 ? ` x${basePayload.qty}` : ''
+      sessionAddedLabels.value.push(...addedLabels.map((l) => `${l}${qtySuffix}`))
       resetItemEntryFields()
-      toast.success('Item ditambahkan. Silakan tambah item berikutnya.')
+      toast.success(`${addedLabels.length} item ditambahkan. Silakan tambah item berikutnya.`)
     } else {
       showItemModal.value = false
       resetItemEntryFields()
-      toast.success(editingItemId.value ? 'Item produk / unit diperbarui.' : 'Item produk / unit ditambahkan.')
+      toast.success(editingItemId.value ? 'Item produk / unit diperbarui.' : `${addedLabels.length} item ditambahkan.`)
       editingItemId.value = null
       editingItemOriginal.value = null
     }
@@ -580,6 +614,16 @@ const isEditable = computed(() => {
     return !dTechId
   }
   return false
+})
+
+const masterCustomerSignature = computed(() => String((customer.value as any)?.signature || (item.value as any)?.customer?.signature || '').trim())
+const hasMasterCustomerSignature = computed(() => !!masterCustomerSignature.value && masterCustomerSignature.value !== 'signed')
+
+watch(masterCustomerSignature, (sig) => {
+  if (!sig || sig === 'signed') return
+  if (!form.customer_signature || form.customer_signature === 'signed') form.customer_signature = sig
+  const masterName = String((customer.value as any)?.pic_name || (customer.value as any)?.company_name || (customer.value as any)?.name || '').trim()
+  if (masterName && !form.customer_name) form.customer_name = masterName
 })
 
 const isLeadTech = computed(() => {
@@ -716,7 +760,7 @@ async function executeCompleteForm() {
         do_type: 'service',
         status: 'pending',
         customer_id: item.value.customer_id,
-        customer_category: item.value.customer_category,
+        customer_category: item.value.customer_category || 'Stand Alone',
         project_name: item.value.project_name || '',
         delivery_address: item.value.delivery_address,
         recipient_name: item.value.recipient_name,
@@ -724,6 +768,8 @@ async function executeCompleteForm() {
         delivery_date: new Date().toISOString(),
         technician_id: item.value.technician_id,
         notes: `Lanjutan dari perbaikan ${item.value.do_number || ''}`,
+        customer_signature: form.customer_signature || (customer.value as any)?.signature || '',
+        customer_name: form.customer_name || (customer.value as any)?.pic_name || '',
       })
       
       const newDoId = (newDo as any).data?.data?.id || (newDo as any).data?.id
@@ -773,12 +819,14 @@ async function executeNewSH() {
     const newTimeIn = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`
     // Warisi Project Name dari CS (lewati '-' peninggalan data lama).
     const pickName = (...vals: any[]) => vals.map((v) => String(v || '').trim()).find((v) => v && v !== '-') || ''
+    const masterCustSig = String((customer.value as any)?.signature || item.value?.customer_signature || form.customer_signature || '').trim()
+    const masterCustName = String((customer.value as any)?.pic_name || (customer.value as any)?.company_name || item.value?.customer_name || form.customer_name || '').trim()
     const newDo: any = await resources.deliveryOrders.create({
         do_type: 'service',
         status: 'pending',
         customer_id: item.value.customer_id,
-        customer_category: item.value.customer_category,
-        project_name: pickName(item.value.project_name),
+        customer_category: item.value.customer_category || 'Stand Alone',
+        project_name: item.value.project_name || '-',
         delivery_address: item.value.delivery_address,
         recipient_name: item.value.recipient_name,
         recipient_phone: item.value.recipient_phone,
@@ -786,6 +834,8 @@ async function executeNewSH() {
         technician_id: item.value.technician_id,
         notes: item.value.notes,
         time_in: newTimeIn,
+        customer_signature: masterCustSig,
+        customer_name: masterCustName,
     })
     const newDoId = (newDo as any).data?.data?.id || (newDo as any).data?.id
     toast.success('Service History baru dibuat.')
@@ -942,6 +992,7 @@ onMounted(async () => {
               <span class="item-label-text">
                 {{ itemLabel(it) }}
                 <span class="text-muted">x{{ it.qty || 1 }}</span>
+                <span v-if="it.is_first_installation" class="badge badge-success" style="margin-left:6px;font-size:10px;">First Installation</span>
                 <span v-if="it.remarks" class="text-muted"> — {{ it.remarks }}</span>
               </span>
             </div>
@@ -1068,10 +1119,14 @@ onMounted(async () => {
           </div>
         </div>
         <div class="form-group" style="flex: 1;">
-          <label class="form-label">Customer / PIC Name <span v-if="isEditable" class="text-danger">*</span></label>
-          <input v-model="form.customer_name" type="text" class="form-input" placeholder="Nama PIC customer" :disabled="!isEditable" />
+          <label class="form-label">Customer / PIC Name <span v-if="isEditable && !hasMasterCustomerSignature" class="text-danger">*</span></label>
+          <input v-model="form.customer_name" type="text" class="form-input" :readonly="hasMasterCustomerSignature" :disabled="!isEditable || hasMasterCustomerSignature" :placeholder="hasMasterCustomerSignature ? '' : 'Nama PIC customer'" />
           <label class="form-label mt-sm">Customer Signature <span v-if="isEditable" class="text-danger">*</span></label>
-          <div :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+          <div v-if="hasMasterCustomerSignature" style="border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px; text-align: center; background: #fff; pointer-events: none;">
+            <img :src="masterCustomerSignature" alt="Customer Signature" style="max-height: 120px;" />
+            <div class="text-xs text-muted mt-xs">Tanda tangan customer (dari master/pengaturan awal)</div>
+          </div>
+          <div v-else :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
             <SignaturePad v-model="form.customer_signature" height="150px" />
           </div>
         </div>
@@ -1166,7 +1221,24 @@ onMounted(async () => {
       <!-- 1. Unit dari Database -->
       <div v-if="itemForm.category === 'unit' && itemForm.source === 'db'" class="form-group">
         <label class="form-label font-bold">Pilih Unit / Mesin <span class="text-danger">*</span></label>
-        <CustomSelect v-model="itemForm.unit_id" :options="unitOptions" placeholder="-- Pilih Unit / Mesin --" :searchable="true" :loading="isModalLoading" />
+        <CustomSelect
+          v-if="editingItemId"
+          v-model="itemForm.unit_id"
+          :options="unitOptions"
+          placeholder="-- Pilih Unit / Mesin --"
+          :searchable="true"
+          :loading="isModalLoading"
+        />
+        <CustomSelect
+          v-else
+          v-model="itemForm.unit_ids"
+          :options="unitOptions"
+          placeholder="-- Pilih Unit / Mesin --"
+          :searchable="true"
+          :loading="isModalLoading"
+          :multiple="true"
+        />
+        <div v-if="!editingItemId && itemForm.unit_ids.length" class="text-xs text-muted mt-xs">{{ itemForm.unit_ids.length }} unit dipilih.</div>
         <div class="source-switch-hint">
           Unit tidak ada di database?
           <button type="button" class="link-btn" @click="setItemSource('manual')">Klik untuk Input Manual →</button>
@@ -1176,7 +1248,24 @@ onMounted(async () => {
       <!-- 2. Produk dari Database -->
       <div v-else-if="itemForm.category === 'product' && itemForm.source === 'db'" class="form-group">
         <label class="form-label font-bold">Pilih Produk / Consumable / Sparepart <span class="text-danger">*</span></label>
-        <CustomSelect v-model="itemForm.product_id" :options="productOptions" placeholder="-- Pilih Produk / Sparepart --" :searchable="true" :loading="isModalLoading" />
+        <CustomSelect
+          v-if="editingItemId"
+          v-model="itemForm.product_id"
+          :options="productOptions"
+          placeholder="-- Pilih Produk / Sparepart --"
+          :searchable="true"
+          :loading="isModalLoading"
+        />
+        <CustomSelect
+          v-else
+          v-model="itemForm.product_ids"
+          :options="productOptions"
+          placeholder="-- Pilih Produk / Sparepart --"
+          :searchable="true"
+          :loading="isModalLoading"
+          :multiple="true"
+        />
+        <div v-if="!editingItemId && itemForm.product_ids.length" class="text-xs text-muted mt-xs">{{ itemForm.product_ids.length }} produk dipilih.</div>
         <div class="source-switch-hint">
           Produk tidak ada di database?
           <button type="button" class="link-btn" @click="setItemSource('manual')">Klik untuk Input Manual →</button>

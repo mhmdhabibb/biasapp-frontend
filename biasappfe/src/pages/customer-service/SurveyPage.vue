@@ -28,7 +28,7 @@ const toast = useToast();
 const { currentUser } = useAuth();
 const { can } = usePermission();
 const router = useRouter();
-const { customers, units, technicians, jobOrders, findTechnician, ensureResourcesLoaded } = useMasterStore();
+const { customers, units, technicians, jobOrders, findTechnician, ensureResourcesLoaded, formatUnitDisplayName } = useMasterStore();
 
 const columns: TableColumn[] = [
   { key: "survey_no", label: "Survey No" },
@@ -112,17 +112,12 @@ const customerOptions = computed(() =>
   })),
 );
 
-const unitOptions = computed(() => {
-  const grouped = new Map<string, any>();
-  (units.value as any[]).forEach((u: any) => {
-    const label = String(u.model || u.name || "-").trim();
-    const existing = grouped.get(label);
-    if (!existing || String(u.id) === String(form.unit_id || "")) {
-      grouped.set(label, { value: u.id, label });
-    }
-  });
-  return Array.from(grouped.values());
-});
+const unitOptions = computed(() =>
+  (units.value as any[]).map((u: any) => ({
+    value: u.id,
+    label: formatUnitDisplayName(u),
+  })),
+);
 
 const technicianOptions = computed(() => [
   { value: "", label: "-- Belum Ditugaskan / Pilih Nanti --" },
@@ -204,7 +199,7 @@ async function fetchData(silent = false) {
         _customer: r.customer?.company_name || r.customer?.name || "-",
         _technician: techName || (r.technician_id ? `Teknisi Terpilih` : "-"),
         _scheduled_date: r.scheduled_date ? new Date(r.scheduled_date).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "-",
-        _unit: r.unit ? `${r.unit.model || r.unit.name}` : (r.recommended_model ? `Rekomendasi: ${r.recommended_model}` : "-"),
+        _unit: r.unit ? formatUnitDisplayName(r.unit) : (r.recommended_model ? `Rekomendasi: ${r.recommended_model}` : "-"),
         _field_findings: hasFindings ? "Sudah Survey" : "Belum Survey",
         _hasFindings: hasFindings,
       };
@@ -347,12 +342,51 @@ async function handleDelete() {
 async function handleNextSurvey(item: any) {
   try {
     isLoading.value = true;
+    const surveyNo = String(item.survey_no || item.id || "");
+    const existing = ((deliveryOrders.value as any[]) || []).find((d: any) => {
+      const note = String(d?.notes || "");
+      return String(d?.do_type || "").toLowerCase() === "service" && !!surveyNo && note.includes(`Survey ${surveyNo}`);
+    });
+    if (existing) {
+      if (item.status !== "matched") {
+        await resources.surveys.update(String(item.id), { status: "matched", result: "matched" });
+      }
+      toast.info(`Standalone untuk survey ini sudah ada: ${existing.do_number || existing.id}`);
+      window.dispatchEvent(new CustomEvent("bias:data-mutated"));
+      await fetchData(true);
+      return;
+    }
+
+    const cust = (customers.value as any[]).find((c: any) => String(c.id) === String(item.customer_id));
+    const unit = (units.value as any[]).find((u: any) => String(u.id) === String(item.unit_id));
+    const doPayload: any = {
+      do_type: "service",
+      status: "pending",
+      customer_id: item.customer_id || undefined,
+      customer_category: "Stand Alone",
+      delivery_date: new Date().toISOString(),
+      delivery_address: item.survey_address || cust?.address || "",
+      recipient_name: cust?.pic_name || cust?.company_name || cust?.name || "",
+      recipient_phone: cust?.phone || "",
+      notes: `Dibuat dari Survey ${surveyNo}${item.recommended_model ? ` - Rekomendasi: ${item.recommended_model}` : ""}`,
+      project_name: item.recommended_model || unit?.model || unit?.name || "Standalone Service dari Survey",
+    };
+    if (item.unit_id || item.recommended_model) {
+      doPayload.delivery_order_items = [{
+        unit_id: item.unit_id || undefined,
+        qty: 1,
+        model: unit?.model || unit?.name || item.recommended_model || "",
+        serial_no: unit?.serial_no || "",
+        description: item.recommended_model ? `Rekomendasi survey: ${item.recommended_model}` : "",
+      }];
+    }
+    const created: any = await resources.deliveryOrders.create(doPayload);
     await resources.surveys.update(String(item.id), { status: "matched", result: "matched" });
     window.dispatchEvent(new CustomEvent("bias:data-mutated"));
-    toast.success("Survey disetujui. Mengarahkan ke form Sale...");
-    createSaleFromSurvey(item);
+    toast.success(`Survey disetujui. Standalone Service ${created?.do_number || ""} dibuat.`);
+    await fetchData(true);
   } catch (e: any) {
-    toast.error("Gagal memproses survey: " + (e?.message || "Error"));
+    toast.error("Gagal membuat Standalone Service dari survey: " + (e?.message || "Error"));
   } finally {
     isLoading.value = false;
   }
@@ -528,12 +562,13 @@ onUnmounted(() => {
         </span>
       </template>
       <template #cell-_field_findings="{ row }">
-        <button v-if="row._hasFindings" class="btn btn-xs btn-outline" style="gap: 4px; display: inline-flex; align-items: center;" @click="openDetail(row)">
-          📋 Lihat Hasil
+        <button v-if="row._hasFindings" class="action-btn action-btn--sm" title="Lihat Hasil" @click="openDetail(row)">
+          <svg class="action-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         </button>
         <span v-else class="text-muted" style="font-size: 0.75rem;">-</span>
       </template>
       <template #actions="{ row }">
+        <div class="action-buttons">
         <button
           v-if="row.status !== 'completed' && row.status !== 'matched' && row.status !== 'cancelled'"
           class="action-btn"
@@ -550,17 +585,17 @@ onUnmounted(() => {
         </button>
         <!-- Tampilkan tombol Next dan Cancel hanya jika teknisi sudah selesai survey (status completed) atau survey belum ditugaskan ke teknisi -->
         <template v-if="row.status === 'completed' || ((row.status === 'pending' || (!row.status && row.result === 'pending')) && (!row.technician_id || row._hasFindings || !!row.completed_at))">
-          <button class="btn btn-sm btn-primary" title="Lanjut ke Sale" @click="handleNextSurvey(row)">
-            Next
+          <button class="btn btn-sm btn-primary" title="Buat Standalone Service" @click="handleNextSurvey(row)">
+            Buat Standalone
           </button>
           <button class="btn btn-sm btn-outline" title="Cancel Survey" @click="cancelSurvey(row)">
             Cancel
           </button>
         </template>
-        <!-- Status matched: otomatis ada tombol Buat Sale -->
+        <!-- Status matched: buat Standalone Service -->
         <template v-else-if="row.status === 'matched' || row.result === 'matched'">
-          <button class="btn btn-sm btn-primary" title="Buat Sale berdasarkan survey ini" @click="createSaleFromSurvey(row)">
-            Buat Sale
+          <button class="btn btn-sm btn-primary" title="Buat Standalone Service" @click="handleNextSurvey(row)">
+            Buat Standalone
           </button>
         </template>
         <button class="action-btn" title="Edit" @click="openEdit(row)">
@@ -575,6 +610,7 @@ onUnmounted(() => {
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
           </svg>
         </button>
+        </div>
       </template>
     </DataTable>
 
@@ -734,8 +770,8 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <button class="btn btn-outline" @click="showDetailModal = false">Tutup</button>
-        <button v-if="selectedDetailItem && selectedDetailItem.status === 'matched'" class="btn btn-primary" @click="createSaleFromSurvey(selectedDetailItem)">
-          Buat Sale dari Survey Ini
+        <button v-if="selectedDetailItem && selectedDetailItem.status === 'matched'" class="btn btn-primary" @click="handleNextSurvey(selectedDetailItem)">
+          Buat Standalone dari Survey Ini
         </button>
       </template>
     </FormModal>
@@ -847,13 +883,10 @@ onUnmounted(() => {
 
 <style scoped>
 .mt-3 { margin-top: 1rem; }
-.responsive-flex {
-  display: flex;
-  gap: 12px;
-}
+.responsive-flex { display: flex; gap: 12px; }
+.action-buttons { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.action-btn--sm { width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 @media (max-width: 640px) {
-  .responsive-flex {
-    flex-direction: column;
-  }
+  .responsive-flex { flex-direction: column; }
 }
 </style>

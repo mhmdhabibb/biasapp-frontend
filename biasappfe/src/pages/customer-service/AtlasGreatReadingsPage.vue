@@ -2855,7 +2855,7 @@ async function exportExcel() {
   <div class="atlas-great-page">
     <PageHeader
       :title="activeTab === 'atlas' ? 'Pencatatan Lembar Pemakaian - Atlas Copco' : 'Pencatatan Lembar Pemakaian - PT Great Eastern'"
-      :buttonLabel="activeTab === 'atlas' ? '+ Hitung Pencatatan Atlas' : '+ Hitung Pencatatan Great'"
+      :buttonLabel="activeTab === 'atlas' ? '+ Atlas' : '+ Great'"
       @add="openAddModal(activeTab)"
     >
       <template #actions>
@@ -2897,17 +2897,13 @@ async function exportExcel() {
       </div>
       <div class="info-content">
         <div class="info-title">
-          {{ activeTab === 'atlas' ? 'Perhitungan Lembar Pemakaian Khusus Atlas Copco (Deduksi A3 & Alokasi 88:12)' : 'Perhitungan Lembar Pemakaian Khusus PT Great Eastern (Direct Meter & Alokasi 88:12)' }}
+          {{ activeTab === 'atlas' ? 'Pencatatan Lembar Pemakaian Atlas Copco' : 'Pencatatan Lembar Pemakaian PT Great Eastern' }}
         </div>
         <div class="info-desc" v-if="activeTab === 'atlas'">
-          Teknisi mencatat meter reading fisik di lapangan tanggal 25–30. Untuk <strong>Atlas Copco</strong>, perhitungan menggunakan deduksi lembar A3:
-          <strong>Last Meter (Counter Akhir) = Gross Mesin Total &minus; Deduksi A3</strong>, kemudian pemakaian color dialokasikan <strong>88% ke BW</strong> dan <strong>12% Color Murni</strong>.
-          Siklus billing otomatis diterbitkan setiap <strong>tanggal 7</strong>.
+          Atlas: <strong>Counter Akhir = Gross &minus; Deduksi A3</strong>, alokasi color <strong>88% BW / 12% Color</strong>. Billing <strong>tgl 7</strong>.
         </div>
         <div class="info-desc" v-else>
-          Teknisi mencatat meter reading fisik di lapangan tanggal 25–30. Untuk <strong>PT Great Eastern</strong>, perhitungan menggunakan pemakaian langsung (Direct Counter):
-          <strong>Pemakaian Dasar = Counter Akhir &minus; Counter Awal</strong> (tanpa deduksi A3), kemudian pemakaian color dialokasikan <strong>88% ke BW</strong> dan <strong>12% Color Murni</strong>.
-          Siklus billing otomatis diterbitkan setiap <strong>tanggal 7</strong>.
+          Great: <strong>Pemakaian = Akhir &minus; Awal</strong> (direct), alokasi color <strong>88% BW / 12% Color</strong>. Billing <strong>tgl 7</strong>.
         </div>
       </div>
     </div>
@@ -2921,7 +2917,7 @@ async function exportExcel() {
           @click="activeTab = 'atlas'"
         >
           <span class="tab-indicator indicator-atlas"></span>
-          Perhitungan Atlas
+          Atlas
           <span class="badge-count">{{ readings.filter(isAtlas).length }}</span>
         </button>
         <button
@@ -2930,7 +2926,7 @@ async function exportExcel() {
           @click="activeTab = 'great'"
         >
           <span class="tab-indicator indicator-great"></span>
-          Perhitungan Great
+          Great
           <span class="badge-count">{{ readings.filter(isGreat).length }}</span>
         </button>
       </div>

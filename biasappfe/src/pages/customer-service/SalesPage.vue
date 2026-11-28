@@ -3102,6 +3102,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
                           ) || "Product ID: " + si.product_id
                         : "-"
                     }}
+                    <span v-if="si.is_first_installation && si.product_id" class="badge badge-success" style="margin-left:6px;font-size:10px;">First Installation</span>
                   </td>
                   <td style="padding: 12px">
                     {{
@@ -3116,6 +3117,7 @@ function printReceipt(item: any, existingWindow?: Window | null) {
                             : "")
                         : "-"
                     }}
+                    <span v-if="si.is_first_installation && si.unit_id" class="badge badge-success" style="margin-left:6px;font-size:10px;">First Installation</span>
                   </td>
                   <td style="padding: 12px; text-align: center">
                     {{ si.qty }}

@@ -1755,7 +1755,7 @@ function printTable() {
                 </thead>
                 <tbody>
                   <tr v-for="(item, index) in doDetailItem.delivery_order_items || []" :key="item.id || index">
-                    <td>{{ getDoItemName(item) }}</td>
+                    <td>{{ getDoItemName(item) }} <span v-if="item.is_first_installation" class="badge badge-success" style="margin-left:6px;font-size:10px;">First Installation</span></td>
                     <td>{{ item.qty || 1 }}</td>
                     <td>{{ item.remarks || '-' }}</td>
                   </tr>

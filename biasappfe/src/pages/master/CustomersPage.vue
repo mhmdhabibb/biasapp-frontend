@@ -378,6 +378,7 @@ interface CustomerItemEntry {
   name: string
   qty: number
   status: string
+  isFirstInstallation?: boolean
 }
 
 const customerItems = computed<CustomerItemEntry[]>(() => {
@@ -538,6 +539,37 @@ const customerItems = computed<CustomerItemEntry[]>(() => {
       qty: req.qty || 1,
       status: (req.status || '-').toUpperCase(),
     })
+  }
+
+  // 4. First Installation dari Delivery Order items
+  const doList = ((masterStore.deliveryOrders as any)?.value || []) as any[]
+  for (const d of doList) {
+    if (String(d.customer_id) !== cid) continue
+    for (let idx = 0; idx < (d.delivery_order_items || []).length; idx++) {
+      const it = d.delivery_order_items[idx]
+      if (!it?.is_first_installation) continue
+      const u = it.unit || masterStore.findUnit(it.unit_id)
+      const p = it.product || masterStore.findProduct(it.product_id)
+      const isUnit = !!(it.unit_id || u || it.serial_no)
+      const targetId = it.unit_id ? `unit_${it.unit_id}` : (it.product_id ? `prod_${it.product_id}` : `prod_ext_${it.serial_no || it.model || idx}`)
+      const name = isUnit
+        ? (u ? `${masterStore.formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}` : (it.model || it.serial_no || 'Unit'))
+        : (p ? masterStore.formatProductDisplayName(p) : (it.model || it.description || 'Produk / Consumable'))
+      list.push({
+        key: `fi_${d.id}_${it.id || idx}`,
+        targetId,
+        date: d.delivery_date || d.created_at || '',
+        category: 'purchased',
+        categoryLabel: 'First Installation',
+        refNo: d.do_number || d.delivery_no || `DO-${d.id}`,
+        itemKind: isUnit ? 'unit' : 'product',
+        itemKindLabel: isUnit ? 'Unit / Mesin' : 'Produk / Consumable',
+        name,
+        qty: it.qty || 1,
+        status: (d.status || '-').toUpperCase(),
+        isFirstInstallation: true,
+      })
+    }
   }
 
   return list.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
@@ -1178,7 +1210,10 @@ function goToForm(item: any) {
                   </td>
                   <td style="padding: 10px 12px; font-weight: 500; white-space: nowrap;">{{ entry.refNo }}</td>
                   <td style="padding: 10px 12px; white-space: nowrap; font-size: 12px; color: var(--color-text-muted);">{{ entry.itemKindLabel }}</td>
-                  <td style="padding: 10px 12px; font-weight: 500;">{{ entry.name }}</td>
+                  <td style="padding: 10px 12px; font-weight: 500;">
+                    {{ entry.name }}
+                    <span v-if="entry.isFirstInstallation" class="badge badge-success" style="margin-left:6px;font-size:10px;">First Installation</span>
+                  </td>
                   <td style="padding: 10px 12px; white-space: nowrap;">{{ entry.qty }}</td>
                   <td style="padding: 10px 12px; white-space: nowrap;">
                     <span class="badge badge-secondary" style="font-size: 11px;">

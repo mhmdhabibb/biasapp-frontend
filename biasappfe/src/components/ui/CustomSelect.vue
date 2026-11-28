@@ -8,23 +8,25 @@ export interface SelectOption {
 }
 
 const props = withDefaults(defineProps<{
-  modelValue: number | string | null
+  modelValue: number | string | null | Array<number | string>
   options: SelectOption[]
   placeholder?: string
   searchable?: boolean
   disabled?: boolean
   loading?: boolean
   id?: string
+  multiple?: boolean
 }>(), {
   placeholder: 'Select option',
   searchable: true,
   disabled: false,
   loading: false,
   id: '',
+  multiple: false,
 })
 
 const emit = defineEmits<{
-  'update:modelValue': [val: number | string | null]
+  'update:modelValue': [val: number | string | null | Array<number | string>]
 }>()
 
 const isOpen = ref(false)
@@ -34,18 +36,34 @@ const dropdownRef = ref<HTMLElement>()
 const listRef = ref<HTMLElement>()
 const searchInputRef = ref<HTMLInputElement>()
 
+const safeOptions = computed(() => (Array.isArray(props.options) ? props.options : []))
+
+const selectedValues = computed(() =>
+  Array.isArray(props.modelValue) ? props.modelValue.map((v) => String(v)) : []
+)
+
 const selectedLabel = computed(() => {
+  if (props.multiple) {
+    const count = selectedValues.value.length
+    if (count === 0) return ''
+    if (count === 1) {
+      const found = safeOptions.value.find((o) => String(o.value) === selectedValues.value[0])
+      return found ? found.label : '1 dipilih'
+    }
+    return `${count} item dipilih`
+  }
   if (props.modelValue === null || props.modelValue === undefined) return ''
-  const found = props.options.find(o => o.value === props.modelValue)
+  const found = safeOptions.value.find((o) => o.value === props.modelValue)
   return found ? found.label : ''
 })
 
 const MAX_VISIBLE_OPTIONS = 50
 
 const filteredOptions = computed(() => {
-  if (!searchQuery.value.trim()) return props.options
+  const opts = safeOptions.value
+  if (!searchQuery.value.trim()) return opts
   const q = searchQuery.value.toLowerCase()
-  return props.options.filter(o => o.label.toLowerCase().includes(q))
+  return opts.filter((o) => String(o.label || '').toLowerCase().includes(q))
 })
 
 // Batasi DOM yang di-render agar dropdown dengan ratusan opsi tidak freeze.
@@ -73,8 +91,21 @@ function close() {
   highlightedIndex.value = -1
 }
 
+function isSelected(option: SelectOption) {
+  if (props.multiple) return selectedValues.value.includes(String(option.value))
+  return option.value === props.modelValue
+}
+
 function select(option: SelectOption) {
   if (option.disabled) return
+  if (props.multiple) {
+    const current = Array.isArray(props.modelValue) ? [...props.modelValue] : []
+    const idx = current.findIndex((v) => String(v) === String(option.value))
+    if (idx >= 0) current.splice(idx, 1)
+    else current.push(option.value)
+    emit('update:modelValue', current)
+    return
+  }
   emit('update:modelValue', option.value)
   close()
 }
@@ -165,7 +196,7 @@ watch(() => searchQuery.value, () => {
 
     <Transition name="dropdown">
       <div v-if="isOpen" class="custom-select__dropdown">
-        <div v-if="searchable && options.length > 5" class="custom-select__search-wrap">
+        <div v-if="searchable && safeOptions.length > 5" class="custom-select__search-wrap">
           <svg class="custom-select__search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
             <circle cx="7" cy="7" r="5.25" stroke="currentColor" stroke-width="1.5"/>
             <path d="M11 11L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -185,18 +216,21 @@ watch(() => searchQuery.value, () => {
             :key="option.value"
             class="custom-select__option"
             :class="{
-              'is-selected': option.value === modelValue,
+              'is-selected': isSelected(option),
               'is-highlighted': idx === highlightedIndex,
               'is-disabled': option.disabled,
             }"
             role="option"
-            :aria-selected="option.value === modelValue"
+            :aria-selected="isSelected(option)"
             :aria-disabled="option.disabled"
             @mouseenter="highlightedIndex = idx"
             @click="select(option)"
           >
-            <span class="custom-select__option-label">{{ option.label }}</span>
-            <svg v-if="option.value === modelValue" class="custom-select__check" width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <span class="custom-select__option-left">
+              <input v-if="multiple" type="checkbox" class="custom-select__checkbox" :checked="isSelected(option)" tabindex="-1" @click.stop="select(option)" />
+              <span class="custom-select__option-label">{{ option.label }}</span>
+            </span>
+            <svg v-if="!multiple && isSelected(option)" class="custom-select__check" width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </li>
@@ -402,6 +436,21 @@ watch(() => searchQuery.value, () => {
 
 .custom-select__option:active {
   background: var(--color-surface-sunken);
+}
+
+.custom-select__option-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.custom-select__checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-primary);
+  flex-shrink: 0;
 }
 
 .custom-select__option-label {

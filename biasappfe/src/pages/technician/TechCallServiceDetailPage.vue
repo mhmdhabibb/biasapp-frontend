@@ -44,7 +44,11 @@ const {
   findUnit,
   findProduct,
   findTechnician,
-  getTechnicianIdByUser, refreshInBackground, refreshOnly } = useMasterStore()
+  getTechnicianIdByUser,
+  refreshInBackground,
+  refreshOnly,
+  formatUnitDisplayName,
+} = useMasterStore()
 
 const serviceId = String(route.params.id)
 const directJobData = ref<any>(null)
@@ -423,9 +427,11 @@ function initDoForm(force = false) {
     time_out: d.time_out || doForm.value.time_out || '',
     is_tested: !!d.is_tested,
     is_completed: !!d.is_completed,
-    customer_signature: (d.customer_signature && d.customer_signature !== 'signed') ? d.customer_signature : (doForm.value.customer_signature || theCustomer?.signature || ''),
+    customer_signature: (theCustomer?.signature && theCustomer.signature !== 'signed')
+      ? theCustomer.signature
+      : ((d.customer_signature && d.customer_signature !== 'signed') ? d.customer_signature : (doForm.value.customer_signature || '')),
     technician_signature: (d.technician_signature && d.technician_signature !== 'signed') ? d.technician_signature : (doForm.value.technician_signature || ''),
-    customer_name: d.customer_name || d.recipient_name || theCustomer?.pic_name || theCustomer?.company_name || theCustomer?.name || '',
+    customer_name: theCustomer?.pic_name || theCustomer?.company_name || theCustomer?.name || d.customer_name || d.recipient_name || '',
     technician_name: d.technician_name || currentUser.value?.name || '',
     customer_category: resolveTransactionCustomerType(d),
     photo_before: d.photo_before || doForm.value.photo_before || '',
@@ -455,6 +461,19 @@ watchEffect(() => {
     isDoFormInit.value = false
   }
   if (isDeliveryJob.value && deliveryOrder.value && !isDoFormInit.value) initDoForm()
+})
+
+const masterDoCustomerSignature = computed(() => {
+  const sig = String((doCustomer.value as any)?.signature || '').trim()
+  return sig && sig !== 'signed' ? sig : ''
+})
+const hasMasterDoCustomerSignature = computed(() => !!masterDoCustomerSignature.value)
+
+watch(masterDoCustomerSignature, (sig) => {
+  if (!sig) return
+  if (!doForm.value.customer_signature || doForm.value.customer_signature === 'signed') doForm.value.customer_signature = sig
+  const masterName = String((doCustomer.value as any)?.pic_name || (doCustomer.value as any)?.company_name || (doCustomer.value as any)?.name || '').trim()
+  if (masterName) doForm.value.customer_name = masterName
 })
 
 const isDeliveryFormCompleted = computed(() => {
@@ -978,6 +997,7 @@ async function createStandalone() {
       finalProjectName = addr ? `Pengantaran ${summary} ke ${addr}` : `Pengantaran ${summary}`
     }
 
+    const masterCust = custId ? findCustomer(custId) : null
     const newDo = await resources.deliveryOrders.create({
         do_type: 'service',
         status: 'pending',
@@ -985,12 +1005,14 @@ async function createStandalone() {
         customer_category: resolveTransactionCustomerType(d || sr || job.value),
         project_name: finalProjectName,
         delivery_address: resolvedDeliveryAddress.value !== '-' ? resolvedDeliveryAddress.value : (d?.delivery_address || sr?.customer?.address || ''),
-        recipient_name: d?.recipient_name || sr?.customer?.pic_name || '',
-        recipient_phone: d?.recipient_phone || sr?.customer?.phone || '',
+        recipient_name: d?.recipient_name || sr?.customer?.pic_name || (masterCust as any)?.pic_name || '',
+        recipient_phone: d?.recipient_phone || sr?.customer?.phone || (masterCust as any)?.phone || '',
         technician_id: techId,
         notes: d?.notes || '',
         delivery_date: new Date().toISOString(),
         time_in: timeIn,
+        customer_signature: (masterCust as any)?.signature || sr?.customer?.signature || d?.customer_signature || '',
+        customer_name: (masterCust as any)?.pic_name || sr?.customer?.pic_name || d?.customer_name || '',
     })
     toast.success('Service History baru (Stand Alone) berhasil dibuat.')
     await refreshOnly(['deliveryOrders'])
@@ -1046,8 +1068,9 @@ function syncSurveyFormFromData(force = false) {
   const syncKey = `${s.id || ''}:${s.updated_at || ''}`
   if (!force && lastSyncedSurveyKey.value === syncKey) return
   lastSyncedSurveyKey.value = syncKey
+  const unitLabel = s.unit ? formatUnitDisplayName(s.unit) : ''
   surveyForm.value = {
-    recommended_model: s.recommended_model || s.unit?.model || '',
+    recommended_model: s.recommended_model || unitLabel || s.unit?.model || '',
     photo_locations: normalizeSurveyPhotos(s),
     attachments: Array.isArray(s.attachments) ? [...s.attachments] : [],
     technician_notes: s.technician_notes || '',
@@ -1240,7 +1263,7 @@ async function handleDownloadSavedAttachment(att: any) {
           </div>
           <div class="info-item">
             <span class="info-label">Unit Minat Awal</span>
-            <span class="info-value">{{ surveyData?.unit?.model ? `${surveyData.unit.model} (SN: ${surveyData.unit.serial_no || '-'})` : '-' }}</span>
+            <span class="info-value">{{ surveyData?.unit ? formatUnitDisplayName(surveyData.unit) : '-' }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">Status Job</span>
@@ -1484,7 +1507,7 @@ async function handleDownloadSavedAttachment(att: any) {
           <h3 class="text-md font-bold mb-sm">Items ({{ doItems.length }})</h3>
           <div v-if="doItems.length > 0">
             <div v-for="(it, idx) in doItems" :key="idx" class="text-sm p-md mb-sm" style="background: var(--color-surface-sunken); border-radius: var(--radius-md); display: flex; justify-content: space-between; align-items: center;">
-              <span>{{ idx + 1 }}. {{ doItemLabel(it) }}</span>
+              <span>{{ idx + 1 }}. {{ doItemLabel(it) }} <span v-if="it.is_first_installation" class="badge badge-success" style="margin-left:6px;font-size:10px;">First Installation</span></span>
               <button v-if="it.unit_id && (job.status === 'in_progress' || job.status === 'draft')" class="btn btn-outline btn-sm" style="padding: 2px 8px; font-size: 0.7rem;" @click="openEditSn(it)">Edit SN</button>
             </div>
           </div>
@@ -1662,10 +1685,14 @@ async function handleDownloadSavedAttachment(att: any) {
               </div>
             </div>
             <div class="form-group" style="flex: 1;">
-              <label class="form-label">Customer / PIC Name <span v-if="isEditable" class="text-danger">*</span></label>
-              <input v-model="doForm.customer_name" type="text" class="form-input" placeholder="Customer PIC name" :disabled="!isEditable">
+              <label class="form-label">Customer / PIC Name <span v-if="isEditable && !hasMasterDoCustomerSignature" class="text-danger">*</span></label>
+              <input v-model="doForm.customer_name" type="text" class="form-input" :readonly="hasMasterDoCustomerSignature" :disabled="!isEditable || hasMasterDoCustomerSignature" placeholder="Customer PIC name">
               <label class="form-label mt-sm">Customer Signature <span v-if="isEditable" class="text-danger">*</span></label>
-              <div :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
+              <div v-if="hasMasterDoCustomerSignature" style="border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px; text-align: center; background: #fff; pointer-events: none;">
+                <img :src="masterDoCustomerSignature" alt="Customer Signature" style="max-height: 120px;" />
+                <div class="text-xs text-muted mt-xs">Tanda tangan customer (dari master/pengaturan awal)</div>
+              </div>
+              <div v-else :style="{ pointerEvents: isEditable ? 'auto' : 'none' }">
                 <SignaturePad v-model="doForm.customer_signature" height="150px" />
               </div>
             </div>

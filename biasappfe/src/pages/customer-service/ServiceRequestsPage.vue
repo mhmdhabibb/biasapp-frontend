@@ -856,9 +856,27 @@ function findJobOrderForRequest(reqId: string | number) {
   );
 }
 
+function findServiceReportForRequest(reqId: string | number) {
+  const jo = findJobOrderForRequest(reqId)
+  if (!jo) return null
+  return (serviceReports.value as any[]).find(
+    (sr: any) => String(sr.job_order_id || '') === String(jo.id),
+  ) || null
+}
+
+function getJobRefLabel(reqId: string | number) {
+  const sr = findServiceReportForRequest(reqId)
+  const srNo = String(sr?.report_no || sr?.service_report_no || '').trim()
+  if (srNo) return srNo
+  return String(findJobOrderForRequest(reqId)?.job_order_no || '')
+}
+
 function goToServiceReport(jo: any) {
-  if (!jo?.job_order_no) return;
-  router.push({ path: '/customer-service/service-reports', query: { q: jo.job_order_no } });
+  if (!jo) return
+  const sr = (serviceReports.value as any[]).find((r: any) => String(r.job_order_id || '') === String(jo.id))
+  const q = sr?.report_no || sr?.service_report_no || jo?.job_order_no
+  if (!q) return
+  router.push({ path: '/customer-service/service-reports', query: { q } })
 }
 
 const showAssignModal = ref(false);
@@ -1173,34 +1191,9 @@ onUnmounted(() => {
       "
     >
       <template #toolbar>
-        <div
-          v-if="listTab === 'external'"
-          style="display: flex; align-items: center; gap: 8px"
-        >
-          <label
-            style="
-              font-size: 12px;
-              font-weight: 600;
-              color: var(--color-text-muted);
-              white-space: nowrap;
-            "
-            >Tipe Pembelian:</label
-          >
-          <select
-            v-model="externalTypeFilter"
-            class="form-select"
-            style="
-              min-width: 200px;
-              height: 36px;
-              padding: 0 10px;
-              font-size: 13px;
-              border-radius: 6px;
-              border: 1px solid var(--color-border);
-              background: var(--color-surface, #fff);
-              color: var(--color-text);
-              cursor: pointer;
-            "
-          >
+        <div v-if="listTab === 'external'" class="external-toolbar">
+          <label class="external-toolbar__label">Tipe Pembelian</label>
+          <select v-model="externalTypeFilter" class="form-select external-toolbar__select">
             <option value="all">Semua</option>
             <option value="legacy_rental">Rental lama (sebelum sistem)</option>
             <option value="external_purchase">Beli dari toko lain</option>
@@ -1211,33 +1204,16 @@ onUnmounted(() => {
         new Date(value).toLocaleDateString("en-GB")
       }}</template>
       <template #cell-request_no="{ value, row }">
-        <span class="mono">{{ value }}</span>
-        <span
-          v-if="row?.is_external"
-          class="unit-source-badge badge-external"
-          title="Unit di luar milik perusahaan"
-          >Eksternal</span
-        >
-        <span
-          v-if="row?.is_external"
-          class="unit-source-badge"
-          :class="
-            (row?.external_type || 'legacy_rental') === 'external_purchase'
-              ? 'badge-outside'
-              : 'badge-running'
-          "
-          :title="
-            (row?.external_type || 'legacy_rental') === 'external_purchase'
-              ? 'Unit dibeli dari toko lain'
-              : 'Rental yang sudah berjalan sebelum ada sistem'
-          "
-        >
-          {{
-            (row?.external_type || "legacy_rental") === "external_purchase"
-              ? "Beli Toko Lain"
-              : "Rental Lama"
-          }}
-        </span>
+        <div class="req-no-cell">
+          <span class="mono">{{ value }}</span>
+          <div v-if="row?.is_external" class="req-badges">
+            <span class="unit-source-badge badge-external" title="Unit di luar milik perusahaan">Eksternal</span>
+            <span
+              class="unit-source-badge"
+              :class="(row?.external_type || 'legacy_rental') === 'external_purchase' ? 'badge-outside' : 'badge-running'"
+            >{{ (row?.external_type || "legacy_rental") === "external_purchase" ? "Beli Toko Lain" : "Rental Lama" }}</span>
+          </div>
+        </div>
       </template>
       <template #cell-status="{ value }">
         <span
@@ -1253,13 +1229,13 @@ onUnmounted(() => {
       </template>
       <template #cell-_job_ref="{ row }">
         <a
-          v-if="findJobOrderForRequest(row.id)?.job_order_no"
+          v-if="getJobRefLabel(row.id)"
           href="#"
           style="color: var(--color-primary); font-weight: 600; font-size: 12px; text-decoration: underline; cursor: pointer; white-space: nowrap;"
           @click.prevent="goToServiceReport(findJobOrderForRequest(row.id))"
-          :title="`Lihat Service Report untuk ${findJobOrderForRequest(row.id)?.job_order_no}`"
+          :title="`Lihat Service Report untuk ${getJobRefLabel(row.id)}`"
         >
-          {{ findJobOrderForRequest(row.id)?.job_order_no }}
+          {{ getJobRefLabel(row.id) }}
         </a>
         <span v-else class="text-muted" style="font-size: 11px;">—</span>
       </template>
@@ -1290,12 +1266,17 @@ onUnmounted(() => {
             (can('job_order:create') || can('service_request:update')) &&
             (row.status === 'pending' || row.status === 'assigned')
           "
-          class="btn btn-sm btn-outline"
+          class="action-btn"
           :title="findJobOrderForRequest(row.id)?.technician_id ? 'Re-assign Teknisi' : 'Assign Teknisi'"
           @click="openAssign(row)"
-          style="color: var(--color-primary); border-color: var(--color-primary); font-size: 11px; padding: 3px 8px;"
+          style="color: var(--color-primary); border-color: transparent;"
         >
-          {{ findJobOrderForRequest(row.id)?.technician_id ? 'Re-assign' : 'Assign' }}
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
         </button>
         <button
           v-if="
@@ -1939,8 +1920,14 @@ onUnmounted(() => {
       </div>
       <template #footer>
         <button type="button" class="btn btn-outline" @click="showAssignModal = false" :disabled="isAssigning">Cancel</button>
-        <button type="button" class="btn btn-primary" @click="handleAssignSubmit" :disabled="isAssigning">
-          {{ isAssigning ? 'Saving...' : 'Assign Teknisi' }}
+        <button type="button" class="btn btn-primary assign-icon-btn" @click="handleAssignSubmit" :disabled="isAssigning" :title="findJobOrderForRequest(assigningRequest?.id)?.technician_id ? 'Re-assign Teknisi' : 'Assign Teknisi'">
+          <svg v-if="!isAssigning" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
+          <span v-else>...</span>
         </button>
       </template>
     </FormModal>
@@ -2017,22 +2004,18 @@ onUnmounted(() => {
   margin-bottom: 8px;
 }
 
-.badge-external {
-  background: #fef3c7;
-  color: #92400e;
-  margin-left: 8px;
-}
-
-.badge-running {
-  background: #dbeafe;
-  color: #1d4ed8;
-  margin-left: 8px;
-}
-
-.badge-outside {
-  background: #fce7f3;
-  color: #be185d;
-  margin-left: 8px;
+.req-no-cell { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.req-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.badge-external { background: #fef3c7; color: #92400e; }
+.badge-running { background: #dbeafe; color: #1d4ed8; }
+.badge-outside { background: #fce7f3; color: #be185d; }
+.unit-source-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.external-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.external-toolbar__label { font-size: 12px; font-weight: 600; color: var(--color-text-muted); white-space: nowrap; }
+.external-toolbar__select { min-width: 220px; height: 36px; padding: 0 10px; font-size: 13px; border-radius: 6px; }
+@media (max-width: 768px) {
+  .external-toolbar { width: 100%; }
+  .external-toolbar__select { width: 100%; min-width: 0; }
 }
 
 .badge-sale {

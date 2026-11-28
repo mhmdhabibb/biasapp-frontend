@@ -2,20 +2,14 @@
 import { computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import PageHeader from "@/components/ui/PageHeader.vue";
-import DashboardSkeleton from "@/components/ui/DashboardSkeleton.vue";
+/* no skeleton on auto-refresh */
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
 
 const route = useRoute();
 const router = useRouter();
 const { ensureResourcesLoaded, loadedResources } = useMasterStore();
-const dashboardResources = [
-  "serviceSpareparts", "purchaseOrders", "deliveryOrders", "rentalInvoices",
-  "salesInvoices",
-];
-const isDashboardLoading = computed(() =>
-  dashboardResources.some((resource) => !loadedResources.value.has(resource)),
-);
+// no loading skeleton on dashboard auto-refresh
 
 onMounted(() => {
   ensureResourcesLoaded(route.path);
@@ -105,8 +99,7 @@ const completionPercentage = computed(() => {
 </script>
 
 <template>
-  <DashboardSkeleton v-if="isDashboardLoading" variant="accounting" />
-  <div v-else class="dashboard-container">
+  <div class="dashboard-container">
     <PageHeader title="Accounting Dashboard" />
     <p class="subtitle">
       Monitor and manage your financial and procurement operations.

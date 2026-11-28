@@ -65,6 +65,7 @@ const isUpdatingServiceType = ref(false)
 const form = ref({
   service_type: 'preventif',
   preventive_action: '',
+  repair_action: '',
   remarks: '',
   notes: '',
   is_tested: false,
@@ -105,6 +106,7 @@ onMounted(async () => {
     form.value = {
       service_type: job.value.service_type || linkedJobOrder.value?.service_request?.service_type || 'preventif',
       preventive_action: job.value.preventive_action || '',
+      repair_action: job.value.repair_action || '',
       remarks: job.value.remarks || '',
       notes: job.value.notes || '',
       is_tested: job.value.is_tested || false,
@@ -146,6 +148,7 @@ onMounted(async () => {
       form.value = {
         service_type: data.service_type || form.value.service_type || linkedJobOrder.value?.service_request?.service_type || 'preventif',
         preventive_action: data.preventive_action || form.value.preventive_action || '',
+        repair_action: data.repair_action || form.value.repair_action || '',
         remarks: data.remarks || form.value.remarks || '',
         notes: data.notes || form.value.notes || '',
         is_tested: data.is_tested ?? form.value.is_tested ?? false,
@@ -348,9 +351,14 @@ async function saveForm() {
       customer_category: customerType.value,
       service_type: form.value.service_type || 'preventif',
       preventive_action: form.value.preventive_action || '',
+      repair_action: form.value.repair_action || '',
       remarks: form.value.remarks,
       notes: form.value.notes,
       is_tested: form.value.is_tested,
+      customer_signature: form.value.customer_signature,
+      technician_signature: form.value.technician_signature,
+      customer_name: form.value.customer_name,
+      technician_name: form.value.technician_name,
       customer_signature_technical: form.value.customer_signature,
       technician_signature_technical: form.value.technician_signature,
       customer_name_technical: form.value.customer_name,
@@ -408,6 +416,11 @@ async function saveForm() {
       <div v-if="form.service_type === 'preventif'" class="form-group">
         <label class="form-label">Tindakan Preventif</label>
         <textarea v-model="form.preventive_action" class="form-textarea" rows="3" placeholder="Deskripsikan tindakan preventif yang dilakukan..."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Repair Action / Tindakan Perbaikan</label>
+        <textarea v-model="form.repair_action" class="form-textarea" rows="3" placeholder="Apa tindakan perbaikan yang dilakukan?"></textarea>
       </div>
 
       <!-- 2. Photo Before -->

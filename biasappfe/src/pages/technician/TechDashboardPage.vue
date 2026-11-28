@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import PageHeader from "@/components/ui/PageHeader.vue";
-import DashboardSkeleton from "@/components/ui/DashboardSkeleton.vue";
+/* no skeleton on auto-refresh */
 import { useAuth } from "@/composables/useAuth";
 import { useAutoRefresh } from "@/composables/useAutoRefresh";
 import { useMasterStore } from "@/composables/useMasterStore";
@@ -30,9 +30,7 @@ const { ensureResourcesLoaded, loadedResources } = useMasterStore()
 const dashboardResources = [
   "jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests",
 ]
-const isDashboardLoading = computed(() =>
-  dashboardResources.some((resource) => !loadedResources.value.has(resource)),
-)
+// no dashboard loading skeleton on refresh
 const {
   jobOrders,
   serviceReports,
@@ -282,8 +280,7 @@ function getDisplayJobNo(job: any): string {
 </script>
 
 <template>
-  <DashboardSkeleton v-if="isDashboardLoading" variant="technician" />
-  <div v-else class="tech-dashboard">
+  <div class="tech-dashboard">
     <div class="welcome-header">
       <div class="user-greeting">
         <h1 class="greeting-title">

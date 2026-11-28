@@ -33,12 +33,12 @@ const { deliveryOrders, jobOrders, technicians, findCustomer, findTechnician, re
 watch(() => (deliveryOrders.value as any[]).length, (n) => emit('count', n), { immediate: true })
 
 const columns: TableColumn[] = [
-  { key: 'delivery_no', label: 'Delivery No' },
-  { key: 'customer_id', label: 'Customer' },
-  { key: 'contract_item_id', label: 'Contract Ref' },
-  { key: 'assigned_to', label: 'Assigned Technician' },
-  { key: 'delivery_date', label: 'Delivery Date' },
-  { key: 'status', label: 'Status' },
+  { key: 'delivery_no', label: 'DO No', width: '170px' },
+  { key: 'customer_id', label: 'Customer', minWidth: '180px', wrap: true },
+  { key: 'contract_item_id', label: 'Ref', width: '130px' },
+  { key: 'assigned_to', label: 'Teknisi', width: '170px' },
+  { key: 'delivery_date', label: 'Date', width: '110px' },
+  { key: 'status', label: 'Status', width: '110px' },
 ]
 
 function getCustomer(id: number | null) {
@@ -194,8 +194,11 @@ async function markDelivered(row: any) {
 <template>
   <div>
     <PageHeader v-if="!embedded" title="Delivery & Installation Monitoring" />
-    <DataTable :columns="columns" :data="deliveryOrders" search-placeholder="Search delivery...">
-      <template #cell-customer_id="{ value }">{{ getCustomer(value) }}</template>
+    <DataTable :columns="columns" :data="deliveryOrders" search-placeholder="Search delivery..." :scrollable="false" class="dm-table">
+      <template #cell-delivery_no="{ row }">
+        <span class="do-no-cell">{{ row.delivery_no || row.do_number || '-' }}</span>
+      </template>
+      <template #cell-customer_id="{ value }"><span class="customer-cell">{{ getCustomer(value) }}</span></template>
       <template #cell-assigned_to="{ row }">
         <template v-if="getDoTeam(row).leadName">
           <div style="display: flex; flex-direction: column; gap: 2px;">
@@ -216,17 +219,26 @@ async function markDelivered(row: any) {
         {{ value ? new Date(value).toLocaleDateString() : '-' }}
       </template>
       <template #actions="{ row }">
-        <button
-          v-if="(can('job_order:create') || can('delivery_order:update')) && !isDoCompleted(row) && String(row.do_type || '').toLowerCase() !== 'inbound'"
-          class="btn btn-sm btn-outline"
-          style="color: var(--color-primary); border-color: var(--color-primary); margin-right: 0.5rem;"
-          @click="openAssign(row)"
-        >
-          {{ findJobOrderForDO(row.id)?.technician_id || row.technician_id ? 'Re-assign' : 'Assign' }}
-        </button>
-        <button v-if="can('delivery_order:update')" class="btn btn-sm btn-outline" @click="openEdit(row)">Edit Report</button>
-        <button v-if="can('delivery_order:update') && String(row.status || '').toLowerCase() !== 'delivered'" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="markDelivered(row)">Mark Delivered</button>
-        <button v-if="can('delivery_order:read') && hasDeliveryHistory(row) && String(row.do_type || '').toLowerCase() !== 'inbound'" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="printServiceHistory(row)">Print Service History</button>
+        <div class="dm-actions">
+          <button
+            v-if="(can('job_order:create') || can('delivery_order:update')) && !isDoCompleted(row) && String(row.do_type || '').toLowerCase() !== 'inbound'"
+            class="action-btn"
+            style="color: var(--color-primary); border-color: transparent;"
+            :title="findJobOrderForDO(row.id)?.technician_id || row.technician_id ? 'Re-assign' : 'Assign'"
+            @click="openAssign(row)"
+          >
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+          </button>
+          <button v-if="can('delivery_order:update')" class="action-btn" title="Edit Report" @click="openEdit(row)">
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button v-if="can('delivery_order:update') && String(row.status || '').toLowerCase() !== 'delivered'" class="action-btn" title="Mark Delivered" @click="markDelivered(row)">
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+          <button v-if="can('delivery_order:read') && hasDeliveryHistory(row) && String(row.do_type || '').toLowerCase() !== 'inbound'" class="action-btn" title="Print Service History" @click="printServiceHistory(row)">
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          </button>
+        </div>
       </template>
     </DataTable>
 
@@ -292,3 +304,18 @@ async function markDelivered(row: any) {
     />
   </div>
 </template>
+
+<style scoped>
+.do-no-cell { font-size: 12px; font-weight: 600; white-space: nowrap; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.customer-cell { font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dm-actions { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.dm-actions .action-btn { flex-shrink: 0; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--color-border-light, #e2e8f0); border-radius: 6px; background: #fff; cursor: pointer; }
+.dm-actions .action-btn:hover { background: var(--color-surface-sunken, #f8fafc); }
+:deep(.dm-table .data-table) { table-layout: fixed; width: 100%; }
+:deep(.dm-table th), :deep(.dm-table td) { padding: 10px 8px; font-size: 12px; vertical-align: middle; }
+:deep(.dm-table td:nth-child(1)) { overflow: hidden; }
+@media (max-width: 900px) {
+  :deep(.dm-table .data-table) { table-layout: auto; min-width: 760px; }
+  :deep(.dm-table .table-wrap), :deep(.dm-table .table-container) { overflow-x: auto; }
+}
+</style>

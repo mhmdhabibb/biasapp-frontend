@@ -349,22 +349,22 @@ async function saveAssign() {
         <table class="table sa-table">
           <thead>
             <tr>
-              <th>No. DO</th>
+              <th>DO</th>
               <th>Customer</th>
               <th>Date</th>
               <th>Items</th>
               <th>Status</th>
-              <th>Keterangan / Alasan</th>
-              <th>Technician</th>
-              <th>Job Order</th>
-              <th>JO Status</th>
-              <th class="th-actions">Actions</th>
+              <th>Keterangan</th>
+              <th>Tech</th>
+              <th>JO</th>
+              <th>JO St</th>
+              <th class="th-actions">Act</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in paginatedList" :key="row.id">
               <td class="td-do-number">
-                <span class="do-number-text">{{ row.do_number || '-' }}</span>
+                <span class="do-number-text" :title="row.do_number || '-'">{{ row.do_number || '-' }}</span>
               </td>
               <td>
                 <div class="font-bold">{{ customerName(row.customer_id) }}</div>
@@ -424,10 +424,9 @@ async function saveAssign() {
                     type="button"
                     class="btn btn-sm btn-primary"
                     @click="router.push(`/technician/standalone-service-history/${row.id}`)"
-                    title="View / Fill Detail"
+                    title="View"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    <span class="btn-label">View</span>
                   </button>
 
                   <button
@@ -435,10 +434,9 @@ async function saveAssign() {
                     type="button"
                     class="btn btn-sm btn-outline btn-edit-action"
                     @click="openEditModal(row)"
-                    title="Edit detail"
+                    title="Edit"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    <span class="btn-label">Edit</span>
                   </button>
 
                   <button
@@ -449,7 +447,6 @@ async function saveAssign() {
                     :title="findJobOrderForDO(row.id) ? 'Re-assign Job' : 'Assign ke Job Order'"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-                    <span class="btn-label">{{ findJobOrderForDO(row.id) ? 'Re-assign' : 'Assign' }}</span>
                   </button>
 
                   <button
@@ -458,10 +455,9 @@ async function saveAssign() {
                     class="btn btn-sm btn-outline btn-danger"
                     :disabled="deletingId === String(row.id)"
                     @click="removeStandalone(row)"
-                    title="Hapus form"
+                    title="Hapus"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    <span class="btn-label">{{ deletingId === String(row.id) ? '...' : 'Delete' }}</span>
                   </button>
                 </div>
               </td>
@@ -552,9 +548,10 @@ async function saveAssign() {
                 v-if="(isSuperadminOrAdmin || can('job_order:create')) && !isRowCompleted(row)"
                 type="button"
                 class="btn btn-sm btn-outline btn-assign-action m-action-btn"
+                :title="findJobOrderForDO(row.id) ? 'Re-assign' : 'Assign'"
                 @click="openAssignModal(row)"
               >
-                👤 {{ findJobOrderForDO(row.id) ? 'Re-assign' : 'Assign' }}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
               </button>
               <button
                 v-if="isSuperadminOrAdmin || can('delivery_order:delete')"
@@ -669,8 +666,14 @@ async function saveAssign() {
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" @click="showAssignModal = false" :disabled="assignSaving">Cancel</button>
-          <button type="button" class="btn btn-primary" @click="saveAssign" :disabled="assignSaving">
-            {{ assignSaving ? 'Saving...' : (findJobOrderForDO(assigningRow?.id) ? 'Update Assignment' : 'Create Job Order & Assign') }}
+          <button type="button" class="btn btn-primary assign-icon-btn" @click="saveAssign" :disabled="assignSaving" :title="findJobOrderForDO(assigningRow?.id) ? 'Re-assign' : 'Assign'">
+            <svg v-if="!assignSaving" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="23" y1="11" x2="17" y2="11"></line>
+            </svg>
+            <span v-else>...</span>
           </button>
         </div>
       </div>
@@ -729,23 +732,22 @@ async function saveAssign() {
 }
 
 .sa-table {
-  min-width: 1820px;
   width: 100%;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
 }
 
-.sa-table th:nth-child(1), .sa-table td:nth-child(1) { width: 140px; }
-.sa-table th:nth-child(2), .sa-table td:nth-child(2) { width: 240px; }
-.sa-table th:nth-child(3), .sa-table td:nth-child(3) { width: 120px; }
-.sa-table th:nth-child(4), .sa-table td:nth-child(4) { width: 145px; }
-.sa-table th:nth-child(5), .sa-table td:nth-child(5) { width: 120px; }
-.sa-table th:nth-child(6), .sa-table td:nth-child(6) { width: 210px; }
-.sa-table th:nth-child(7), .sa-table td:nth-child(7) { width: 145px; }
-.sa-table th:nth-child(8), .sa-table td:nth-child(8) { width: 160px; }
-.sa-table th:nth-child(9), .sa-table td:nth-child(9) { width: 130px; }
-.sa-table th:nth-child(10), .sa-table td:nth-child(10) { width: 410px; }
+.sa-table th:nth-child(1), .sa-table td:nth-child(1) { width: 110px; }
+.sa-table th:nth-child(2), .sa-table td:nth-child(2) { width: 170px; }
+.sa-table th:nth-child(3), .sa-table td:nth-child(3) { width: 88px; }
+.sa-table th:nth-child(4), .sa-table td:nth-child(4) { width: 120px; }
+.sa-table th:nth-child(5), .sa-table td:nth-child(5) { width: 88px; }
+.sa-table th:nth-child(6), .sa-table td:nth-child(6) { width: 160px; }
+.sa-table th:nth-child(7), .sa-table td:nth-child(7) { width: 110px; }
+.sa-table th:nth-child(8), .sa-table td:nth-child(8) { width: 110px; }
+.sa-table th:nth-child(9), .sa-table td:nth-child(9) { width: 90px; }
+.sa-table th:nth-child(10), .sa-table td:nth-child(10) { width: 170px; }
 
 .sa-table th {
   position: sticky;
@@ -797,7 +799,7 @@ async function saveAssign() {
 }
 
 .th-actions {
-  min-width: 410px;
+  width: 170px;
   text-align: center;
 }
 
@@ -823,7 +825,9 @@ async function saveAssign() {
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-  padding: 5px 7px;
+  padding: 5px 6px;
+  min-width: 30px;
+  justify-content: center;
   font-size: 12px;
   white-space: nowrap;
 }
@@ -831,6 +835,7 @@ async function saveAssign() {
 .action-btn-group .btn svg {
   flex-shrink: 0;
 }
+.action-btn-group .btn-label { display: none; }
 
 .btn-edit-action {
   border-color: #f59e0b !important;

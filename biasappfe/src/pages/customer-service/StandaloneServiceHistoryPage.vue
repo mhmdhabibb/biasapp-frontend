@@ -207,7 +207,7 @@ const isSaving = ref(false)
 
 const form = reactive({
   customer_id: null as any,
-  customer_category: 'Corporate' as string,
+  customer_category: 'Stand Alone' as string,
   project_name: '',
   delivery_address: '',
   recipient_name: '',
@@ -226,7 +226,7 @@ watch(
       if (!form.delivery_address) form.delivery_address = cust.address || ''
       if (!form.recipient_name) form.recipient_name = cust.pic_name || cust.company_name || cust.name || ''
       if (!form.recipient_phone) form.recipient_phone = cust.phone || ''
-      if (cust.category) form.customer_category = cust.category
+      form.customer_category = 'Stand Alone'
       if (!form.project_name && form.delivery_address) {
         form.project_name = `Pengantaran Unit ke ${form.delivery_address}`
       }
@@ -237,7 +237,7 @@ watch(
 function resetForm() {
   Object.assign(form, {
     customer_id: null,
-    customer_category: 'Corporate',
+    customer_category: 'Stand Alone',
     project_name: '',
     delivery_address: '',
     recipient_name: '',
@@ -258,7 +258,7 @@ function openEdit(row: any) {
   editingItem.value = row
   Object.assign(form, {
     customer_id: row.customer_id || null,
-    customer_category: row.customer_category || row.customer?.category || 'Corporate',
+    customer_category: row.customer_category || row.customer?.category || 'Stand Alone',
     project_name: row.project_name || '',
     delivery_address: row.delivery_address || '',
     recipient_name: row.recipient_name || '',
@@ -304,18 +304,21 @@ async function handleSubmit() {
       }
       toast.success('Customer detail diperbarui.')
     } else {
+      const cust = ((store.customers?.value || []) as any[]).find((c: any) => String(c.id) === String(form.customer_id))
       await resources.create('deliveryOrders', {
         do_type: 'service',
         status: 'pending',
         customer_id: form.customer_id,
-        customer_category: form.customer_category,
+        customer_category: form.customer_category || 'Stand Alone',
         project_name: form.project_name,
         delivery_address: form.delivery_address,
-        recipient_name: form.recipient_name,
-        recipient_phone: form.recipient_phone,
+        recipient_name: form.recipient_name || cust?.pic_name || cust?.company_name || '',
+        recipient_phone: form.recipient_phone || cust?.phone || '',
         delivery_date: form.delivery_date ? `${form.delivery_date}T00:00:00Z` : new Date().toISOString(),
         technician_id: form.technician_id,
         notes: form.notes,
+        customer_signature: cust?.signature || '',
+        customer_name: cust?.pic_name || cust?.company_name || cust?.name || '',
       })
       toast.success('Form service history baru dibuat.')
     }
@@ -728,57 +731,23 @@ defineExpose({ openAdd })
         </template>
         <template #actions="{ row }">
           <div class="action-buttons">
-            <button class="btn btn-sm btn-outline" @click="openDetail(row)" title="Lihat Detail Pekerjaan">
-              Detail
+            <button class="action-btn" @click="openDetail(row)" title="Detail">
+              <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
-            <button
-              v-if="can('delivery_order:update')"
-              class="btn btn-sm btn-outline btn-edit-action"
-              @click="openEdit(row)"
-              title="Edit Detail Customer"
-            >
-              Edit
+            <button v-if="can('delivery_order:update')" class="action-btn" @click="openEdit(row)" title="Edit">
+              <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
-            <button
-              v-if="(can('job_order:create') || can('delivery_order:update')) && !isRowCompleted(row)"
-              class="action-btn btn-assign-action"
-              style="color: var(--color-primary); border-color: transparent;"
-              @click="openAssign(row)"
-              :title="findJobOrderForDO(row.id) ? 'Re-assign Job Order' : 'Assign ke Job Order'"
-            >
-              <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="8.5" cy="7" r="4"></circle>
-                <line x1="20" y1="8" x2="20" y2="14"></line>
-                <line x1="23" y1="11" x2="17" y2="11"></line>
-              </svg>
+            <button v-if="(can('job_order:create') || can('delivery_order:update')) && !isRowCompleted(row)" class="action-btn" style="color: var(--color-primary); border-color: transparent;" @click="openAssign(row)" :title="findJobOrderForDO(row.id) ? 'Re-assign' : 'Assign'">
+              <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
             </button>
-            <button
-              v-if="can('delivery_order:read') && (row.status !== 'pending' || hasDeliveryHistory(row))"
-              class="btn btn-sm btn-outline"
-              @click="handlePrint(row)"
-              title="Print Report"
-            >
-              Print
+            <button v-if="can('delivery_order:read') && (row.status !== 'pending' || hasDeliveryHistory(row))" class="action-btn" @click="handlePrint(row)" title="Print">
+              <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
             </button>
-            <button
-              v-if="can('delivery_order:delete')"
-              class="btn btn-sm btn-outline btn-danger"
-              @click="openDelete(row)"
-              title="Hapus Data (Soft Delete)"
-            >
-              Hapus
+            <button v-if="can('delivery_order:delete')" class="action-btn" style="color: var(--color-danger);" @click="openDelete(row)" title="Hapus">
+              <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
-            <button
-              v-if="hardDelete.isSuperadmin"
-              class="btn btn-sm btn-outline btn-hard-delete"
-              @click="hardDelete.open(row)"
-              title="Hapus Permanen dari Database (Superadmin)"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 3px;">
-                <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"></path>
-              </svg>
-              Hard Delete
+            <button v-if="hardDelete.isSuperadmin" class="action-btn" style="color: #7f1d1d;" @click="hardDelete.open(row)" title="Hard Delete">
+              <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"></path></svg>
             </button>
           </div>
         </template>
