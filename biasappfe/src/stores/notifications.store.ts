@@ -6,19 +6,33 @@ import { ref } from "vue";
 const notifications = ref<Notification[]>([]);
 const isLoading = ref(false);
 const error = ref("");
+let inflightFetch: Promise<void> | null = null;
+
+if (typeof window !== "undefined") {
+  window.addEventListener("bias:auth-logout", () => {
+    notifications.value = [];
+    error.value = "";
+    isLoading.value = false;
+  });
+}
 
 export function useNotificationsStore() {
   async function fetchAll() {
+    if (inflightFetch) return inflightFetch;
     isLoading.value = true;
     error.value = "";
-    try {
-      notifications.value = (await notificationService.list()).data;
-    } catch (reason) {
-      error.value =
-        reason instanceof ApiError ? reason.message : "Failed to load data";
-    } finally {
-      isLoading.value = false;
-    }
+    inflightFetch = (async () => {
+      try {
+        notifications.value = (await notificationService.list()).data;
+      } catch (reason) {
+        error.value =
+          reason instanceof ApiError ? reason.message : "Failed to load data";
+      } finally {
+        isLoading.value = false;
+        inflightFetch = null;
+      }
+    })();
+    return inflightFetch;
   }
 
   async function create(data: Partial<Notification>) {

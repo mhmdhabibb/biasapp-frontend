@@ -8,6 +8,7 @@ import { useDemoMode } from "@/composables/useDemoMode";
 import { useIsSuperadmin } from "@/composables/useHardDelete";
 import { api } from "@/services/api";
 import { normalizeRole } from "@/router/role-access";
+import { prefetchRoute } from "@/router";
 import { onMounted, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
@@ -103,6 +104,18 @@ function navigate(itemRoute: string) {
   emit("close");
 }
 
+// Hover/focus intent prefetch: after a short dwell, warm the page's JS chunk
+// and its data so the click renders instantly.
+let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+function onItemIntent(itemRoute: string) {
+  if (hoverTimer) clearTimeout(hoverTimer);
+  if (itemRoute === route.path) return;
+  hoverTimer = setTimeout(() => prefetchRoute(itemRoute), 120);
+}
+function onItemLeave() {
+  if (hoverTimer) clearTimeout(hoverTimer);
+}
+
 function handleLogout() {
   logout();
   toastSuccess("Logout successful");
@@ -164,6 +177,10 @@ watch(
               class="menu-item"
               :class="{ 'menu-item-active': isActive(item.route) }"
               @click="navigate(item.route)"
+              @mouseenter="onItemIntent(item.route)"
+              @mouseleave="onItemLeave"
+              @focus="onItemIntent(item.route)"
+              @touchstart.passive="prefetchRoute(item.route)"
             >
               <svg
                 class="menu-icon"

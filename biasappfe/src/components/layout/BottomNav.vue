@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { prefetchRoute } from '@/router'
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
@@ -78,6 +79,8 @@ async function submitPwdChange() {
         class="nav-item" 
         :class="{ active: route.path === '/technician/dashboard' }"
         @click="navigate('/technician/dashboard')"
+        @mouseenter="prefetchRoute('/technician/dashboard')"
+        @touchstart.passive="prefetchRoute('/technician/dashboard')"
       >
         <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
@@ -90,6 +93,8 @@ async function submitPwdChange() {
         class="nav-item" 
         :class="{ active: route.path.startsWith('/technician/call-services') }"
         @click="navigate('/technician/call-services')"
+        @mouseenter="prefetchRoute('/technician/call-services')"
+        @touchstart.passive="prefetchRoute('/technician/call-services')"
       >
         <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
@@ -101,6 +106,8 @@ async function submitPwdChange() {
         class="nav-item" 
         :class="{ active: route.path.startsWith('/technician/maintenance') }"
         @click="navigate('/technician/maintenance')"
+        @mouseenter="prefetchRoute('/technician/maintenance')"
+        @touchstart.passive="prefetchRoute('/technician/maintenance')"
       >
         <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -116,6 +123,8 @@ async function submitPwdChange() {
         class="nav-item" 
         :class="{ active: route.path.startsWith('/technician/service-history') }"
         @click="navigate('/technician/service-history')"
+        @mouseenter="prefetchRoute('/technician/service-history')"
+        @touchstart.passive="prefetchRoute('/technician/service-history')"
       >
         <svg class="nav-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>

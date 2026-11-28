@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useAuth } from "@/composables/useAuth";
 import { useMasterStore } from "@/composables/useMasterStore";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useNavigationMenu } from "@/composables/useNavigationMenu";
+import { prefetchRouteChunksWhenIdle } from "@/router";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import BottomNav from "./BottomNav.vue";
 import Sidebar from "./Sidebar.vue";
@@ -10,8 +12,9 @@ import TopBar from "./TopBar.vue";
 const route = useRoute();
 const sidebarOpen = ref(false);
 
-const { refreshIfStale, refreshOnly, getResourcesForPath, ensureResourcesLoaded } = useMasterStore();
+const { refreshIfStale, refreshOnly, getResourcesForPath } = useMasterStore();
 const { currentUser } = useAuth();
+const { accessibleItems } = useNavigationMenu();
 
 let adminInterval: any = null;
 
@@ -29,35 +32,41 @@ const useMobileLayout = computed(() => {
   return isTechnician.value && windowWidth.value <= 768;
 });
 
-function refreshActivePageResources() {
+function refreshActivePageResources(maxAgeMs = 0) {
   if (document.visibilityState !== "visible") return;
   const activeResources = getResourcesForPath(route.path);
   if (activeResources && activeResources.length > 0) {
-    void refreshOnly(activeResources);
+    // maxAgeMs skips resources another poller (page/dashboard) just refreshed.
+    void refreshOnly(activeResources, false, maxAgeMs);
   } else {
     void refreshIfStale(30000);
   }
 }
 
+function onDataMutated() {
+  refreshActivePageResources(0);
+}
+
 onMounted(() => {
-  window.addEventListener("resize", handleResize);
+  window.addEventListener("resize", handleResize, { passive: true });
   // Polling silent setiap 30 detik agar data tetap sinkron tanpa membebani network
-  adminInterval = setInterval(refreshActivePageResources, 30000);
+  adminInterval = setInterval(() => refreshActivePageResources(25000), 30000);
   document.addEventListener("visibilitychange", onVisibleTab);
   window.addEventListener("focus", onVisibleTab);
-  window.addEventListener("bias:data-mutated", refreshActivePageResources);
+  window.addEventListener("bias:data-mutated", onDataMutated);
+  // Warm the JS chunks of every page in this user's menu during idle time so
+  // page-to-page navigation does not wait on a chunk download.
+  prefetchRouteChunksWhenIdle(accessibleItems.value.map((item: any) => item.route));
 });
 
-// Bila berpindah route/menu, pastikan resource halaman dimuat
-watch(() => route.path, (newPath) => {
-  void ensureResourcesLoaded(newPath);
-});
+// Route data loading is started by the router guard (router/index.ts) in
+// parallel with the chunk download; no duplicate trigger is needed here.
 
 onUnmounted(() => {
   window.removeEventListener("resize", handleResize);
   document.removeEventListener("visibilitychange", onVisibleTab);
   window.removeEventListener("focus", onVisibleTab);
-  window.removeEventListener("bias:data-mutated", refreshActivePageResources);
+  window.removeEventListener("bias:data-mutated", onDataMutated);
   if (adminInterval) clearInterval(adminInterval);
 });
 

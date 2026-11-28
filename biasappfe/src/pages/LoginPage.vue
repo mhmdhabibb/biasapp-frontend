@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useAuth } from '@/composables/useAuth'
 import { useToast } from '@/composables/useToast'
+import { prefetchRouteChunk } from '@/router'
 import { canView, routeNamesByMenuOrder } from '@/router/permission-map'
 import { homeRouteNameByRole, normalizeRole } from '@/router/role-access'
 import { ref, onMounted } from 'vue'
@@ -20,6 +21,19 @@ onMounted(() => {
   if (rememberedUser) {
     username.value = rememberedUser
     rememberMe.value = true
+  }
+  // Pre-warm dashboard chunks while the user types credentials so post-login
+  // navigation mounts the dashboard without waiting on a chunk round-trip.
+  const warmDashboards = () => {
+    prefetchRouteChunk('/customer-service/dashboard')
+    prefetchRouteChunk('/superadmin/dashboard')
+    prefetchRouteChunk('/accounting/dashboard')
+    prefetchRouteChunk('/technician/dashboard')
+  }
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    ;(window as any).requestIdleCallback(warmDashboards, { timeout: 1500 })
+  } else {
+    setTimeout(warmDashboards, 300)
   }
 })
 

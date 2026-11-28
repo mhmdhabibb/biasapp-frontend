@@ -9,8 +9,6 @@ import FormModal from "@/components/ui/FormModal.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import CustomSelect from "@/components/ui/CustomSelect.vue";
-import html2pdf from "html2pdf.js";
-import * as XLSX from "xlsx";
 import { resources } from "@/services/resource.service";
 import {
   type TableColumn,
@@ -18,11 +16,12 @@ import {
   type ProductCategory,
   type UOM,
 } from "@/types";
+import { useMasterStore } from "@/composables/useMasterStore";
 import { useToast } from "@/composables/useToast";
 import { useHardDelete } from '@/composables/useHardDelete';
 import { usePermission } from '@/composables/usePermission';
 import { downloadStyledExcel, NUMFMT_COUNT, NUMFMT_RP, type StyledCell } from "@/utils/exportHelpers";
-import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import { getCached } from "@/utils/requestCache";
 import { formatProductDisplayName } from "@/utils/format";
 
 const toast = useToast();
@@ -38,22 +37,34 @@ const columns: TableColumn[] = [
   { key: "is_sparepart", label: "Sparepart?", width: "90px" },
 ];
 
-const data = ref<Product[]>([]);
-const isLoading = ref(true);
-const categories = ref<ProductCategory[]>([]);
-const uoms = ref<UOM[]>([]);
+const masterStore = useMasterStore();
+const initialProducts =
+  (masterStore.products.value?.length ? (masterStore.products.value as Product[]) : null) ??
+  ((getCached<any>("GET:/products/?page=1&limit=1000")?.data as Product[] | undefined) ?? []);
+const initialCategories =
+  (getCached<any>("GET:/product-categories/?page=1&limit=1000")?.data as ProductCategory[] | undefined) ?? [];
+const initialUoms =
+  (masterStore.uoms.value?.length ? (masterStore.uoms.value as UOM[]) : null) ??
+  ((getCached<any>("GET:/uoms/?page=1&limit=1000")?.data as UOM[] | undefined) ?? []);
+
+const data = ref<Product[]>(initialProducts);
+const isLoading = ref(initialProducts.length === 0);
+const categories = ref<ProductCategory[]>(initialCategories);
+const uoms = ref<UOM[]>(initialUoms);
 
 const categoryOptions = computed(() => categories.value.map(c => ({ value: c.id, label: c.name })))
 const uomOptions = computed(() => uoms.value.map(u => ({ value: u.id, label: u.name })))
 
 async function fetchData() {
-  isLoading.value = true;
+  if (data.value.length === 0) isLoading.value = true;
   try {
-    const res = await resources.products.list();
+    const res = await resources.products.list(undefined, data.value.length === 0);
     data.value = Array.isArray(res.data) ? (res.data as any) : [];
   } catch (error) {
     console.error("Failed to fetch products:", error);
-    toast.error("Failed to fetch data: " + ((error as any).message || "Error"));
+    if (data.value.length === 0) {
+      toast.error("Failed to fetch data: " + ((error as any).message || "Error"));
+    }
   } finally {
     isLoading.value = false;
   }
@@ -380,11 +391,12 @@ async function exportStockExcel() {
   toast.success("Laporan stok berhasil diekspor ke Excel!");
 }
 
-function exportStockPdf() {
+async function exportStockPdf() {
   if (!data.value.length) {
     toast.error("Tidak ada data stok untuk diekspor");
     return;
   }
+  const { BIAS_LOGO_DATA_URL } = await import("@/utils/logoData");
   const dateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
   const totalItems = data.value.length;
   const totalQty = totalStockQty.value.toLocaleString('id-ID');

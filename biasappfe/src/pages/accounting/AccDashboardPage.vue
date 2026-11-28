@@ -11,7 +11,7 @@ const router = useRouter();
 const { ensureResourcesLoaded, loadedResources } = useMasterStore();
 const dashboardResources = [
   "serviceSpareparts", "purchaseOrders", "deliveryOrders", "rentalInvoices",
-  "salesInvoices", "payments",
+  "salesInvoices",
 ];
 const isDashboardLoading = computed(() =>
   dashboardResources.some((resource) => !loadedResources.value.has(resource)),

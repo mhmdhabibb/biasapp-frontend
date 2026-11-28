@@ -1,33 +1,59 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/services/api'
 import DashboardSkeleton from '@/components/ui/DashboardSkeleton.vue'
 import type { SuperadminDashboardStats } from '@/types'
+import { getCached } from '@/utils/requestCache'
+
+let lastSuperadminStats: SuperadminDashboardStats | null = null
 
 const router = useRouter()
-const isLoading = ref(true)
+const initialCached =
+  lastSuperadminStats ??
+  ((getCached<any>('GET:/dashboard/superadmin')?.data ?? null) as SuperadminDashboardStats | null)
+
+const isLoading = ref(!initialCached)
 const isRefreshing = ref(false)
 const errorMessage = ref('')
-const stats = ref<SuperadminDashboardStats | null>(null)
+const stats = ref<SuperadminDashboardStats | null>(initialCached)
 
 async function fetchStats(silent = false) {
-  if (!silent) isLoading.value = true
+  if (!silent && !stats.value) isLoading.value = true
   else isRefreshing.value = true
   errorMessage.value = ''
   try {
-    const res = await api.get<{ data: SuperadminDashboardStats }>('/dashboard/superadmin', !silent, false)
-    stats.value = (res as any)?.data ?? (res as any) ?? null
+    const res = await api.get<{ data: SuperadminDashboardStats }>(
+      '/dashboard/superadmin',
+      !silent && !stats.value,
+      !silent,
+    )
+    const next = (res as any)?.data ?? (res as any) ?? null
+    if (next) {
+      stats.value = next
+      lastSuperadminStats = next
+    }
   } catch (err: any) {
-    errorMessage.value = err?.message || 'Gagal memuat statistik dashboard superadmin.'
+    if (!stats.value) {
+      errorMessage.value = err?.message || 'Gagal memuat statistik dashboard superadmin.'
+    }
   } finally {
     isLoading.value = false
     isRefreshing.value = false
   }
 }
 
+let refreshTimer: ReturnType<typeof setInterval> | undefined
+
 onMounted(() => {
-  fetchStats(false)
+  void fetchStats(Boolean(stats.value))
+  refreshTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') void fetchStats(true)
+  }, 30000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
 })
 
 const md = computed(() => stats.value?.master_data)

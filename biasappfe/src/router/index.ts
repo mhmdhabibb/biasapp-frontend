@@ -7,7 +7,7 @@ import {
   homeRouteNameByRole,
   normalizeRole,
 } from "@/router/role-access";
-import { createRouter, createWebHistory } from "vue-router";
+import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -381,6 +381,18 @@ const router = createRouter({
 });
 
 router.beforeEach((to) => {
+  const result = resolveAccess(to);
+  // Start fetching the target page's data as soon as access is granted, in
+  // parallel with downloading its lazy route chunk (previously this waited
+  // for afterEach, i.e. until the chunk had finished loading).
+  if (result === true && to.meta.requiresAuth !== false) {
+    const { ensureResourcesLoaded } = useMasterStore();
+    void ensureResourcesLoaded(to.path);
+  }
+  return result;
+});
+
+function resolveAccess(to: RouteLocationNormalized) {
   const { isAuthenticated, currentUser } = useAuth();
   const isSuperadmin = useIsSuperadmin();
   const role = normalizeRole(currentUser.value?.role);
@@ -433,7 +445,7 @@ router.beforeEach((to) => {
   }
 
   return true;
-});
+}
 
 router.onError((err, to) => {
   const msg = String(err?.message || err || "");
@@ -446,11 +458,55 @@ router.onError((err, to) => {
   }
 });
 
-router.afterEach((to) => {
-  if (to.meta.requiresAuth !== false) {
-    const { ensureResourcesLoaded } = useMasterStore();
-    void ensureResourcesLoaded(to.path);
+const prefetchedChunks = new Set<string>();
+
+/** Download a route's lazy JS chunk ahead of time (no-op if already done). */
+export function prefetchRouteChunk(path: string) {
+  try {
+    const resolved = router.resolve(path);
+    for (const record of resolved.matched) {
+      const key = String(record.name ?? record.path);
+      if (prefetchedChunks.has(key)) continue;
+      const loader = record.components?.default;
+      if (typeof loader === "function" && !("setup" in loader) && !("render" in loader)) {
+        prefetchedChunks.add(key);
+        void (loader as () => Promise<unknown>)().catch(() => prefetchedChunks.delete(key));
+      }
+    }
+  } catch {
+    /* unknown route: ignore */
   }
-});
+}
+
+/** Menu hover/focus intent: warm both the route chunk and its data. */
+export function prefetchRoute(path: string) {
+  prefetchRouteChunk(path);
+  const { prefetchResourcesForPath } = useMasterStore();
+  void prefetchResourcesForPath(path);
+}
+
+/**
+ * After the first page is interactive, download the chunks of the pages the
+ * user can actually open (sidebar menu) during browser idle time, so later
+ * navigation does not wait for a network round-trip.
+ */
+export function prefetchRouteChunksWhenIdle(paths: string[], limit = 20) {
+  if (typeof window === "undefined") return;
+  const conn = (navigator as any).connection;
+  if (conn?.saveData || /2g/.test(String(conn?.effectiveType || ""))) return;
+  const queue = paths.filter(Boolean).slice(0, limit);
+  const idle: (cb: () => void) => void =
+    (window as any).requestIdleCallback
+      ? (cb) => (window as any).requestIdleCallback(cb, { timeout: 3000 })
+      : (cb) => setTimeout(cb, 400);
+  const next = () => {
+    const path = queue.shift();
+    if (!path) return;
+    prefetchRouteChunk(path);
+    idle(next);
+  };
+  // Let the landing page's own data + chunk requests go first.
+  setTimeout(() => idle(next), 2500);
+}
 
 export default router;

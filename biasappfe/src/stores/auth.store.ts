@@ -1,5 +1,6 @@
 import { ApiError } from "@/services/api";
 import { authService, type LoginRequest } from "@/services/auth.service";
+import { invalidateCache } from "@/utils/requestCache";
 import { computed, ref } from "vue";
 
 interface AuthUser {
@@ -37,6 +38,17 @@ const token = ref(getStoredAuth("bias_token"));
 const currentUser = ref<AuthUser | null>(readUser());
 const isLoading = ref(false);
 const error = ref("");
+
+// O(1) normalized permission lookup set — avoids repeated .some() + .toLowerCase()
+// scans across every sidebar item, route guard, and table action cell.
+const permissionSet = computed(() => {
+  const set = new Set<string>();
+  const list = currentUser.value?.permissions || [];
+  for (const p of list) {
+    if (p) set.add(String(p).toLowerCase());
+  }
+  return set;
+});
 
 function readUser(): AuthUser | null {
   const value = getStoredAuth("bias_user");
@@ -82,6 +94,8 @@ if (typeof window !== "undefined") {
     currentUser.value = null;
     rememberSession.value = false;
     clearStoredAuth();
+    invalidateCache();
+    window.dispatchEvent(new CustomEvent("bias:auth-logout"));
     if (window.location.pathname !== "/login" && !window.location.pathname.startsWith("/verify-payment")) {
       window.location.href = "/login";
     }
@@ -134,6 +148,10 @@ export function useAuthStore() {
     rememberSession.value = false;
     localStorage.removeItem("bias_remember_me");
     clearStoredAuth();
+    invalidateCache();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("bias:auth-logout"));
+    }
   }
 
   async function refreshPermissions(): Promise<void> {
@@ -184,9 +202,7 @@ export function useAuthStore() {
       return true;
     }
 
-    return (currentUser.value.permissions || []).some(
-      (p) => String(p).toLowerCase() === want,
-    );
+    return permissionSet.value.has(want);
   }
 
   return {

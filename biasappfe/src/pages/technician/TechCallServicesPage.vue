@@ -12,7 +12,6 @@ import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { printServiceReport, downloadServiceReportPdf, type ReportType } from '@/utils/printReport'
 import { isCopierReport } from '@/utils/copierReport'
 import { isTechnicianAssignedToJob, isLeadTechnicianForJob, getJobMemberTechIds } from '@/utils/jobTechnician'
-import * as XLSX from 'xlsx'
 
 const router = useRouter()
 const { currentUser } = useAuth()
@@ -438,7 +437,7 @@ async function exportToPdf() {
   html2pdf().set(opt).from(html).save()
 }
 
-function exportToExcel() {
+async function exportToExcel() {
   if (!filteredJobs.value.length) {
     toast.error('Tidak ada data untuk diexport')
     return
@@ -454,6 +453,7 @@ function exportToExcel() {
     'Status': (job.status || '').toUpperCase().replace('_', ' ')
   }))
 
+  const XLSX = await import('xlsx')
   const ws = XLSX.utils.json_to_sheet(data)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, "Call Services")

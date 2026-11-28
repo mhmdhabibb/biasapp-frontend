@@ -11,8 +11,6 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import { useToast } from '@/composables/useToast'
-import html2pdf from 'html2pdf.js'
-import * as XLSX from 'xlsx'
 
 const router = useRouter()
 const route = useRoute()
@@ -217,12 +215,13 @@ function getTechName(id: number | null) {
   return t?.user?.name || t?.name || '-'
 }
 
-function exportToPdf() {
+async function exportToPdf() {
   if (!filteredHistory.value.length) {
     toast.error('No data to export')
     return
   }
 
+  const { default: html2pdf } = await import('html2pdf.js')
   let html = '<h2 style="font-family: sans-serif;">Service History Report</h2><table border="1" cellpadding="8" cellspacing="0" style="width:100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px;">'
   html += '<thead><tr>'
   const keys = ['Completion Date', 'Customer', 'Unit & SN', 'Service Type', 'Problem', 'Repair Action', 'Technician']
@@ -255,12 +254,13 @@ function exportToPdf() {
   html2pdf().set(opt).from(wrapper).save()
 }
 
-function exportToExcel() {
+async function exportToExcel() {
   if (!filteredHistory.value.length) {
     toast.error('No data to export')
     return
   }
 
+  const XLSX = await import('xlsx')
   const data = filteredHistory.value.map((job: any) => ({
     'Completion Date': formatCompletionDate(job),
     'Customer': getCustomerName(job.customer_id),

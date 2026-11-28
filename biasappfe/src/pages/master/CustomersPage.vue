@@ -20,8 +20,11 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const toast = useToast()
-const data = ref<Customer[]>([])
-const isLoading = ref(true)
+const masterStoreInit = useMasterStore()
+const data = ref<Customer[]>(
+  masterStoreInit.customers.value?.length ? [...masterStoreInit.customers.value] : [],
+)
+const isLoading = ref(data.value.length === 0)
 
 const filterCategory = ref('')
 const filterCategoryOptions = [
@@ -41,11 +44,13 @@ const isTechnician = computed(() => currentUser.value?.role === 'technician')
 
 async function fetchData() {
   try {
-    const res = await resources.customers.list()
+    const res = await resources.customers.list(undefined, data.value.length === 0)
     data.value = res.data as any
   } catch (error) {
     console.error('Failed to fetch customers:', error)
-    toast.error('Failed to fetch customer data: ' + ((error as any).message || 'Error'))
+    if (data.value.length === 0) {
+      toast.error('Failed to fetch customer data: ' + ((error as any).message || 'Error'))
+    }
   } finally {
     isLoading.value = false
   }
