@@ -452,7 +452,10 @@ async function exportToExcel() {
       </div>
       <div class="form-group" v-if="!form.id && form.customer_id">
         <label class="form-label">Customer Type</label>
-        <input :value="selectedCustomerCategory" type="text" class="form-input" readonly disabled title="Customer type otomatis mengikuti data Customer" />
+        <input value="Service Warranty" type="text" class="form-input" readonly disabled title="Customer type otomatis mengikuti jenis transaksi Service Warranty" />
+        <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
+          Otomatis mengikuti jenis transaksi (Service Warranty).
+        </span>
       </div>
        <div class="form-group" v-if="!form.id">
         <label class="form-label">Unit / Machine (opsional, bisa diisi teknisi)</label>
