@@ -23,6 +23,9 @@ const MaintenanceSchedulesPage = defineAsyncComponent(
 const StandaloneServiceHistoryPage = defineAsyncComponent(
   () => import("@/pages/customer-service/StandaloneServiceHistoryPage.vue"),
 );
+const DeliveryMonitoringPage = defineAsyncComponent(
+  () => import("@/pages/customer-service/DeliveryMonitoringPage.vue"),
+);
 
 const toast = useToast();
 const { can } = usePermission();
@@ -63,7 +66,7 @@ const externalColumns: TableColumn[] = [
   { key: "_job_ref", label: "Job Ref", width: "130px" },
 ];
 
-type ServiceListTab = "internal" | "external" | "survey" | "warranty" | "standalone";
+type ServiceListTab = "internal" | "external" | "delivery" | "survey" | "warranty" | "standalone";
 const serviceRequests = ref<any[]>([]);
 const showModal = ref(false);
 const listTab = ref<ServiceListTab>("internal");
@@ -71,6 +74,7 @@ const formTab = ref<"internal" | "external">("internal");
 const surveyTabRef = ref<any>(null);
 const warrantyTabRef = ref<any>(null);
 const standaloneTabRef = ref<any>(null);
+const deliveryCount = ref<number | null>(null);
 const surveyCount = ref<number | null>(null);
 const warrantyCount = ref<number | null>(null);
 const standaloneCount = ref<number | null>(null);
@@ -79,6 +83,8 @@ const activeAddButtonLabel = computed(() => {
   switch (listTab.value) {
     case "external":
       return "Log Complaint (External)";
+    case "delivery":
+      return "Delivery & Installation";
     case "survey":
       return "Log Complaint (Survey)";
     case "warranty":
@@ -92,6 +98,8 @@ const activeAddButtonLabel = computed(() => {
 
 const activeAddPermission = computed(() => {
   switch (listTab.value) {
+    case "delivery":
+      return "delivery_order:create";
     case "survey":
       return "survey:create";
     case "warranty":
@@ -233,6 +241,11 @@ const selectedTransactionCustomerType = computed(() => {
   return "Service Contract";
 });
 
+const selectedTransactionCustomerCategory = computed(() => {
+  const cat = String(selectedCustomerCategory.value || "Corporate").toLowerCase();
+  return cat === "government" ? "Government" : "Corporate";
+});
+
 watch(externalBrandSelect, (val) => {
   if (!val) {
     form.external_brand = "";
@@ -360,7 +373,7 @@ async function submitExternalRequest() {
   const payload = {
     request_no: form.request_no,
     customer_id: form.customer_id,
-    customer_category: selectedTransactionCustomerType.value || "Service External",
+    customer_category: selectedTransactionCustomerCategory.value,
     service_type: isEditing.value ? (form.service_type || "preventif") : "preventif",
     unit_id: null,
     is_external: true,
@@ -795,7 +808,7 @@ async function handleSubmit() {
   const payload = {
     request_no: form.request_no,
     customer_id: form.customer_id,
-    customer_category: selectedTransactionCustomerType.value || "Service Contract",
+    customer_category: selectedTransactionCustomerCategory.value,
     service_type: isEditing.value ? (form.service_type || "preventif") : "preventif",
     unit_id:
       form.unit_ids.length > 0 && form.unit_ids?.[0] ? form.unit_ids[0] : null,
@@ -927,6 +940,10 @@ async function handleAssignSubmit() {
 }
 
 function openAdd() {
+  if (listTab.value === "delivery") {
+    router.push("/customer-service/delivery");
+    return;
+  }
   if (listTab.value === "survey") {
     surveyTabRef.value?.openAdd?.();
     return;
@@ -1101,6 +1118,16 @@ onUnmounted(() => {
         @click="listTab = 'external'"
       >
         Service Request External ({{ externalRequests.length }})
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="sr-tab"
+        :class="{ 'sr-tab--active': listTab === 'delivery' }"
+        :aria-selected="listTab === 'delivery'"
+        @click="listTab = 'delivery'"
+      >
+        Delivery Order{{ deliveryCount !== null ? ` (${deliveryCount})` : "" }}
       </button>
       <button
         type="button"
@@ -1329,6 +1356,11 @@ onUnmounted(() => {
       </template>
     </DataTable>
 
+    <DeliveryMonitoringPage
+      v-else-if="listTab === 'delivery'"
+      embedded
+      @count="deliveryCount = $event"
+    />
     <SurveyPage
       v-else-if="listTab === 'survey'"
       ref="surveyTabRef"

@@ -12,8 +12,11 @@ import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDe
 import FormModal from '@/components/ui/FormModal.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
 import { useResourcesStore } from '@/stores/resources.store'
-import { onMounted, ref, reactive } from 'vue'
+import { onMounted, ref, reactive, watch } from 'vue'
 import { useRoute } from 'vue-router'
+
+const props = defineProps<{ embedded?: boolean }>()
+const emit = defineEmits<{ (e: 'count', count: number): void }>()
 
 const toast = useToast()
 const { can } = usePermission()
@@ -26,6 +29,8 @@ onMounted(() => {
 })
 
 const { deliveryOrders, jobOrders, technicians, findCustomer, findTechnician, refreshInBackground } = useMasterStore()
+
+watch(() => (deliveryOrders.value as any[]).length, (n) => emit('count', n), { immediate: true })
 
 const columns: TableColumn[] = [
   { key: 'delivery_no', label: 'Delivery No' },
@@ -188,7 +193,7 @@ async function markDelivered(row: any) {
 
 <template>
   <div>
-    <PageHeader title="Delivery & Installation Monitoring" />
+    <PageHeader v-if="!embedded" title="Delivery & Installation Monitoring" />
     <DataTable :columns="columns" :data="deliveryOrders" search-placeholder="Search delivery...">
       <template #cell-customer_id="{ value }">{{ getCustomer(value) }}</template>
       <template #cell-assigned_to="{ row }">
