@@ -319,7 +319,7 @@ async function submitForm() {
       const srPayload = {
         request_no: `MT-${Date.now().toString().slice(-6)}`,
         customer_id: form.value.customer_id,
-        customer_category: selectedCustomerCategory.value === '-' ? 'Corporate' : selectedCustomerCategory.value,
+        customer_category: 'Service Warranty',
         unit_id: form.value.unit_id || null,
         project_name: form.value.project_name,
         problem_description: `[MAINTENANCE_VISIT] ${form.value.problem || form.value.instructions}`,
@@ -333,7 +333,7 @@ async function submitForm() {
         const joPayload = {
           job_order_no: form.value.job_order_no,
           service_request_id: srId,
-          customer_category: selectedCustomerCategory.value === '-' ? 'Corporate' : selectedCustomerCategory.value,
+          customer_category: 'Service Warranty',
           scheduled_date: scheduledIso,
           instructions: form.value.instructions,
           job_type: 'maintenance_visit',
@@ -493,11 +493,16 @@ defineExpose({ openAdd })
       <template #cell-technician="{ row }">
         <template v-if="getAssignedTeamDisplay(row, store.findTechnician).leadName">
           <div style="display: flex; flex-direction: column; gap: 2px;">
-            <span style="font-weight: 600; font-size: 12px;">
-              Kepala: {{ getAssignedTeamDisplay(row, store.findTechnician).leadName }}
-            </span>
-            <span v-if="getAssignedTeamDisplay(row, store.findTechnician).memberNames.length > 0" style="font-size: 11px; color: var(--color-text-muted);">
-              Anggota: {{ getAssignedTeamDisplay(row, store.findTechnician).memberNames.join(', ') }}
+            <template v-if="getAssignedTeamDisplay(row, store.findTechnician).memberNames.length > 0">
+              <span style="font-weight: 600; font-size: 12px;">
+                Kepala: {{ getAssignedTeamDisplay(row, store.findTechnician).leadName }}
+              </span>
+              <span style="font-size: 11px; color: var(--color-text-muted);">
+                Anggota ({{ getAssignedTeamDisplay(row, store.findTechnician).memberNames.length }}): {{ getAssignedTeamDisplay(row, store.findTechnician).memberNames.join(', ') }}
+              </span>
+            </template>
+            <span v-else style="font-weight: 600; font-size: 12px;">
+              {{ getAssignedTeamDisplay(row, store.findTechnician).leadName }}
             </span>
           </div>
         </template>
@@ -518,12 +523,17 @@ defineExpose({ openAdd })
           </button>
           <button
             v-if="row.status !== 'completed' && row.status !== 'cancelled'"
-            class="btn btn-sm btn-outline"
-            style="color: var(--color-primary); border-color: var(--color-primary);"
+            class="action-btn"
+            style="color: var(--color-primary); border-color: transparent;"
             @click.stop="openAssign(row)"
             :title="row.technician_id ? 'Re-assign Teknisi' : 'Assign Teknisi'"
           >
-            {{ row.technician_id ? 'Re-assign' : 'Assign' }}
+            <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="23" y1="11" x2="17" y2="11"></line>
+            </svg>
           </button>
           <button class="btn btn-sm btn-outline" @click.stop="openEdit(row)" title="Edit Schedule">
             Edit

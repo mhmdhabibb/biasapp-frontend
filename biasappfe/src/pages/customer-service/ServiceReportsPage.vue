@@ -8,6 +8,7 @@ import DataTable from '@/components/ui/DataTable.vue'
 import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
+import ServiceTypeTrigger from '@/components/ui/ServiceTypeTrigger.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useAuth } from '@/composables/useAuth'
 import { usePermission } from '@/composables/usePermission'
@@ -19,6 +20,7 @@ import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDe
 import { printDeliveryOrder } from '@/utils/printDeliveryOrder'
 import { printPurchaseOrder } from '@/utils/printPurchaseOrder'
 import { getJobMemberTechIds } from '@/utils/jobTechnician'
+import { formatDeliveryOrderItemLabel } from '@/utils/deliveryOrderItems'
 import type { TableColumn, ServiceReport, SparepartRequest } from '@/types'
 
 const { can } = usePermission()
@@ -128,6 +130,7 @@ const activeTab = ref<'service' | 'delivery' | 'sparepart'>('service')
 // Filter customer berlaku untuk semua tab (service, delivery, sparepart).
 const customerFilter = ref('')
 const statusFilter = ref('')
+const initialSearchQuery = ref(String(route.query.q || ''))
 const customerFilterOptions = computed(() => [
   { value: '', label: 'All Customers' },
   ...(customers.value as any[]).map((c: any) => ({
@@ -213,6 +216,9 @@ onMounted(async () => {
   if (route.query.customer_id) {
     customerFilter.value = String(route.query.customer_id)
   }
+  if (route.query.q) {
+    initialSearchQuery.value = String(route.query.q)
+  }
   await ensureResourcesLoaded(route.path)
   void silentRefresh(true)
 
@@ -232,6 +238,10 @@ onUnmounted(() => {
   window.removeEventListener('focus', onFocusOrVisible)
   window.removeEventListener('bias:data-mutated', onDataMutated)
   document.removeEventListener('visibilitychange', onFocusOrVisible)
+})
+
+watch(() => route.query.q, (val) => {
+  initialSearchQuery.value = String(val || '')
 })
 
 watch(activeTab, (tab) => {
@@ -774,16 +784,7 @@ const isLoadingDoDetail = ref(false)
 const doDetailTab = ref<'info' | 'items' | 'signatures'>('info')
 
 function getDoItemName(item: any): string {
-  if (item.product || item.product_id) {
-    const p = item.product || findProduct(item.product_id)
-    return p ? formatProductDisplayName(p) : `Product ${item.product_id}`
-  }
-  if (item.unit || item.unit_id) {
-    const u = item.unit || findUnit(item.unit_id)
-    return u ? `${formatUnitDisplayName(u)}${u.serial_no ? ` (${u.serial_no})` : ''}` : `Unit ${item.unit_id}`
-  }
-  if (item.model) return `${formatUnitDisplayName(item)}${item.serial_no ? ` (${item.serial_no})` : ''}`
-  return '-'
+  return formatDeliveryOrderItemLabel(item, { findProduct, findUnit, findBrand, findUnitType })
 }
 
 async function openDoDetail(row: any) {
@@ -1019,16 +1020,43 @@ const selectedTransactionCustomerType = computed(() => {
   return 'Service'
 })
 
+const isUpdatingDetailServiceType = ref(false)
+
+async function handleDetailTriggerServiceType(nextType: 'preventif' | 'korektif' | 'troubleshooting') {
+  if (!srDetailItem.value?.id || isUpdatingDetailServiceType.value) return
+  const prev = srDetailItem.value.service_type
+  srDetailItem.value.service_type = nextType
+  isUpdatingDetailServiceType.value = true
+  try {
+    await api.patch(`/service-reports/${srDetailItem.value.id}`, { service_type: nextType })
+    toast.success(`Service type diubah menjadi ${nextType}`)
+    void masterStore.refreshInBackground()
+  } catch (err: any) {
+    srDetailItem.value.service_type = prev
+    toast.error(err?.message || 'Gagal mengubah service type')
+  } finally {
+    isUpdatingDetailServiceType.value = false
+  }
+}
+
+function isDetailExternalRequest(item: any): boolean {
+  const jo = (masterStore.jobOrders.value || []).find(
+    (j: any) => String(j.id) === String(item?.job_order_id) || String(j.service_report_id) === String(item?.id)
+  )
+  const sr = item?.job_order?.service_request || jo?.service_request
+  return Boolean(item?.is_external || sr?.is_external || String(sr?.request_no || '').toUpperCase().startsWith('REQ-EXT'))
+}
+
 function openAdd() {
   editingItem.value = null
   Object.assign(form, { ...defaultForm, report_no: `SR-${Date.now().toString().slice(-6)}` })
   showModal.value = true
 }
 
-watch(() => form.customer_id, (newId, oldId) => {
+watch(() => [form.customer_id, form.unit_id, form.service_type], ([newId], [oldId]) => {
   if (!newId) return
   if (!editingItem.value || (oldId && newId !== oldId)) {
-    form.customer_category = (findCustomer(newId as any) as any)?.category || 'Corporate'
+    form.customer_category = selectedTransactionCustomerType.value || 'Service'
   }
 })
 
@@ -1308,7 +1336,7 @@ function printTable() {
         Sparepart Requests ({{ filteredSparepartRequests.length }})
       </button>
     </div>
-    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="serviceOnlyReports" search-placeholder="Search service reports..." @edit="openEdit" @delete="openDelete">
+    <DataTable v-if="activeTab === 'service'" :columns="columns" :data="serviceOnlyReports" search-placeholder="Search service reports..." :initial-search="initialSearchQuery" @edit="openEdit" @delete="openDelete">
       <template #cell-report_no="{ value, row }">
         <div style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">
           <span class="sr-link" @click="openSrDetail(row)">{{ formatReportNo(row) }}</span>
@@ -1552,6 +1580,16 @@ function printTable() {
               <span class="badge-running-tx">Transaksi sudah berjalan</span>
             </strong>
           </div>
+        </div>
+
+        <div v-if="srDetailItem.service_type !== 'copier' && srDetailItem.service_type !== 'delivery'" class="mt-md" style="margin-top: 14px;">
+          <ServiceTypeTrigger
+            :service-type="srDetailItem.service_type || 'preventif'"
+            :is-external="isDetailExternalRequest(srDetailItem)"
+            :loading="isUpdatingDetailServiceType"
+            compact
+            @select="handleDetailTriggerServiceType"
+          />
         </div>
 
         <!-- Photos Section -->

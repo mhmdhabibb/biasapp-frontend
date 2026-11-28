@@ -39,6 +39,8 @@ const props = withDefaults(
     selectable?: boolean;
     /** Selected keys / ids */
     selectedKeys?: (string | number)[];
+    /** Initial search query (e.g. from URL query params) */
+    initialSearch?: string;
   }>(),
   {
     columns: () => [],
@@ -56,6 +58,7 @@ const props = withDefaults(
     maxHeight: "calc(100vh - 360px)",
     selectable: false,
     selectedKeys: () => [],
+    initialSearch: "",
   },
 );
 
@@ -115,7 +118,16 @@ const showActionsColumn = computed(
   () => Boolean(slots.actions) || Boolean(slots['cell(actions)']) || Boolean(slots['cell-actions']) || showDefaultActions.value,
 );
 
-const searchQuery = ref("");
+const searchQuery = ref(props.initialSearch || "");
+watch(
+  () => props.initialSearch,
+  (val) => {
+    if (typeof val === "string") {
+      searchQuery.value = val;
+      internalPage.value = 1;
+    }
+  },
+);
 const internalPage = ref(props.currentPage || 1);
 
 const perPage = computed(() => props.perPage || 50);

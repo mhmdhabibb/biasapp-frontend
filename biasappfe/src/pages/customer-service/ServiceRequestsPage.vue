@@ -3,14 +3,16 @@ import DataTable from "@/components/ui/DataTable.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
 import FormModal from "@/components/ui/FormModal.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
+import ServiceTypeTrigger from "@/components/ui/ServiceTypeTrigger.vue";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
+import { formatServiceTypeLabel, getServiceTypeBadgeClass } from "@/utils/serviceType";
 import type { TableColumn } from "@/types";
 import { computed, defineAsyncComponent, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 const SurveyPage = defineAsyncComponent(
   () => import("@/pages/customer-service/SurveyPage.vue"),
@@ -25,6 +27,7 @@ const StandaloneServiceHistoryPage = defineAsyncComponent(
 const toast = useToast();
 const { can } = usePermission();
 const route = useRoute();
+const router = useRouter();
 const { ensureResourcesLoaded } = useMasterStore();
 const {
   customers,
@@ -48,6 +51,7 @@ const columns: TableColumn[] = [
   { key: "_pic_name", label: "PIC Name", width: "150px" },
   { key: "request_date", label: "Request Date", width: "130px" },
   { key: "status", label: "Status", width: "120px" },
+  { key: "_job_ref", label: "Job Ref", width: "130px" },
 ];
 
 const externalColumns: TableColumn[] = [
@@ -56,6 +60,7 @@ const externalColumns: TableColumn[] = [
   { key: "_external_unit", label: "Unit Luar", width: "160px", wrap: true },
   { key: "request_date", label: "Request Date", width: "130px" },
   { key: "status", label: "Status", width: "120px" },
+  { key: "_job_ref", label: "Job Ref", width: "130px" },
 ];
 
 type ServiceListTab = "internal" | "external" | "survey" | "warranty" | "standalone";
@@ -197,6 +202,7 @@ const form = reactive({
   request_no: `REQ-${Date.now().toString().slice(-6)}`,
   customer_id: "",
   customer_category: "Corporate",
+  service_type: "preventif",
   unit_ids: [] as string[],
   project_name: "",
   problem_description: "",
@@ -239,8 +245,38 @@ watch(externalBrandSelect, (val) => {
   }
 });
 
+function isWarrantyOrMaintenanceRequest(r: any): boolean {
+  if (!r) return false;
+  const reqNo = String(r.request_no || "").toUpperCase();
+  const problem = String(r.problem_description || "");
+  const svcType = String(r.service_type || "").toLowerCase();
+  const custCat = String(r.customer_category || "").toLowerCase();
+  if (
+    reqNo.startsWith("MT-") ||
+    problem.includes("[MAINTENANCE_VISIT]") ||
+    svcType === "maintenance" ||
+    svcType === "warranty" ||
+    custCat === "maintenance" ||
+    custCat === "warranty" ||
+    custCat === "service warranty"
+  ) {
+    return true;
+  }
+  const linkedJo = jobOrders.value.find(
+    (j: any) => String(j.service_request_id) === String(r.id),
+  );
+  const joType = String(linkedJo?.job_type || "").toLowerCase();
+  return (
+    joType === "maintenance_visit" ||
+    joType === "maintenance" ||
+    joType === "warranty"
+  );
+}
+
 const internalRequests = computed(() =>
-  serviceRequests.value.filter((r: any) => !r.is_external),
+  serviceRequests.value.filter(
+    (r: any) => !r.is_external && !isWarrantyOrMaintenanceRequest(r),
+  ),
 );
 const externalRequests = computed(() => {
   let list = serviceRequests.value.filter((r: any) => r.is_external);
@@ -282,6 +318,7 @@ function resetCreateForm(tab: "internal" | "external" = listTab.value) {
   Object.assign(form, {
     request_no: newRequestNo(tab),
     customer_id: "",
+    service_type: "preventif",
     unit_ids: [],
     project_name: "",
     problem_description: "",
@@ -323,7 +360,8 @@ async function submitExternalRequest() {
   const payload = {
     request_no: form.request_no,
     customer_id: form.customer_id,
-    customer_category: selectedCustomerCategory.value || "Corporate",
+    customer_category: selectedTransactionCustomerType.value || "Service External",
+    service_type: isEditing.value ? (form.service_type || "preventif") : "preventif",
     unit_id: null,
     is_external: true,
     external_brand: form.external_brand,
@@ -757,7 +795,8 @@ async function handleSubmit() {
   const payload = {
     request_no: form.request_no,
     customer_id: form.customer_id,
-    customer_category: selectedCustomerCategory.value || "Corporate",
+    customer_category: selectedTransactionCustomerType.value || "Service Contract",
+    service_type: isEditing.value ? (form.service_type || "preventif") : "preventif",
     unit_id:
       form.unit_ids.length > 0 && form.unit_ids?.[0] ? form.unit_ids[0] : null,
     project_name: form.project_name,
@@ -802,6 +841,11 @@ function findJobOrderForRequest(reqId: string | number) {
       (j: any) => String(j.service_request_id || "") === String(reqId),
     ) || null
   );
+}
+
+function goToServiceReport(jo: any) {
+  if (!jo?.job_order_no) return;
+  router.push({ path: '/customer-service/service-reports', query: { q: jo.job_order_no } });
 }
 
 const showAssignModal = ref(false);
@@ -898,6 +942,7 @@ function openAdd() {
   isEditing.value = false;
   editId.value = null;
   resetCreateForm(listTab.value === "external" ? "external" : "internal");
+  void ensureFormData();
   showModal.value = true;
 }
 
@@ -912,6 +957,7 @@ function openEdit(row: any) {
       row.customer_category ||
       (findCustomer(row.customer_id as any) as any)?.category ||
       "Corporate",
+    service_type: row.service_type || "preventif",
     unit_ids: row.unit_id ? [row.unit_id] : [],
     project_name: row.project_name || "",
     problem_description: row.problem_description || "",
@@ -925,6 +971,7 @@ function openEdit(row: any) {
     external_type: row.external_type || "legacy_rental",
   });
   externalBrandSelect.value = row.external_brand;
+  void ensureFormData();
   showModal.value = true;
 }
 
@@ -936,6 +983,37 @@ async function confirmDelete(row: any) {
     fetchRequests();
   } catch (error) {
     toast.error(toast.fromError(error, "A network error occurred."));
+  }
+}
+
+const isUpdatingServiceType = ref(false);
+
+async function handleTriggerServiceType(
+  nextType: "preventif" | "korektif" | "troubleshooting",
+) {
+  if (!selectedRequest.value || isUpdatingServiceType.value) return;
+  const reqId = selectedRequest.value.id;
+  const prevType = selectedRequest.value.service_type;
+  selectedRequest.value.service_type = nextType;
+  isUpdatingServiceType.value = true;
+  try {
+    await api.patch(`/service-requests/${reqId}`, {
+      service_type: nextType,
+    });
+    const idx = serviceRequests.value.findIndex((r: any) => String(r.id) === String(reqId));
+    if (idx !== -1) {
+      serviceRequests.value[idx] = {
+        ...serviceRequests.value[idx],
+        service_type: nextType,
+      };
+    }
+    toast.success(`Service type diubah menjadi ${formatServiceTypeLabel(nextType)}`);
+    void fetchRequests();
+  } catch (error) {
+    selectedRequest.value.service_type = prevType;
+    toast.error(toast.fromError(error, "Gagal mengubah service type."));
+  } finally {
+    isUpdatingServiceType.value = false;
   }
 }
 
@@ -952,18 +1030,31 @@ async function silentRefresh() {
   } catch {}
 }
 
+// Track if rentals/warranties have already been loaded (lazy — only needed for form)
+const rentalsLoaded = ref(false);
+const warrantiesLoaded = ref(false);
+
+async function ensureFormData() {
+  const loads: Promise<void>[] = [];
+  if (!rentalsLoaded.value) {
+    loads.push(fetchRentals().then(() => { rentalsLoaded.value = true; }));
+  }
+  if (!warrantiesLoaded.value) {
+    loads.push(fetchWarranties().then(() => { warrantiesLoaded.value = true; }));
+  }
+  if (loads.length > 0) await Promise.all(loads);
+}
+
 onMounted(async () => {
   isLoading.value = true;
   try {
-    await Promise.all([
-      fetchRequests(),
-      fetchRentals(),
-      fetchWarranties(),
-      ensureResourcesLoaded(route.path),
-    ]);
+    // Only block initial table render on the 50 service requests;
+    // auxiliary master data loads in the background for modals/dropdowns.
+    await fetchRequests();
   } finally {
     isLoading.value = false;
   }
+  void ensureResourcesLoaded(route.path);
   srTimer = setInterval(silentRefresh, 30000);
   window.addEventListener("focus", silentRefresh);
   window.addEventListener("bias:data-mutated", silentRefresh);
@@ -1133,6 +1224,18 @@ onUnmounted(() => {
           {{ value.toUpperCase() }}
         </span>
       </template>
+      <template #cell-_job_ref="{ row }">
+        <a
+          v-if="findJobOrderForRequest(row.id)?.job_order_no"
+          href="#"
+          style="color: var(--color-primary); font-weight: 600; font-size: 12px; text-decoration: underline; cursor: pointer; white-space: nowrap;"
+          @click.prevent="goToServiceReport(findJobOrderForRequest(row.id))"
+          :title="`Lihat Service Report untuk ${findJobOrderForRequest(row.id)?.job_order_no}`"
+        >
+          {{ findJobOrderForRequest(row.id)?.job_order_no }}
+        </a>
+        <span v-else class="text-muted" style="font-size: 11px;">—</span>
+      </template>
       <template #actions="{ row }">
         <button
           class="action-btn"
@@ -1281,6 +1384,16 @@ onUnmounted(() => {
                 : "-"
             }}</span>
           </div>
+        </div>
+
+        <!-- Admin Service Type Trigger -->
+        <div class="mb-3" style="margin-bottom: 14px;">
+          <ServiceTypeTrigger
+            :service-type="selectedRequest.service_type || 'preventif'"
+            :is-external="Boolean(selectedRequest.is_external)"
+            :loading="isUpdatingServiceType"
+            @select="handleTriggerServiceType"
+          />
         </div>
 
         <!-- Problem Description -->

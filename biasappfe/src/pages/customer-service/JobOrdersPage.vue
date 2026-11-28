@@ -4,6 +4,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
 import DateTime24Input from "@/components/ui/DateTime24Input.vue";
 import SignaturePad from "@/components/ui/SignaturePad.vue";
+import ServiceTypeTrigger from "@/components/ui/ServiceTypeTrigger.vue";
 import { useAuthStore } from "@/stores/auth.store";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { useIsSuperadmin } from "@/composables/useHardDelete";
@@ -28,6 +29,37 @@ const jobToDelete = ref<any | null>(null);
 const showDeleteTechModal = ref(false);
 const techToDelete = ref<any | null>(null);
 const isDeleting = ref(false);
+const isUpdatingJobServiceType = ref(false);
+
+async function handleJobTriggerServiceType(
+  nextType: "preventif" | "korektif" | "troubleshooting",
+) {
+  if (!selectedJob.value || isUpdatingJobServiceType.value) return;
+  const srId = selectedJob.value.service_request_id || selectedJob.value.service_request?.id;
+  const srepId = selectedJob.value.service_report_id || selectedJob.value.service_report?.id;
+  if (!srId && !srepId) return;
+
+  isUpdatingJobServiceType.value = true;
+  try {
+    if (srepId) {
+      await api.patch(`/service-reports/${srepId}`, { service_type: nextType });
+      if (selectedJob.value.service_report) {
+        selectedJob.value.service_report.service_type = nextType;
+      }
+    } else if (srId) {
+      await api.patch(`/service-requests/${srId}`, { service_type: nextType });
+    }
+    if (selectedJob.value.service_request) {
+      selectedJob.value.service_request.service_type = nextType;
+    }
+    toast.success(`Service type diubah menjadi ${nextType}`);
+    void masterStore.refreshInBackground();
+  } catch (err: any) {
+    toast.error(err?.message || "Gagal mengubah service type");
+  } finally {
+    isUpdatingJobServiceType.value = false;
+  }
+}
 
 const showAuditLogModal = ref(false);
 const auditLogs = ref<any[]>([]);
@@ -3133,6 +3165,16 @@ async function handleDeleteTech() {
               }}</span>
             </div>
           </div>
+        </div>
+
+        <div class="detail-section" v-if="selectedJob.service_request || (selectedJob.service_report && selectedJob.service_report.service_type !== 'copier')">
+          <ServiceTypeTrigger
+            :service-type="selectedJob.service_report?.service_type || selectedJob.service_request?.service_type || 'preventif'"
+            :is-external="Boolean(selectedJob.service_request?.is_external)"
+            :loading="isUpdatingJobServiceType"
+            compact
+            @select="handleJobTriggerServiceType"
+          />
         </div>
 
         <div class="detail-section" v-if="selectedJob.service_report">

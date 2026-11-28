@@ -1,4 +1,4 @@
-import { downloadFile, uploadFile } from '@/services/api'
+import { downloadFile, http, uploadFile } from '@/services/api'
 
 const IMAGE_EXT_REGEX = /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif|tiff?)$/i
 
@@ -84,4 +84,17 @@ export async function uploadSurveyAttachments(surveyId: string, files: File[]) {
 
 export function downloadSurveyAttachment(surveyId: string, att: { id: string; file_name: string }) {
   return downloadFile(`/surveys/${surveyId}/attachments/${att.id}/download`, att.file_name || 'lampiran-survey')
+}
+
+export async function fetchSurveyAttachmentBlobUrl(
+  surveyId: string,
+  att: { id: string; mime_type?: string },
+): Promise<{ url: string; mimeType: string }> {
+  const response = await http.get(`/surveys/${surveyId}/attachments/${att.id}/download`, {
+    responseType: 'blob',
+  })
+  const mimeType =
+    att.mime_type || response.headers?.['content-type'] || 'application/octet-stream'
+  const blob = new Blob([response.data], { type: mimeType })
+  return { url: URL.createObjectURL(blob), mimeType }
 }

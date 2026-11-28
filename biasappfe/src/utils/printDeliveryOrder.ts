@@ -152,12 +152,15 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
   const items = fullItem.delivery_order_items || [];
   
   items.forEach((doi: any) => {
-    let pName = doi.description || "-";
+    let pName = doi.description || doi.model || "-";
     let remarks = doi.remarks || "-";
-    let serialNo = "-";
+    let serialNo = doi.serial_no || "-";
     let uom = "Unit";
 
-    const isSparepart = Boolean(doi.remarks && doi.remarks.toLowerCase().includes("sparepart"));
+    const isSparepart = Boolean(
+      (doi.remarks && doi.remarks.toLowerCase().includes("sparepart")) ||
+      (doi.description && !doi.unit_id && !doi.unit_type_id),
+    );
 
     if (doi.product_id) {
       const p = masterStore.findProduct(doi.product_id);
@@ -173,7 +176,12 @@ export async function getDeliveryOrderHtml(item: any, autoPrint: boolean = false
         pName += ` (Unit: ${u.model || u.name})`;
       }
       if (!isSparepart) {
-        serialNo = u ? u.serial_no : "-";
+        serialNo = u ? u.serial_no : (doi.serial_no || "-");
+      }
+    } else if (!doi.product_id && !isSparepart) {
+      const brand = doi.brand || (doi.brand_id ? masterStore.findBrand(doi.brand_id) : null);
+      if (brand?.name && pName !== "-" && !pName.toLowerCase().includes(brand.name.toLowerCase())) {
+        pName = `${brand.name} ${pName}`;
       }
     } else if (isSparepart) {
       uom = "Pcs";

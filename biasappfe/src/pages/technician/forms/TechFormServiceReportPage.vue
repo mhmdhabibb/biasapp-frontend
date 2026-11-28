@@ -11,12 +11,13 @@ import { useRoute, useRouter } from 'vue-router'
 
 import { useAuth } from '@/composables/useAuth'
 import { normalizeRole } from '@/router/role-access'
+import { resolveTransactionCustomerType } from '@/utils/customerType'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { currentUser } = useAuth()
-const { serviceReports, jobOrders, products, findCustomer, findTechnician, getTechnicianIdByUser, refreshInBackground, ensureResourcesLoaded } = useMasterStore()
+const { serviceReports, jobOrders, products, contractItems, sales, findCustomer, findTechnician, getTechnicianIdByUser, refreshInBackground, ensureResourcesLoaded } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
@@ -39,7 +40,9 @@ const isLeadTech = computed(() => {
   if (!leadId) return true
   return String(leadId) === String(myTechId)
 })
-const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
+const customerType = computed(() =>
+  resolveTransactionCustomerType(job.value, { contractItems, sales, jobOrders })
+)
 
 const form = ref({
   repair_action: '',

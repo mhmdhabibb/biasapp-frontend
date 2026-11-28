@@ -793,9 +793,16 @@ export interface ProcurementDeliveryOrder {
   delivery_order_items?: {
     id?: string | number;
     product_id?: string | null;
-    product?: { name?: string } | null;
+    product?: { name?: string; sku?: string } | null;
     unit_id?: string | null;
-    unit?: { model?: string; serial_no?: string } | null;
+    unit?: { model?: string; serial_no?: string; name?: string; brand_id?: string | null } | null;
+    brand_id?: string | null;
+    brand?: { id?: string; name?: string } | null;
+    unit_type_id?: string | null;
+    unit_type?: { id?: string; name?: string } | null;
+    model?: string;
+    serial_no?: string;
+    description?: string;
     qty?: number;
     remarks?: string;
   }[];

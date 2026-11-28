@@ -21,6 +21,7 @@ import { useResourcesStore } from '@/stores/resources.store'
 import { resources as resourceService } from '@/services/resource.service'
 import { api } from '@/services/api'
 import { getAssignedTeamDisplay, getJobMemberTechIds } from '@/utils/jobTechnician'
+import { formatDeliveryOrderItemsSummary, formatDeliveryOrderItemLabel, getDeliveryOrderItemBadge } from '@/utils/deliveryOrderItems'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import { printServiceReport, type ReportType } from '@/utils/printReport'
 import type { TableColumn } from '@/types'
@@ -168,22 +169,15 @@ function isRowCompleted(row: any): boolean {
   return false
 }
 
+const itemLookups = {
+  findUnit: (id: any) => store.findUnit(id),
+  findProduct: (id: any) => store.findProduct(id),
+  findBrand: (id: any) => store.findBrand(id),
+  findUnitType: (id: any) => (store as any).findUnitType?.(id),
+}
+
 function productSummary(row: any): string {
-  const items = row?.delivery_order_items || []
-  if (!items.length) return 'Belum diisi teknisi'
-  return items.map((it: any) => {
-    if (it.unit_id) {
-      const u: any = store.findUnit(it.unit_id)
-      return u ? `${u.model || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}` : 'Unit'
-    }
-    if (it.product_id) {
-      const p: any = store.findProduct(it.product_id)
-      return p?.name || 'Product'
-    }
-    if (it.model) return it.model
-    if (it.serial_no) return it.serial_no
-    return 'Item'
-  }).join(', ')
+  return formatDeliveryOrderItemsSummary(row, itemLookups, 'Belum diisi teknisi')
 }
 
 const customerOptions = computed(() =>
@@ -710,10 +704,13 @@ defineExpose({ openAdd })
         <template #cell-technician_id="{ row }">
           <template v-if="getStandaloneTeam(row).leadName">
             <div style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-weight: 600; font-size: 12px;">Kepala: {{ getStandaloneTeam(row).leadName }}</span>
-              <span v-if="getStandaloneTeam(row).memberNames.length > 0" style="font-size: 11px; color: var(--color-text-muted);">
-                Anggota: {{ getStandaloneTeam(row).memberNames.join(', ') }}
-              </span>
+              <template v-if="getStandaloneTeam(row).memberNames.length > 0">
+                <span style="font-weight: 600; font-size: 12px;">Kepala: {{ getStandaloneTeam(row).leadName }}</span>
+                <span style="font-size: 11px; color: var(--color-text-muted);">
+                  Anggota ({{ getStandaloneTeam(row).memberNames.length }}): {{ getStandaloneTeam(row).memberNames.join(', ') }}
+                </span>
+              </template>
+              <span v-else style="font-weight: 600; font-size: 12px;">{{ getStandaloneTeam(row).leadName }}</span>
             </div>
           </template>
           <span v-else class="text-muted" style="font-size: 12px; font-style: italic;">Belum ditugaskan</span>
@@ -744,11 +741,17 @@ defineExpose({ openAdd })
             </button>
             <button
               v-if="(can('job_order:create') || can('delivery_order:update')) && !isRowCompleted(row)"
-              class="btn btn-sm btn-outline btn-assign-action"
+              class="action-btn btn-assign-action"
+              style="color: var(--color-primary); border-color: transparent;"
               @click="openAssign(row)"
               :title="findJobOrderForDO(row.id) ? 'Re-assign Job Order' : 'Assign ke Job Order'"
             >
-              {{ findJobOrderForDO(row.id) ? 'Re-assign' : 'Assign' }}
+              <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
+              </svg>
             </button>
             <button
               v-if="can('delivery_order:read') && (row.status !== 'pending' || hasDeliveryHistory(row))"
@@ -882,8 +885,27 @@ defineExpose({ openAdd })
     <FormModal :open="showDetailModal" title="Detail Pekerjaan Teknisi" max-width="500px" @close="showDetailModal = false">
       <div v-if="detailItem" class="detail-content">
         <div class="info-group">
-          <label>Unit / Product:</label>
-          <div style="font-weight: 500;">{{ productSummary(detailItem) }}</div>
+          <label>Unit / Product ({{ (detailItem.delivery_order_items || []).length }}):</label>
+          <div v-if="(detailItem.delivery_order_items || []).length > 0" style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
+            <div
+              v-for="(it, idx) in detailItem.delivery_order_items"
+              :key="it.id || idx"
+              style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; background: var(--color-surface-sunken, #f8fafc); border: 1px solid var(--color-border-light); border-radius: 6px; font-size: 13px;"
+            >
+              <span
+                class="badge"
+                :style="getDeliveryOrderItemBadge(it).isUnit
+                  ? 'background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px;'
+                  : 'background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; font-size: 10px;'"
+              >
+                {{ getDeliveryOrderItemBadge(it).label }}
+              </span>
+              <span style="font-weight: 500;">{{ formatDeliveryOrderItemLabel(it, itemLookups) }}</span>
+              <span class="text-muted">x{{ it.qty || 1 }}</span>
+              <span v-if="it.remarks" class="text-muted">— {{ it.remarks }}</span>
+            </div>
+          </div>
+          <div v-else style="font-weight: 500;">Belum diisi teknisi</div>
         </div>
         <div class="info-group mt-sm">
           <label>Problem / Kendala:</label>

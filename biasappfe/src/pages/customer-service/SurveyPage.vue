@@ -14,7 +14,7 @@ import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { resources } from "@/services/resource.service";
 import { getAssignedTeamDisplay, getJobMemberTechIds } from "@/utils/jobTechnician";
-import { downloadSurveyAttachment, formatFileSize, normalizeSurveyPhotos } from "@/utils/surveyFiles";
+import { downloadSurveyAttachment, fetchSurveyAttachmentBlobUrl, formatFileSize, normalizeSurveyPhotos } from "@/utils/surveyFiles";
 import { useRouter } from "vue-router";
 import type { TableColumn } from "@/types";
 
@@ -381,6 +381,37 @@ function openZoom(photo: string) {
   }
 }
 
+const previewFile = ref<{ url: string; fileName: string; mimeType: string } | null>(null);
+const previewingAttachmentId = ref<string | null>(null);
+
+function closePreviewFile() {
+  if (previewFile.value?.url) {
+    URL.revokeObjectURL(previewFile.value.url);
+  }
+  previewFile.value = null;
+}
+
+async function handlePreviewSurveyAttachment(att: any) {
+  if (!selectedDetailItem.value?.id) return;
+  previewingAttachmentId.value = String(att.id);
+  try {
+    const { url, mimeType } = await fetchSurveyAttachmentBlobUrl(
+      String(selectedDetailItem.value.id),
+      att,
+    );
+    closePreviewFile();
+    previewFile.value = {
+      url,
+      fileName: att.file_name || "Lampiran Survey",
+      mimeType,
+    };
+  } catch (e: any) {
+    toast.error("Gagal memuat preview file: " + (e?.message || "Error"));
+  } finally {
+    previewingAttachmentId.value = null;
+  }
+}
+
 async function handleDownloadSurveyAttachment(att: any) {
   if (!selectedDetailItem.value?.id) return;
   try {
@@ -449,11 +480,16 @@ onUnmounted(() => {
     <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search surveys..." permission="survey">
       <template #cell-_technician="{ row, value }">
         <div v-if="row.technician_id" style="display: flex; flex-direction: column; gap: 2px;">
-          <span class="badge badge-info" style="font-size: 0.78rem; width: fit-content;">
-            👷 Kepala: {{ getSurveyTeam(row).leadName || value }}
-          </span>
-          <span v-if="getSurveyTeam(row).memberNames.length > 0" style="font-size: 11px; color: var(--color-text-muted);">
-            Anggota: {{ getSurveyTeam(row).memberNames.join(', ') }}
+          <template v-if="getSurveyTeam(row).memberNames.length > 0">
+            <span class="badge badge-info" style="font-size: 0.78rem; width: fit-content;">
+              👷 Kepala: {{ getSurveyTeam(row).leadName || value }}
+            </span>
+            <span style="font-size: 11px; color: var(--color-text-muted);">
+              Anggota ({{ getSurveyTeam(row).memberNames.length }}): {{ getSurveyTeam(row).memberNames.join(', ') }}
+            </span>
+          </template>
+          <span v-else class="badge badge-info" style="font-size: 0.78rem; width: fit-content;">
+            👷 {{ getSurveyTeam(row).leadName || value }}
           </span>
         </div>
         <span v-else class="text-muted" style="font-size: 0.8rem; font-style: italic;">
@@ -498,17 +534,19 @@ onUnmounted(() => {
         <span v-else class="text-muted" style="font-size: 0.75rem;">-</span>
       </template>
       <template #actions="{ row }">
-        <button class="btn btn-sm btn-outline" title="Lihat Detail Survey" @click="openDetail(row)">
-          Detail
-        </button>
         <button
           v-if="row.status !== 'completed' && row.status !== 'matched' && row.status !== 'cancelled'"
-          class="btn btn-sm btn-outline"
-          style="color: var(--color-primary); border-color: var(--color-primary);"
+          class="action-btn"
+          style="color: var(--color-primary); border-color: transparent;"
           :title="row.technician_id ? 'Re-assign Teknisi Survey' : 'Assign Teknisi Survey'"
           @click="openAssign(row)"
         >
-          {{ row.technician_id ? 'Re-assign' : 'Assign' }}
+          <svg class="action-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
         </button>
         <!-- Tampilkan tombol Next dan Cancel hanya jika teknisi sudah selesai survey (status completed) atau survey belum ditugaskan ke teknisi -->
         <template v-if="row.status === 'completed' || ((row.status === 'pending' || (!row.status && row.result === 'pending')) && (!row.technician_id || row._hasFindings || !!row.completed_at))">
@@ -676,9 +714,19 @@ onUnmounted(() => {
                   <div class="text-sm font-medium" style="word-break: break-word;">📎 {{ att.file_name }}</div>
                   <div class="text-xs text-muted">{{ formatFileSize(att.file_size) }} &bull; {{ att.mime_type || 'Dokumen' }}</div>
                 </div>
-                <button type="button" class="btn btn-xs btn-outline" @click="handleDownloadSurveyAttachment(att)">
-                  ⬇ Unduh
-                </button>
+                <div style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline"
+                    :disabled="previewingAttachmentId === String(att.id)"
+                    @click="handlePreviewSurveyAttachment(att)"
+                  >
+                    {{ previewingAttachmentId === String(att.id) ? 'Memuat...' : '👁 Preview' }}
+                  </button>
+                  <button type="button" class="btn btn-xs btn-outline" @click="handleDownloadSurveyAttachment(att)">
+                    ⬇ Unduh
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -723,6 +771,54 @@ onUnmounted(() => {
           </div>
           <div style="padding: 10px 16px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; background: #f8fafc;">
             <button type="button" class="btn btn-primary btn-sm" @click="zoomPhoto = null">Tutup</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- File Attachment Preview Modal -->
+    <Teleport to="body">
+      <div
+        v-if="previewFile"
+        style="position: fixed; inset: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 999999; display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(2px);"
+        @click="closePreviewFile"
+      >
+        <div
+          style="position: relative; width: 90vw; max-width: 960px; height: 85vh; background: #ffffff; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);"
+          @click.stop
+        >
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+            <span style="font-weight: 700; font-size: 13px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">📄 {{ previewFile.fileName }}</span>
+            <button
+              type="button"
+              class="btn btn-xs btn-outline"
+              style="padding: 2px 8px; font-weight: bold; font-size: 14px; cursor: pointer;"
+              @click="closePreviewFile"
+            >
+              ✕
+            </button>
+          </div>
+          <div style="flex: 1; background: #0b0f19; display: flex; align-items: center; justify-content: center; overflow: auto;">
+            <img
+              v-if="previewFile.mimeType.startsWith('image/')"
+              :src="previewFile.url"
+              :alt="previewFile.fileName"
+              style="max-width: 100%; max-height: 100%; object-fit: contain;"
+            />
+            <iframe
+              v-else-if="previewFile.mimeType.includes('pdf') || previewFile.mimeType.startsWith('text/')"
+              :src="previewFile.url"
+              style="width: 100%; height: 100%; border: none; background: #fff;"
+              :title="previewFile.fileName"
+            />
+            <div v-else style="color: #e2e8f0; text-align: center; padding: 24px;">
+              <p style="margin-bottom: 12px;">Format file ({{ previewFile.mimeType }}) tidak dapat dipreview langsung di browser.</p>
+              <a :href="previewFile.url" :download="previewFile.fileName" class="btn btn-primary btn-sm">⬇ Unduh File</a>
+            </div>
+          </div>
+          <div style="padding: 10px 16px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 8px; background: #f8fafc;">
+            <a :href="previewFile.url" :download="previewFile.fileName" class="btn btn-outline btn-sm">⬇ Unduh</a>
+            <button type="button" class="btn btn-primary btn-sm" @click="closePreviewFile">Tutup</button>
           </div>
         </div>
       </div>

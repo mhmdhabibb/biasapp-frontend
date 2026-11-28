@@ -149,6 +149,11 @@ export const allMenuGroups: MenuGroup[] = [
         icon: "box",
         route: "/customer-service/sparepart-request",
       },
+      {
+        label: "Delivery Orders",
+        icon: "truck",
+        route: "/customer-service/delivery",
+      },
     ],
   },
   {

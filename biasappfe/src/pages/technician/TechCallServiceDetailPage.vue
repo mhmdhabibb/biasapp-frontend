@@ -13,6 +13,8 @@ import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { isTechnicianAssignedToJob, isLeadTechnicianForJob, getJobMemberTechIds, isMemberTechnicianForJob } from '@/utils/jobTechnician'
+import { isJobOverSla, formatJobSlaLabel } from '@/utils/jobSla'
+import { resolveTransactionCustomerType } from '@/utils/customerType'
 import { findPreviousServiceReportMeter } from '@/utils/meterReading'
 import { hasDeliveryHistory } from '@/utils/printDeliveryHistory'
 import { compressSurveyImage, downloadSurveyAttachment, formatFileSize, isImageFile, MAX_SURVEY_FILE_BYTES, normalizeSurveyPhotos, uploadSurveyAttachments } from '@/utils/surveyFiles'
@@ -425,7 +427,7 @@ function initDoForm(force = false) {
     technician_signature: (d.technician_signature && d.technician_signature !== 'signed') ? d.technician_signature : (doForm.value.technician_signature || ''),
     customer_name: d.customer_name || d.recipient_name || theCustomer?.pic_name || theCustomer?.company_name || theCustomer?.name || '',
     technician_name: d.technician_name || currentUser.value?.name || '',
-    customer_category: d.customer_category || theCustomer?.category || 'Corporate',
+    customer_category: resolveTransactionCustomerType(d),
     photo_before: d.photo_before || doForm.value.photo_before || '',
     photo_progress: d.photo_progress || doForm.value.photo_progress || '',
     photo_after: d.photo_after || doForm.value.photo_after || '',
@@ -809,9 +811,9 @@ async function ensureServiceReport(now: string) {
     job_order_id: job.value.id,
     unit_id: String(unitId),
     customer_id: String(customerId),
-    customer_category: customer.value?.category || job.value?.customer?.category || '',
+    customer_category: resolveTransactionCustomerType(job.value),
     technician_id: job.value.technician_id,
-    service_type: 'repair',
+    service_type: job.value?.service_request?.service_type || 'preventif',
     status: 'in_progress',
     time_in: now,
     machine_problem: job.value.instructions || job.value.service_request?.problem_description || '-',
@@ -915,6 +917,7 @@ async function confirmCompleteJob() {
       await api.patch(`/service-reports/${serviceReport.value.id}`, {
         status: 'completed',
         is_completed: true,
+        service_type: serviceReport.value.service_type || job.value?.service_request?.service_type || 'preventif',
         time_out: nowHM(),
       })
     }
@@ -979,7 +982,7 @@ async function createStandalone() {
         do_type: 'service',
         status: 'pending',
         customer_id: custId,
-        customer_category: d?.customer_category || sr?.customer_category || 'Corporate',
+        customer_category: resolveTransactionCustomerType(d || sr || job.value),
         project_name: finalProjectName,
         delivery_address: resolvedDeliveryAddress.value !== '-' ? resolvedDeliveryAddress.value : (d?.delivery_address || sr?.customer?.address || ''),
         recipient_name: d?.recipient_name || sr?.customer?.pic_name || '',
@@ -1468,7 +1471,12 @@ async function handleDownloadSavedAttachment(att: any) {
           </div>
           <div class="info-item">
             <span class="info-label">Duration / SLA</span>
-            <span class="info-value">{{ slaDurationStr }} (Limit: 2 Hours)</span>
+            <span class="info-value" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span>{{ slaDurationStr }} (Limit: 2 Hours)</span>
+              <span v-if="isJobOverSla(job)" class="badge badge-danger" style="font-size: 11px;">
+                ⚠️ Over SLA ({{ formatJobSlaLabel(job) }})
+              </span>
+            </span>
           </div>
         </div>
 
@@ -1767,7 +1775,12 @@ async function handleDownloadSavedAttachment(att: any) {
           </div>
           <div class="info-item">
             <span class="info-label">Duration / SLA</span>
-            <span class="info-value">{{ slaDurationStr }} (Limit: 2 Hours)</span>
+            <span class="info-value" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span>{{ slaDurationStr }} (Limit: 2 Hours)</span>
+              <span v-if="isJobOverSla(job)" class="badge badge-danger" style="font-size: 11px;">
+                ⚠️ Over SLA ({{ formatJobSlaLabel(job) }})
+              </span>
+            </span>
           </div>
         </div>
 

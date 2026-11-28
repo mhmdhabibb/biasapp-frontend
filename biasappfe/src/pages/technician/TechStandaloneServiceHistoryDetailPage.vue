@@ -19,6 +19,7 @@ import { resources } from '@/services/resource.service'
 import { printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import { isTechnicianAssignedToJob, getJobMemberTechIds, isLeadTechnicianForJob, isMemberTechnicianForJob } from '@/utils/jobTechnician'
 import { normalizeRole } from '@/router/role-access'
+import { formatDeliveryOrderItemLabel, getDeliveryOrderItemBadge, resolveDeliveryOrderItemKind } from '@/utils/deliveryOrderItems'
 
 const toast = useToast()
 const { can } = usePermission()
@@ -52,10 +53,20 @@ const brandOptions = computed(() => {
   if (!showItemModal.value) return []
   return ((store.brands.value ?? []) as any[]).map((b: any) => ({ value: b.id, label: b.name }))
 })
+const MANUAL_BRAND_VALUE = '__manual__'
+const brandOptionsWithManual = computed(() => [
+  { value: '', label: '-- Tanpa Brand (Opsional) --' },
+  { value: MANUAL_BRAND_VALUE, label: '✏️ Ketik Brand Manual (tidak ada di database)' },
+  ...brandOptions.value,
+])
 const unitTypeOptions = computed(() => {
   if (!showItemModal.value) return []
   return (((store as any).unitTypes?.value ?? []) as any[]).map((u: any) => ({ value: u.id, label: u.name }))
 })
+const unitTypeOptionsWithOptional = computed(() => [
+  { value: '', label: '-- Tanpa Tipe Produk (Opsional) --' },
+  ...unitTypeOptions.value,
+])
 const warrantyOptions = [
   { value: 'Under warranty', label: 'Under warranty' },
   { value: 'Out of warranty', label: 'Out of warranty' },
@@ -122,8 +133,8 @@ function formatTimeWithDate(timeStr: string, dateStr: string) {
   }
 }
 
-// Aturan: 1 form Stand Alone = 1 produk. Tombol tambah hanya muncul bila
-// belum ada item, dan Selesaikan mensyaratkan minimal 1 item.
+// Multi-item: teknisi bisa menambah banyak unit/produk per form Stand Alone.
+// Selesaikan mensyaratkan minimal 1 item.
 const hasItem = computed(() => ((item.value as any)?.delivery_order_items || []).length > 0)
 
 const isCompleted = computed(() =>
@@ -177,42 +188,37 @@ function clearPhoto(type: 'before' | 'progress' | 'after') {
 }
 
 // ── Items form state ──
+const editingItemId = ref<string | null>(null)
+const editingItemOriginal = ref<any>(null)
+const sessionAddedLabels = ref<string[]>([])
+
 const itemForm = reactive({
-  kind: 'unit',
+  category: 'unit' as 'unit' | 'product',
+  source: 'db' as 'db' | 'manual',
   unit_id: null as any,
   product_id: null as any,
-  brand_id: null as any,
-  unit_type_id: null as any,
+  brand_id: '' as any,
+  manual_brand: '',
+  unit_type_id: '' as any,
   model: '',
   serial_no: '',
   warranty_status: '',
   warranty_expired_date: '',
+  save_to_master: false,
   qty: 1,
   remarks: ''
 })
-const kindOptions = [
-  { value: 'unit', label: 'Unit / Product (Pilih dari Database)' },
-  { value: 'product', label: 'Consumable / Sparepart (Pilih dari Database)' },
-  { value: 'external', label: 'Barang External (Input Manual)' },
-]
+
+const itemLookups = {
+  findUnit: (uid: any) => store.findUnit(uid),
+  findProduct: (pid: any) => store.findProduct(pid),
+  findBrand: (bid: any) => store.findBrand(bid),
+  findUnitType: (utid: any) => (store as any).findUnitType?.(utid),
+}
 
 const isModalLoading = ref(false)
 
-async function openItemModal() {
-  Object.assign(itemForm, {
-    kind: 'unit',
-    unit_id: null,
-    product_id: null,
-    brand_id: null,
-    unit_type_id: null,
-    model: '',
-    serial_no: '',
-    warranty_status: '',
-    warranty_expired_date: '',
-    qty: 1,
-    remarks: ''
-  })
-  showItemModal.value = true
+async function ensureModalDropdownData() {
   const needsUnits = ((store.units.value ?? []) as any[]).length === 0
   const needsProducts = ((store.products.value ?? []) as any[]).length === 0
   const needsBrands = ((store.brands.value ?? []) as any[]).length === 0
@@ -232,51 +238,160 @@ async function openItemModal() {
   }
 }
 
-function itemLabel(it: any): string {
-  if (it.unit_id) {
-    const u: any = store.findUnit(it.unit_id)
-    return u ? `${u.model || 'Unit'}${u.serial_no ? ` (${u.serial_no})` : ''}` : 'Unit'
-  }
-  if (it.product_id) {
-    const p: any = store.findProduct(it.product_id)
-    return p?.name || 'Product'
-  }
-  if (it.brand_id || it.unit_type_id || it.model) {
-    const b: any = store.findBrand(it.brand_id)
-    const ut: any = (store as any).findUnitType?.(it.unit_type_id)
-    const brandStr = b ? b.name : ''
-    const typeStr = ut ? ut.name : ''
-    return `${brandStr} ${typeStr} ${it.model || ''} ${it.serial_no ? `(SN: ${it.serial_no})` : ''}`.trim() || 'Barang External'
-  }
-  return '-'
+function resetItemEntryFields() {
+  Object.assign(itemForm, {
+    unit_id: null,
+    product_id: null,
+    brand_id: '',
+    manual_brand: '',
+    unit_type_id: '',
+    model: '',
+    serial_no: '',
+    warranty_status: '',
+    warranty_expired_date: '',
+    save_to_master: false,
+    qty: 1,
+    remarks: ''
+  })
 }
 
-async function addItem() {
-  if (((item.value as any)?.delivery_order_items || []).length > 0) {
-    toast.warning('1 form hanya untuk 1 produk.')
-    showItemModal.value = false
+function setItemCategory(cat: 'unit' | 'product') {
+  if (itemForm.category === cat) return
+  itemForm.category = cat
+  itemForm.unit_id = null
+  itemForm.product_id = null
+  itemForm.unit_type_id = ''
+  itemForm.save_to_master = false
+  if (cat === 'product') {
+    itemForm.warranty_status = ''
+    itemForm.warranty_expired_date = ''
+  }
+}
+
+function setItemSource(src: 'db' | 'manual') {
+  if (itemForm.source === src) return
+  itemForm.source = src
+  if (src === 'manual') {
+    itemForm.unit_id = null
+    itemForm.product_id = null
+  } else {
+    itemForm.brand_id = ''
+    itemForm.manual_brand = ''
+    itemForm.unit_type_id = ''
+    itemForm.model = ''
+    itemForm.serial_no = ''
+    itemForm.warranty_status = ''
+    itemForm.warranty_expired_date = ''
+    itemForm.save_to_master = false
+  }
+}
+
+async function openItemModal() {
+  editingItemId.value = null
+  editingItemOriginal.value = null
+  sessionAddedLabels.value = []
+  itemForm.category = 'unit'
+  itemForm.source = 'db'
+  resetItemEntryFields()
+  showItemModal.value = true
+  await ensureModalDropdownData()
+}
+
+async function openEditItemModal(it: any) {
+  editingItemId.value = String(it.id)
+  editingItemOriginal.value = it
+  sessionAddedLabels.value = []
+  const kind = resolveDeliveryOrderItemKind(it)
+  resetItemEntryFields()
+  if (kind === 'unit') {
+    itemForm.category = 'unit'
+    itemForm.source = 'db'
+    itemForm.unit_id = it.unit_id
+  } else if (kind === 'product') {
+    itemForm.category = 'product'
+    itemForm.source = 'db'
+    itemForm.product_id = it.product_id
+  } else if (kind === 'product_manual') {
+    itemForm.category = 'product'
+    itemForm.source = 'manual'
+    itemForm.brand_id = it.brand_id || ''
+    itemForm.model = it.description || it.model || ''
+    itemForm.serial_no = it.serial_no || ''
+  } else {
+    itemForm.category = 'unit'
+    itemForm.source = 'manual'
+    itemForm.brand_id = it.brand_id || ''
+    itemForm.unit_type_id = it.unit_type_id || ''
+    itemForm.model = it.model || ''
+    itemForm.serial_no = it.serial_no || ''
+    itemForm.warranty_status = it.warranty_status || ''
+    itemForm.warranty_expired_date = it.warranty_expired_date ? String(it.warranty_expired_date).slice(0, 10) : ''
+  }
+  itemForm.qty = Number(it.qty) > 0 ? Number(it.qty) : 1
+  itemForm.remarks = it.remarks || ''
+  showItemModal.value = true
+  await ensureModalDropdownData()
+}
+
+function itemLabel(it: any): string {
+  return formatDeliveryOrderItemLabel(it, itemLookups)
+}
+
+function itemBadge(it: any) {
+  return getDeliveryOrderItemBadge(it)
+}
+
+async function refreshCurrentDO() {
+  try {
+    const res: any = await api.get(`/delivery-orders/${id}`)
+    const full = res.data?.data ?? res.data
+    if (full) {
+      localItem.value = full
+    }
+  } catch {}
+  void store.refreshOnly(['deliveryOrders'])
+}
+
+async function addItem(keepOpen = false) {
+  if (itemForm.category === 'unit' && itemForm.source === 'db' && !itemForm.unit_id) {
+    toast.warning('Pilih unit dari database terlebih dahulu, atau gunakan tab Input Manual.')
     return
   }
-  if (itemForm.kind === 'unit' && !itemForm.unit_id) {
-    toast.warning('Pilih unit dulu.')
+  if (itemForm.category === 'product' && itemForm.source === 'db' && !itemForm.product_id) {
+    toast.warning('Pilih produk dari database terlebih dahulu, atau gunakan tab Input Manual.')
     return
   }
-  if (itemForm.kind === 'product' && !itemForm.product_id) {
-    toast.warning('Pilih product dulu.')
+
+  const trimmedModel = (itemForm.model || '').trim()
+  if (itemForm.category === 'unit' && itemForm.source === 'manual' && !trimmedModel) {
+    toast.warning('Isi Nama / Model Unit terlebih dahulu.')
     return
   }
+  if (itemForm.category === 'product' && itemForm.source === 'manual' && !trimmedModel) {
+    toast.warning('Isi Nama Produk / Sparepart terlebih dahulu.')
+    return
+  }
+
+  const manualBrandText = itemForm.brand_id === MANUAL_BRAND_VALUE ? (itemForm.manual_brand || '').trim() : ''
+  if (itemForm.source === 'manual' && itemForm.brand_id === MANUAL_BRAND_VALUE && !manualBrandText) {
+    toast.warning('Ketik nama brand manual atau pilih brand lain / Tanpa Brand.')
+    return
+  }
+
+  const serialUpper = (itemForm.serial_no || '').trim().toUpperCase()
+  if (itemForm.category === 'unit' && itemForm.source === 'manual' && itemForm.save_to_master) {
+    if (!itemForm.brand_id || itemForm.brand_id === MANUAL_BRAND_VALUE || !itemForm.unit_type_id || !trimmedModel || !serialUpper) {
+      toast.warning('Untuk menyimpan ke Master Unit, lengkapi Brand (DB), Tipe Produk, Model, dan Serial Number.')
+      return
+    }
+  }
+
   isSaving.value = true
   try {
-    let finalUnitId = itemForm.kind === 'unit' ? itemForm.unit_id : null;
-    
-    if (itemForm.kind === 'external') {
-      if (!itemForm.brand_id || !itemForm.unit_type_id || !itemForm.model || !itemForm.serial_no) {
-        toast.warning('Lengkapi Brand, Tipe, Model, dan Serial No untuk unit external.');
-        isSaving.value = false;
-        return;
-      }
-      const serialUpper = (itemForm.serial_no || '').trim().toUpperCase()
-      let existing = ((store.units.value ?? []) as any[]).find(
+    let finalUnitId = itemForm.category === 'unit' && itemForm.source === 'db' ? itemForm.unit_id : null
+
+    if (itemForm.category === 'unit' && itemForm.source === 'manual' && itemForm.save_to_master) {
+      const existing = ((store.units.value ?? []) as any[]).find(
         (u: any) => String(u.serial_no || '').trim().toUpperCase() === serialUpper,
       )
       if (existing) {
@@ -284,10 +399,10 @@ async function addItem() {
       } else {
         try {
           await resources.units.create({
-            name: itemForm.model || 'Unit',
+            name: trimmedModel || 'Unit',
             brand_id: itemForm.brand_id,
             type_id: itemForm.unit_type_id,
-            model: itemForm.model,
+            model: trimmedModel,
             serial_no: serialUpper,
             is_external: true,
             status: 'available',
@@ -302,57 +417,100 @@ async function addItem() {
         if (found) {
           finalUnitId = found.id
         } else {
-          toast.error('Gagal menambahkan unit. Silakan coba lagi.')
+          toast.error('Gagal menambahkan unit ke Master Unit. Silakan coba lagi.')
           isSaving.value = false
           return
         }
       }
     }
 
-    await resources.deliveryOrderItems.create({
+    const isManualUnit = itemForm.category === 'unit' && itemForm.source === 'manual' && !itemForm.save_to_master
+    const isExternalSavedUnit = itemForm.category === 'unit' && itemForm.source === 'manual' && itemForm.save_to_master
+    const isManualProduct = itemForm.category === 'product' && itemForm.source === 'manual'
+
+    let finalModel = trimmedModel
+    if (manualBrandText && !finalModel.toLowerCase().startsWith(manualBrandText.toLowerCase())) {
+      finalModel = `${manualBrandText} ${finalModel}`.trim()
+    }
+    const finalBrandId = (isManualUnit || isManualProduct || isExternalSavedUnit) && itemForm.brand_id && itemForm.brand_id !== MANUAL_BRAND_VALUE
+      ? itemForm.brand_id
+      : null
+    const finalUnitTypeId = (isManualUnit || isExternalSavedUnit) && itemForm.unit_type_id
+      ? itemForm.unit_type_id
+      : null
+
+    const itemPayload: any = {
       delivery_order_id: id,
       unit_id: finalUnitId,
-      product_id: itemForm.kind === 'product' ? itemForm.product_id : null,
-      brand_id: itemForm.kind === 'external' ? itemForm.brand_id : null,
-      unit_type_id: itemForm.kind === 'external' ? itemForm.unit_type_id : null,
-      model: itemForm.kind === 'external' ? itemForm.model : '',
-      serial_no: itemForm.kind === 'external' ? (itemForm.serial_no || '').toUpperCase() : '',
-      warranty_status: itemForm.kind === 'external' ? itemForm.warranty_status : '',
-      warranty_expired_date: itemForm.kind === 'external' && itemForm.warranty_expired_date ? `${itemForm.warranty_expired_date}T00:00:00Z` : undefined,
-      qty: itemForm.qty || 1,
-      remarks: itemForm.remarks || '',
-    })
-
-    // Auto-update project_name to format "Pengantaran [Nama Produk / Unit] ke [Alamat Penerima]"
-    const createdItem = {
-      unit_id: finalUnitId,
-      product_id: itemForm.kind === 'product' ? itemForm.product_id : null,
-      brand_id: itemForm.kind === 'external' ? itemForm.brand_id : null,
-      unit_type_id: itemForm.kind === 'external' ? itemForm.unit_type_id : null,
-      model: itemForm.kind === 'external' ? itemForm.model : '',
-      serial_no: itemForm.kind === 'external' ? (itemForm.serial_no || '').toUpperCase() : '',
-    }
-    const label = itemLabel(createdItem)
-    const curProjectName = String(item.value?.project_name || '').trim()
-    const address = item.value?.delivery_address || customer.value?.address || ''
-    if (!curProjectName || curProjectName === '-' || curProjectName === 'Pengantaran Unit' || curProjectName.startsWith('Pengantaran Unit ke') || curProjectName.toLowerCase().includes('service laptop')) {
-      const newProjectName = address ? `Pengantaran ${label} ke ${address}` : `Pengantaran ${label}`
-      await resources.deliveryOrders.update(id, { project_name: newProjectName })
+      product_id: itemForm.category === 'product' && itemForm.source === 'db' ? itemForm.product_id : null,
+      brand_id: finalBrandId,
+      unit_type_id: finalUnitTypeId,
+      model: (isManualUnit || isManualProduct || isExternalSavedUnit) ? finalModel : '',
+      serial_no: (isManualUnit || isManualProduct || isExternalSavedUnit) ? serialUpper : '',
+      description: isManualProduct ? finalModel : '',
+      warranty_status: (isManualUnit || isExternalSavedUnit) ? (itemForm.warranty_status || '') : '',
+      warranty_expired_date: (isManualUnit || isExternalSavedUnit) && itemForm.warranty_expired_date
+        ? `${itemForm.warranty_expired_date}T00:00:00Z`
+        : undefined,
+      qty: Math.max(1, Number(itemForm.qty) || 1),
+      remarks: (itemForm.remarks || '').trim(),
     }
 
-    await store.refreshOnly(['deliveryOrders'])
-    try {
-      const res: any = await api.get(`/delivery-orders/${id}`)
-      const full = res.data?.data ?? res.data
-      if (full) {
-        localItem.value = full
+    const wasEmpty = ((item.value as any)?.delivery_order_items || []).length === 0
+
+    if (editingItemId.value && editingItemOriginal.value) {
+      const orig = editingItemOriginal.value
+      const origKind = resolveDeliveryOrderItemKind(orig)
+      const nextKind = isExternalSavedUnit
+        ? 'unit'
+        : `${itemForm.category}${itemForm.source === 'manual' ? '_manual' : ''}`
+      // Backend Update uses GORM struct Updates (ignores zero/empty values).
+      // Recreate when switching kind or clearing previously non-empty optional fields.
+      const clearedTextOrFK =
+        Boolean(orig.serial_no && !itemPayload.serial_no) ||
+        Boolean(orig.remarks && !itemPayload.remarks) ||
+        Boolean(orig.brand_id && !itemPayload.brand_id) ||
+        Boolean(orig.unit_type_id && !itemPayload.unit_type_id) ||
+        Boolean(orig.warranty_status && !itemPayload.warranty_status) ||
+        Boolean(orig.description && !itemPayload.description)
+
+      if (origKind !== nextKind || clearedTextOrFK) {
+        await resources.deliveryOrderItems.create(itemPayload)
+        await resources.deliveryOrderItems.remove(editingItemId.value)
+      } else {
+        await resources.deliveryOrderItems.update(editingItemId.value, itemPayload)
       }
-    } catch {}
-    showItemModal.value = false
-    Object.assign(itemForm, { kind: 'external', unit_id: null, product_id: null, brand_id: null, unit_type_id: null, model: '', serial_no: '', warranty_status: '', warranty_expired_date: '', qty: 1, remarks: '' })
-    toast.success('Item produk ditambahkan.')
+    } else {
+      await resources.deliveryOrderItems.create(itemPayload)
+    }
+
+    const label = itemLabel(itemPayload)
+    // Auto-update project_name only on first item when CS left default placeholder
+    if (!editingItemId.value && wasEmpty) {
+      const curProjectName = String(item.value?.project_name || '').trim()
+      const address = item.value?.delivery_address || customer.value?.address || ''
+      if (!curProjectName || curProjectName === '-' || curProjectName === 'Pengantaran Unit' || curProjectName.startsWith('Pengantaran Unit ke') || curProjectName.toLowerCase().includes('service laptop')) {
+        const newProjectName = address ? `Pengantaran ${label} ke ${address}` : `Pengantaran ${label}`
+        await resources.deliveryOrders.update(id, { project_name: newProjectName })
+      }
+    }
+
+    await refreshCurrentDO()
+
+    if (keepOpen && !editingItemId.value) {
+      const qtySuffix = itemPayload.qty > 1 ? ` x${itemPayload.qty}` : ''
+      sessionAddedLabels.value.push(`${label}${qtySuffix}`)
+      resetItemEntryFields()
+      toast.success('Item ditambahkan. Silakan tambah item berikutnya.')
+    } else {
+      showItemModal.value = false
+      resetItemEntryFields()
+      toast.success(editingItemId.value ? 'Item produk / unit diperbarui.' : 'Item produk / unit ditambahkan.')
+      editingItemId.value = null
+      editingItemOriginal.value = null
+    }
   } catch (err: any) {
-    toast.error(err?.message || 'Gagal menambah item.')
+    toast.error(err?.message || 'Gagal menyimpan item.')
   } finally {
     isSaving.value = false
   }
@@ -362,14 +520,7 @@ async function removeItem(itemId: string) {
   if (!confirm('Hapus item ini?')) return
   try {
     await resources.deliveryOrderItems.remove(String(itemId))
-    await store.refreshOnly(['deliveryOrders'])
-    try {
-      const res: any = await api.get(`/delivery-orders/${id}`)
-      const full = res.data?.data ?? res.data
-      if (full) {
-        localItem.value = full
-      }
-    } catch {}
+    await refreshCurrentDO()
     toast.success('Item dihapus.')
   } catch (err: any) {
     toast.error(err?.message || 'Gagal menghapus item.')
@@ -536,7 +687,7 @@ function confirmCompleteForm() {
     return
   }
   if (!isCompleted.value) {
-    toast.warning('Lengkapi dulu: 1 produk + action + tanda tangan + foto awal.')
+    toast.warning('Lengkapi dulu: minimal 1 unit/produk + action + tanda tangan + foto awal.')
     return
   }
   showCompleteConfirm.value = true
@@ -586,6 +737,7 @@ async function executeCompleteForm() {
              unit_type_id: doi.unit_type_id,
              model: doi.model,
              serial_no: doi.serial_no,
+             description: doi.description,
              warranty_status: doi.warranty_status,
              warranty_expired_date: doi.warranty_expired_date,
              qty: doi.qty,
@@ -772,16 +924,36 @@ onMounted(async () => {
       <div class="items-box mb-lg">
         <div class="items-head">
           <strong>Unit / Product ({{ (item.delivery_order_items || []).length }})</strong>
-          <button v-if="canManageDo && !hasItem" class="btn btn-sm btn-outline" @click="openItemModal">+ Tambah Item</button>
-          <span v-else-if="hasItem" class="text-sm text-muted">1 form = 1 produk</span>
+          <button v-if="canManageDo" type="button" class="btn btn-sm btn-outline" @click="openItemModal">+ Tambah Item</button>
         </div>
         <div v-if="(item.delivery_order_items || []).length" class="mt-sm">
-          <div v-for="it in item.delivery_order_items" :key="it.id" class="item-row">
-            <span>{{ itemLabel(it) }} <span class="text-muted">x{{ it.qty || 1 }}</span><span v-if="it.remarks" class="text-muted"> — {{ it.remarks }}</span></span>
-            <button v-if="canManageDo" class="btn btn-sm btn-outline btn-danger" @click="removeItem(it.id)">Hapus</button>
+          <div v-for="(it, idx) in item.delivery_order_items" :key="it.id || idx" class="item-row">
+            <div class="item-row-info">
+              <span class="item-index">#{{ idx + 1 }}</span>
+              <span
+                class="item-kind-badge"
+                :class="[
+                  itemBadge(it).isUnit ? 'kind-unit' : 'kind-product',
+                  { 'kind-manual': itemBadge(it).isManual },
+                ]"
+              >
+                {{ itemBadge(it).label }}
+              </span>
+              <span class="item-label-text">
+                {{ itemLabel(it) }}
+                <span class="text-muted">x{{ it.qty || 1 }}</span>
+                <span v-if="it.remarks" class="text-muted"> — {{ it.remarks }}</span>
+              </span>
+            </div>
+            <div v-if="canManageDo" class="item-row-actions">
+              <button type="button" class="btn btn-sm btn-outline" @click="openEditItemModal(it)">Edit</button>
+              <button type="button" class="btn btn-sm btn-outline btn-danger" @click="removeItem(it.id)">Hapus</button>
+            </div>
           </div>
         </div>
-        <p v-else class="text-sm text-muted mt-sm">Belum ada produk. Tambahkan 1 unit/mesin atau product yang dikerjakan.</p>
+        <p v-else class="text-sm text-muted mt-sm">
+          Belum ada item. Klik <strong>+ Tambah Item</strong> untuk menambahkan unit/mesin atau produk (bisa lebih dari satu, pilih dari database atau input manual).
+        </p>
       </div>
 
       <div class="form-group">
@@ -925,60 +1097,168 @@ onMounted(async () => {
       </template>
     </div>
 
-    <!-- Modal tambah item (v-if agar CustomSelect tidak di-mount saat tertutup) -->
+    <!-- Modal tambah / edit item (v-if agar CustomSelect tidak di-mount saat tertutup) -->
     <FormModal
       v-if="showItemModal"
       :open="showItemModal"
-      title="Tambah Unit / Product"
-      max-width="640px"
+      :title="editingItemId ? 'Edit Unit / Product' : 'Tambah Unit / Product'"
+      max-width="680px"
       min-height="460px"
-      submit-label="Simpan Unit / Product"
+      :loading="isSaving"
       @close="showItemModal = false"
-      @submit="addItem"
-      :is-loading="isSaving"
+      @submit="addItem(false)"
     >
-      <div class="form-group">
-        <label class="form-label font-bold">Jenis Barang</label>
-        <CustomSelect v-model="itemForm.kind" :options="kindOptions" />
+      <div v-if="sessionAddedLabels.length > 0 && !editingItemId" class="session-added-banner">
+        <div class="session-added-title">✓ Tersimpan pada form ini (+{{ sessionAddedLabels.length }}):</div>
+        <div class="session-added-chips">
+          <span v-for="(lbl, i) in sessionAddedLabels" :key="i" class="session-chip">
+            {{ lbl }}
+          </span>
+        </div>
       </div>
 
-      <div v-if="itemForm.kind === 'unit'" class="form-group">
-        <label class="form-label font-bold">Pilih Unit / Product <span class="text-danger">*</span></label>
-        <CustomSelect v-model="itemForm.unit_id" :options="unitOptions" placeholder="-- Pilih Unit / Product --" :searchable="true" :loading="isModalLoading" />
-      </div>
-      <div v-else-if="itemForm.kind === 'product'" class="form-group">
-        <label class="form-label font-bold">Pilih Consumable / Sparepart <span class="text-danger">*</span></label>
-        <CustomSelect v-model="itemForm.product_id" :options="productOptions" placeholder="-- Pilih Consumable / Sparepart --" :searchable="true" :loading="isModalLoading" />
-      </div>
-      <template v-if="itemForm.kind === 'external'">
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label font-bold">Brand</label>
-            <CustomSelect v-model="itemForm.brand_id" :options="brandOptions" placeholder="-- Brand --" :searchable="true" :loading="isModalLoading" />
-          </div>
-          <div class="form-group">
-            <label class="form-label font-bold">Tipe Produk</label>
-            <CustomSelect v-model="itemForm.unit_type_id" :options="unitTypeOptions" placeholder="-- Tipe Produk --" :searchable="true" :loading="isModalLoading" />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label font-bold">Model/Type</label>
-            <input v-model="itemForm.model" type="text" class="form-input" placeholder="Misal: GL65" />
-          </div>
-          <div class="form-group">
-            <label class="form-label font-bold">Serial Number</label>
-            <input v-model="itemForm.serial_no" type="text" class="form-input uppercase-input" placeholder="SN" autocapitalize="characters" autocomplete="off" spellcheck="false" @input="itemForm.serial_no = (itemForm.serial_no || '').toUpperCase()" />
+      <div class="mode-selectors">
+        <div class="form-group">
+          <label class="form-label font-bold">Kategori Barang</label>
+          <div class="segmented-group">
+            <button
+              type="button"
+              class="segmented-btn"
+              :class="{ active: itemForm.category === 'unit' }"
+              @click="setItemCategory('unit')"
+            >
+              🖥️ Unit / Mesin
+            </button>
+            <button
+              type="button"
+              class="segmented-btn"
+              :class="{ active: itemForm.category === 'product' }"
+              @click="setItemCategory('product')"
+            >
+              📦 Produk / Sparepart
+            </button>
           </div>
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label font-bold">Warranty Status</label>
-            <CustomSelect v-model="itemForm.warranty_status" :options="warrantyOptions" placeholder="Status" />
+
+        <div class="form-group">
+          <label class="form-label font-bold">Sumber Data</label>
+          <div class="segmented-group">
+            <button
+              type="button"
+              class="segmented-btn"
+              :class="{ active: itemForm.source === 'db' }"
+              @click="setItemSource('db')"
+            >
+              📋 Pilih dari Database
+            </button>
+            <button
+              type="button"
+              class="segmented-btn"
+              :class="{ active: itemForm.source === 'manual' }"
+              @click="setItemSource('manual')"
+            >
+              ✏️ Input Manual
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. Unit dari Database -->
+      <div v-if="itemForm.category === 'unit' && itemForm.source === 'db'" class="form-group">
+        <label class="form-label font-bold">Pilih Unit / Mesin <span class="text-danger">*</span></label>
+        <CustomSelect v-model="itemForm.unit_id" :options="unitOptions" placeholder="-- Pilih Unit / Mesin --" :searchable="true" :loading="isModalLoading" />
+        <div class="source-switch-hint">
+          Unit tidak ada di database?
+          <button type="button" class="link-btn" @click="setItemSource('manual')">Klik untuk Input Manual →</button>
+        </div>
+      </div>
+
+      <!-- 2. Produk dari Database -->
+      <div v-else-if="itemForm.category === 'product' && itemForm.source === 'db'" class="form-group">
+        <label class="form-label font-bold">Pilih Produk / Consumable / Sparepart <span class="text-danger">*</span></label>
+        <CustomSelect v-model="itemForm.product_id" :options="productOptions" placeholder="-- Pilih Produk / Sparepart --" :searchable="true" :loading="isModalLoading" />
+        <div class="source-switch-hint">
+          Produk tidak ada di database?
+          <button type="button" class="link-btn" @click="setItemSource('manual')">Klik untuk Input Manual →</button>
+        </div>
+      </div>
+
+      <!-- 3. Unit Input Manual -->
+      <template v-else-if="itemForm.category === 'unit' && itemForm.source === 'manual'">
+        <div class="manual-box">
+          <div class="manual-box-hint">
+            Masukkan detail unit secara manual karena belum terdaftar di database.
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label font-bold">Nama / Model Unit <span class="text-danger">*</span></label>
+              <input v-model="itemForm.model" type="text" class="form-input" placeholder="Misal: Epson L3210 / ThinkPad X1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label font-bold">Serial Number <span v-if="itemForm.save_to_master" class="text-danger">*</span></label>
+              <input v-model="itemForm.serial_no" type="text" class="form-input uppercase-input" placeholder="SN (opsional jika tidak ada)" autocapitalize="characters" autocomplete="off" spellcheck="false" @input="itemForm.serial_no = (itemForm.serial_no || '').toUpperCase()" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label font-bold">Brand <span v-if="itemForm.save_to_master" class="text-danger">*</span></label>
+              <CustomSelect v-model="itemForm.brand_id" :options="brandOptionsWithManual" placeholder="-- Tanpa Brand (Opsional) --" :searchable="true" :loading="isModalLoading" />
+              <input
+                v-if="itemForm.brand_id === MANUAL_BRAND_VALUE"
+                v-model="itemForm.manual_brand"
+                type="text"
+                class="form-input mt-xs"
+                placeholder="Ketik nama brand manual..."
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label font-bold">Tipe Produk <span v-if="itemForm.save_to_master" class="text-danger">*</span></label>
+              <CustomSelect v-model="itemForm.unit_type_id" :options="unitTypeOptionsWithOptional" placeholder="-- Tanpa Tipe Produk (Opsional) --" :searchable="true" :loading="isModalLoading" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label font-bold">Warranty Status (Opsional)</label>
+              <CustomSelect v-model="itemForm.warranty_status" :options="warrantyOptions" placeholder="Status" />
+            </div>
+            <div class="form-group">
+              <label class="form-label font-bold">Warranty Expired Date (Opsional)</label>
+              <input v-model="itemForm.warranty_expired_date" type="date" class="form-input" />
+            </div>
+          </div>
+          <label v-if="!editingItemId" class="save-master-check">
+            <input type="checkbox" v-model="itemForm.save_to_master" />
+            <span>Simpan juga sebagai <strong>Unit External</strong> di database Master Unit (wajib Brand DB, Tipe, Model &amp; SN)</span>
+          </label>
+        </div>
+      </template>
+
+      <!-- 4. Produk Input Manual -->
+      <template v-else-if="itemForm.category === 'product' && itemForm.source === 'manual'">
+        <div class="manual-box">
+          <div class="manual-box-hint">
+            Masukkan detail produk / consumable / sparepart secara manual karena belum terdaftar di database.
           </div>
           <div class="form-group">
-            <label class="form-label font-bold">Warranty Expired Date</label>
-            <input v-model="itemForm.warranty_expired_date" type="date" class="form-input" />
+            <label class="form-label font-bold">Nama Produk / Consumable / Sparepart <span class="text-danger">*</span></label>
+            <input v-model="itemForm.model" type="text" class="form-input" placeholder="Misal: Tinta Epson 003 Black / Kabel Power 1.5m" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label font-bold">Brand / Merk (Opsional)</label>
+              <CustomSelect v-model="itemForm.brand_id" :options="brandOptionsWithManual" placeholder="-- Tanpa Brand (Opsional) --" :searchable="true" :loading="isModalLoading" />
+              <input
+                v-if="itemForm.brand_id === MANUAL_BRAND_VALUE"
+                v-model="itemForm.manual_brand"
+                type="text"
+                class="form-input mt-xs"
+                placeholder="Ketik nama brand manual..."
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label font-bold">Kode / SKU / Part No (Opsional)</label>
+              <input v-model="itemForm.serial_no" type="text" class="form-input uppercase-input" placeholder="Misal: PART-001 (opsional)" autocapitalize="characters" autocomplete="off" spellcheck="false" @input="itemForm.serial_no = (itemForm.serial_no || '').toUpperCase()" />
+            </div>
           </div>
         </div>
       </template>
@@ -993,6 +1273,25 @@ onMounted(async () => {
           <input v-model="itemForm.remarks" type="text" class="form-input" placeholder="Keterangan tambahan..." />
         </div>
       </div>
+
+      <template #footer>
+        <button type="button" class="btn btn-outline" :disabled="isSaving" @click="showItemModal = false">
+          {{ sessionAddedLabels.length > 0 ? 'Selesai / Tutup' : 'Batal' }}
+        </button>
+        <button
+          v-if="!editingItemId"
+          type="button"
+          class="btn btn-outline"
+          style="color: var(--color-primary); border-color: var(--color-primary);"
+          :disabled="isSaving"
+          @click="addItem(true)"
+        >
+          {{ isSaving ? 'Menyimpan...' : '+ Simpan & Tambah Lagi' }}
+        </button>
+        <button type="button" class="btn btn-primary" :disabled="isSaving" @click="addItem(false)">
+          {{ isSaving ? 'Menyimpan...' : (editingItemId ? 'Simpan Perubahan' : 'Simpan Unit / Product') }}
+        </button>
+      </template>
     </FormModal>
 
     <ConfirmDialog
@@ -1090,6 +1389,147 @@ onMounted(async () => {
   margin-top: 8px;
   font-size: 13px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  flex-wrap: wrap;
+}
+.item-row-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 200px;
+}
+.item-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.item-index {
+  font-weight: 700;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+.item-kind-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.item-kind-badge.kind-unit {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+.item-kind-badge.kind-product {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+.item-kind-badge.kind-manual {
+  border-style: dashed;
+}
+.item-label-text {
+  font-weight: 500;
+  word-break: break-word;
+}
+.session-added-banner {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.session-added-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #065f46;
+  margin-bottom: 6px;
+}
+.session-added-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.session-chip {
+  font-size: 11px;
+  font-weight: 600;
+  background: #fff;
+  color: #047857;
+  border: 1px solid #6ee7b7;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.mode-selectors {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.segmented-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.segmented-btn {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+.segmented-btn:hover {
+  border-color: var(--color-primary);
+}
+.segmented-btn.active {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+.source-switch-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.manual-box {
+  background: var(--color-surface-sunken);
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.manual-box-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 10px;
+}
+.save-master-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text);
+  cursor: pointer;
+  margin-top: 4px;
+}
+.mt-xs {
+  margin-top: 6px;
 }
 .text-muted {
   color: var(--color-text-muted);
@@ -1135,6 +1575,9 @@ onMounted(async () => {
   border: 1px solid var(--color-border);
 }
 @media (max-width: 580px) {
+  .mode-selectors {
+    grid-template-columns: 1fr;
+  }
   .form-row {
     grid-template-columns: 1fr;
   }

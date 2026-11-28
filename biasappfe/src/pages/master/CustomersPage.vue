@@ -14,6 +14,13 @@ import { useToast } from '@/composables/useToast'
 import { useHardDelete } from '@/composables/useHardDelete'
 import { usePermission } from '@/composables/usePermission'
 import { resources } from '@/services/resource.service'
+import {
+  downloadServiceReportPdf,
+  fetchFullServiceReport,
+  needsFullReportFetch,
+  printServiceReport,
+} from '@/utils/printReport'
+import { formatDeliveryOrderItemLabel, resolveDeliveryOrderItemKind } from '@/utils/deliveryOrderItems'
 import type { Customer, TableColumn } from '@/types'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -237,15 +244,21 @@ function resolveDeliveryLineTarget(line: any): HistoryTarget | null {
       badge: 'Produk / Sparepart'
     }
   }
-  if (line.model) {
-    const label = `${line.model}${line.serial_no ? ` (${line.serial_no})` : ''}`
-    const isExternalUnit = !!(line.brand_id || line.unit_type_id || line.serial_no)
-    const extKey = line.serial_no ? `sn_${line.serial_no}` : `model_${line.model}`
+  if (line.model || line.description) {
+    const itemKind = resolveDeliveryOrderItemKind(line)
+    const isUnit = itemKind === 'unit_manual'
+    const label = formatDeliveryOrderItemLabel(line, {
+      findBrand: masterStore.findBrand,
+      findUnitType: (masterStore as any).findUnitType,
+    })
+    const rawKey = line.serial_no
+      ? `sn_${line.serial_no}`
+      : `name_${(line.description || line.model || label).toLowerCase()}`
     return {
-      id: isExternalUnit ? `unit_ext_${extKey}` : `prod_ext_${line.model}`,
+      id: isUnit ? `unit_ext_${rawKey}` : `prod_ext_${rawKey}`,
       name: label,
-      kind: isExternalUnit ? 'unit' : 'product',
-      badge: isExternalUnit ? 'Unit (External)' : 'Produk'
+      kind: isUnit ? 'unit' : 'product',
+      badge: isUnit ? 'Unit (Manual)' : 'Produk (Manual)'
     }
   }
   return null
@@ -684,6 +697,28 @@ function getCustomerHistoryCount(cid: any) {
   return customerHistoryCountMap.value.get(String(cid)) || 0
 }
 
+const pdfBusyId = ref<string | null>(null)
+
+async function handleHistoryPdf(item: any, mode: 'preview' | 'download') {
+  const key = `${item._type}-${item.id}-${mode}`
+  pdfBusyId.value = key
+  try {
+    let target = item
+    if (needsFullReportFetch(item)) {
+      target = await fetchFullServiceReport(item)
+    }
+    if (mode === 'preview') {
+      await printServiceReport(target)
+    } else {
+      await downloadServiceReportPdf(target)
+    }
+  } catch (err: any) {
+    toast.error(toast.fromError(err, 'Gagal memproses PDF laporan'))
+  } finally {
+    pdfBusyId.value = null
+  }
+}
+
 function goToForm(item: any) {
   if (item._type === 'service') {
     router.push(`/shared/service-reports/${item.id}`)
@@ -1003,6 +1038,7 @@ function goToForm(item: any) {
                 <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Teknisi</th>
                 <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Status</th>
                 <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted);">Problem / Keluhan</th>
+                <th style="padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--color-text-muted); text-align: center;">PDF</th>
               </tr>
             </thead>
             <tbody>
@@ -1022,7 +1058,7 @@ function goToForm(item: any) {
                     {{ getItemTarget(item).badge }}
                   </span>
                 </td>
-                <td style="padding: 10px 12px; font-weight: 500;">{{ getItemTarget(item).name }}</td>
+                <td style="padding: 10px 12px; font-weight: 500;">{{ getItemTargets(item).map(t => t.name).join(', ') }}</td>
                 <td style="padding: 10px 12px; white-space: nowrap;">{{ item._type === 'service' ? 'Service Report' : 'Stand Alone' }}</td>
                 <td style="padding: 10px 12px; white-space: nowrap;">{{ getHistoryTechnicianName(item) }}</td>
                 <td style="padding: 10px 12px; white-space: nowrap;">
@@ -1032,6 +1068,32 @@ function goToForm(item: any) {
                 </td>
                 <td style="padding: 10px 12px; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" :title="getHistoryProblem(item)">
                    {{ getHistoryProblem(item) }}
+                </td>
+                <td style="padding: 10px 12px; white-space: nowrap;">
+                  <div style="display: inline-flex; align-items: center; gap: 6px;">
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-outline"
+                      :disabled="pdfBusyId === `${item._type}-${item.id}-preview`"
+                      title="Preview PDF"
+                      @click="handleHistoryPdf(item, 'preview')"
+                      style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 11px;"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      Preview
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-outline"
+                      :disabled="pdfBusyId === `${item._type}-${item.id}-download`"
+                      title="Download PDF"
+                      @click="handleHistoryPdf(item, 'download')"
+                      style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 11px; color: var(--color-primary); border-color: var(--color-primary);"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Download
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>

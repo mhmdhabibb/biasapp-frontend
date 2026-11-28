@@ -15,6 +15,7 @@ import type { ProcurementDeliveryOrder, TableColumn } from '@/types'
 import { computed, reactive, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { printDeliveryOrder } from '@/utils/printDeliveryOrder'
+import { formatDeliveryOrderItemLabel } from '@/utils/deliveryOrderItems'
 
 const toast = useToast()
 const { can, isAdmin } = usePermission()
@@ -135,14 +136,12 @@ function getReference(item: ProcurementDeliveryOrder) {
 }
 
 function getDeliveryItemName(item: NonNullable<ProcurementDeliveryOrder['delivery_order_items']>[number]) {
-  if (item.product?.name) return item.product.name
-  if (item.product_id) return store.findProduct(item.product_id)?.name || `Product ${item.product_id}`
-  if (item.unit) return `${item.unit.model || 'Unit'}${item.unit.serial_no ? ` (${item.unit.serial_no})` : ''}`
-  if (item.unit_id) {
-    const unit = store.findUnit(item.unit_id)
-    return unit ? `${unit.model}${unit.serial_no ? ` (${unit.serial_no})` : ''}` : `Unit ${item.unit_id}`
-  }
-  return '-'
+  return formatDeliveryOrderItemLabel(item, {
+    findProduct: (id) => store.findProduct(id),
+    findUnit: (id) => store.findUnit(id),
+    findBrand: (id) => store.findBrand(id),
+    findUnitType: (id) => store.findUnitType(id),
+  })
 }
 
 async function openDetail(item: ProcurementDeliveryOrder) {

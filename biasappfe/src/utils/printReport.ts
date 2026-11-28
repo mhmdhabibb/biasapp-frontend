@@ -1,5 +1,6 @@
 import { useMasterStore } from "@/composables/useMasterStore";
 import { api } from "@/services/api";
+import { resolveTransactionCustomerType } from "@/utils/customerType";
 import { formatUnitDisplayName } from "@/utils/format";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
 
@@ -279,7 +280,7 @@ function buildCtx(item: any): ReportCtx {
     custPhone,
     picName,
     custAddress,
-    custCategory: item.customer_category || customer.category || "Corporate",
+    custCategory: resolveTransactionCustomerType(item, masterStore),
     dateStr: rawDate
       ? new Date(rawDate).toLocaleDateString("en-GB")
       : "-",
@@ -295,27 +296,36 @@ function buildCtx(item: any): ReportCtx {
       (u.model || '').toLowerCase().includes('notebook') ||
       (u.model || '').toLowerCase().startsWith('nb ') ||
       (u.model || '').toLowerCase().includes('desktop'),
-    isSparepart: !!item.is_sparepart || !!(doi?.product_id || doi?.product || item.product_id || (!u.id && !doi?.unit_id && (doi?.model || doi?.name || item.model))),
+    isSparepart:
+      !!item.is_sparepart ||
+      !!(
+        doi?.product_id ||
+        doi?.product ||
+        item.product_id ||
+        (!u.id && !doi?.unit_id && Boolean(doi?.description && !doi?.unit_type_id))
+      ),
   };
 }
 
 const companyHeaderHtml = `
-  <table class="header-table">
-    <tr>
-      <td class="logo-col">
-        <img src="${BIAS_LOGO_DATA_URL}" class="logo" alt="BiAS Logo" style="width: 75px; height: 75px; object-fit: contain;" />
-      </td>
-      <td class="info-col">
-        <div class="company-name">PT. BIAS SURYA TEKNOLOGI</div>
-        <div class="tagline">The shape of smart</div>
-        <div class="address">
-          Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia<br>
-          Phone: +62811 704 5657  Email: admin@biasbst.com<br>
-          Website: www.biassuryateknologi.com
-        </div>
-      </td>
-    </tr>
-  </table>
+  <div class="header-box">
+    <table class="header-inner">
+      <tr>
+        <td class="logo-col">
+          <img src="${BIAS_LOGO_DATA_URL}" class="logo" alt="BiAS Logo" style="width: 75px; height: 75px; object-fit: contain;" />
+        </td>
+        <td class="info-col">
+          <div class="company-name">PT. BiAS SURYA TEKNOLOGI</div>
+          <div class="tagline">The shape of smart</div>
+          <div class="address">
+            Ruko Purimas Blok A No.47 Kota Batam, Kepulauan Riau - Indonesia<br>
+            Phone: +62811 704 5657 &nbsp; Email: admin@biasbst.com<br>
+            Website: www.biassuryateknologi.com
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
 `;
 
 function getSpareparts(item: any, ctx?: ReportCtx): any[] {
@@ -1065,7 +1075,7 @@ function buildSubItemReport(baseReport: any, subItem: any, index: number, total:
   const subProd = subItem.product || (subItem.product_id ? masterStore.findProduct(subItem.product_id) : null);
   const subBrand = subUnit?.brand || (subUnit?.brand_id ? masterStore.findBrand(subUnit.brand_id) : null) || subProd?.brand || (subItem.brand_id ? masterStore.findBrand(subItem.brand_id) : null);
 
-  const rawModel = subUnit?.model || subProd?.name || subProd?.model || subItem.item_name || subItem.name || subItem.model || '-';
+  const rawModel = subUnit?.model || subProd?.name || subProd?.model || subItem.item_name || subItem.name || subItem.description || subItem.model || '-';
   const qtyStr = subItem.qty && subItem.qty > 1 ? ` (Qty: ${subItem.qty})` : '';
   const model = `${rawModel}${qtyStr}`;
   const serialNo = subUnit?.serial_no || subItem.serial_no || '-';
@@ -1079,7 +1089,9 @@ function buildSubItemReport(baseReport: any, subItem: any, index: number, total:
     (rawModel || '').toLowerCase().includes('notebook') ||
     (rawModel || '').toLowerCase().startsWith('nb ') ||
     (rawModel || '').toLowerCase().includes('desktop');
-  const isSparepart = !subUnit && (!!subProd || !!subItem.product_id || (!subItem.unit_id && !subUnit));
+  const isSparepart =
+    !subUnit &&
+    (!!subProd || !!subItem.product_id || (!subItem.unit_id && !subUnit && Boolean(subItem.description && !subItem.unit_type_id)));
 
   const baseRef = baseReport.report_no || baseReport.job_order_no || baseReport.do_number || (baseReport.id ? `SR-${baseReport.id}` : '-');
   const serviceNo = total > 1 ? `${baseRef} (${index + 1}/${total})` : baseRef;
@@ -1118,7 +1130,18 @@ function getReportPages(item: any, type?: ReportType): string[] {
   const subItems = getReportItems(item);
 
   if (type === 'technical') {
-    pages = [technicalReportBody(item, ctx)];
+    const unitSubItems = subItems.filter(
+      (s: any) => s.unit_id || s.unit || (!s.product_id && !s.product && !s.description),
+    );
+    if (unitSubItems.length > 1) {
+      pages = unitSubItems.map((sub, idx) => {
+        const subReport = buildSubItemReport(item, sub, idx, unitSubItems.length);
+        const subCtx = buildCtx(subReport);
+        return technicalReportBody(subReport, subCtx);
+      });
+    } else {
+      pages = [technicalReportBody(item, ctx)];
+    }
   } else if (type === 'history') {
     if (subItems.length > 1) {
       pages = subItems.map((sub, idx) => {
@@ -1200,14 +1223,15 @@ const CSS = `
     margin-bottom: 0;
   }
   .container { width: 100%; max-width: 790px; margin: 0 auto; border: 2px solid #000; box-sizing: border-box; background: #fff; }
-  .header-table { width: 100%; border-collapse: collapse; }
-  .header-table td { padding: 10px; }
-  .logo-col { width: 100px; vertical-align: middle; border-bottom: 2px solid #000; }
-  .info-col { text-align: right; vertical-align: middle; border-bottom: 2px solid #000; }
-  .logo { width: 70px; height: 70px; }
-  .company-name { font-size: 20px; font-weight: bold; color: #3399ff; margin: 0; }
-  .tagline { font-size: 14px; font-style: italic; font-weight: bold; margin: 0; }
-  .address { font-size: 9px; font-weight: bold; margin-top: 5px; }
+  .header-box { width: 100%; border-bottom: 2px solid #000; padding: 8px 12px; box-sizing: border-box; text-align: center; }
+  .header-inner { margin: 0 auto; border-collapse: collapse; }
+  .header-inner td { padding: 0; vertical-align: middle; }
+  .logo-col { padding-right: 16px !important; text-align: center; }
+  .info-col { text-align: left; }
+  .logo { width: 75px; height: 75px; display: block; }
+  .company-name { font-size: 20px; font-weight: bold; color: #0070c0; margin: 0; line-height: 1.15; }
+  .tagline { font-size: 13px; font-style: italic; font-weight: bold; margin: 2px 0 3px; }
+  .address { font-size: 9.5px; font-weight: normal; line-height: 1.35; margin: 0; }
   .title-bar { background-color: #000; color: #fff; text-align: center; font-size: 18px; font-weight: bold; padding: 5px; }
   .grid-table { width: 100%; border-collapse: collapse; font-weight: bold; text-transform: uppercase; font-size: 10px; }
   .grid-table td { border: 1px solid #000; padding: 3px 6px; }

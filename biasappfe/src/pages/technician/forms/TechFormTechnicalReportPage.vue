@@ -2,12 +2,14 @@
 import PageHeader from '@/components/ui/PageHeader.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
 import SignaturePad from '@/components/ui/SignaturePad.vue'
+import ServiceTypeTrigger from '@/components/ui/ServiceTypeTrigger.vue'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import { resources } from '@/services/resource.service'
 import { useAuth } from '@/composables/useAuth'
 import { normalizeRole } from '@/router/role-access'
+import { resolveTransactionCustomerType } from '@/utils/customerType'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -15,7 +17,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { currentUser } = useAuth()
-const { serviceReports, jobOrders, products, findCustomer, findTechnician, getTechnicianIdByUser, refreshInBackground, ensureResourcesLoaded } = useMasterStore()
+const { serviceReports, jobOrders, products, contractItems, sales, findCustomer, findTechnician, getTechnicianIdByUser, refreshInBackground, ensureResourcesLoaded } = useMasterStore()
 
 const serviceId = String(route.params.id)
 const reportRecord = ref<any>(null)
@@ -38,9 +40,31 @@ const isLeadTech = computed(() => {
   if (!leadId) return true
   return String(leadId) === String(myTechId)
 })
-const customerType = computed(() => job.value?.customer_category || findCustomer(job.value?.customer_id)?.category || 'Corporate')
+const linkedJobOrder = computed(() =>
+  (jobOrders.value || []).find((j: any) =>
+    String(j.id) === String(job.value?.job_order_id || serviceId) ||
+    String(j.service_report_id) === String(realServiceReportId.value)
+  )
+)
+const isExternalRequest = computed(() => {
+  const sr = job.value?.job_order?.service_request || linkedJobOrder.value?.service_request
+  return Boolean(
+    job.value?.is_external ||
+    sr?.is_external ||
+    String(sr?.request_no || '').toUpperCase().startsWith('REQ-EXT')
+  )
+})
+const customerType = computed(() =>
+  resolveTransactionCustomerType(
+    { ...(job.value || {}), job_order: job.value?.job_order || linkedJobOrder.value },
+    { contractItems, sales, jobOrders },
+  )
+)
+const isUpdatingServiceType = ref(false)
 
 const form = ref({
+  service_type: 'preventif',
+  preventive_action: '',
   remarks: '',
   notes: '',
   is_tested: false,
@@ -79,6 +103,8 @@ onMounted(async () => {
   if (job.value) {
     const initCust = findCustomer(job.value.customer_id) || job.value.customer
     form.value = {
+      service_type: job.value.service_type || linkedJobOrder.value?.service_request?.service_type || 'preventif',
+      preventive_action: job.value.preventive_action || '',
       remarks: job.value.remarks || '',
       notes: job.value.notes || '',
       is_tested: job.value.is_tested || false,
@@ -118,6 +144,8 @@ onMounted(async () => {
       reportRecord.value = data
       const loadedCust = findCustomer(data.customer_id) || data.customer
       form.value = {
+        service_type: data.service_type || form.value.service_type || linkedJobOrder.value?.service_request?.service_type || 'preventif',
+        preventive_action: data.preventive_action || form.value.preventive_action || '',
         remarks: data.remarks || form.value.remarks || '',
         notes: data.notes || form.value.notes || '',
         is_tested: data.is_tested ?? form.value.is_tested ?? false,
@@ -288,6 +316,25 @@ async function saveSpareparts() {
   }
 }
 
+async function handleTriggerServiceType(nextType: 'preventif' | 'korektif' | 'troubleshooting') {
+  if (isUpdatingServiceType.value || !realServiceReportId.value) return
+  const prev = form.value.service_type
+  form.value.service_type = nextType
+  isUpdatingServiceType.value = true
+  try {
+    await api.patch(`/service-reports/${realServiceReportId.value}`, {
+      service_type: nextType,
+    })
+    toast.success(`Service type diubah menjadi ${nextType === 'preventif' ? 'Preventif' : nextType === 'korektif' ? 'Korektif' : 'Troubleshooting'}`)
+    void refreshInBackground()
+  } catch (err: any) {
+    form.value.service_type = prev
+    toast.error(err.message || 'Gagal mengubah service type')
+  } finally {
+    isUpdatingServiceType.value = false
+  }
+}
+
 async function saveForm() {
   if (isLoading.value || !job.value || isSaving.value) return
   if (!form.value.customer_signature || !form.value.technician_signature || !form.value.customer_name.trim()) {
@@ -299,6 +346,8 @@ async function saveForm() {
     if (!(await saveSpareparts())) return
     await api.patch(`/service-reports/${realServiceReportId.value}`, {
       customer_category: customerType.value,
+      service_type: form.value.service_type || 'preventif',
+      preventive_action: form.value.preventive_action || '',
       remarks: form.value.remarks,
       notes: form.value.notes,
       is_tested: form.value.is_tested,
@@ -342,6 +391,23 @@ async function saveForm() {
       <div class="form-group">
         <label class="form-label">Customer Type</label>
         <input :value="customerType" type="text" class="form-input" readonly disabled>
+      </div>
+
+      <!-- 1b. Service Type Trigger -->
+      <div class="form-group">
+        <ServiceTypeTrigger
+          :service-type="form.service_type"
+          :is-external="isExternalRequest"
+          :loading="isUpdatingServiceType"
+          :disabled="!isLeadTech"
+          @select="handleTriggerServiceType"
+        />
+      </div>
+
+      <!-- 1c. Tindakan Preventif (khusus saat Preventif) -->
+      <div v-if="form.service_type === 'preventif'" class="form-group">
+        <label class="form-label">Tindakan Preventif</label>
+        <textarea v-model="form.preventive_action" class="form-textarea" rows="3" placeholder="Deskripsikan tindakan preventif yang dilakukan..."></textarea>
       </div>
 
       <!-- 2. Photo Before -->

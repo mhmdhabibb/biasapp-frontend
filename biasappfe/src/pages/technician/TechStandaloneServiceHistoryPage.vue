@@ -15,14 +15,16 @@ import { useToast } from '@/composables/useToast'
 import { resources } from '@/services/resource.service'
 import { api } from '@/services/api'
 import { isTechnicianAssignedToJob, getJobMemberTechIds, isLeadTechnicianForJob } from '@/utils/jobTechnician'
+import { formatDeliveryOrderItemsSummary } from '@/utils/deliveryOrderItems'
 
 const router = useRouter()
 const route = useRoute()
 const toast = useToast()
 const { currentUser } = useAuth()
 const { can } = usePermission()
-const { ensureResourcesLoaded } = useMasterStore()
-const { deliveryOrders, jobOrders, technicians, customers, findCustomer, findTechnician, getTechnicianIdByUser, refreshOnly } = useMasterStore()
+const masterStore = useMasterStore()
+const { ensureResourcesLoaded } = masterStore
+const { deliveryOrders, jobOrders, technicians, customers, findCustomer, findTechnician, findUnit, findProduct, findBrand, findUnitType, getTechnicianIdByUser, refreshOnly } = masterStore
 
 const rawDeliveryOrders = ref<any[]>([])
 const isLoading = ref(false)
@@ -141,13 +143,7 @@ function isRowCompleted(row: any): boolean {
 }
 
 function itemsSummary(row: any): string {
-  const items = row?.delivery_order_items || []
-  if (!items.length) return '-'
-  return items.map((it: any) => {
-    if (it.model) return it.model
-    if (it.serial_no) return it.serial_no
-    return 'Item'
-  }).join(', ')
+  return formatDeliveryOrderItemsSummary(row, { findUnit, findProduct, findBrand, findUnitType }, '-')
 }
 
 const currentPage = ref(1)
