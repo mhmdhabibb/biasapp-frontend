@@ -22,6 +22,9 @@ import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDe
 import { printServiceReport, type ReportType } from '@/utils/printReport'
 import type { TableColumn } from '@/types'
 
+const props = defineProps<{ embedded?: boolean }>()
+const emit = defineEmits<{ (e: 'count', count: number): void }>()
+
 const toast = useToast()
 const { can } = usePermission()
 const route = useRoute()
@@ -52,7 +55,7 @@ async function loadStandaloneData(force = false) {
 }
 
 onMounted(() => {
-  ensureResourcesLoaded(route.path)
+  ensureResourcesLoaded('/customer-service/standalone-service-history')
   void loadStandaloneData()
 })
 
@@ -616,11 +619,20 @@ async function exportPdf() {
   }
   html2pdf().set(opt).from(htmlContent).save()
 }
+
+watch(
+  () => standaloneList.value.length,
+  (len) => emit('count', len),
+  { immediate: true },
+)
+
+defineExpose({ openAdd })
 </script>
 
 <template>
   <div class="standalone-page">
     <PageHeader
+      v-if="!props.embedded"
       title="Service History Mandiri"
       button-label="Buat Form Baru"
       permission="delivery_order:create"
@@ -638,6 +650,16 @@ async function exportPdf() {
         </button>
       </template>
     </PageHeader>
+    <div v-else style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px;">
+      <button class="btn btn-outline btn-header-action" @click="exportPdf">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        Export PDF
+      </button>
+      <button class="btn btn-outline btn-header-action" @click="exportExcel">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="17"></line><line x1="16" y1="13" x2="8" y2="17"></line></svg>
+        Export Excel
+      </button>
+    </div>
 
    
 

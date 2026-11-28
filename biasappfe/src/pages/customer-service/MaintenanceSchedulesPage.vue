@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onActivated, onMounted } from 'vue'
+import { ref, computed, watch, onActivated, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
@@ -9,6 +9,9 @@ import { useMasterStore } from '@/composables/useMasterStore'
 import { useToast } from '@/composables/useToast'
 import { api } from '@/services/api'
 import type { TableColumn } from '@/types'
+
+const props = defineProps<{ embedded?: boolean }>()
+const emit = defineEmits<{ (e: 'count', count: number): void }>()
 
 const toast = useToast()
 const store = useMasterStore()
@@ -400,11 +403,19 @@ async function exportToExcel() {
   XLSX.utils.book_append_sheet(wb, ws, "Photo Dokumentasi")
   XLSX.writeFile(wb, `Photo_Dokumentasi_${Date.now()}.xlsx`)
 }
+
+watch(
+  () => jobOrders.value.length,
+  (len) => emit('count', len),
+  { immediate: true },
+)
+
+defineExpose({ openAdd })
 </script>
 
 <template>
   <div>
-    <PageHeader title="Service Warranty Schedules" button-label="Add Schedule" @add="openAdd">
+    <PageHeader v-if="!props.embedded" title="Service Warranty Schedules" button-label="Add Schedule" @add="openAdd">
       <template #actions>
         <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
@@ -416,6 +427,16 @@ async function exportToExcel() {
         </button>
       </template>
     </PageHeader>
+    <div v-else style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px;">
+      <button class="btn btn-outline" @click="exportToPdf" style="display: flex; align-items: center; gap: 6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        Export PDF
+      </button>
+      <button class="btn btn-outline" @click="exportToExcel" style="display: flex; align-items: center; gap: 6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="17"></line><line x1="16" y1="13" x2="8" y2="17"></line></svg>
+        Export Excel
+      </button>
+    </div>
 
     <DataTable :columns="columns" :data="mappedJobOrders" :loading="loading" search-placeholder="Search schedules..." @edit="openEdit" @row-click="openDetail">
       <template #cell-customer="{ row }">{{ getCustomerName(row) }}</template>

@@ -18,6 +18,9 @@ import type { TableColumn } from "@/types";
 // Module-level cache for instant zero-latency page transitions
 let cachedSurveys: any[] = [];
 
+const props = defineProps<{ embedded?: boolean }>();
+const emit = defineEmits<{ (e: "count", count: number): void }>();
+
 const toast = useToast();
 const { can } = usePermission();
 const router = useRouter();
@@ -364,6 +367,14 @@ onMounted(() => {
   window.addEventListener("bias:data-mutated", silentRefresh);
 });
 
+watch(
+  () => data.value.length,
+  (len) => emit("count", len),
+  { immediate: true },
+);
+
+defineExpose({ openAdd });
+
 onUnmounted(() => {
   if (surveyTimer) {
     clearInterval(surveyTimer);
@@ -377,7 +388,7 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <PageHeader title="Survey" button-label="Add Survey" permission="survey:create" @add="openAdd" />
+    <PageHeader v-if="!props.embedded" title="Survey" button-label="Add Survey" permission="survey:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search surveys..." permission="survey">
       <template #cell-_technician="{ row, value }">
         <span v-if="row.technician_id" class="badge badge-info" style="font-size: 0.8rem;">

@@ -39,9 +39,7 @@ onUnmounted(() => {
 <template>
   <AdminLayout v-if="!isPublicPage">
     <router-view v-slot="{ Component, route: currentRoute }">
-      <transition name="page-fade" mode="out-in">
-        <component :is="Component" :key="currentRoute.path" />
-      </transition>
+      <component :is="Component" :key="currentRoute.path" />
     </router-view>
   </AdminLayout>
   <router-view v-else />

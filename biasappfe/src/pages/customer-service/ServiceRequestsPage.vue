@@ -9,8 +9,18 @@ import { useToast } from "@/composables/useToast";
 import { api, apiRequest } from "@/services/api";
 import { isCopierReport } from "@/utils/copierReport";
 import type { TableColumn } from "@/types";
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
+
+const SurveyPage = defineAsyncComponent(
+  () => import("@/pages/customer-service/SurveyPage.vue"),
+);
+const MaintenanceSchedulesPage = defineAsyncComponent(
+  () => import("@/pages/customer-service/MaintenanceSchedulesPage.vue"),
+);
+const StandaloneServiceHistoryPage = defineAsyncComponent(
+  () => import("@/pages/customer-service/StandaloneServiceHistoryPage.vue"),
+);
 
 const toast = useToast();
 const { can } = usePermission();
@@ -48,10 +58,45 @@ const externalColumns: TableColumn[] = [
   { key: "status", label: "Status", width: "120px" },
 ];
 
+type ServiceListTab = "internal" | "external" | "survey" | "warranty" | "standalone";
 const serviceRequests = ref<any[]>([]);
 const showModal = ref(false);
-const listTab = ref<"internal" | "external">("internal");
+const listTab = ref<ServiceListTab>("internal");
 const formTab = ref<"internal" | "external">("internal");
+const surveyTabRef = ref<any>(null);
+const warrantyTabRef = ref<any>(null);
+const standaloneTabRef = ref<any>(null);
+const surveyCount = ref<number | null>(null);
+const warrantyCount = ref<number | null>(null);
+const standaloneCount = ref<number | null>(null);
+
+const activeAddButtonLabel = computed(() => {
+  switch (listTab.value) {
+    case "external":
+      return "Log Complaint (External)";
+    case "survey":
+      return "Log Complaint (Survey)";
+    case "warranty":
+      return "Log Complaint (Service Warranty)";
+    case "standalone":
+      return "Log Complaint (Stand Alone)";
+    default:
+      return "Log Complaint (Internal)";
+  }
+});
+
+const activeAddPermission = computed(() => {
+  switch (listTab.value) {
+    case "survey":
+      return "survey:create";
+    case "warranty":
+      return undefined;
+    case "standalone":
+      return "delivery_order:create";
+    default:
+      return "service_request:create";
+  }
+});
 
 const tableColumns = computed(() =>
   listTab.value === "internal" ? columns : externalColumns,
@@ -798,9 +843,21 @@ const relatedReports = computed(() => {
 });
 
 function openAdd() {
+  if (listTab.value === "survey") {
+    surveyTabRef.value?.openAdd?.();
+    return;
+  }
+  if (listTab.value === "warranty") {
+    warrantyTabRef.value?.openAdd?.();
+    return;
+  }
+  if (listTab.value === "standalone") {
+    standaloneTabRef.value?.openAdd?.();
+    return;
+  }
   isEditing.value = false;
   editId.value = null;
-  resetCreateForm(listTab.value);
+  resetCreateForm(listTab.value === "external" ? "external" : "internal");
   showModal.value = true;
 }
 
@@ -883,8 +940,8 @@ onUnmounted(() => {
   <div>
     <PageHeader
       title="Service Request Management"
-      button-label="Log Complaint"
-      permission="service_request:create"
+      :button-label="activeAddButtonLabel"
+      :permission="activeAddPermission"
       @add="openAdd"
     />
 
@@ -892,6 +949,7 @@ onUnmounted(() => {
       class="sr-tabs sr-tabs--page"
       role="tablist"
       aria-label="Filter daftar service request"
+      style="flex-wrap: wrap;"
     >
       <button
         type="button"
@@ -901,7 +959,7 @@ onUnmounted(() => {
         :aria-selected="listTab === 'internal'"
         @click="listTab = 'internal'"
       >
-        Unit Internal ({{ internalRequests.length }})
+        Service Request Internal ({{ internalRequests.length }})
       </button>
       <button
         type="button"
@@ -911,11 +969,42 @@ onUnmounted(() => {
         :aria-selected="listTab === 'external'"
         @click="listTab = 'external'"
       >
-        Unit Luar / Eksternal ({{ externalRequests.length }})
+        Service Request External ({{ externalRequests.length }})
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="sr-tab"
+        :class="{ 'sr-tab--active': listTab === 'survey' }"
+        :aria-selected="listTab === 'survey'"
+        @click="listTab = 'survey'"
+      >
+        Survey{{ surveyCount !== null ? ` (${surveyCount})` : "" }}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="sr-tab"
+        :class="{ 'sr-tab--active': listTab === 'warranty' }"
+        :aria-selected="listTab === 'warranty'"
+        @click="listTab = 'warranty'"
+      >
+        Service Warranty{{ warrantyCount !== null ? ` (${warrantyCount})` : "" }}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="sr-tab"
+        :class="{ 'sr-tab--active': listTab === 'standalone' }"
+        :aria-selected="listTab === 'standalone'"
+        @click="listTab = 'standalone'"
+      >
+        Stand Alone{{ standaloneCount !== null ? ` (${standaloneCount})` : "" }}
       </button>
     </div>
 
     <DataTable
+      v-if="listTab === 'internal' || listTab === 'external'"
       :columns="tableColumns"
       :data="displayedRequests"
       :loading="isLoading"
@@ -1084,6 +1173,25 @@ onUnmounted(() => {
         </button>
       </template>
     </DataTable>
+
+    <SurveyPage
+      v-else-if="listTab === 'survey'"
+      ref="surveyTabRef"
+      embedded
+      @count="surveyCount = $event"
+    />
+    <MaintenanceSchedulesPage
+      v-else-if="listTab === 'warranty'"
+      ref="warrantyTabRef"
+      embedded
+      @count="warrantyCount = $event"
+    />
+    <StandaloneServiceHistoryPage
+      v-else-if="listTab === 'standalone'"
+      ref="standaloneTabRef"
+      embedded
+      @count="standaloneCount = $event"
+    />
 
     <FormModal
       :open="showRequestDetailModal"
