@@ -465,6 +465,22 @@ onUnmounted(() => {
         <CustomSelect v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" />
       </div>
 
+      <div v-if="form.customer_id" class="form-group mt-3">
+        <label for="survey-customer-category" class="form-label">Customer Type</label>
+        <input
+          id="survey-customer-category"
+          value="Survey"
+          type="text"
+          class="form-input"
+          readonly
+          disabled
+          title="Otomatis mengikuti jenis transaksi Survey"
+        />
+        <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
+          Otomatis mengikuti jenis transaksi (Survey).
+        </span>
+      </div>
+
       <div class="form-group mt-3">
         <label class="form-label">Alamat Survey</label>
         <textarea v-model="form.survey_address" class="form-input" rows="2" placeholder="Alamat lokasi customer yang akan disurvey..."></textarea>

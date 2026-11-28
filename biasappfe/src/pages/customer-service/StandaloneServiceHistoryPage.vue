@@ -775,8 +775,11 @@ async function exportPdf() {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Tipe Customer</label>
-          <CustomSelect v-model="form.customer_category" :options="customerCategoryOptions" class="form-select" />
+          <label class="form-label">Customer Type</label>
+          <input value="Stand Alone" type="text" class="form-input" readonly disabled title="Otomatis mengikuti jenis transaksi Stand Alone" />
+          <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
+            Otomatis mengikuti jenis transaksi (Stand Alone).
+          </span>
         </div>
         <div class="form-group">
           <label class="form-label">Tanggal Kunjungan</label>
