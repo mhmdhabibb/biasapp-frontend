@@ -60,7 +60,7 @@ const messages = {
       dashboard: 'Dashboard',
       sales_group: 'Sales',
       rental_group: 'Rental & Contracts',
-      service_group: 'Service & Service Warranty',
+      service_group: 'Services',
       finance_group: 'Finance & Logistics',
       master_data: 'Master Data',
       users: 'Users',
