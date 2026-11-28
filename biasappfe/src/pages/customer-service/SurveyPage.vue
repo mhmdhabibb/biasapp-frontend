@@ -43,6 +43,47 @@ const isLoadingDetail = ref(false);
 const showModal = ref(false);
 const showConfirm = ref(false);
 const showDetailModal = ref(false);
+const showAssignModal = ref(false);
+const assigningRow = ref<any>(null);
+const isAssigning = ref(false);
+const assignForm = reactive({
+  technician_id: "",
+  scheduled_date: new Date().toISOString().slice(0, 16),
+});
+
+function openAssign(row: any) {
+  assigningRow.value = row;
+  assignForm.technician_id = row.technician_id ? String(row.technician_id) : "";
+  assignForm.scheduled_date = row.scheduled_date
+    ? new Date(row.scheduled_date).toISOString().slice(0, 16)
+    : new Date().toISOString().slice(0, 16);
+  showAssignModal.value = true;
+}
+
+async function handleAssignSubmit() {
+  if (!assigningRow.value) return;
+  if (!assignForm.technician_id) {
+    toast.warning("Pilih teknisi terlebih dahulu.");
+    return;
+  }
+  isAssigning.value = true;
+  try {
+    await resources.surveys.update(String(assigningRow.value.id), {
+      technician_id: assignForm.technician_id,
+      scheduled_date: assignForm.scheduled_date
+        ? new Date(assignForm.scheduled_date).toISOString()
+        : undefined,
+    });
+    toast.success("Teknisi survey berhasil ditugaskan!");
+    showAssignModal.value = false;
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
+    await fetchData(true);
+  } catch (e: any) {
+    toast.error("Gagal menugaskan teknisi: " + (e?.message || "Error"));
+  } finally {
+    isAssigning.value = false;
+  }
+}
 const selectedDetailItem = ref<any>(null);
 const zoomPhoto = ref<string | null>(null);
 const editingItem = ref<any>(null);
@@ -439,6 +480,15 @@ onUnmounted(() => {
         <button class="btn btn-sm btn-outline" title="Lihat Detail Survey" @click="openDetail(row)">
           Detail
         </button>
+        <button
+          v-if="row.status !== 'completed' && row.status !== 'matched' && row.status !== 'cancelled'"
+          class="btn btn-sm btn-outline"
+          style="color: var(--color-primary); border-color: var(--color-primary);"
+          :title="row.technician_id ? 'Re-assign Teknisi Survey' : 'Assign Teknisi Survey'"
+          @click="openAssign(row)"
+        >
+          {{ row.technician_id ? 'Re-assign' : 'Assign' }}
+        </button>
         <!-- Tampilkan tombol Next dan Cancel hanya jika teknisi sudah selesai survey (status completed) atau survey belum ditugaskan ke teknisi -->
         <template v-if="row.status === 'completed' || ((row.status === 'pending' || (!row.status && row.result === 'pending')) && (!row.technician_id || row._hasFindings || !!row.completed_at))">
           <button class="btn btn-sm btn-primary" title="Lanjut ke Sale" @click="handleNextSurvey(row)">
@@ -658,6 +708,33 @@ onUnmounted(() => {
     </Teleport>
 
     <ConfirmDialog :open="showConfirm" title="Delete Survey" :message="`Are you sure you want to delete this survey?`" @close="showConfirm = false" @confirm="handleDelete" />
+
+    <FormModal
+      :open="showAssignModal"
+      :title="assigningRow?.technician_id ? 'Re-assign Teknisi Survey' : 'Assign Teknisi Survey'"
+      max-width="460px"
+      @close="showAssignModal = false"
+      @submit="handleAssignSubmit"
+    >
+      <div v-if="assigningRow" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: var(--color-surface-sunken); font-size: 13px;">
+        <div><strong>Survey No:</strong> {{ assigningRow.survey_no }}</div>
+        <div><strong>Customer:</strong> {{ assigningRow._customer }}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Pilih Teknisi / Surveyor <span class="text-danger">*</span></label>
+        <CustomSelect v-model="assignForm.technician_id" :options="technicianOptions" placeholder="-- Pilih Teknisi --" />
+      </div>
+      <div class="form-group mt-3">
+        <label class="form-label">Tanggal &amp; Waktu Jadwal Survey</label>
+        <DateTime24Input v-model="assignForm.scheduled_date" />
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showAssignModal = false" :disabled="isAssigning">Batal</button>
+        <button type="button" class="btn btn-primary" @click="handleAssignSubmit" :disabled="isAssigning">
+          {{ isAssigning ? 'Menyimpan...' : 'Assign Teknisi' }}
+        </button>
+      </template>
+    </FormModal>
   </div>
 </template>
 

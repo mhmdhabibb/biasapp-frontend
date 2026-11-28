@@ -784,52 +784,6 @@ async function handleSubmit() {
   }
 }
 
-const showAssignModal = ref(false);
-const assignItem = ref<any>(null);
-const assignForm = reactive({
-  technician_id: "",
-  scheduled_date: new Date().toISOString().slice(0, 10),
-  instructions: "",
-});
-
-function openAssign(row: any) {
-  assignItem.value = row;
-  Object.assign(assignForm, {
-    technician_id: "",
-    scheduled_date: new Date().toISOString().slice(0, 10),
-    instructions: `Follow-up on complaint: ${row.problem_description}`,
-  });
-  showAssignModal.value = true;
-}
-
-async function handleAssignSubmit() {
-  if (!assignForm.technician_id) return;
-  isLoading.value = true;
-
-  const payload = {
-    job_order_no: `JO-${Date.now().toString().slice(-6)}`,
-    service_request_id: assignItem.value.id,
-    technician_id: assignForm.technician_id,
-    scheduled_date: new Date(assignForm.scheduled_date).toISOString(),
-    instructions: assignForm.instructions,
-  };
-
-  try {
-    await apiRequest({
-      url: "/service-requests",
-      method: "POST",
-      data: payload,
-    });
-    toast.success("Technician assigned successfully! Job order created.");
-    showAssignModal.value = false;
-    fetchRequests(); // To maybe refresh status if backend updates SR status automatically
-  } catch (error) {
-    toast.error(toast.fromError(error, "A network error occurred."));
-  } finally {
-    isLoading.value = false;
-  }
-}
-
 const relatedReports = computed(() => {
   if (!selectedRequest.value) return [];
   const requestJobs = jobOrders.value.filter(
@@ -841,6 +795,92 @@ const relatedReports = computed(() => {
     (sr) => jobIds.includes(String(sr.job_order_id)) && !isCopierReport(sr),
   );
 });
+
+function findJobOrderForRequest(reqId: string | number) {
+  return (
+    (jobOrders.value as any[]).find(
+      (j: any) => String(j.service_request_id || "") === String(reqId),
+    ) || null
+  );
+}
+
+const showAssignModal = ref(false);
+const assigningRequest = ref<any>(null);
+const isAssigning = ref(false);
+const assignForm = reactive({
+  technician_id: "",
+  member_technician_ids: [] as string[],
+  scheduled_date: new Date().toISOString().slice(0, 16),
+  instructions: "",
+});
+
+function openAssign(row: any) {
+  assigningRequest.value = row;
+  const existingJob = findJobOrderForRequest(row.id);
+  assignForm.technician_id = existingJob?.technician_id ? String(existingJob.technician_id) : "";
+  assignForm.member_technician_ids = Array.isArray(existingJob?.member_technician_ids)
+    ? existingJob.member_technician_ids.map((id: any) => String(id))
+    : [];
+  assignForm.scheduled_date = existingJob?.scheduled_date
+    ? new Date(existingJob.scheduled_date).toISOString().slice(0, 16)
+    : new Date().toISOString().slice(0, 16);
+  assignForm.instructions = existingJob?.instructions || row.problem_description || "";
+  showAssignModal.value = true;
+}
+
+async function handleAssignSubmit() {
+  if (!assigningRequest.value) return;
+  if (!assignForm.technician_id) {
+    toast.warning("Pilih kepala teknisi terlebih dahulu.");
+    return;
+  }
+  isAssigning.value = true;
+  try {
+    const req = assigningRequest.value;
+    const existingJob = findJobOrderForRequest(req.id);
+    const memberIds = (assignForm.member_technician_ids || []).filter(
+      (id) => String(id) !== String(assignForm.technician_id),
+    );
+    const scheduledIso = new Date(assignForm.scheduled_date || Date.now()).toISOString();
+
+    if (existingJob) {
+      await apiRequest({
+        url: `/job-orders/${existingJob.id}`,
+        method: "PUT",
+        data: {
+          technician_id: assignForm.technician_id,
+          member_technician_ids: memberIds,
+          scheduled_date: scheduledIso,
+          instructions: assignForm.instructions || req.problem_description || "Please check the unit",
+          status: existingJob.status === "pending" || !existingJob.technician_id ? "scheduled" : existingJob.status,
+        },
+      });
+      toast.success("Teknisi berhasil di-re-assign.");
+    } else {
+      await apiRequest({
+        url: `/job-orders`,
+        method: "POST",
+        data: {
+          job_order_no: `JO-${Date.now().toString().slice(-6)}`,
+          service_request_id: req.id,
+          customer_category: req.customer_category || "Corporate",
+          technician_id: assignForm.technician_id,
+          member_technician_ids: memberIds,
+          scheduled_date: scheduledIso,
+          instructions: assignForm.instructions || req.problem_description || "Please check the unit",
+        },
+      });
+      toast.success("Teknisi berhasil di-assign ke Job Order.");
+    }
+    showAssignModal.value = false;
+    window.dispatchEvent(new CustomEvent("bias:data-mutated"));
+    await fetchRequests(true);
+  } catch (err: any) {
+    toast.error(err?.message || "Gagal meng-assign teknisi.");
+  } finally {
+    isAssigning.value = false;
+  }
+}
 
 function openAdd() {
   if (listTab.value === "survey") {
@@ -1114,6 +1154,18 @@ onUnmounted(() => {
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
           </svg>
+        </button>
+        <button
+          v-if="
+            (can('job_order:create') || can('service_request:update')) &&
+            (row.status === 'pending' || row.status === 'assigned')
+          "
+          class="btn btn-sm btn-outline"
+          :title="findJobOrderForRequest(row.id)?.technician_id ? 'Re-assign Teknisi' : 'Assign Teknisi'"
+          @click="openAssign(row)"
+          style="color: var(--color-primary); border-color: var(--color-primary); font-size: 11px; padding: 3px 8px;"
+        >
+          {{ findJobOrderForRequest(row.id)?.technician_id ? 'Re-assign' : 'Assign' }}
         </button>
         <button
           v-if="
@@ -1692,39 +1744,60 @@ onUnmounted(() => {
 
     <FormModal
       :open="showAssignModal"
-      title="Assign Technician (Create Job Order)"
+      :title="findJobOrderForRequest(assigningRequest?.id)?.technician_id ? 'Re-assign Teknisi' : 'Assign Teknisi'"
+      max-width="500px"
       @close="showAssignModal = false"
       @submit="handleAssignSubmit"
     >
-      <div class="form-group mt-3">
-        <label class="form-label">Select Technician</label>
+      <div v-if="assigningRequest" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: var(--color-surface-sunken); font-size: 13px;">
+        <div><strong>Request No:</strong> {{ assigningRequest.request_no }}</div>
+        <div><strong>Customer:</strong> {{ assigningRequest._company_name }}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Kepala Teknisi <span class="text-danger">*</span></label>
         <CustomSelect
           v-model="assignForm.technician_id"
           :options="technicianOptions"
-          placeholder="-- Select Technician --"
+          placeholder="-- Pilih Kepala Teknisi --"
         />
       </div>
       <div class="form-group mt-3">
-        <label class="form-label">Assignment Date</label>
+        <label class="form-label">Anggota Teknisi (Opsional)</label>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <label
+            v-for="t in technicianOptions.filter((opt: any) => String(opt.value) !== String(assignForm.technician_id))"
+            :key="t.value"
+            style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--color-border); border-radius: 6px; font-size: 12px; cursor: pointer;"
+          >
+            <input type="checkbox" :value="String(t.value)" v-model="assignForm.member_technician_ids" />
+            <span>{{ t.label }}</span>
+          </label>
+        </div>
+      </div>
+      <div class="form-group mt-3">
+        <label class="form-label">Tanggal &amp; Waktu Jadwal</label>
         <input
           v-model="assignForm.scheduled_date"
-          type="date"
+          type="datetime-local"
           class="form-input"
           required
         />
       </div>
       <div class="form-group mt-3">
-        <label class="form-label">Instructions / Notes for Technician</label>
+        <label class="form-label">Instruksi / Catatan untuk Teknisi</label>
         <textarea
           v-model="assignForm.instructions"
           class="form-input"
-          rows="4"
+          rows="3"
           required
         ></textarea>
       </div>
-      <div v-if="isLoading" class="mt-2 text-center text-sm text-gray-500">
-        Saving data...
-      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showAssignModal = false" :disabled="isAssigning">Cancel</button>
+        <button type="button" class="btn btn-primary" @click="handleAssignSubmit" :disabled="isAssigning">
+          {{ isAssigning ? 'Saving...' : 'Assign Teknisi' }}
+        </button>
+      </template>
     </FormModal>
   </div>
 </template>

@@ -28,6 +28,67 @@ const showModal = ref(false)
 const showDetailModal = ref(false)
 const detailRow = ref<any>(null)
 const detailPhotoZoom = ref<string | null>(null)
+const showAssignModal = ref(false)
+const assigningRow = ref<any>(null)
+const isAssigning = ref(false)
+const assignForm = ref({
+  technician_id: '',
+  member_technician_ids: [] as string[],
+  scheduled_date: new Date().toISOString().slice(0, 16),
+  instructions: '',
+})
+
+const technicianOptions = computed(() =>
+  ((store.technicians?.value || []) as any[]).map((t: any) => ({
+    value: String(t.id),
+    label: t.user?.name || t.name || `Teknisi ${t.id}`,
+  })),
+)
+
+function openAssign(row: any) {
+  assigningRow.value = row
+  assignForm.value = {
+    technician_id: row.technician_id ? String(row.technician_id) : '',
+    member_technician_ids: Array.isArray(row.member_technician_ids)
+      ? row.member_technician_ids.map((id: any) => String(id))
+      : [],
+    scheduled_date: row.scheduled_date
+      ? new Date(row.scheduled_date).toISOString().slice(0, 16)
+      : new Date().toISOString().slice(0, 16),
+    instructions: row.instructions || '',
+  }
+  showAssignModal.value = true
+}
+
+async function handleAssignSubmit() {
+  if (!assigningRow.value) return
+  if (!assignForm.value.technician_id) {
+    toast.warning('Pilih kepala teknisi terlebih dahulu.')
+    return
+  }
+  isAssigning.value = true
+  try {
+    const row = assigningRow.value
+    const memberIds = (assignForm.value.member_technician_ids || []).filter(
+      (id) => String(id) !== String(assignForm.value.technician_id),
+    )
+    await api.patch(`/job-orders/${row.id}`, {
+      technician_id: assignForm.value.technician_id,
+      member_technician_ids: memberIds,
+      scheduled_date: new Date(assignForm.value.scheduled_date || Date.now()).toISOString(),
+      instructions: assignForm.value.instructions,
+      status: row.status === 'pending' || !row.technician_id ? 'scheduled' : row.status,
+    })
+    toast.success('Teknisi Service Warranty berhasil di-assign!')
+    showAssignModal.value = false
+    window.dispatchEvent(new CustomEvent('bias:data-mutated'))
+    fetchJobs()
+  } catch (err: any) {
+    toast.error(err?.message || 'Gagal meng-assign teknisi.')
+  } finally {
+    isAssigning.value = false
+  }
+}
 
 const form = ref({
   id: '',
@@ -449,6 +510,25 @@ defineExpose({ openAdd })
           {{ String(value || '-').toUpperCase().replace('_', ' ') }}
         </span>
       </template>
+      <template #actions="{ row }">
+        <div style="display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
+          <button class="btn btn-sm btn-outline" @click.stop="openDetail(row)" title="Lihat Detail">
+            Detail
+          </button>
+          <button
+            v-if="row.status !== 'completed' && row.status !== 'cancelled'"
+            class="btn btn-sm btn-outline"
+            style="color: var(--color-primary); border-color: var(--color-primary);"
+            @click.stop="openAssign(row)"
+            :title="row.technician_id ? 'Re-assign Teknisi' : 'Assign Teknisi'"
+          >
+            {{ row.technician_id ? 'Re-assign' : 'Assign' }}
+          </button>
+          <button class="btn btn-sm btn-outline" @click.stop="openEdit(row)" title="Edit Schedule">
+            Edit
+          </button>
+        </div>
+      </template>
     </DataTable>
 
     <FormModal :open="showModal" :title="form.id ? 'Edit Schedule' : 'Create Schedule'" @close="showModal = false" @submit="submitForm">
@@ -502,6 +582,51 @@ defineExpose({ openAdd })
         <button type="button" class="btn btn-outline" @click="showModal = false">Cancel</button>
           <button type="button" class="btn btn-primary" :disabled="loading || (!form.id && !form.customer_id)" @click="submitForm">
           {{ loading ? 'Saving...' : 'Save' }}
+        </button>
+      </template>
+    </FormModal>
+
+    <FormModal
+      :open="showAssignModal"
+      :title="assigningRow?.technician_id ? 'Re-assign Teknisi Service Warranty' : 'Assign Teknisi Service Warranty'"
+      max-width="500px"
+      @close="showAssignModal = false"
+      @submit="handleAssignSubmit"
+    >
+      <div v-if="assigningRow" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: var(--color-surface-sunken); font-size: 13px;">
+        <div><strong>Schedule No:</strong> {{ assigningRow.job_order_no }}</div>
+        <div><strong>Customer:</strong> {{ getCustomerName(assigningRow) }}</div>
+        <div><strong>Unit:</strong> {{ getUnitName(assigningRow) }}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Kepala Teknisi <span class="text-danger">*</span></label>
+        <CustomSelect v-model="assignForm.technician_id" :options="technicianOptions" placeholder="-- Pilih Kepala Teknisi --" class="form-select" />
+      </div>
+      <div class="form-group" style="margin-top: 12px;">
+        <label class="form-label">Anggota Teknisi (Opsional)</label>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <label
+            v-for="t in technicianOptions.filter((opt: any) => String(opt.value) !== String(assignForm.technician_id))"
+            :key="t.value"
+            style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--color-border); border-radius: 6px; font-size: 12px; cursor: pointer;"
+          >
+            <input type="checkbox" :value="String(t.value)" v-model="assignForm.member_technician_ids" />
+            <span>{{ t.label }}</span>
+          </label>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top: 12px;">
+        <label class="form-label">Scheduled Date &amp; Time</label>
+        <input type="datetime-local" v-model="assignForm.scheduled_date" class="form-input" />
+      </div>
+      <div class="form-group" style="margin-top: 12px;">
+        <label class="form-label">Instructions / Remarks</label>
+        <textarea v-model="assignForm.instructions" class="form-textarea" rows="3"></textarea>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-outline" @click="showAssignModal = false" :disabled="isAssigning">Cancel</button>
+        <button type="button" class="btn btn-primary" @click="handleAssignSubmit" :disabled="isAssigning">
+          {{ isAssigning ? 'Saving...' : 'Assign Teknisi' }}
         </button>
       </template>
     </FormModal>
