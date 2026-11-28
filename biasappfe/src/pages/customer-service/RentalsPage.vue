@@ -4279,16 +4279,17 @@ function isExpired(row: any): boolean {
 
       <div v-if="form.customer_id" class="form-group">
         <label for="rent-customer-category" class="form-label">Customer Type</label>
-        <select
+        <input
           id="rent-customer-category"
-          v-model="form.customer_category"
-          class="form-select"
-        >
-          <option value="Corporate">Corporate</option>
-          <option value="Government">Government</option>
-        </select>
+          value="Rental"
+          type="text"
+          class="form-input"
+          readonly
+          disabled
+          title="Otomatis mengikuti transaksi Rental yang dibuat"
+        />
         <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
-          Default mengikuti tipe Customer, dapat diubah sesuai transaksi rental ini.
+          Otomatis mengikuti jenis transaksi yang dibuat (Rental).
         </span>
       </div>
 

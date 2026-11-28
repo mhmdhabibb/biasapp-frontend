@@ -2478,16 +2478,17 @@ function printReceipt(item: any, existingWindow?: Window | null) {
         </div>
         <div v-if="form.customer_id" class="form-group">
           <label for="sale-customer-category" class="form-label">Customer Type</label>
-          <select
+          <input
             id="sale-customer-category"
-            v-model="form.customer_category"
-            class="form-select"
-          >
-            <option value="Corporate">Corporate</option>
-            <option value="Government">Government</option>
-          </select>
+            value="Sales"
+            type="text"
+            class="form-input"
+            readonly
+            disabled
+            title="Otomatis mengikuti transaksi Sales yang dibuat"
+          />
           <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
-            Default mengikuti tipe Customer, dapat diubah sesuai transaksi penjualan ini.
+            Otomatis mengikuti jenis transaksi yang dibuat (Sales).
           </span>
         </div>
         <div class="form-row">

@@ -1002,6 +1002,23 @@ watch(
   }
 )
 
+const selectedTransactionCustomerType = computed(() => {
+  if (!form.customer_id) return ''
+  if (form.service_type === 'delivery') return 'Delivery'
+  if (form.unit_id) {
+    const ci = (useMasterStore().contractItems.value as any[] || []).find(
+      (c: any) => String(c.unit_id) === String(form.unit_id) && String(c.customer_id) === String(form.customer_id)
+    )
+    if (ci) return 'Rental'
+    const sale = (useMasterStore().sales.value as any[] || []).find(
+      (s: any) => String(s.customer_id) === String(form.customer_id) &&
+        (s.sale_items || []).some((si: any) => String(si.unit_id) === String(form.unit_id))
+    )
+    if (sale) return 'Sales'
+  }
+  return 'Service'
+})
+
 function openAdd() {
   editingItem.value = null
   Object.assign(form, { ...defaultForm, report_no: `SR-${Date.now().toString().slice(-6)}` })
@@ -1820,12 +1837,9 @@ function printTable() {
       </div>
       <div v-if="form.customer_id" class="form-group">
         <label for="sr-customer-category" class="form-label">Customer Type</label>
-        <select id="sr-customer-category" v-model="form.customer_category" class="form-select">
-          <option value="Corporate">Corporate</option>
-          <option value="Government">Government</option>
-        </select>
+        <input id="sr-customer-category" :value="selectedTransactionCustomerType" type="text" class="form-input" readonly disabled title="Otomatis mengikuti transaksi yang dibuat" />
         <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
-          Default mengikuti tipe Customer, dapat diubah sesuai transaksi ini.
+          Otomatis mengikuti jenis transaksi (Rental / Sales / Delivery / Service).
         </span>
       </div>
       <div class="form-group">

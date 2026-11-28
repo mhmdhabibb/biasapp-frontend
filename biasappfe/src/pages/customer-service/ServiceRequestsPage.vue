@@ -165,19 +165,22 @@ const form = reactive({
 
 const selectedCustomerCategory = computed(() => {
   if (!form.customer_id) return "";
-  return form.customer_category || (findCustomer(form.customer_id as any) as any)?.category || "Corporate";
+  return (findCustomer(form.customer_id as any) as any)?.category || "Corporate";
 });
 
-watch(
-  () => form.customer_id,
-  (newCustId, oldCustId) => {
-    if (!newCustId) return;
-    if (!isEditing.value || (oldCustId && newCustId !== oldCustId)) {
-      form.customer_category =
-        (findCustomer(newCustId as any) as any)?.category || "Corporate";
-    }
-  },
-);
+const selectedTransactionCustomerType = computed(() => {
+  if (!form.customer_id) return "";
+  if (formTab.value === "external") return "Service";
+  const selectedId = form.unit_ids?.[0];
+  if (selectedId) {
+    const matched = availableUnitsForCustomer.value.find(
+      (u: any) => String(u.id) === String(selectedId),
+    );
+    if (matched?.source === "rental") return "Rental";
+    if (matched?.source === "sale") return "Sales";
+  }
+  return "Service";
+});
 
 watch(externalBrandSelect, (val) => {
   if (!val) {
@@ -1304,16 +1307,17 @@ onUnmounted(() => {
 
       <div v-if="form.customer_id" class="form-group mt-3">
         <label for="srq-customer-category" class="form-label">Customer Type</label>
-        <select
+        <input
           id="srq-customer-category"
-          v-model="form.customer_category"
-          class="form-select"
-        >
-          <option value="Corporate">Corporate</option>
-          <option value="Government">Government</option>
-        </select>
+          :value="selectedTransactionCustomerType"
+          type="text"
+          class="form-input"
+          readonly
+          disabled
+          title="Otomatis mengikuti transaksi / unit yang dipilih"
+        />
         <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
-          Default mengikuti tipe Customer, dapat diubah sesuai transaksi ini.
+          Otomatis mengikuti jenis transaksi unit yang dipilih (Rental / Sales / Service).
         </span>
       </div>
 
