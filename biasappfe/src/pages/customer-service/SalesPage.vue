@@ -264,11 +264,14 @@ onMounted(() => {
 
 watch(
   () => form.customer_id,
-  (newCustId) => {
+  (newCustId, oldCustId) => {
     if (!newCustId) return;
     const cust = findCustomer(newCustId);
     if (cust?.address && !form.installation_address) {
       form.installation_address = cust.address;
+    }
+    if (!editingItem.value || (oldCustId && newCustId !== oldCustId)) {
+      form.customer_category = (cust as any)?.category || "Corporate";
     }
   },
 );
@@ -1036,6 +1039,7 @@ const saleItems = ref<
 const form = reactive({
   sale_no: "",
   customer_id: null as string | null,
+  customer_category: "Corporate",
   sale_date: "",
   po_no: "",
   installation_address: "",
@@ -1192,6 +1196,7 @@ function openAdd() {
   Object.assign(form, {
     sale_no: `SLS-${Date.now().toString().slice(-6)}`,
     customer_id: null,
+    customer_category: "Corporate",
     sale_date: todayStr,
     po_no: "",
     installation_address: "",
@@ -1425,6 +1430,10 @@ function openEdit(item: any) {
   Object.assign(form, {
     sale_no: item.sale_no || `SLS-${item.id}`,
     customer_id: item.customer_id,
+    customer_category:
+      item.customer_category ||
+      (findCustomer(item.customer_id) as any)?.category ||
+      "Corporate",
     po_no: item.po_no || "",
     installation_address: item.installation_address || "",
     sale_date: item.sale_date ? item.sale_date.slice(0, 10) : "",
@@ -2466,6 +2475,20 @@ function printReceipt(item: any, existingWindow?: Window | null) {
               class="form-select"
             />
           </div>
+        </div>
+        <div v-if="form.customer_id" class="form-group">
+          <label for="sale-customer-category" class="form-label">Customer Type</label>
+          <select
+            id="sale-customer-category"
+            v-model="form.customer_category"
+            class="form-select"
+          >
+            <option value="Corporate">Corporate</option>
+            <option value="Government">Government</option>
+          </select>
+          <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
+            Default mengikuti tipe Customer, dapat diubah sesuai transaksi penjualan ini.
+          </span>
         </div>
         <div class="form-row">
           <div class="form-group">

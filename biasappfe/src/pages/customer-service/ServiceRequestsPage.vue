@@ -151,6 +151,7 @@ function getWarrantyStatus(
 const form = reactive({
   request_no: `REQ-${Date.now().toString().slice(-6)}`,
   customer_id: "",
+  customer_category: "Corporate",
   unit_ids: [] as string[],
   project_name: "",
   problem_description: "",
@@ -164,8 +165,19 @@ const form = reactive({
 
 const selectedCustomerCategory = computed(() => {
   if (!form.customer_id) return "";
-  return (findCustomer(form.customer_id as any) as any)?.category || "Corporate";
+  return form.customer_category || (findCustomer(form.customer_id as any) as any)?.category || "Corporate";
 });
+
+watch(
+  () => form.customer_id,
+  (newCustId, oldCustId) => {
+    if (!newCustId) return;
+    if (!isEditing.value || (oldCustId && newCustId !== oldCustId)) {
+      form.customer_category =
+        (findCustomer(newCustId as any) as any)?.category || "Corporate";
+    }
+  },
+);
 
 watch(externalBrandSelect, (val) => {
   if (!val) {
@@ -796,6 +808,10 @@ function openEdit(row: any) {
   Object.assign(form, {
     request_no: row.request_no,
     customer_id: row.customer_id,
+    customer_category:
+      row.customer_category ||
+      (findCustomer(row.customer_id as any) as any)?.category ||
+      "Corporate",
     unit_ids: row.unit_id ? [row.unit_id] : [],
     project_name: row.project_name || "",
     problem_description: row.problem_description || "",
@@ -1287,15 +1303,18 @@ onUnmounted(() => {
       </div>
 
       <div v-if="form.customer_id" class="form-group mt-3">
-        <label class="form-label">Customer Type</label>
-        <input
-          :value="selectedCustomerCategory"
-          type="text"
-          class="form-input"
-          readonly
-          disabled
-          title="Otomatis mengikuti tipe Customer yang dipilih"
-        />
+        <label for="srq-customer-category" class="form-label">Customer Type</label>
+        <select
+          id="srq-customer-category"
+          v-model="form.customer_category"
+          class="form-select"
+        >
+          <option value="Corporate">Corporate</option>
+          <option value="Government">Government</option>
+        </select>
+        <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
+          Default mengikuti tipe Customer, dapat diubah sesuai transaksi ini.
+        </span>
       </div>
 
       <div v-show="formTab === 'internal'" class="form-group mt-3">

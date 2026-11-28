@@ -443,7 +443,10 @@ async function submitCreateRentalDO() {
       targetRentalForDO.value?.customer ||
       findCustomer(targetRentalForDO.value?.customer_id);
     const payload = {
-      customer_category: custForDO?.category || "Corporate",
+      customer_category:
+        targetRentalForDO.value?.customer_category ||
+        custForDO?.category ||
+        "Corporate",
       do_number: doForm.do_number ? doForm.do_number.trim() : undefined,
       project_name: doForm.project_name
         ? doForm.project_name.trim()
@@ -721,6 +724,7 @@ const rentalItems = ref<
 
 const form = reactive({
   customer_id: "",
+  customer_category: "Corporate",
   start_date: new Date().toISOString().slice(0, 10),
   duration_months: 12,
   duration_days: 0,
@@ -749,11 +753,14 @@ watch(
 
 watch(
   () => form.customer_id,
-  (newCustId) => {
+  (newCustId, oldCustId) => {
     if (!newCustId) return;
     const cust = findCustomer(newCustId);
     if (cust?.address && !form.installation_address) {
       form.installation_address = cust.address;
+    }
+    if (!editingRental.value || (oldCustId && newCustId !== oldCustId)) {
+      form.customer_category = (cust as any)?.category || "Corporate";
     }
   },
 );
@@ -1299,6 +1306,7 @@ async function openAdd() {
   }
   Object.assign(form, {
     customer_id: "",
+    customer_category: "Corporate",
     start_date: new Date().toISOString().slice(0, 10),
     duration_months: 12,
     duration_days: 0,
@@ -1384,6 +1392,10 @@ async function openEdit(row: any) {
 
   Object.assign(form, {
     customer_id: rentalData.customer_id || "",
+    customer_category:
+      rentalData.customer_category ||
+      (findCustomer(rentalData.customer_id) as any)?.category ||
+      "Corporate",
     start_date: rentalData.start_date
       ? String(rentalData.start_date).slice(0, 10)
       : new Date().toISOString().slice(0, 10),
@@ -1841,6 +1853,7 @@ async function handleSubmit() {
 
   const payload = {
     customer_id: String(form.customer_id),
+    customer_category: form.customer_category || "Corporate",
     start_date: startDateIso,
     duration_months: Math.max(0, Math.round(Number(form.duration_months) || 0)),
     duration_days: Math.max(0, Math.round(Number(form.duration_days) || 0)),
@@ -4265,15 +4278,18 @@ function isExpired(row: any): boolean {
       </div>
 
       <div v-if="form.customer_id" class="form-group">
-        <label class="form-label">Customer Type</label>
-        <input
-          :value="(findCustomer(form.customer_id) as any)?.category || 'Corporate'"
-          type="text"
-          class="form-input"
-          readonly
-          disabled
-          title="Otomatis mengikuti tipe Customer yang dipilih"
-        />
+        <label for="rent-customer-category" class="form-label">Customer Type</label>
+        <select
+          id="rent-customer-category"
+          v-model="form.customer_category"
+          class="form-select"
+        >
+          <option value="Corporate">Corporate</option>
+          <option value="Government">Government</option>
+        </select>
+        <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
+          Default mengikuti tipe Customer, dapat diubah sesuai transaksi rental ini.
+        </span>
       </div>
 
       <div class="form-row">

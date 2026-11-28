@@ -913,6 +913,7 @@ const form = reactive({
   report_no: '',
   service_type: 'corrective',
   customer_id: null as string | null,
+  customer_category: 'Corporate',
   unit_id: null as string | null,
   technician_id: null as string | null,
   project_name: '',
@@ -1007,12 +1008,20 @@ function openAdd() {
   showModal.value = true
 }
 
+watch(() => form.customer_id, (newId, oldId) => {
+  if (!newId) return
+  if (!editingItem.value || (oldId && newId !== oldId)) {
+    form.customer_category = (findCustomer(newId as any) as any)?.category || 'Corporate'
+  }
+})
+
 function openEdit(item: any) {
   editingItem.value = item
   Object.assign(form, {
     report_no: item.report_no,
     service_type: item.service_type,
     customer_id: item.customer_id,
+    customer_category: item.customer_category || (findCustomer(item.customer_id as any) as any)?.category || 'Corporate',
     unit_id: item.unit_id,
     technician_id: item.technician_id,
     project_name: item.project_name,
@@ -1810,8 +1819,14 @@ function printTable() {
         <CustomSelect id="sr-customer" v-model="form.customer_id" :options="customerOptions" placeholder="-- Select Customer --" class="form-select" />
       </div>
       <div v-if="form.customer_id" class="form-group">
-        <label class="form-label">Customer Type</label>
-        <input :value="(findCustomer(form.customer_id as any) as any)?.category || 'Corporate'" type="text" class="form-input" readonly disabled title="Otomatis mengikuti tipe Customer yang dipilih" />
+        <label for="sr-customer-category" class="form-label">Customer Type</label>
+        <select id="sr-customer-category" v-model="form.customer_category" class="form-select">
+          <option value="Corporate">Corporate</option>
+          <option value="Government">Government</option>
+        </select>
+        <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
+          Default mengikuti tipe Customer, dapat diubah sesuai transaksi ini.
+        </span>
       </div>
       <div class="form-group">
         <label class="form-label">Unit / Machine</label>
