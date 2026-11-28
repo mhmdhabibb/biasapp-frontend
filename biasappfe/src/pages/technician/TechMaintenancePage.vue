@@ -410,7 +410,7 @@ async function completeJob() {
 
 <template>
   <div class="tech-maint">
-    <PageHeader title="Maintenance" />
+    <PageHeader title="Service Warranty" />
 
     <!-- Active Jobs Table -->
     <div class="maint-card">
@@ -478,7 +478,7 @@ async function completeJob() {
           <div class="mf-header">
             <div>
               <div class="mf-header-no">{{ formatJobNo(selectedJob) }}</div>
-              <div class="mf-header-sub">Maintenance Form</div>
+              <div class="mf-header-sub">Service Warranty Form</div>
             </div>
             <button class="mf-close" @click="showForm = false">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -494,7 +494,7 @@ async function completeJob() {
             </div>
             <div class="mf-info-grid">
               <div class="mf-info-field">
-                <span class="mf-info-label">Maintenance Number</span>
+                <span class="mf-info-label">Service Warranty Number</span>
                 <span class="mf-info-value mf-info-value--primary">{{ formatJobNo(selectedJob) }}</span>
               </div>
               <div class="mf-info-field">
@@ -717,13 +717,13 @@ async function completeJob() {
               @click="completeJob"
             >
               <svg v-if="isSaving" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite; margin-right:5px;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-              {{ isSaving ? 'Saving...' : (isFormCompleted ? 'Complete Maintenance' : 'Complete Form First') }}
+              {{ isSaving ? 'Saving...' : (isFormCompleted ? 'Complete Service Warranty' : 'Complete Form First') }}
             </button>
           </div>
           <div class="mf-footer mf-footer--done" v-else>
             <span class="mf-done-label">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              Maintenance Completed
+              Service Warranty Completed
             </span>
             <button class="btn btn-outline" @click="showForm = false">Close</button>
           </div>

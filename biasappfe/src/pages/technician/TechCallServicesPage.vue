@@ -102,7 +102,7 @@ const filterTypeOptions = [
   { value: 'service', label: 'Service' },
   { value: 'copier', label: 'Copier' },
   { value: 'delivery', label: 'Delivery' },
-  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'maintenance', label: 'Service Warranty' },
   { value: 'survey', label: 'Survey' },
   { value: 'visit', label: 'Visit' },
   { value: 'meter_reading', label: 'Meter Reading' },

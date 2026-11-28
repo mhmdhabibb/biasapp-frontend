@@ -103,7 +103,7 @@ const pageTitle = computed(() => {
     "/accounting/delivery-orders": "Delivery Orders",
     "/technician/dashboard": "BIAS Technician",
     "/technician/call-services": "My Jobs",
-    "/technician/maintenance": "Maintenance",
+    "/technician/maintenance": "Service Warranty",
     "/technician/sparepart-request": "Request Sparepart",
     "/technician/meter-readings": "Meter Readings",
     "/technician/service-history": "Service History",

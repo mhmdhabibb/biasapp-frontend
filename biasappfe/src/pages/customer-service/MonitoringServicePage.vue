@@ -281,7 +281,7 @@ const allMonitoredServices = computed<MonitoredService[]>(() => {
     } else if (r.service_type === "preventive") {
       catLabel = "Preventive Maintenance";
     } else if (r.service_type === "maintenance") {
-      catLabel = "Maintenance";
+      catLabel = "Service Warranty";
     } else if (r.service_type === "installation") {
       catLabel = "Installation";
     } else if (r.service_type === "delivery") {
@@ -710,7 +710,7 @@ function navigateToDetail(item: MonitoredService) {
       >
         <div class="kpi-label">Technical Report (SR)</div>
         <div class="kpi-value text-emerald">{{ totalReportCount }}</div>
-        <div class="kpi-sub">Repair & Maintenance</div>
+        <div class="kpi-sub">Repair & Service Warranty</div>
       </div>
       <div
         class="kpi-card"

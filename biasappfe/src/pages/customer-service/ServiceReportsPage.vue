@@ -68,7 +68,7 @@ const unitOptions = computed(() =>
 
 const serviceTypeOptions = [
   { value: 'repair', label: 'Repair' },
-  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'maintenance', label: 'Service Warranty' },
   { value: 'copier', label: 'Copier' },
   { value: 'corrective', label: 'Corrective' },
   { value: 'preventive', label: 'Preventive' },
@@ -158,7 +158,7 @@ const serviceTypeFilterOptions = computed(() => [
   { value: '', label: 'All Service Types' },
   { value: 'copier', label: 'Copier' },
   { value: 'repair', label: 'Repair' },
-  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'maintenance', label: 'Service Warranty' },
   { value: 'corrective', label: 'Corrective' },
   { value: 'preventive', label: 'Preventive' },
   { value: 'installation', label: 'Installation' },

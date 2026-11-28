@@ -83,7 +83,7 @@ async function fetchAuditLogs() {
               : j.job_type === "service" || j.service_request_id
                 ? "Service"
                 : j.job_type === "maintenance"
-                  ? "Maintenance"
+                  ? "Service Warranty"
                   : "Visit";
           const assigner = j.assigner_name || "Admin/CS";
           const dateStr = j.created_at || j.scheduled_date || new Date().toISOString();
@@ -1009,7 +1009,7 @@ function jobTypeLabel(kind: string) {
     case "visit":
       return "Visits";
     case "maintenance":
-      return "Maintenance";
+      return "Service Warranty";
     case "survey":
       return "Surveys";
     default:
@@ -2012,7 +2012,7 @@ async function handleDeleteTech() {
             "
             @click="activeTab = 'maintenance'"
           >
-            Maintenance ({{ unassignedMaintenance.length }})
+            Service Warranty ({{ unassignedMaintenance.length }})
           </button>
           <button
             class="btn btn-sm"
@@ -2393,7 +2393,7 @@ async function handleDeleteTech() {
                       ></path>
                     </svg>
                     <span style="font-weight: 500; color: var(--color-primary)"
-                      >Maintenance</span
+                      >Service Warranty</span
                     >
                   </div>
 
@@ -2680,7 +2680,7 @@ async function handleDeleteTech() {
               "
               @click="jobTypeFilter = 'maintenance'"
             >
-              Maintenance ({{ jobTypeCounts.maintenance }})
+              Service Warranty ({{ jobTypeCounts.maintenance }})
             </button>
             <button
               class="btn btn-sm"
@@ -3006,10 +3006,10 @@ async function handleDeleteTech() {
       :title="
         selectedJob
           ? selectedJob.taskType === 'maintenance'
-            ? 'Maintenance Details'
+            ? 'Service Warranty Details'
             : 'Job Order Details'
           : selectedRequest?.taskType === 'maintenance'
-            ? 'Maintenance Details'
+            ? 'Service Warranty Details'
             : 'Service Request Details'
       "
       max-width="560px"

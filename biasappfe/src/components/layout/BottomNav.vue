@@ -176,7 +176,7 @@ async function submitPwdChange() {
               <div class="tile-icon-box" style="background: rgba(16, 185, 129, 0.12); color: #059669;">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="m9 16 2 2 4-4"></path></svg>
               </div>
-              <span class="tile-label">Maintenance</span>
+              <span class="tile-label">Service Warranty</span>
             </button>
 
             <button class="sheet-tile" @click="navigate('/technician/sparepart-request')">
