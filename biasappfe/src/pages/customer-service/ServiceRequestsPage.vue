@@ -170,7 +170,7 @@ const selectedCustomerCategory = computed(() => {
 
 const selectedTransactionCustomerType = computed(() => {
   if (!form.customer_id) return "";
-  if (formTab.value === "external") return "Service";
+  if (formTab.value === "external") return "Service External";
   const selectedId = form.unit_ids?.[0];
   if (selectedId) {
     const matched = availableUnitsForCustomer.value.find(
@@ -179,7 +179,7 @@ const selectedTransactionCustomerType = computed(() => {
     if (matched?.source === "rental") return "Rental";
     if (matched?.source === "sale") return "Sales";
   }
-  return "Service";
+  return "Service Contract";
 });
 
 watch(externalBrandSelect, (val) => {
@@ -1317,7 +1317,7 @@ onUnmounted(() => {
           title="Otomatis mengikuti transaksi / unit yang dipilih"
         />
         <span class="form-hint" style="font-size: 11px; color: var(--color-text-muted);">
-          Otomatis mengikuti jenis transaksi unit yang dipilih (Rental / Sales / Service).
+          Otomatis mengikuti jenis transaksi unit yang dipilih (Rental / Sales / Service Contract / Service External).
         </span>
       </div>
 
