@@ -21,8 +21,6 @@ import { apiRequest, api } from "@/services/api";
 import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
 import { buildPaymentTimestamp } from "@/utils/paymentReceipt";
 import { normalizeRole } from "@/router/role-access";
-import html2pdf from "html2pdf.js";
-import * as XLSX from "xlsx";
 
 const toast = useToast();
 const { can, isAdmin } = usePermission();
@@ -1962,7 +1960,7 @@ function generateSingleReceiptHtml(item: any) {
   `;
 }
 
-function exportToExcel() {
+async function exportToExcel() {
   const exportData = filteredSales.value.map((j: any) => ({
     "Transaction Date": j.date
       ? new Date(j.date).toLocaleDateString("en-GB")
@@ -1980,13 +1978,14 @@ function exportToExcel() {
     toast.error("No data to export");
     return;
   }
+  const XLSX = await import("xlsx");
   const ws = XLSX.utils.json_to_sheet(exportData);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Sales");
   XLSX.writeFile(wb, buildExportFileName(filteredSales.value, "xlsx"));
 }
 
-function exportToPdf() {
+async function exportToPdf() {
   const exportData = filteredSales.value.map((j: any) => ({
     "Transaction Date": j.date
       ? new Date(j.date).toLocaleDateString("en-GB")
@@ -2005,6 +2004,7 @@ function exportToPdf() {
     return;
   }
 
+  const { default: html2pdf } = await import("html2pdf.js");
   const tableHtml = [
     "<style>",
     "body{font-family:Arial,sans-serif;margin:0;padding:18px;color:#222}",

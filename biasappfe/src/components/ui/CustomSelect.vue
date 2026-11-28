@@ -126,7 +126,13 @@ function handleClickOutside(e: MouseEvent) {
   }
 }
 
-onMounted(() => document.addEventListener('mousedown', handleClickOutside))
+watch(isOpen, (open) => {
+  if (open) {
+    document.addEventListener('mousedown', handleClickOutside)
+  } else {
+    document.removeEventListener('mousedown', handleClickOutside)
+  }
+})
 onBeforeUnmount(() => document.removeEventListener('mousedown', handleClickOutside))
 
 watch(() => searchQuery.value, () => {

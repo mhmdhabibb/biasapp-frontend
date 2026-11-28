@@ -151,7 +151,27 @@ const columns = computed<TableColumn[]>(() => [
   { key: "status", label: t("rentals.status") },
 ]);
 
-const rentals = ref<any[]>([]);
+function mapRentalRows(list: any[]) {
+  return (list || []).map((r: any) => {
+    const c = findCustomer(r.customer_id);
+    const companyName = c
+      ? c.company_name || (c as any).name || "-"
+      : r.customer?.company_name || r.customer?.name || "-";
+    const picName = c ? c.pic_name || "-" : r.customer?.pic_name || "-";
+    return {
+      ...r,
+      company: companyName,
+      pic_name: picName,
+    };
+  });
+}
+
+const initialRentalSource =
+  Array.isArray(masterStore.rents.value) && masterStore.rents.value.length > 0
+    ? masterStore.rents.value
+    : [];
+
+const rentals = ref<any[]>(mapRentalRows(initialRentalSource));
 
 const customerOptions = computed(() => [
   { value: null, label: "All Customers" },
@@ -250,7 +270,7 @@ function resetDateFilters() {
 
 const showModal = ref(false);
 const isLoading = ref(false);
-const isLoadingRentals = ref(true);
+const isLoadingRentals = ref(rentals.value.length === 0);
 const showInvoiceModal = ref(false);
 const isLoadingRentalInvoices = ref(false);
 const selectedRental = ref<any>(null);
@@ -1578,39 +1598,25 @@ async function openEdit(row: any) {
 }
 
 async function fetchRentals(silent = false) {
-  if (!silent) isLoadingRentals.value = true;
+  const showLoader = !silent && rentals.value.length === 0;
+  if (showLoader) isLoadingRentals.value = true;
   try {
-    const res = await api.get<any>(
-      "/rents?limit=200&order_by=created_at&order_dir=desc",
-      !silent,
-      true,
-    );
+    // Use the exact canonical resource list endpoint so RentalsPage shares
+    // in-flight deduplication and cache with useMasterStore.
+    const res = await resources.rents.list({ limit: 200 }, showLoader, !silent);
     const list = Array.isArray(res?.data)
       ? res.data
       : Array.isArray(res)
         ? res
         : [];
-    rentals.value = list.map((r: any) => {
-      const c = (customers.value || []).find(
-        (cust: any) => cust.id === r.customer_id,
-      );
-      const companyName = c
-        ? c.company_name || c.name || "-"
-        : r.customer?.company_name || r.customer?.name || "-";
-      const picName = c ? c.pic_name || "-" : r.customer?.pic_name || "-";
-      return {
-        ...r,
-        company: companyName,
-        pic_name: picName,
-      };
-    });
+    rentals.value = mapRentalRows(list);
   } catch (error) {
-    if (!silent) {
+    if (!silent && rentals.value.length === 0) {
       console.error("Failed to fetch rentals data", error);
       toast.error("Gagal memuat data rental. Silakan refresh halaman.");
     }
   } finally {
-    if (!silent) isLoadingRentals.value = false;
+    isLoadingRentals.value = false;
   }
 }
 
@@ -2363,24 +2369,31 @@ async function loadPaperLookups() {
   }
 }
 
-function hydrateRentalLookups() {
-  void refreshOnly([
-    "customers",
-    "units",
-    "products",
-    "payments",
-    "technicians",
-    "deliveryOrders",
-    "brands",
-    "unitTypes",
-    "uoms",
-  ]);
+function hydrateRentalLookups(forceRefresh = false) {
+  if (forceRefresh) {
+    void refreshOnly(
+      [
+        "customers",
+        "units",
+        "products",
+        "payments",
+        "technicians",
+        "deliveryOrders",
+        "brands",
+        "unitTypes",
+        "uoms",
+      ],
+      true,
+    );
+  } else {
+    void ensureResourcesLoaded("/customer-service/rentals");
+  }
   void loadPaperLookups();
 }
 
 let skipNextRentalActivate = true;
 let rentalPollTimer: any = null;
-let lastSilentRentalSync = 0;
+let lastSilentRentalSync = Date.now();
 
 function silentSyncRentals() {
   if (
@@ -2394,12 +2407,12 @@ function silentSyncRentals() {
 
 function onDataMutated() {
   fetchRentals(true);
-  hydrateRentalLookups();
+  hydrateRentalLookups(true);
 }
 
 onMounted(() => {
-  fetchRentals();
-  hydrateRentalLookups();
+  void fetchRentals(rentals.value.length > 0);
+  hydrateRentalLookups(false);
   rentalPollTimer = setInterval(silentSyncRentals, 30000);
   window.addEventListener("focus", silentSyncRentals);
   window.addEventListener("bias:data-mutated", onDataMutated);

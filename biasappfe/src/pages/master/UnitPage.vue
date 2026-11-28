@@ -10,6 +10,7 @@ import HardDeleteDialog from "@/components/ui/HardDeleteDialog.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import { useAuth } from "@/composables/useAuth";
 import { useHardDelete } from "@/composables/useHardDelete";
+import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { resources } from "@/services/resource.service";
@@ -22,7 +23,7 @@ import {
   NUMFMT_RP,
   type StyledCell,
 } from "@/utils/exportHelpers";
-import { BIAS_LOGO_DATA_URL } from "@/utils/logoData";
+import { getCached } from "@/utils/requestCache";
 
 const toast = useToast();
 const { currentUser } = useAuth();
@@ -37,10 +38,26 @@ const columns: TableColumn[] = [
   { key: "is_copier", label: "Copier", width: "70px", nowrap: true },
 ];
 
-const brands = ref<{ id: string; name: string }[]>([]);
-const unitTypes = ref<{ id: string; name: string }[]>([]);
-const paperSizes = ref<{ id: string; name: string }[]>([]);
-const uoms = ref<UOM[]>([]);
+const masterStore = useMasterStore();
+const initialUnits =
+  (masterStore.units.value?.length ? (masterStore.units.value as Unit[]) : null) ??
+  ((getCached<any>("GET:/units/?page=1&limit=1000")?.data as Unit[] | undefined) ?? []);
+const initialBrands =
+  (masterStore.brands.value?.length ? (masterStore.brands.value as any[]) : null) ??
+  ((getCached<any>("GET:/brands/?page=1&limit=1000")?.data as any[] | undefined) ?? []);
+const initialTypes =
+  (masterStore.unitTypes.value?.length ? (masterStore.unitTypes.value as any[]) : null) ??
+  ((getCached<any>("GET:/unit-types/?page=1&limit=1000")?.data as any[] | undefined) ?? []);
+const initialPaperSizes =
+  (getCached<any>("GET:/paper-sizes/?page=1&limit=1000")?.data as any[] | undefined) ?? [];
+const initialUoms =
+  (masterStore.uoms.value?.length ? (masterStore.uoms.value as UOM[]) : null) ??
+  ((getCached<any>("GET:/uoms/?page=1&limit=1000")?.data as UOM[] | undefined) ?? []);
+
+const brands = ref<{ id: string; name: string }[]>(initialBrands);
+const unitTypes = ref<{ id: string; name: string }[]>(initialTypes);
+const paperSizes = ref<{ id: string; name: string }[]>(initialPaperSizes);
+const uoms = ref<UOM[]>(initialUoms);
 
 const brandOptions = computed(() =>
   brands.value.map((b) => ({ value: b.id, label: b.name })),
@@ -55,19 +72,20 @@ const uomOptions = computed(() =>
   uoms.value.map((u) => ({ value: u.id, label: u.name })),
 );
 
-const data = ref<Unit[]>([]);
-const isLoading = ref(true);
+const data = ref<Unit[]>(initialUnits);
+const isLoading = ref(initialUnits.length === 0);
 
 async function fetchData() {
-  isLoading.value = true;
+  const showLoader = data.value.length === 0;
+  if (showLoader) isLoading.value = true;
   try {
     const [resUnits, resBrands, resTypes, resPaperSizes, resUoms] =
       await Promise.all([
-        resources.units.list(),
-        resources.brands.list(),
-        resources.unitTypes.list(),
-        resources.paperSizes.list(),
-        resources.uoms.list(),
+        resources.units.list(undefined, showLoader),
+        resources.brands.list(undefined, false),
+        resources.unitTypes.list(undefined, false),
+        resources.paperSizes.list(undefined, false),
+        resources.uoms.list(undefined, false),
       ]);
     data.value = resUnits.data as any;
     brands.value = resBrands.data as any;
@@ -76,9 +94,11 @@ async function fetchData() {
     uoms.value = resUoms.data as any;
   } catch (error: any) {
     console.error("Failed to fetch data:", error);
-    toast.error(
-      "Failed to fetch data from server: " + (error.message || "Error"),
-    );
+    if (showLoader) {
+      toast.error(
+        "Failed to fetch data from server: " + (error.message || "Error"),
+      );
+    }
   } finally {
     isLoading.value = false;
   }
@@ -1215,12 +1235,13 @@ async function exportStockExcel() {
   toast.success("Laporan stok unit berhasil diekspor ke Excel!");
 }
 
-function exportStockPdf() {
+async function exportStockPdf() {
   const exportItems = filteredData.value;
   if (!exportItems.length) {
     toast.error("Tidak ada data stok unit untuk diekspor");
     return;
   }
+  const { BIAS_LOGO_DATA_URL } = await import("@/utils/logoData");
   const dateStr = new Date().toLocaleDateString("id-ID", {
     day: "2-digit",
     month: "long",

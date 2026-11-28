@@ -27,7 +27,7 @@ const MASTER_RESOURCES = [
 function getTTLForKey(key: string): number {
   const lower = key.toLowerCase();
   for (const res of MASTER_RESOURCES) {
-    if (lower.includes(res)) return 60000; // 60s for master data
+    if (lower.includes(res)) return 120000; // 120s for master data (invalidated immediately on mutation)
   }
   return 30000; // 30s default for operational data
 }
@@ -87,7 +87,10 @@ export function invalidateCache(pattern?: string): void {
     return;
   }
   const clean = (pattern.split("?")[0] || "").replace(/^\/+|\/+$/g, "");
-  const kebab = clean.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+  const kebab = clean
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .replace(/_/g, "-")
+    .toLowerCase();
   const segments = clean.split("/");
   const rootResource = segments[0] ? `/${segments[0]}` : "";
   const rootKebab = kebab.split("/")[0] ? `/${kebab.split("/")[0]}` : "";

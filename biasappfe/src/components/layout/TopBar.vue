@@ -171,9 +171,12 @@ watch(notificationPageCount, (pageCount) => {
 });
 
 let notificationInterval: ReturnType<typeof setInterval> | undefined;
+let initialNotificationTimer: ReturnType<typeof setTimeout> | undefined;
 
 onMounted(() => {
-  void fetchAll();
+  // Notifications are not needed for the first paint: defer the initial fetch
+  // so the landing page's data requests get the connections first.
+  initialNotificationTimer = setTimeout(() => void fetchAll(), 1200);
   notificationInterval = setInterval(() => {
     if (document.visibilityState === "visible") void fetchAll();
   }, 30000);
@@ -182,6 +185,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (initialNotificationTimer) clearTimeout(initialNotificationTimer);
   if (notificationInterval) clearInterval(notificationInterval);
   window.removeEventListener("click", handleClickOutside);
   window.removeEventListener("keydown", handleGlobalKeydown);

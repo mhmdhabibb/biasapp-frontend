@@ -10,12 +10,17 @@ const { isAuthenticated, refreshPermissions } = useAuth()
 const isPublicPage = computed(() => currentRoute.value.name === 'login' || currentRoute.value.name === 'verifyPayment')
 
 let permissionRefreshInterval: ReturnType<typeof setInterval> | undefined
+let lastPermissionRefreshAt = Date.now()
+const PERMISSION_REFRESH_MIN_GAP_MS = 25000
 
 function refreshActiveSession() {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return
-  if (isAuthenticated.value && document.visibilityState === 'visible') {
-    void refreshPermissions()
-  }
+  if (!isAuthenticated.value || document.visibilityState !== 'visible') return
+  // focus + visibilitychange + interval used to fire /auth/me back-to-back;
+  // collapse them so the session check never competes with page data.
+  if (Date.now() - lastPermissionRefreshAt < PERMISSION_REFRESH_MIN_GAP_MS) return
+  lastPermissionRefreshAt = Date.now()
+  void refreshPermissions()
 }
 
 onMounted(() => {
@@ -46,13 +51,13 @@ onUnmounted(() => {
 <style>
 /* Page Transition - Smooth, Lightweight & GPU-Accelerated */
 .page-fade-enter-active {
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.14s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: opacity, transform;
 }
 
 .page-fade-leave-active {
-  transition: opacity 0.12s ease-in;
+  transition: opacity 0.06s ease-out;
   will-change: opacity;
 }
 

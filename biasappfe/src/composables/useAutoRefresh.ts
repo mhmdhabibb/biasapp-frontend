@@ -19,35 +19,40 @@ export function useAutoRefresh(intervalMs = 10000, resourceKeys?: string[]) {
   let timer: ReturnType<typeof setInterval> | undefined;
   let debounceTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  const doRefresh = () => {
+  // maxAgeMs > 0 skips resources that were fetched more recently than that
+  // (by the router on navigation, the layout poller, or another page), so the
+  // dashboard no longer re-downloads everything right after it just loaded.
+  const doRefresh = (maxAgeMs = 0) => {
     if (debounceTimeout) clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(() => {
       if (document.visibilityState !== "visible") return;
       if (resourceKeys && resourceKeys.length > 0) {
-        void refreshOnly(resourceKeys, true);
+        void refreshOnly(resourceKeys, true, maxAgeMs);
       } else {
         void refreshInBackground();
       }
     }, 250);
   };
 
+  const freshWindow = Math.max(1000, intervalMs - 1000);
+
   const poll = () => {
     if (document.visibilityState !== "visible") return;
-    doRefresh();
+    doRefresh(freshWindow);
   };
 
   const onVisible = () => {
     if (document.visibilityState === "visible") {
-      doRefresh();
+      doRefresh(freshWindow);
     }
   };
 
   const onMutation = () => {
-    doRefresh();
+    doRefresh(0);
   };
 
   onMounted(() => {
-    doRefresh();
+    doRefresh(freshWindow);
     timer = setInterval(poll, intervalMs);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);

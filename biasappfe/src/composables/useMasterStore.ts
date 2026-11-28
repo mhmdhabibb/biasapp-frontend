@@ -66,6 +66,45 @@ let syncPromise: Promise<void> | null = null;
 let syncing = false;
 let lastFullSyncAt = 0;
 
+// Per-resource freshness tracking. Previously only a (never-set) global
+// timestamp existed, so every navigation to an already-loaded page re-fetched
+// ALL of its resources with the cache bypassed. Now each resource remembers
+// when it was last fetched and only stale ones are revalidated.
+const resourceFetchedAt = new Map<string, number>();
+// In-flight load per resource: concurrent callers (router guard, layout,
+// page onMounted, hover-prefetch) share one request instead of stacking.
+const pendingLoads = new Map<string, Promise<void>>();
+const STALE_AFTER_MS = 30000;
+
+function markFetched(names: string[]) {
+  const now = Date.now();
+  names.forEach((n) => {
+    resourceFetchedAt.set(n, now);
+    if (!loadedResources.value.has(n)) loadedResources.value.add(n);
+  });
+}
+
+function isStale(name: string, maxAgeMs: number) {
+  const at = resourceFetchedAt.get(name);
+  return !at || Date.now() - at >= maxAgeMs;
+}
+
+function resetStoreState() {
+  for (const key of Object.keys(store)) {
+    if (Array.isArray((store as any)[key])) {
+      (store as any)[key] = [];
+    }
+  }
+  loadedResources.value = new Set();
+  resourceFetchedAt.clear();
+  pendingLoads.clear();
+  lastFullSyncAt = 0;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("bias:auth-logout", resetStoreState);
+}
+
 const CRITICAL_RESOURCES = [
   "customers",
   "technicians",
@@ -81,7 +120,7 @@ const CRITICAL_RESOURCES = [
 const PAGE_RESOURCE_MAP: Record<string, string[]> = {
   // Dashboards (All Roles)
   "/customer-service/dashboard": ["serviceRequests", "jobOrders", "serviceReports", "contractItems", "serviceSpareparts", "warrantyClaims", "rents"],
-  "/accounting/dashboard": ["serviceSpareparts", "purchaseOrders", "deliveryOrders", "rentalInvoices", "salesInvoices", "payments"],
+  "/accounting/dashboard": ["serviceSpareparts", "purchaseOrders", "deliveryOrders", "rentalInvoices", "salesInvoices"],
   "/technician/dashboard": ["jobOrders", "serviceReports", "technicians", "customers", "units", "sparepartRequests"],
 
   // Customer Service Operational Pages
@@ -352,25 +391,29 @@ export function useMasterStore() {
   }
 
   function runSyncTasks(names: string[] | null, tracksLoading: boolean) {
-    const isFullSync = !names || names.length === 0;
     const registry = buildSyncTasks(tracksLoading);
-    const picked = (
-      names && names.length > 0
-        ? names.map((name) => registry[name]).filter(Boolean)
-        : Object.values(registry)
-    ) as Array<() => Promise<void>>;
 
-    if (picked.length === 0) {
-      if (names) names.forEach((name) => loadedResources.value.add(name));
-      return Promise.resolve();
+    if (!names || names.length === 0) {
+      const all = Object.values(registry) as Array<() => Promise<void>>;
+      return Promise.all(all.map((task) => task())).then(() => {
+        lastFullSyncAt = Date.now();
+        markFetched(Object.keys(registry));
+      });
     }
 
-    return (async () => {
-      // Execute all targeted tasks in parallel for instant network throughput
-      await Promise.all(picked.map((task) => task()));
-      if (names) names.forEach((n) => loadedResources.value.add(n));
-      if (isFullSync) lastFullSyncAt = Date.now();
-    })();
+    // Execute all targeted tasks in parallel; reuse any load already in flight
+    // for the same resource so duplicate triggers never stack requests.
+    const promises = names.map((name) => {
+      const existing = pendingLoads.get(name);
+      if (existing) return existing;
+      const task = registry[name];
+      const p = (task ? task() : Promise.resolve())
+        .then(() => markFetched([name]))
+        .finally(() => pendingLoads.delete(name));
+      pendingLoads.set(name, p);
+      return p;
+    });
+    return Promise.all(promises).then(() => undefined);
   }
 
   function syncFromApi(force = false, tracksLoading = true) {
@@ -437,51 +480,73 @@ export function useMasterStore() {
     const targetResources = needed.length > 0 ? needed : (CRITICAL_RESOURCES as unknown as string[]);
 
     const notLoaded = targetResources.filter((r) => !loadedResources.value.has(r));
-    if (notLoaded.length > 0) {
+    const loadPromise = notLoaded.length > 0
       // First visit: track initial requests so list pages can show skeleton rows.
-      return runSyncTasks(notLoaded, true);
-    }
+      ? runSyncTasks(notLoaded, true)
+      : Promise.resolve();
 
-    // Resources already in memory: page renders INSTANTLY (0ms)
-    // Silently revalidate only if data is older than 30 seconds
-    if (Date.now() - lastFullSyncAt > 30000) {
-      void refreshIfStale(30000);
-    }
-    return Promise.resolve();
+    // Resources already in memory render INSTANTLY from the shared store.
+    // Silently revalidate only the ones older than 30s (no skeleton, no
+    // cache bypass, and never resources that are still loading).
+    const stale = targetResources.filter(
+      (r) => loadedResources.value.has(r) && !pendingLoads.has(r) && isStale(r, STALE_AFTER_MS),
+    );
+    if (stale.length > 0) void refreshOnly(stale, false);
+
+    return loadPromise;
+  }
+
+  /**
+   * Background prefetch (e.g. on menu hover): loads a page's missing resources
+   * silently so the page renders with data immediately when opened.
+   */
+  function prefetchResourcesForPath(path: string) {
+    const needed = getResourcesForPath(path);
+    const notLoaded = needed.filter((r) => !loadedResources.value.has(r) && !pendingLoads.has(r));
+    if (notLoaded.length === 0) return Promise.resolve();
+    return runSyncTasks(notLoaded, false);
+  }
+
+  function currentPathResources() {
+    const route = typeof window !== 'undefined' ? window.location.pathname : '';
+    return route ? getResourcesForPath(route) : [];
   }
 
   function refreshInBackground() {
     // Refresh only resources needed for current page instead of flooding all 25 resources across the browser socket pool
-    const route = typeof window !== 'undefined' ? window.location.pathname : '';
-    let needed = (route && PAGE_RESOURCE_MAP[route]) || [];
-    if (!needed || needed.length === 0) {
-      for (const [key, val] of Object.entries(PAGE_RESOURCE_MAP)) {
-        if (route && route.startsWith(key)) {
-          needed = val;
-          break;
-        }
-      }
-    }
+    const needed = currentPathResources();
     if (needed && needed.length > 0) {
       return refreshOnly(needed, true);
     }
     return Promise.resolve();
   }
 
-  async function refreshOnly(names: string[], bypassCache = false) {
+  /**
+   * Silent refresh of the given resources.
+   * @param bypassCache drop the HTTP cache first (forces a network request)
+   * @param maxAgeMs    when > 0, skip resources fetched more recently than this
+   *                    (collapses overlapping pollers: layout, page, dashboard)
+   */
+  async function refreshOnly(names: string[], bypassCache = false, maxAgeMs = 0) {
     if (!names || names.length === 0) return refreshInBackground();
+    const targets = maxAgeMs > 0 ? names.filter((n) => isStale(n, maxAgeMs)) : names;
+    if (targets.length === 0) return;
     if (bypassCache) {
-      names.forEach((n) => invalidateCache(n));
+      targets.forEach((n) => invalidateCache(n));
     }
     const registry = buildSyncTasks(false);
-    const tasks = names.map((name) => registry[name]).filter(Boolean);
-    await Promise.all(tasks.map((task) => task()));
-    names.forEach((n) => loadedResources.value.add(n));
+    await Promise.all(
+      targets.map((name) => {
+        const task = registry[name];
+        return (task ? task() : Promise.resolve()).then(() => markFetched([name]));
+      }),
+    );
   }
 
   function refreshIfStale(maxAgeMs = 30000) {
-    if (Date.now() - lastFullSyncAt < maxAgeMs) return Promise.resolve();
-    return refreshInBackground();
+    const needed = currentPathResources();
+    if (needed.length === 0) return Promise.resolve();
+    return refreshOnly(needed, false, maxAgeMs);
   }
 
   // Fast Index Caches for O(1) lookups across all pages
@@ -586,22 +651,43 @@ export function useMasterStore() {
     return (store.units || []).find((u) => String(u.id).trim().toLowerCase() === str);
   }
 
+  function makeIdIndex<T extends { id?: any }>(getter: () => T[] | undefined) {
+    const map = new Map<string, T>();
+    let lastArr: T[] | undefined = undefined;
+    return (id: number | string | null | undefined): T | undefined => {
+      if (id == null) return undefined;
+      const arr = getter() || [];
+      if (arr !== lastArr) {
+        map.clear();
+        for (const item of arr) {
+          if (item?.id != null) map.set(String(item.id).trim().toLowerCase(), item);
+        }
+        lastArr = arr;
+      }
+      return map.get(String(id).trim().toLowerCase());
+    };
+  }
+
+  const lookupBrand = makeIdIndex<Brand>(() => store.brands);
+  const lookupUnitType = makeIdIndex<UnitType>(() => store.unitTypes as UnitType[]);
+  const lookupUom = makeIdIndex<any>(() => store.uoms);
+  const lookupWarranty = makeIdIndex<Warranty>(() => store.warranties);
+  const lookupServiceReport = makeIdIndex<ServiceReport>(() => store.serviceReports);
+  const lookupSparepartRequest = makeIdIndex<SparepartRequest>(() => store.sparepartRequests);
+  const lookupRentalInvoice = makeIdIndex<RentalInvoice>(() => store.rentalInvoices);
+  const lookupSale = makeIdIndex<Sale>(() => store.sales);
+  const lookupSalesInvoice = makeIdIndex<SalesInvoice>(() => store.salesInvoices);
+
   function findBrand(
     id: number | string | null | undefined,
   ): Brand | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return (store.brands || []).find((b) => String(b.id).trim().toLowerCase() === str);
+    return lookupBrand(id);
   }
 
   function findUnitType(
     id: number | string | null | undefined,
   ): UnitType | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return ((store.unitTypes as UnitType[]) || []).find(
-      (u) => String(u.id).trim().toLowerCase() === str,
-    );
+    return lookupUnitType(id);
   }
 
   function findProduct(id: number | string | null): Product | undefined {
@@ -613,15 +699,11 @@ export function useMasterStore() {
   }
 
   function findUom(id: number | string | null): any | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return (store.uoms || []).find((u: any) => String(u.id).trim().toLowerCase() === str);
+    return lookupUom(id);
   }
 
   function findWarranty(id: number | string | null): Warranty | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return (store.warranties || []).find((w) => String(w.id).trim().toLowerCase() === str);
+    return lookupWarranty(id);
   }
 
   function findContractItem(
@@ -637,35 +719,25 @@ export function useMasterStore() {
   function findServiceReport(
     id: number | string | null,
   ): ServiceReport | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return (store.serviceReports || []).find((sr) => String(sr.id).trim().toLowerCase() === str);
+    return lookupServiceReport(id);
   }
 
   function findSparepartRequest(
     id: number | string | null,
   ): SparepartRequest | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return (store.sparepartRequests || []).find((r) => String(r.id).trim().toLowerCase() === str);
+    return lookupSparepartRequest(id);
   }
 
   function findRentalInvoice(id: any): RentalInvoice | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return (store.rentalInvoices || []).find((ri) => String(ri.id).trim().toLowerCase() === str);
+    return lookupRentalInvoice(id);
   }
 
   function findSale(id: any): Sale | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return (store.sales || []).find((s) => String(s.id).trim().toLowerCase() === str);
+    return lookupSale(id);
   }
 
   function findSalesInvoice(id: any): SalesInvoice | undefined {
-    if (id == null) return undefined;
-    const str = String(id).trim().toLowerCase();
-    return (store.salesInvoices || []).find((si) => String(si.id).trim().toLowerCase() === str);
+    return lookupSalesInvoice(id);
   }
 
   function getUnitsByCustomer(customerId: number | string | null): Unit[] {
@@ -806,6 +878,7 @@ export function useMasterStore() {
     loadCriticalResources,
     loadResourcesForPage,
     ensureResourcesLoaded,
+    prefetchResourcesForPath,
     findCustomer,
     findTechnician,
     findUnit,
