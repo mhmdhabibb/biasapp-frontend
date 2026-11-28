@@ -11,6 +11,8 @@ import FormModal from '@/components/ui/FormModal.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import HardDeleteDialog from '@/components/ui/HardDeleteDialog.vue'
 import CustomSelect from '@/components/ui/CustomSelect.vue'
+import AssignTechnicianModal, { type AssignSubmitPayload } from '@/components/ui/AssignTechnicianModal.vue'
+import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useHardDelete } from '@/composables/useHardDelete'
@@ -18,6 +20,7 @@ import { useToast } from '@/composables/useToast'
 import { useResourcesStore } from '@/stores/resources.store'
 import { resources as resourceService } from '@/services/resource.service'
 import { api } from '@/services/api'
+import { getAssignedTeamDisplay, getJobMemberTechIds } from '@/utils/jobTechnician'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
 import { printServiceReport, type ReportType } from '@/utils/printReport'
 import type { TableColumn } from '@/types'
@@ -27,6 +30,7 @@ const emit = defineEmits<{ (e: 'count', count: number): void }>()
 
 const toast = useToast()
 const { can } = usePermission()
+const { currentUser } = useAuth()
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
 const store = useMasterStore()
@@ -336,29 +340,21 @@ async function handleSubmit() {
 // ══════════════════════════════════════════════════
 const showAssignModal = ref(false)
 const assigningRow = ref<any>(null)
-const assignForm = reactive({
-  technician_id: null as any,
-  scheduled_date: new Date().toISOString().slice(0, 16),
+const isAssigning = ref(false)
+const assignInitial = ref({
+  technician_id: '',
+  member_technician_ids: [] as string[],
+  scheduled_date: '',
   instructions: '',
 })
-const isAssigning = ref(false)
 
-const assignTechOptions = computed(() => [
-  { value: null as any, label: '-- Pilih Teknisi --' },
-  ...((store.technicians?.value || []) as any[]).map((t: any) => ({
-    value: t.id,
-    label: t.user?.name || t.name || `Teknisi ${t.id}`,
-  })),
-])
-
-const filterStatusOptions = [
-  { value: 'all', label: 'Semua Status' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'filled', label: 'Filled' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'draft', label: 'Draft' },
-]
+function getStandaloneTeam(row: any) {
+  const linkedJO = findJobOrderForDO(row.id)
+  const target = linkedJO
+    ? { ...row, technician_id: row.technician_id || linkedJO.technician_id, member_technician_ids: linkedJO.member_technician_ids, job_order_technicians: linkedJO.job_order_technicians }
+    : row
+  return getAssignedTeamDisplay(target, store.findTechnician)
+}
 
 function openAssign(row: any) {
   if (isRowCompleted(row)) {
@@ -367,59 +363,53 @@ function openAssign(row: any) {
   }
   assigningRow.value = row
   const linkedJO = findJobOrderForDO(row.id)
-  Object.assign(assignForm, {
-    technician_id: row.technician_id || linkedJO?.technician_id || null,
-    scheduled_date: linkedJO?.scheduled_date
-      ? String(linkedJO.scheduled_date).slice(0, 16)
-      : row.delivery_date
-        ? String(row.delivery_date).slice(0, 16)
-        : new Date().toISOString().slice(0, 16),
+  assignInitial.value = {
+    technician_id: (row.technician_id || linkedJO?.technician_id) ? String(row.technician_id || linkedJO?.technician_id) : '',
+    member_technician_ids: linkedJO ? getJobMemberTechIds(linkedJO) : [],
+    scheduled_date: linkedJO?.scheduled_date || row.delivery_date || '',
     instructions: linkedJO?.instructions || row.notes || row.project_name || '',
-  })
+  }
   showAssignModal.value = true
 }
 
-async function handleAssignSubmit() {
+async function handleAssignSubmit(payload: AssignSubmitPayload) {
   if (!assigningRow.value) return
   if (isRowCompleted(assigningRow.value)) {
     toast.error('Pekerjaan ini sudah selesai (Completed) dan tidak dapat di-assign lagi.')
     showAssignModal.value = false
     return
   }
-  if (!assignForm.technician_id) {
-    toast.warning('Pilih teknisi terlebih dahulu.')
-    return
-  }
   isAssigning.value = true
   try {
     const row = assigningRow.value
 
-    // 1. Update technician_id di Delivery Order
     await api.patch(`/delivery-orders/${row.id}`, {
-      technician_id: assignForm.technician_id,
+      technician_id: payload.technician_id,
     })
 
-    // 2. Buat atau update Job Order
     const existingJO = findJobOrderForDO(row.id)
     if (existingJO) {
       await api.patch(`/job-orders/${existingJO.id}`, {
-        technician_id: assignForm.technician_id,
-        scheduled_date: new Date(assignForm.scheduled_date).toISOString(),
-        instructions: assignForm.instructions,
+        technician_id: payload.technician_id,
+        member_technician_ids: payload.member_technician_ids,
+        scheduled_date: payload.scheduled_date,
+        instructions: payload.instructions,
+        assigner_name: currentUser.value?.name || undefined,
       })
-      toast.success('Job Order berhasil diperbarui dan teknisi di-assign.')
+      toast.success('Teknisi berhasil di-re-assign.')
     } else {
-      const joPayload = {
+      await api.post('/job-orders', {
         job_order_no: `JO-${Date.now().toString().slice(-6)}`,
         delivery_order_id: row.id,
-        technician_id: assignForm.technician_id,
+        technician_id: payload.technician_id,
+        member_technician_ids: payload.member_technician_ids,
         job_type: 'delivery',
-        scheduled_date: new Date(assignForm.scheduled_date).toISOString(),
-        instructions: assignForm.instructions,
+        scheduled_date: payload.scheduled_date,
+        instructions: payload.instructions,
+        assigner_name: currentUser.value?.name || undefined,
         status: 'assigned',
-      }
-      await api.post('/job-orders', joPayload)
-      toast.success('Job Order berhasil dibuat dan teknisi di-assign!')
+      })
+      toast.success('Teknisi berhasil di-assign.')
     }
 
     await loadStandaloneData()
@@ -717,8 +707,16 @@ defineExpose({ openAdd })
             </div>
           </div>
         </template>
-        <template #cell-technician_id="{ value }">
-          <span class="text-nowrap">{{ technicianName(value) }}</span>
+        <template #cell-technician_id="{ row }">
+          <template v-if="getStandaloneTeam(row).leadName">
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-weight: 600; font-size: 12px;">Kepala: {{ getStandaloneTeam(row).leadName }}</span>
+              <span v-if="getStandaloneTeam(row).memberNames.length > 0" style="font-size: 11px; color: var(--color-text-muted);">
+                Anggota: {{ getStandaloneTeam(row).memberNames.join(', ') }}
+              </span>
+            </div>
+          </template>
+          <span v-else class="text-muted" style="font-size: 12px; font-style: italic;">Belum ditugaskan</span>
         </template>
         <template #cell-job_order="{ row }">
           <template v-if="findJobOrderForDO(row.id)">
@@ -839,67 +837,23 @@ defineExpose({ openAdd })
       </template>
     </FormModal>
 
-    <!-- ═══ MODAL ASSIGN → BUAT JOB ORDER ═══ -->
-    <FormModal
+    <AssignTechnicianModal
       :open="showAssignModal"
-      :title="findJobOrderForDO(assigningRow?.id) ? 'Re-assign Job Order' : 'Assign ke Job Order'"
-      max-width="560px"
+      :title="findJobOrderForDO(assigningRow?.id)?.technician_id || assigningRow?.technician_id ? 'Re-assign Teknisi' : 'Assign Teknisi'"
+      :summary-lines="assigningRow ? [
+        { label: 'No. DO', value: assigningRow.do_number || '-' },
+        { label: 'Customer', value: customerName(assigningRow.customer_id) },
+        ...(assigningRow.delivery_address ? [{ label: 'Alamat', value: assigningRow.delivery_address }] : []),
+      ] : []"
+      :technicians="store.technicians?.value || []"
+      :initial-lead-id="assignInitial.technician_id"
+      :initial-member-ids="assignInitial.member_technician_ids"
+      :initial-scheduled-date="assignInitial.scheduled_date"
+      :initial-instructions="assignInitial.instructions"
+      :loading="isAssigning"
       @close="showAssignModal = false"
       @submit="handleAssignSubmit"
-    >
-      <div v-if="assigningRow" class="assign-summary-box mb-4">
-        <div><strong>No. DO:</strong> {{ assigningRow.do_number || '-' }}</div>
-        <div><strong>Customer:</strong> {{ customerName(assigningRow.customer_id) }}</div>
-        <div v-if="assigningRow.delivery_address"><strong>Alamat:</strong> {{ assigningRow.delivery_address }}</div>
-        <div v-if="findJobOrderForDO(assigningRow.id)" class="mt-xs">
-          <strong>Job Order Terhubung:</strong>
-          <span class="badge badge-primary jo-badge ml-1">{{ findJobOrderForDO(assigningRow.id).job_order_no }}</span>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Pilih Teknisi <span class="text-danger">*</span></label>
-        <CustomSelect
-          v-model="assignForm.technician_id"
-          :options="assignTechOptions"
-          placeholder="-- Pilih Teknisi --"
-          class="form-select"
-        />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Tanggal & Waktu Jadwal</label>
-        <input v-model="assignForm.scheduled_date" type="datetime-local" class="form-input" />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Instruksi / Catatan untuk Teknisi</label>
-        <textarea
-          v-model="assignForm.instructions"
-          class="form-textarea"
-          rows="3"
-          placeholder="Instruksi pengerjaan teknisi..."
-        ></textarea>
-      </div>
-
-      <div class="assign-note">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="10" r="10" />
-          <line x1="12" y1="8" x2="12" y2="12" />
-          <line x1="12" y1="16" x2="12.01" y2="16" />
-        </svg>
-        <span>
-          Setelah di-assign, sistem otomatis membuat <strong>Job Order</strong> sehingga tugas ini langsung muncul di <strong>Job Orders</strong> dan dashboard teknisi terkait.
-        </span>
-      </div>
-
-      <template #footer>
-        <button type="button" class="btn btn-outline" @click="showAssignModal = false" :disabled="isAssigning">Batal</button>
-        <button type="button" class="btn btn-primary" :disabled="isAssigning" @click="handleAssignSubmit">
-          {{ isAssigning ? 'Menyimpan...' : (findJobOrderForDO(assigningRow?.id) ? 'Update Assignment' : 'Assign & Buat Job Order') }}
-        </button>
-      </template>
-    </FormModal>
+    />
 
     <!-- ═══ MODAL DELETE (SOFT DELETE) ═══ -->
     <ConfirmDialog

@@ -231,7 +231,7 @@ const formattedGeneratedAt = computed(() => {
           </div>
         </div>
 
-        <div class="card card-clickable" @click="router.push('/customer-service/job-orders')">
+        <div class="card card-clickable" @click="router.push('/customer-service/service-requests')">
           <div class="card-header">
             <span>Job Orders &amp; SLA</span>
             <span class="icon-badge">🛠️</span>
@@ -395,7 +395,7 @@ const formattedGeneratedAt = computed(() => {
         </div>
 
         <!-- Job Orders by Type & Status -->
-        <div class="card section-card card-clickable" @click="router.push('/customer-service/job-orders')">
+        <div class="card section-card card-clickable" @click="router.push('/customer-service/service-requests')">
           <div class="section-header">
             <h3 class="section-title">Job Orders by Type ({{ svc?.job_orders.total ?? 0 }})</h3>
             <span class="tag-pill">{{ joCompletionRate }}% Completed</span>

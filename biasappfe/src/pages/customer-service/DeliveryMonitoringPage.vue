@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import PageHeader from '@/components/ui/PageHeader.vue'
 import DataTable from '@/components/ui/DataTable.vue'
+import AssignTechnicianModal, { type AssignSubmitPayload } from '@/components/ui/AssignTechnicianModal.vue'
+import { useAuth } from '@/composables/useAuth'
 import { useMasterStore } from '@/composables/useMasterStore'
 import { usePermission } from '@/composables/usePermission'
 import { useToast } from '@/composables/useToast'
+import { api } from '@/services/api'
+import { getAssignedTeamDisplay, getJobMemberTechIds } from '@/utils/jobTechnician'
 import { hasDeliveryHistory, printDeliveryServiceHistory } from '@/utils/printDeliveryHistory'
-import type { TableColumn } from '@/types'
-import { onMounted } from 'vue'
+import FormModal from '@/components/ui/FormModal.vue'
+import SignaturePad from '@/components/ui/SignaturePad.vue'
+import { useResourcesStore } from '@/stores/resources.store'
+import { onMounted, ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 
 const toast = useToast()
 const { can } = usePermission()
+const { currentUser } = useAuth()
 const route = useRoute()
 const { ensureResourcesLoaded } = useMasterStore()
 
@@ -18,7 +25,7 @@ onMounted(() => {
   ensureResourcesLoaded(route.path)
 })
 
-const { deliveryOrders, findCustomer, findTechnician } = useMasterStore()
+const { deliveryOrders, jobOrders, technicians, findCustomer, findTechnician, refreshInBackground } = useMasterStore()
 
 const columns: TableColumn[] = [
   { key: 'delivery_no', label: 'Delivery No' },
@@ -43,10 +50,82 @@ function printServiceHistory(item: any) {
   printDeliveryServiceHistory(item)
 }
 
-import { ref, reactive } from 'vue'
-import FormModal from '@/components/ui/FormModal.vue'
-import SignaturePad from '@/components/ui/SignaturePad.vue'
-import { useResourcesStore } from '@/stores/resources.store'
+function findJobOrderForDO(doId: string | number) {
+  return (jobOrders.value as any[]).find(
+    (j: any) => String(j.delivery_order_id || '') === String(doId),
+  ) || null
+}
+
+function getDoTeam(row: any) {
+  const jo = findJobOrderForDO(row.id)
+  const target = jo ? { ...row, technician_id: row.technician_id || jo.technician_id, member_technician_ids: jo.member_technician_ids, job_order_technicians: jo.job_order_technicians } : row
+  return getAssignedTeamDisplay(target, findTechnician)
+}
+
+function isDoCompleted(row: any) {
+  const s = String(row?.status || '').toLowerCase()
+  return s === 'delivered' || s === 'completed' || s === 'cancelled' || !!row?.is_completed
+}
+
+const showAssignModal = ref(false)
+const assigningRow = ref<any>(null)
+const isAssigning = ref(false)
+const assignInitial = ref({
+  technician_id: '',
+  member_technician_ids: [] as string[],
+  scheduled_date: '',
+  instructions: '',
+})
+
+function openAssign(row: any) {
+  assigningRow.value = row
+  const jo = findJobOrderForDO(row.id)
+  assignInitial.value = {
+    technician_id: (row.technician_id || jo?.technician_id) ? String(row.technician_id || jo?.technician_id) : '',
+    member_technician_ids: jo ? getJobMemberTechIds(jo) : [],
+    scheduled_date: jo?.scheduled_date || row.delivery_date || '',
+    instructions: jo?.instructions || row.notes || row.project_name || '',
+  }
+  showAssignModal.value = true
+}
+
+async function handleAssignSubmit(payload: AssignSubmitPayload) {
+  if (!assigningRow.value) return
+  isAssigning.value = true
+  try {
+    const row = assigningRow.value
+    const existingJO = findJobOrderForDO(row.id)
+    if (existingJO) {
+      await api.patch(`/job-orders/${existingJO.id}`, {
+        technician_id: payload.technician_id,
+        member_technician_ids: payload.member_technician_ids,
+        scheduled_date: payload.scheduled_date,
+        instructions: payload.instructions,
+        assigner_name: currentUser.value?.name || undefined,
+      })
+      toast.success('Teknisi delivery berhasil diperbarui.')
+    } else {
+      await api.post('/job-orders', {
+        job_order_no: `JO-${Date.now().toString().slice(-6)}`,
+        delivery_order_id: row.id,
+        technician_id: payload.technician_id,
+        member_technician_ids: payload.member_technician_ids,
+        job_type: 'delivery',
+        scheduled_date: payload.scheduled_date,
+        instructions: payload.instructions || 'Delivery & Installation',
+        assigner_name: currentUser.value?.name || undefined,
+      })
+      toast.success('Teknisi delivery berhasil di-assign.')
+    }
+    showAssignModal.value = false
+    window.dispatchEvent(new CustomEvent('bias:data-mutated'))
+    await refreshInBackground()
+  } catch (err: any) {
+    toast.error(err?.message || 'Gagal meng-assign teknisi delivery.')
+  } finally {
+    isAssigning.value = false
+  }
+}
 
 const showModal = ref(false)
 const editingItem = ref<any>(null)
@@ -112,7 +191,17 @@ async function markDelivered(row: any) {
     <PageHeader title="Delivery & Installation Monitoring" />
     <DataTable :columns="columns" :data="deliveryOrders" search-placeholder="Search delivery...">
       <template #cell-customer_id="{ value }">{{ getCustomer(value) }}</template>
-      <template #cell-assigned_to="{ value }">{{ getTechnician(value) }}</template>
+      <template #cell-assigned_to="{ row }">
+        <template v-if="getDoTeam(row).leadName">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-weight: 600; font-size: 12px;">Kepala: {{ getDoTeam(row).leadName }}</span>
+            <span v-if="getDoTeam(row).memberNames.length > 0" style="font-size: 11px; color: var(--color-text-muted);">
+              Anggota: {{ getDoTeam(row).memberNames.join(', ') }}
+            </span>
+          </div>
+        </template>
+        <span v-else class="text-muted" style="font-size: 12px; font-style: italic;">Belum ditugaskan</span>
+      </template>
       <template #cell-status="{ value }">
         <span class="badge" :class="value === 'delivered' ? 'badge-success' : value === 'in_transit' ? 'badge-info' : 'badge-warning'">
           {{ value.toUpperCase().replace('_', ' ') }}
@@ -122,6 +211,14 @@ async function markDelivered(row: any) {
         {{ value ? new Date(value).toLocaleDateString() : '-' }}
       </template>
       <template #actions="{ row }">
+        <button
+          v-if="(can('job_order:create') || can('delivery_order:update')) && !isDoCompleted(row) && String(row.do_type || '').toLowerCase() !== 'inbound'"
+          class="btn btn-sm btn-outline"
+          style="color: var(--color-primary); border-color: var(--color-primary); margin-right: 0.5rem;"
+          @click="openAssign(row)"
+        >
+          {{ findJobOrderForDO(row.id)?.technician_id || row.technician_id ? 'Re-assign' : 'Assign' }}
+        </button>
         <button v-if="can('delivery_order:update')" class="btn btn-sm btn-outline" @click="openEdit(row)">Edit Report</button>
         <button v-if="can('delivery_order:update') && String(row.status || '').toLowerCase() !== 'delivered'" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="markDelivered(row)">Mark Delivered</button>
         <button v-if="can('delivery_order:read') && hasDeliveryHistory(row) && String(row.do_type || '').toLowerCase() !== 'inbound'" class="btn btn-sm btn-outline" style="margin-left: 0.5rem;" @click="printServiceHistory(row)">Print Service History</button>
@@ -171,5 +268,22 @@ async function markDelivered(row: any) {
         </div>
       </div>
     </FormModal>
+
+    <AssignTechnicianModal
+      :open="showAssignModal"
+      :title="findJobOrderForDO(assigningRow?.id)?.technician_id || assigningRow?.technician_id ? 'Re-assign Teknisi Delivery' : 'Assign Teknisi Delivery'"
+      :summary-lines="assigningRow ? [
+        { label: 'DO No', value: assigningRow.do_number || assigningRow.delivery_no || '-' },
+        { label: 'Customer', value: getCustomer(assigningRow.customer_id) },
+      ] : []"
+      :technicians="technicians"
+      :initial-lead-id="assignInitial.technician_id"
+      :initial-member-ids="assignInitial.member_technician_ids"
+      :initial-scheduled-date="assignInitial.scheduled_date"
+      :initial-instructions="assignInitial.instructions"
+      :loading="isAssigning"
+      @close="showAssignModal = false"
+      @submit="handleAssignSubmit"
+    />
   </div>
 </template>

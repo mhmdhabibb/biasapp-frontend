@@ -427,7 +427,7 @@ async function handleDelete() {
         <line x1="12" y1="16" x2="12" y2="12" />
         <line x1="12" y1="8" x2="12.01" y2="8" />
       </svg>
-      <span>Visit copier di-generate otomatis saat rental pertama kali dibuat (status <b>draft</b>) dan muncul di <b>Job Orders → tab Visits</b> untuk di-assign teknisi. Setelah teknisi isi &amp; submit, otomatis di-generate draft visit bulan berikutnya. Halaman ini untuk monitoring &amp; print laporan copier.</span>
+      <span>Visit copier di-generate otomatis saat rental pertama kali dibuat (status <b>draft</b>) dan dapat langsung di-assign teknisi (Kepala &amp; Anggota) melalui tombol <b>Assign</b> di halaman ini. Setelah teknisi isi &amp; submit, otomatis di-generate draft visit bulan berikutnya.</span>
     </div>
 
     <div style="display: flex; gap: 8px; margin-bottom: 16px;">

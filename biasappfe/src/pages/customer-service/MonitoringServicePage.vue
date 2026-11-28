@@ -421,7 +421,13 @@ const allMonitoredServices = computed<MonitoredService[]>(() => {
       createdAtMs: new Date(cAt).getTime() || Date.now(),
       updatedAtMs: new Date(uAt).getTime() || Date.now(),
       is_completed: isComp,
-      target_route: `/customer-service/job-orders`,
+      target_route: j.delivery_order_id
+        ? `/customer-service/delivery-monitoring`
+        : j.survey_id
+          ? `/customer-service/surveys`
+          : j.job_type === "visit"
+            ? `/customer-service/copier-reports`
+            : `/customer-service/service-requests`,
     });
   }
 

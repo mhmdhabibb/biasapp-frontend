@@ -218,9 +218,9 @@ async function openNotification(notification: Notification) {
   } else if (title.includes("stock") || title.includes("product") || msg.includes("stock") || msg.includes("product")) {
     await router.push("/master/products");
   } else if (title.includes("job") || type.includes("job") || msg.includes("job")) {
-    await router.push("/customer-service/job-orders");
+    await router.push("/customer-service/service-requests");
   } else if (title.includes("delivery") || type.includes("delivery") || msg.includes("delivery")) {
-    await router.push("/customer-service/job-orders");
+    await router.push("/customer-service/delivery-monitoring");
   } else if (title.includes("service request") || type.includes("service_request") || msg.includes("service request")) {
     await router.push("/customer-service/service-requests");
   } else if (title.includes("purchase order") || title.includes("po") || type.includes("purchase_order")) {

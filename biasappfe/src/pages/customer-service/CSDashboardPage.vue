@@ -212,7 +212,7 @@ const completionPercentage = computed(() =>
         </div>
       </div>
 
-      <div class="card card-clickable" @click="router.push('/customer-service/job-orders')" title="Lihat Job Orders">
+      <div class="card card-clickable" @click="router.push('/customer-service/service-requests')" title="Lihat Service Requests">
         <div class="card-header">
           <span>In Progress</span>
           <span class="icon-wrapper">
@@ -448,7 +448,7 @@ const completionPercentage = computed(() =>
         </div>
       </div>
 
-      <div class="card section-card card-clickable" @click="router.push('/customer-service/job-orders')" title="Lihat Job Orders">
+      <div class="card section-card card-clickable" @click="router.push('/customer-service/service-requests')" title="Lihat Service Requests">
         <div class="section-header">
           <h3 class="section-title">Project Progress</h3>
         </div>

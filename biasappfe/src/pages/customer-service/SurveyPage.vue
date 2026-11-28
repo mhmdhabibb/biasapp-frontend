@@ -7,10 +7,13 @@ import FormModal from "@/components/ui/FormModal.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import CustomSelect from "@/components/ui/CustomSelect.vue";
 import DateTime24Input from "@/components/ui/DateTime24Input.vue";
+import AssignTechnicianModal, { type AssignSubmitPayload } from "@/components/ui/AssignTechnicianModal.vue";
+import { useAuth } from "@/composables/useAuth";
 import { useMasterStore } from "@/composables/useMasterStore";
 import { usePermission } from "@/composables/usePermission";
 import { useToast } from "@/composables/useToast";
 import { resources } from "@/services/resource.service";
+import { getAssignedTeamDisplay, getJobMemberTechIds } from "@/utils/jobTechnician";
 import { downloadSurveyAttachment, formatFileSize, normalizeSurveyPhotos } from "@/utils/surveyFiles";
 import { useRouter } from "vue-router";
 import type { TableColumn } from "@/types";
@@ -22,9 +25,10 @@ const props = defineProps<{ embedded?: boolean }>();
 const emit = defineEmits<{ (e: "count", count: number): void }>();
 
 const toast = useToast();
+const { currentUser } = useAuth();
 const { can } = usePermission();
 const router = useRouter();
-const { customers, units, technicians, ensureResourcesLoaded } = useMasterStore();
+const { customers, units, technicians, jobOrders, findTechnician, ensureResourcesLoaded } = useMasterStore();
 
 const columns: TableColumn[] = [
   { key: "survey_no", label: "Survey No" },
@@ -46,33 +50,45 @@ const showDetailModal = ref(false);
 const showAssignModal = ref(false);
 const assigningRow = ref<any>(null);
 const isAssigning = ref(false);
-const assignForm = reactive({
+const assignInitial = ref({
   technician_id: "",
-  scheduled_date: new Date().toISOString().slice(0, 16),
+  member_technician_ids: [] as string[],
+  scheduled_date: "",
+  instructions: "",
 });
+
+function findJobOrderForSurvey(surveyId: string | number) {
+  return (jobOrders.value as any[]).find(
+    (j: any) => String(j.survey_id || "") === String(surveyId),
+  ) || null;
+}
+
+function getSurveyTeam(row: any) {
+  const jo = findJobOrderForSurvey(row.id);
+  const target = jo ? { ...row, member_technician_ids: jo.member_technician_ids, job_order_technicians: jo.job_order_technicians } : row;
+  return getAssignedTeamDisplay(target, findTechnician);
+}
 
 function openAssign(row: any) {
   assigningRow.value = row;
-  assignForm.technician_id = row.technician_id ? String(row.technician_id) : "";
-  assignForm.scheduled_date = row.scheduled_date
-    ? new Date(row.scheduled_date).toISOString().slice(0, 16)
-    : new Date().toISOString().slice(0, 16);
+  const jo = findJobOrderForSurvey(row.id);
+  assignInitial.value = {
+    technician_id: row.technician_id ? String(row.technician_id) : "",
+    member_technician_ids: jo ? getJobMemberTechIds(jo) : getJobMemberTechIds(row),
+    scheduled_date: row.scheduled_date || "",
+    instructions: jo?.instructions || row.remarks || "",
+  };
   showAssignModal.value = true;
 }
 
-async function handleAssignSubmit() {
+async function handleAssignSubmit(payload: AssignSubmitPayload) {
   if (!assigningRow.value) return;
-  if (!assignForm.technician_id) {
-    toast.warning("Pilih teknisi terlebih dahulu.");
-    return;
-  }
   isAssigning.value = true;
   try {
     await resources.surveys.update(String(assigningRow.value.id), {
-      technician_id: assignForm.technician_id,
-      scheduled_date: assignForm.scheduled_date
-        ? new Date(assignForm.scheduled_date).toISOString()
-        : undefined,
+      technician_id: payload.technician_id,
+      member_technician_ids: payload.member_technician_ids,
+      scheduled_date: payload.scheduled_date,
     });
     toast.success("Teknisi survey berhasil ditugaskan!");
     showAssignModal.value = false;
@@ -432,9 +448,14 @@ onUnmounted(() => {
     <PageHeader v-if="!props.embedded" title="Survey" button-label="Add Survey" permission="survey:create" @add="openAdd" />
     <DataTable :columns="columns" :data="data" :loading="isLoading" search-placeholder="Search surveys..." permission="survey">
       <template #cell-_technician="{ row, value }">
-        <span v-if="row.technician_id" class="badge badge-info" style="font-size: 0.8rem;">
-          👷 {{ value }}
-        </span>
+        <div v-if="row.technician_id" style="display: flex; flex-direction: column; gap: 2px;">
+          <span class="badge badge-info" style="font-size: 0.78rem; width: fit-content;">
+            👷 Kepala: {{ getSurveyTeam(row).leadName || value }}
+          </span>
+          <span v-if="getSurveyTeam(row).memberNames.length > 0" style="font-size: 11px; color: var(--color-text-muted);">
+            Anggota: {{ getSurveyTeam(row).memberNames.join(', ') }}
+          </span>
+        </div>
         <span v-else class="text-muted" style="font-size: 0.8rem; font-style: italic;">
           Belum Ditugaskan
         </span>
@@ -709,32 +730,22 @@ onUnmounted(() => {
 
     <ConfirmDialog :open="showConfirm" title="Delete Survey" :message="`Are you sure you want to delete this survey?`" @close="showConfirm = false" @confirm="handleDelete" />
 
-    <FormModal
+    <AssignTechnicianModal
       :open="showAssignModal"
       :title="assigningRow?.technician_id ? 'Re-assign Teknisi Survey' : 'Assign Teknisi Survey'"
-      max-width="460px"
+      :summary-lines="assigningRow ? [
+        { label: 'Survey No', value: assigningRow.survey_no },
+        { label: 'Customer', value: assigningRow._customer },
+      ] : []"
+      :technicians="technicians"
+      :initial-lead-id="assignInitial.technician_id"
+      :initial-member-ids="assignInitial.member_technician_ids"
+      :initial-scheduled-date="assignInitial.scheduled_date"
+      :show-instructions="false"
+      :loading="isAssigning"
       @close="showAssignModal = false"
       @submit="handleAssignSubmit"
-    >
-      <div v-if="assigningRow" style="margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; background: var(--color-surface-sunken); font-size: 13px;">
-        <div><strong>Survey No:</strong> {{ assigningRow.survey_no }}</div>
-        <div><strong>Customer:</strong> {{ assigningRow._customer }}</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Pilih Teknisi / Surveyor <span class="text-danger">*</span></label>
-        <CustomSelect v-model="assignForm.technician_id" :options="technicianOptions" placeholder="-- Pilih Teknisi --" />
-      </div>
-      <div class="form-group mt-3">
-        <label class="form-label">Tanggal &amp; Waktu Jadwal Survey</label>
-        <DateTime24Input v-model="assignForm.scheduled_date" />
-      </div>
-      <template #footer>
-        <button type="button" class="btn btn-outline" @click="showAssignModal = false" :disabled="isAssigning">Batal</button>
-        <button type="button" class="btn btn-primary" @click="handleAssignSubmit" :disabled="isAssigning">
-          {{ isAssigning ? 'Menyimpan...' : 'Assign Teknisi' }}
-        </button>
-      </template>
-    </FormModal>
+    />
   </div>
 </template>
 

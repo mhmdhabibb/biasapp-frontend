@@ -119,11 +119,6 @@ export const allMenuGroups: MenuGroup[] = [
         route: "/customer-service/service-requests",
       },
       {
-        label: "sidebar.job_orders",
-        icon: "clipboard",
-        route: "/customer-service/job-orders",
-      },
-      {
         label: "sidebar.maintenance_schedules",
         icon: "calendar",
         route: "/customer-service/maintenance",

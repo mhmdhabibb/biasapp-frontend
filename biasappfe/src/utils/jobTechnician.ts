@@ -51,3 +51,39 @@ export function isMemberTechnicianForJob(
   if (leadId === tid) return false;
   return getJobMemberTechIds(job).includes(tid);
 }
+
+export function toLocalDateTimeInput(val?: string | Date | null): string {
+  const d = val ? new Date(val) : new Date();
+  const safe = Number.isNaN(d.getTime()) ? new Date() : d;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${safe.getFullYear()}-${pad(safe.getMonth() + 1)}-${pad(safe.getDate())}T${pad(safe.getHours())}:${pad(safe.getMinutes())}`;
+}
+
+export function resolveTechDisplayName(
+  techId: string | number | null | undefined,
+  findTechnician: (id: any) => any,
+  techObj?: any,
+): string {
+  if (techObj?.user?.name) return techObj.user.name;
+  if (techObj?.name) return techObj.name;
+  if (!techId) return "";
+  const t = findTechnician(techId);
+  return t?.user?.name || t?.name || "";
+}
+
+export function getAssignedTeamDisplay(
+  jobOrRow: any,
+  findTechnician: (id: any) => any,
+): { leadName: string; memberNames: string[] } {
+  if (!jobOrRow) return { leadName: "", memberNames: [] };
+  const leadName = resolveTechDisplayName(
+    jobOrRow.technician_id,
+    findTechnician,
+    jobOrRow.technician,
+  );
+  const memberIds = getJobMemberTechIds(jobOrRow);
+  const memberNames = memberIds
+    .map((id) => resolveTechDisplayName(id, findTechnician))
+    .filter(Boolean);
+  return { leadName, memberNames };
+}
